@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Transcription Compare</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <p class="eyebrow">Coverage-first diarized transcription comparison</p>
+        <h1>Find skipped audio, text divergence, and speaker drift</h1>
+        <p>Upload two transcription JSON files. Optionally upload the source audio to play suspicious intervals.</p>
+      </section>
+
+      <section class="panel upload-panel">
+        <label>Label A <input id="label-a" value="A" /></label>
+        <label>JSON A <input id="file-a" type="file" accept="application/json,.json" /></label>
+        <label>Label B <input id="label-b" value="B" /></label>
+        <label>JSON B <input id="file-b" type="file" accept="application/json,.json" /></label>
+        <label>Source audio optional <input id="audio-file" type="file" accept="audio/*" /></label>
+        <button id="run-button">Run comparison</button>
+      </section>
+
+      <section id="messages" class="messages" aria-live="polite"></section>
+      <section id="summary" class="summary-grid"></section>
+      <section id="timeline" class="panel"></section>
+      <section id="side-by-side" class="panel"></section>
+      <section id="tables" class="tables"></section>
+
+      <audio id="audio" controls class="audio" hidden></audio>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
