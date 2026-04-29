@@ -266,35 +266,18 @@ def _append_pending_text_segment(result: dict, pending_text: str, duration: floa
     )
 
 
-def _batch_transcribe(pcm_bytes: bytes, language: str | None = None) -> list:
-    """Transcribe the full audio by calling the ASR model directly in 30s chunks.
-
-    Bypasses the streaming AudioProcessor pipeline (which silently discards audio
-    during buffer resets at online_asr.py:244-252) to achieve full audio coverage.
-
-    Args:
-        pcm_bytes: Raw int16 PCM audio at 16kHz mono.
-        language:  Optional BCP-47 language code (e.g. "es").
-
-    Returns:
-        Flat list of ASRToken objects sorted by start time, covering the full audio.
-    """
+def _iter_batch_transcribe_chunks(pcm_bytes: bytes, language: str | None = None):
+    """Yield accepted ASRToken batches for each direct faster-whisper chunk."""
     SAMPLE_RATE = 16000
     CHUNK_SECONDS = 30
     OVERLAP_SECONDS = 2
     CHUNK_SAMPLES = CHUNK_SECONDS * SAMPLE_RATE
     OVERLAP_SAMPLES = OVERLAP_SECONDS * SAMPLE_RATE
 
-    # Convert int16 PCM bytes → float32 numpy (faster-whisper native format)
     audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
     total_samples = len(audio)
 
     asr = transcription_engine.asr
-
-    # Resolve the underlying faster-whisper WhisperModel.
-    # When backend_policy="simulstreaming" (the default), transcription_engine.asr
-    # is a SimulStreamingASR which wraps a faster-whisper encoder at .fw_encoder.
-    # When backend_policy="localagreement", .asr is a FasterWhisperASR with .model.
     fw_model = getattr(asr, "fw_encoder", None) or getattr(asr, "model", None)
     if fw_model is None or not hasattr(fw_model, "transcribe"):
         raise RuntimeError(
@@ -303,7 +286,6 @@ def _batch_transcribe(pcm_bytes: bytes, language: str | None = None) -> list:
         )
 
     lan = language or getattr(asr, "lan", None) or getattr(asr, "original_language", None)
-
     all_tokens = []
     prev_end_time = 0.0  # wall-clock end of last accepted token from previous chunk
     init_prompt = ""
@@ -367,15 +349,28 @@ def _batch_transcribe(pcm_bytes: bytes, language: str | None = None) -> list:
             recent_text = "".join(t.text for t in all_tokens[-50:])
             init_prompt = recent_text[-200:] if len(recent_text) > 200 else recent_text
 
+        yield new_tokens
+
         # Advance by chunk size minus overlap so next chunk re-covers the tail
         chunk_start_sample += CHUNK_SAMPLES - OVERLAP_SAMPLES
+
+
+def _batch_transcribe(pcm_bytes: bytes, language: str | None = None) -> list:
+    """Transcribe the full audio by calling the ASR model directly in 30s chunks.
+
+    Bypasses the streaming AudioProcessor pipeline (which silently discards audio
+    during buffer resets at online_asr.py:244-252) to achieve full audio coverage.
+    """
+    all_tokens = []
+    for new_tokens in _iter_batch_transcribe_chunks(pcm_bytes, language):
+        all_tokens.extend(new_tokens)
 
     # Sort by start time (chunk boundaries can produce minor ordering jitter)
     all_tokens.sort(key=lambda t: t.start)
     logger.info(
         "Batch transcription complete: %d tokens across %.1fs",
         len(all_tokens),
-        total_samples / SAMPLE_RATE,
+        len(pcm_bytes) / (16000 * 2),
     )
     return all_tokens
 
@@ -734,49 +729,60 @@ def _extract_text_from_frontdata(front_data) -> str:
     return " ".join(part.strip() for part in parts if part.strip())
 
 
-async def _stream_transcription(results_generator, processor, response_format: str, language, duration: float):
+async def _stream_batch_transcription(pcm_data: bytes, language, duration: float):
     import json
 
+    all_tokens = []
     sent_text = ""
-    front_data = None
-    accumulated_segments: dict[tuple, object] = {}
 
     try:
-        async for front_data in results_generator:
-            for seg in getattr(front_data, "lines", []):
-                if getattr(seg, "speaker", None) == -2:
-                    continue
-                if not getattr(seg, "text", None):
-                    continue
-                key = (
-                    round(float(getattr(seg, "start", 0.0)), 2),
-                    round(float(getattr(seg, "end", 0.0)), 2),
-                    str(getattr(seg, "speaker", "")),
-                )
-                accumulated_segments[key] = seg
-
-            current_text = _extract_text_from_frontdata(front_data)
+        for new_tokens in _iter_batch_transcribe_chunks(pcm_data, language):
+            all_tokens.extend(new_tokens)
+            current_text = "".join(getattr(token, "text", "") for token in all_tokens)
             if len(current_text) > len(sent_text):
                 delta = current_text[len(sent_text):]
                 sent_text = current_text
                 event_data = json.dumps({"type": "transcript.text.delta", "delta": delta})
                 yield f"data: {event_data}\n\n"
+            await asyncio.sleep(0)
+
+        if not all_tokens:
+            result = {
+                "segments": [],
+                "word_segments": [],
+                "transcript": [],
+                "diarization": [],
+                "raw_words": [],
+            }
+        else:
+            all_tokens.sort(key=lambda t: t.start)
+            all_diarization = await _batch_diarize(pcm_data)
+            token_segments = _build_segments_from_tokens(all_tokens, all_diarization)
+            token_segments = _clamp_segment_overlaps(token_segments)
+
+            # Duck-type a minimal object for _to_whisperx — it reads attributes via getattr.
+            class _FrontData:
+                lines = token_segments
+                buffer_transcription = ""
+                buffer_diarization = ""
+
+            result = _to_whisperx(_FrontData(), duration=duration)
+            result["raw_words"] = [
+                {
+                    "word": getattr(t, "text", ""),
+                    "start": round(float(getattr(t, "start", 0.0)), 3),
+                    "end": round(float(getattr(t, "end", 0.0)), 3),
+                    "score": float(getattr(t, "probability", 1.0) or 1.0),
+                }
+                for t in all_tokens
+            ]
+
+        done_data = json.dumps({"type": "transcript.text.done", "text": json.dumps(result)})
+        yield f"data: {done_data}\n\n"
+        yield "data: [DONE]\n\n"
     except Exception as e:
         error_data = json.dumps({"type": "error", "error": str(e)})
         yield f"data: {error_data}\n\n"
-        return
-    finally:
-        await processor.cleanup()
-
-    if front_data is not None and accumulated_segments:
-        front_data.lines = _deduplicate_segments(list(accumulated_segments.values()))
-
-    if front_data is not None:
-        result = _to_whisperx(front_data, duration=duration)
-        done_data = json.dumps({"type": "transcript.text.done", "text": json.dumps(result)})
-        yield f"data: {done_data}\n\n"
-
-    yield "data: [DONE]\n\n"
 
 
 @app.post("/v1/audio/transcriptions")
@@ -814,23 +820,8 @@ async def create_transcription(
     duration = len(pcm_data) / (16000 * 2)
 
     if stream:
-        processor = AudioProcessor(
-            transcription_engine=transcription_engine,
-            language=language,
-        )
-        processor.is_pcm_input = True
-        results_gen = await processor.create_tasks()
-
-        async def feed_audio():
-            chunk_size = 16000 * 2
-            for i in range(0, len(pcm_data), chunk_size):
-                await processor.process_audio(pcm_data[i : i + chunk_size])
-            await processor.process_audio(b"")
-
-        asyncio.create_task(feed_audio())
-
         return StreamingResponse(
-            _stream_transcription(results_gen, processor, "json", language, duration),
+            _stream_batch_transcription(pcm_data, language, duration),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
