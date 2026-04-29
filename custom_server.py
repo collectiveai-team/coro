@@ -1,6 +1,9 @@
 import asyncio
 import logging
+import threading
 from contextlib import asynccontextmanager
+
+import numpy as np
 
 from fastapi import FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +15,8 @@ from whisperlivekit import (
     get_inline_ui_html,
     parse_args,
 )
+from whisperlivekit.timed_objects import ASRToken, Segment
+from whisperlivekit.tokens_alignment import PuncSegment
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logging.getLogger().setLevel(logging.WARNING)
@@ -21,6 +26,9 @@ logging.getLogger("whisperlivekit.qwen3_asr").setLevel(logging.DEBUG)
 
 config = parse_args()
 transcription_engine = None
+# Serialises concurrent batch transcriptions that mutate asr.original_language.
+# A single GPU makes true parallelism impossible anyway; this just makes it safe.
+_asr_lock = threading.Lock()
 
 
 @asynccontextmanager
@@ -33,12 +41,12 @@ async def lifespan(app: FastAPI):
     # so any faster-whisper transcribe() kwarg can be injected here.
     asr = getattr(transcription_engine, "asr", None)
     if asr is not None and hasattr(asr, "transcribe_kargs"):
-        asr.transcribe_kargs.update({
-            "condition_on_previous_text": False,
-            "compression_ratio_threshold": 1.8,
-            "no_speech_threshold": 0.45,
-            "logprob_threshold": -0.8,
-        })
+        # asr.transcribe_kargs.update({
+        #     "condition_on_previous_text": False,
+        #     "compression_ratio_threshold": 1.8,
+        #     "no_speech_threshold": 0.45,
+        #     "logprob_threshold": -0.8,
+        # })
         logger.info("Applied anti-repetition transcribe_kargs to FasterWhisperASR: %s", asr.transcribe_kargs)
 
     yield
@@ -257,6 +265,240 @@ def _append_pending_text_segment(result: dict, pending_text: str, duration: floa
     )
 
 
+def _batch_transcribe(pcm_bytes: bytes, language: str | None = None) -> list:
+    """Transcribe the full audio by calling the ASR model directly in 30s chunks.
+
+    Bypasses the streaming AudioProcessor pipeline (which silently discards audio
+    during buffer resets at online_asr.py:244-252) to achieve full audio coverage.
+
+    Args:
+        pcm_bytes: Raw int16 PCM audio at 16kHz mono.
+        language:  Optional BCP-47 language code (e.g. "es").
+
+    Returns:
+        Flat list of ASRToken objects sorted by start time, covering the full audio.
+    """
+    SAMPLE_RATE = 16000
+    CHUNK_SECONDS = 30
+    OVERLAP_SECONDS = 2
+    CHUNK_SAMPLES = CHUNK_SECONDS * SAMPLE_RATE
+    OVERLAP_SAMPLES = OVERLAP_SECONDS * SAMPLE_RATE
+
+    # Convert int16 PCM bytes → float32 numpy (faster-whisper native format)
+    audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    total_samples = len(audio)
+
+    asr = transcription_engine.asr
+
+    # Resolve the underlying faster-whisper WhisperModel.
+    # When backend_policy="simulstreaming" (the default), transcription_engine.asr
+    # is a SimulStreamingASR which wraps a faster-whisper encoder at .fw_encoder.
+    # When backend_policy="localagreement", .asr is a FasterWhisperASR with .model.
+    fw_model = getattr(asr, "fw_encoder", None) or getattr(asr, "model", None)
+    if fw_model is None or not hasattr(fw_model, "transcribe"):
+        raise RuntimeError(
+            f"Cannot find a faster-whisper WhisperModel on transcription_engine.asr "
+            f"({type(asr).__name__}). Batch transcription requires faster-whisper."
+        )
+
+    lan = language or getattr(asr, "lan", None) or getattr(asr, "original_language", None)
+
+    all_tokens = []
+    prev_end_time = 0.0  # wall-clock end of last accepted token from previous chunk
+    init_prompt = ""
+
+    chunk_start_sample = 0
+    while chunk_start_sample < total_samples:
+        chunk_end_sample = min(chunk_start_sample + CHUNK_SAMPLES, total_samples)
+        chunk_audio = audio[chunk_start_sample:chunk_end_sample]
+        offset_seconds = chunk_start_sample / SAMPLE_RATE
+
+        logger.debug(
+            "Batch transcribing chunk %.1f-%.1fs (%d samples)",
+            offset_seconds,
+            chunk_end_sample / SAMPLE_RATE,
+            len(chunk_audio),
+        )
+
+        # Call faster-whisper directly — no local-agreement, no buffer resets.
+        # Lock so concurrent requests don't interfere with shared model state.
+        with _asr_lock:
+            raw_segs, _ = fw_model.transcribe(
+                chunk_audio,
+                language=lan if lan and lan != "auto" else None,
+                initial_prompt=init_prompt,
+                beam_size=5,
+                word_timestamps=True,
+                condition_on_previous_text=True,
+            )
+            raw_segs = list(raw_segs)  # consume the generator inside the lock
+
+        # Convert faster-whisper Segment.words → ASRToken, filter no_speech
+        tokens = []
+        for seg in raw_segs:
+            if getattr(seg, "no_speech_prob", 0.0) > 0.9:
+                continue
+            for word in getattr(seg, "words", []):
+                tokens.append(ASRToken(word.start, word.end, word.word, probability=word.probability))
+
+        # Adjust timestamps to global audio time and build ASRToken objects
+        chunk_tokens = []
+        for t in tokens:
+            adjusted = ASRToken(
+                start=round(t.start + offset_seconds, 3),
+                end=round(t.end + offset_seconds, 3),
+                text=t.text,
+                probability=t.probability,
+            )
+            chunk_tokens.append(adjusted)
+
+        # Drop tokens from the overlap region already covered by previous chunk.
+        # Use half the overlap as dedup boundary to avoid losing words at boundaries.
+        dedup_boundary = prev_end_time - (OVERLAP_SECONDS * 0.5) if all_tokens else 0.0
+        new_tokens = [t for t in chunk_tokens if t.start >= dedup_boundary]
+
+        if new_tokens:
+            all_tokens.extend(new_tokens)
+            prev_end_time = new_tokens[-1].end
+
+        # Build init_prompt from last ~200 chars of committed text for context
+        if new_tokens:
+            recent_text = "".join(t.text for t in all_tokens[-50:])
+            init_prompt = recent_text[-200:] if len(recent_text) > 200 else recent_text
+
+        # Advance by chunk size minus overlap so next chunk re-covers the tail
+        chunk_start_sample += CHUNK_SAMPLES - OVERLAP_SAMPLES
+
+    # Sort by start time (chunk boundaries can produce minor ordering jitter)
+    all_tokens.sort(key=lambda t: t.start)
+    logger.info(
+        "Batch transcription complete: %d tokens across %.1fs",
+        len(all_tokens),
+        total_samples / SAMPLE_RATE,
+    )
+    return all_tokens
+
+
+def _build_segments_from_tokens(all_tokens: list, all_diarization: list) -> list:
+    """Build non-overlapping Segment objects from the full committed token stream.
+
+    Args:
+        all_tokens: processor.state.tokens — the complete, never-pruned list of
+            ASRToken and Silence objects committed during the session.
+        all_diarization: accumulated diarization records from the collect() loop,
+            each a dict {"start": float, "end": float, "speaker": any}.
+            This must be accumulated externally because all_diarization_segments
+            inside TokensAlignment is pruned to a 300s window.
+
+    Returns:
+        List of Segment objects with non-overlapping time ranges, suitable for
+        assigning to front_data.lines and passing to _to_whisperx().
+    """
+    # Step A — Group tokens into punctuation-boundary PuncSegments.
+    # After creating each segment, clamp its start/end to the true min/max
+    # timestamps across all tokens in the chunk.  PuncSegment.from_tokens()
+    # uses tokens[0].start and tokens[-1].end, but adjacent-chunk interleaving
+    # can make those boundary tokens non-chronological.
+    def _make_punc_seg(chunk):
+        ps = PuncSegment.from_tokens(tokens=chunk)
+        if ps is None:
+            return None
+        times = [t for t in chunk
+                 if not getattr(t, 'is_silence', lambda: False)()
+                 and getattr(t, 'start', None) is not None
+                 and getattr(t, 'end', None) is not None]
+        if times:
+            ps.start = min(t.start for t in times)
+            ps.end   = max(t.end   for t in times)
+        return ps
+
+    punc_segments = []
+    seg_start = 0
+    for i, token in enumerate(all_tokens):
+        is_sil = getattr(token, 'is_silence', lambda: False)()
+        if is_sil:
+            chunk = all_tokens[seg_start:i]
+            if chunk:
+                ps = _make_punc_seg(chunk)
+                if ps:
+                    punc_segments.append(ps)
+            sil_ps = PuncSegment.from_tokens(tokens=[token], is_silence=True)
+            if sil_ps is not None:
+                punc_segments.append(sil_ps)
+            seg_start = i + 1
+        elif getattr(token, 'has_punctuation', lambda: False)():
+            chunk = all_tokens[seg_start:i + 1]
+            ps = _make_punc_seg(chunk)
+            if ps:
+                punc_segments.append(ps)
+            seg_start = i + 1
+
+    tail = all_tokens[seg_start:]
+    if tail:
+        ps = _make_punc_seg(tail)
+        if ps:
+            punc_segments.append(ps)
+
+    # Step B — Build merged diarization timeline from all_diarization
+    merged_diar = []
+    for d in sorted(all_diarization, key=lambda x: x['start']):
+        if merged_diar and d['speaker'] == merged_diar[-1]['speaker']:
+            merged_diar[-1]['end'] = max(merged_diar[-1]['end'], d['end'])
+        else:
+            merged_diar.append(dict(d))
+
+    # Step C — Assign speaker to each non-silence PuncSegment
+    for ps in punc_segments:
+        if ps.is_silence():
+            continue
+        if not merged_diar:
+            # No diarization data at all: attribute to speaker 1 (matches get_lines_diarization default).
+            ps.speaker = 1
+            continue
+        if ps.start >= merged_diar[-1]['end']:
+            # Segment is beyond the last diarization entry: mark as unattributed.
+            ps.speaker = -1
+            continue
+        max_overlap = 0.0
+        best_speaker = 1
+        for d in merged_diar:
+            overlap = max(0.0, min(ps.end, d['end']) - max(ps.start, d['start']))
+            if overlap > max_overlap:
+                max_overlap = overlap
+                # Speaker values in all_diarization are already 1-indexed (get_lines_diarization adds +1).
+                best_speaker = d['speaker']
+        ps.speaker = best_speaker
+
+    # Step D — Merge adjacent same-speaker PuncSegments into final Segment objects
+    segments = []
+    for ps in punc_segments:
+        if ps.is_silence():
+            continue
+        if not ps.text or not ps.text.strip():
+            continue
+        # Guard against inverted timestamps from the ASR model (known to occur
+        # occasionally with faster-whisper word_timestamps=True).
+        seg_start = float(ps.start or 0.0)
+        seg_end = float(ps.end or 0.0)
+        if seg_end < seg_start:
+            seg_start, seg_end = seg_end, seg_start
+        if segments and segments[-1].speaker == ps.speaker:
+            # PuncSegment.text already carries leading whitespace from the ASR tokenizer.
+            segments[-1].text = (segments[-1].text or '') + (ps.text or '')
+            segments[-1].end = max(segments[-1].end, seg_end)
+        else:
+            segments.append(Segment(
+                start=seg_start,
+                end=seg_end,
+                text=ps.text,
+                speaker=ps.speaker,
+            ))
+
+    # Sort by start time — inverted-timestamp swaps above can disturb order.
+    segments.sort(key=lambda s: float(s.start or 0.0))
+    return segments
+
+
 def _to_whisperx(front_data, duration: float = 0.0) -> dict:
     """Convert FrontData to WhisperX JSON schema.
 
@@ -316,16 +558,43 @@ def _to_whisperx(front_data, duration: float = 0.0) -> dict:
     result = {"segments": segments, "word_segments": word_segments}
     _append_pending_text_segment(result, getattr(front_data, "buffer_diarization", ""), duration)
     _append_pending_text_segment(result, getattr(front_data, "buffer_transcription", ""), duration)
+
+    # Derived convenience fields built from the final segments list.
+    result["transcript"] = [
+        {"start": seg["start"], "end": seg["end"], "text": seg["text"]}
+        for seg in result["segments"]
+    ]
+    result["diarization"] = [
+        {"start": seg["start"], "end": seg["end"], "speaker": seg["speaker"]}
+        for seg in result["segments"]
+    ]
+
     return result
+
+
+def _speakers_compatible(s1, s2) -> bool:
+    """Return True if two speaker labels can belong to the same segment.
+
+    Speaker -1 means "unknown / not yet diarized" and is treated as
+    compatible with any speaker so that refinements across snapshots
+    (where diarization may flip from -1 to a real label) still merge.
+    """
+    if s1 == s2:
+        return True
+    # -1 (int) and "-1" (str) are both used as the undifferentiated-speaker sentinel
+    unknown = {-1, "-1"}
+    return s1 in unknown or s2 in unknown
 
 
 def _deduplicate_segments(segments: list) -> list:
     """Remove near-duplicate segments that share text and overlap in time.
 
     The pipeline refines timestamps across snapshots, so the same logical
-    segment can appear with slightly different start/end values. This function
-    merges segments that share the same text content by keeping the one with
-    the longest duration (most refined timestamps).
+    segment can appear with slightly different start/end values *and* with
+    different speaker labels (e.g. -1 → 1 as diarization resolves).
+    This function merges such duplicates, keeping the version whose text
+    is a superset of the other's (i.e. the more complete snapshot) and
+    preferring the longer duration when both texts are equal.
     """
     if not segments:
         return segments
@@ -338,24 +607,28 @@ def _deduplicate_segments(segments: list) -> list:
         speaker = getattr(seg, "speaker", None)
 
         merged = False
-        for existing in deduped:
+        for i, existing in enumerate(deduped):
             e_text = getattr(existing, "text", "").strip()
             e_start = float(getattr(existing, "start", 0.0))
             e_end = float(getattr(existing, "end", 0.0))
             e_speaker = getattr(existing, "speaker", None)
 
-            if speaker != e_speaker:
+            # Speaker must be compatible (same label or one of them is -1)
+            if not _speakers_compatible(speaker, e_speaker):
                 continue
 
             overlap = min(end, e_end) - max(start, e_start)
             shorter = min(end - start, e_end - e_start)
-            if shorter <= 0:
+            if shorter <= 0 or overlap <= 0:
                 continue
 
             if overlap / shorter > 0.5 and (text == e_text or text in e_text or e_text in text):
-                if end - start > e_end - e_start:
-                    deduped.remove(existing)
-                    deduped.append(seg)
+                # Keep the segment whose text is the superset (most complete).
+                # If both texts are equal, keep the longer duration (more refined).
+                text_is_superset = e_text in text and text != e_text
+                duration_is_longer = (end - start) > (e_end - e_start)
+                if text_is_superset or (text == e_text and duration_is_longer):
+                    deduped[i] = seg
                 merged = True
                 break
 
@@ -459,15 +732,14 @@ async def create_transcription(
     pcm_data = await _convert_to_pcm(audio_bytes)
     duration = len(pcm_data) / (16000 * 2)
 
-    processor = AudioProcessor(
-        transcription_engine=transcription_engine,
-        language=language,
-    )
-    processor.is_pcm_input = True
-
-    results_gen = await processor.create_tasks()
-
     if stream:
+        processor = AudioProcessor(
+            transcription_engine=transcription_engine,
+            language=language,
+        )
+        processor.is_pcm_input = True
+        results_gen = await processor.create_tasks()
+
         async def feed_audio():
             chunk_size = 16000 * 2
             for i in range(0, len(pcm_data), chunk_size):
@@ -486,54 +758,42 @@ async def create_transcription(
             },
         )
 
-    final_result = None
-    accumulated_segments: dict[tuple, object] = {}
+    # --- Batch path: bypass streaming pipeline for full audio coverage ---
+    # AudioProcessor silently discards audio during buffer resets (online_asr.py:244-252).
+    # For batch files, call the ASR model directly in 30s chunks.
+    all_tokens = await asyncio.to_thread(_batch_transcribe, pcm_data, language)
 
-    async def collect():
-        nonlocal final_result
-        async for result in results_gen:
-            for seg in getattr(result, "lines", []):
-                # Skip silence sentinels (speaker == -2); they have no text.
-                if getattr(seg, "speaker", None) == -2:
-                    continue
-                if not getattr(seg, "text", None):
-                    continue
-                key = (
-                    round(float(getattr(seg, "start", 0.0)), 2),
-                    round(float(getattr(seg, "end", 0.0)), 2),
-                    str(getattr(seg, "speaker", "")),
-                )
-                # Last write wins so refinements (text/speaker updates) are kept.
-                accumulated_segments[key] = seg
-            final_result = result
+    if not all_tokens:
+        logger.warning("Batch transcription produced no tokens.")
+        return JSONResponse({
+            "segments": [], "word_segments": [],
+            "transcript": [], "diarization": [], "raw_words": [],
+        })
 
-    collect_task = asyncio.create_task(collect())
+    # Build non-overlapping segments (no diarization in batch path — all segments get speaker=1)
+    token_segments = _build_segments_from_tokens(all_tokens, [])
 
-    # Feed audio in chunks (1 second each)
-    chunk_size = 16000 * 2  # 1 second of PCM
-    for i in range(0, len(pcm_data), chunk_size):
-        await processor.process_audio(pcm_data[i : i + chunk_size])
+    # Duck-type a minimal object for _to_whisperx — it reads attributes via getattr
+    class _FrontData:
+        lines = token_segments
+        buffer_transcription = ""
+        buffer_diarization = ""
 
-    # Signal end of audio
-    await processor.process_audio(b"")
+    response_body = _to_whisperx(_FrontData(), duration=duration)
 
-    # Wait for pipeline to finish
-    try:
-        await asyncio.wait_for(collect_task, timeout=120.0)
-    except asyncio.TimeoutError:
-        logger.warning("Transcription timed out after 120s")
-    finally:
-        await processor.cleanup()
+    # Raw word-level tokens: actual per-word Whisper timestamps and probabilities
+    response_body["raw_words"] = [
+        {
+            "word": getattr(t, "text", ""),
+            "start": round(float(getattr(t, "start", 0.0)), 3),
+            "end": round(float(getattr(t, "end", 0.0)), 3),
+            "probability": getattr(t, "probability", None),
+        }
+        for t in all_tokens
+        if getattr(t, "text", "").strip()
+    ]
 
-    if final_result is None:
-        return JSONResponse({"segments": [], "word_segments": []})
-
-    # Replace the (pruned) last snapshot's lines with the full accumulated set
-    # so _to_whisperx sees every segment from the entire audio.
-    if accumulated_segments:
-        final_result.lines = _deduplicate_segments(list(accumulated_segments.values()))
-
-    return JSONResponse(_to_whisperx(final_result, duration=duration))
+    return JSONResponse(response_body)
 
 
 @app.get("/v1/models")

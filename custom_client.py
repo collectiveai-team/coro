@@ -240,6 +240,45 @@ def _make_intermediate_callback(intermediate_output: Optional[str]):
     return callback
 
 
+def _reconstruct_diff(msg: dict, lines: list) -> dict:
+    """Correctly reconstruct full state from a diff or snapshot message.
+
+    The library's reconstruct_state is buggy: it appends new_lines without
+    trimming stale lines beyond the common prefix.  This version uses n_lines
+    (total expected line count sent by the server) to truncate before extending.
+    """
+    if msg.get("type") == "snapshot":
+        lines.clear()
+        lines.extend(msg.get("lines", []))
+        return {**msg, "lines": lines[:]}
+
+    # Prune from the front
+    n_pruned = msg.get("lines_pruned", 0)
+    if n_pruned > 0:
+        del lines[:n_pruned]
+
+    new_lines = msg.get("new_lines", [])
+
+    # Trim stale lines beyond the common prefix then append new ones.
+    # n_lines = total expected line count after this diff is applied.
+    n_lines = msg.get("n_lines", len(lines) - len(new_lines) + len(new_lines))
+    n_keep = n_lines - len(new_lines)
+    if n_keep < len(lines):
+        del lines[n_keep:]
+
+    lines.extend(new_lines)
+
+    return {
+        "status": msg.get("status", ""),
+        "lines": lines[:],
+        "buffer_transcription": msg.get("buffer_transcription", ""),
+        "buffer_diarization": msg.get("buffer_diarization", ""),
+        "buffer_translation": msg.get("buffer_translation", ""),
+        "remaining_time_transcription": msg.get("remaining_time_transcription", 0),
+        "remaining_time_diarization": msg.get("remaining_time_diarization", 0),
+    }
+
+
 async def run_ws(args: argparse.Namespace, url: str):
     from whisperlivekit.test_client import transcribe_audio
 
@@ -273,21 +312,113 @@ async def run_ws(args: argparse.Namespace, url: str):
     params = {}
     if args.language:
         params["language"] = args.language
-    if args.diff:
-        params["mode"] = "diff"
     if params:
         sep = "&" if "?" in url else "?"
         url = f"{url}{sep}{urlencode(params)}"
 
-    result = await transcribe_audio(
-        audio_path=str(args.audio),
-        url=url,
-        chunk_duration=args.chunk_duration,
-        speed=args.speed,
-        timeout=args.timeout,
-        on_response=on_response,
-        mode="diff" if args.diff else "full",
+    if args.diff:
+        result = await _run_ws_diff(
+            args=args,
+            url=url,
+            on_response=on_response,
+        )
+    else:
+        result = await transcribe_audio(
+            audio_path=str(args.audio),
+            url=url,
+            chunk_duration=args.chunk_duration,
+            speed=args.speed,
+            timeout=args.timeout,
+            on_response=on_response,
+            mode="full",
+        )
+    return result
+
+
+async def _run_ws_diff(args: argparse.Namespace, url: str, on_response):
+    """WebSocket session using the diff protocol with correct state reconstruction."""
+    import asyncio
+    import json as _json
+
+    import websockets
+
+    from whisperlivekit.test_client import (
+        BYTES_PER_SAMPLE,
+        SAMPLE_RATE,
+        TranscriptionResult,
+        load_audio_pcm,
     )
+
+    result = TranscriptionResult()
+    pcm_data = load_audio_pcm(str(args.audio))
+    result.audio_duration = len(pcm_data) / (SAMPLE_RATE * BYTES_PER_SAMPLE)
+
+    chunk_bytes = int(args.chunk_duration * SAMPLE_RATE * BYTES_PER_SAMPLE)
+
+    sep = "&" if "?" in url else "?"
+    connect_url = f"{url}{sep}mode=diff"
+
+    async with websockets.connect(connect_url) as ws:
+        config_msg = _json.loads(await ws.recv())
+        is_pcm = config_msg.get("useAudioWorklet", False)
+        logger.info("Server config: %s", config_msg)
+
+        done_event = asyncio.Event()
+        diff_lines: list = []
+
+        async def send_audio():
+            if is_pcm:
+                offset = 0
+                while offset < len(pcm_data):
+                    end = min(offset + chunk_bytes, len(pcm_data))
+                    await ws.send(pcm_data[offset:end])
+                    offset = end
+                    if args.speed > 0:
+                        await asyncio.sleep(args.chunk_duration / args.speed)
+            else:
+                file_bytes = open(str(args.audio), "rb").read()
+                raw_chunk_size = 32000
+                offset = 0
+                while offset < len(file_bytes):
+                    end = min(offset + raw_chunk_size, len(file_bytes))
+                    await ws.send(file_bytes[offset:end])
+                    offset = end
+                    if args.speed > 0:
+                        await asyncio.sleep(0.5 / args.speed)
+            await ws.send(b"")
+
+        async def receive_results():
+            try:
+                async for raw_msg in ws:
+                    data = _json.loads(raw_msg)
+                    if data.get("type") == "ready_to_stop":
+                        done_event.set()
+                        return
+                    if data.get("type") in ("snapshot", "diff"):
+                        data = _reconstruct_diff(data, diff_lines)
+                    result.responses.append(data)
+                    if on_response:
+                        on_response(data)
+            except Exception as e:
+                logger.debug("Receiver ended: %s", e)
+            done_event.set()
+
+        send_task = asyncio.create_task(send_audio())
+        recv_task = asyncio.create_task(receive_results())
+
+        send_time = result.audio_duration / args.speed if args.speed > 0 else 1.0
+        total_timeout = send_time + args.timeout
+
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(send_task, recv_task),
+                timeout=total_timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Timed out after %.0fs", total_timeout)
+            send_task.cancel()
+            recv_task.cancel()
+
     return result
 
 
@@ -364,9 +495,17 @@ async def run_http(args: argparse.Namespace, base_url: str):
         if seg.get("text", "").strip()
     ]
 
+    response: dict = {"lines": lines, "buffer_transcription": ""}
+    if "transcript" in body:
+        response["transcript"] = body["transcript"]
+    if "diarization" in body:
+        response["diarization"] = body["diarization"]
+    if "raw_words" in body:
+        response["raw_words"] = body["raw_words"]
+
     result = TranscriptionResult()
     result.audio_duration = audio_duration
-    result.responses.append({"lines": lines, "buffer_transcription": ""})
+    result.responses.append(response)
     return result
 
 
@@ -470,7 +609,14 @@ async def run_http_stream(args: argparse.Namespace, base_url: str):
             for seg in segments
             if seg.get("text", "").strip()
         ]
-        result.responses.append({"lines": lines, "buffer_transcription": ""})
+        response: dict = {"lines": lines, "buffer_transcription": ""}
+        if "transcript" in body:
+            response["transcript"] = body["transcript"]
+        if "diarization" in body:
+            response["diarization"] = body["diarization"]
+        if "raw_words" in body:
+            response["raw_words"] = body["raw_words"]
+        result.responses.append(response)
     elif accumulated_text.strip():
         result.responses.append({"lines": [{"text": accumulated_text.strip()}], "buffer_transcription": ""})
     else:
