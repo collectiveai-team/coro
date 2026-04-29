@@ -1,0 +1,51 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
+// https://github.com/microsoft/vscode-dev-containers/tree/v0.183.0/containers/python-3
+{
+	"name": "aymurai-asr",
+	// "initializeCommand": "make core-build",
+	"dockerComposeFile": "docker-compose.yml",
+	"service": "aymurai-asr-devcontainer-gpu",
+	"runServices": [
+		"aymurai-asr-devcontainer-gpu"
+	],
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"extensions.verifySignature": false,
+				"files.trimFinalNewlines": true,
+				"files.trimTrailingWhitespace": true,
+				"files.watcherExclude": {
+					"**/.git/objects/**": true,
+					"**/.git/subtree-cache/**": true
+				},
+				"editor.formatOnSave": true,
+				"notebook.formatOnSave.enabled": true,
+				"notebook.output.scrolling": true,
+				"notebook.codeActionsOnSave": {
+					"notebook.source.organizeImports": "explicit"
+				},
+				"[python]": {
+					"editor.defaultFormatter": "charliermarsh.ruff",
+					"editor.codeActionsOnSave": {
+						"source.fixAll": "never"
+					}
+				},
+				"remote.autoForwardPorts": false,
+				"remote.restoreForwardedPorts": false
+			},
+			// Add the IDs of extensions you want installed when the container is created.
+			"extensions": [
+				"ms-python.python",
+				"eamodio.gitlens",
+				"charliermarsh.ruff",
+				"GitHub.vscode-pull-request-github",
+				"tamasfe.even-better-toml",
+				"christian-kohler.path-intellisense",
+				"github.vscode-github-actions",
+				"fedaykindev.openchamber"
+			]
+		}
+	},
+	"workspaceFolder": "/workspace",
+	"postCreateCommand": "bash /home/ubuntu/entrypoint.sh",
+}
