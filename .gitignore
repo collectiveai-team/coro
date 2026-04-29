@@ -1,3 +1,6 @@
 outputs/
 audios/
 __pycache__
+.env
+
+resources

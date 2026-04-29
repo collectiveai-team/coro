@@ -3,7 +3,7 @@ name = "aymurai-asr"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13, <3.14"
+requires-python = ">=3.12, <3.14"
 dependencies = [
     "nemo-toolkit[asr]>=2.7.3",
     "python-multipart>=0.0.27",
