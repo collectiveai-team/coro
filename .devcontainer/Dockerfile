@@ -91,6 +91,14 @@ COPY --from=astral-uv-source /uv /uvx /bin/
 # Install dependencies
 USER $DEVCONTAINER_USER
 
+# # nvm & nodejs
+ARG NODEJS_VERSION=20
+ENV NVM_DIR /home/ubuntu/.nvm
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.3/install.sh | bash \
+    && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" \
+    && nvm install ${NODEJS_VERSION} \
+    && nvm alias default ${NODEJS_VERSION}
+
 # Install OhMyZsh
 RUN sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 RUN curl -fsSL https://opencode.ai/install | bash
@@ -98,6 +106,9 @@ RUN curl -fsSL https://opencode.ai/install | bash
 # Custom Zsh configurations
 RUN echo "autoload bashcompinit && bashcompinit" >> ~/.zshrc && \
     echo "autoload -Uz compinit && compinit" >> ~/.zshrc && \
+    echo "export NVM_DIR=\"$NVM_DIR\"" >> ~/.zshrc && \
+    echo "source $NVM_DIR/nvm.sh" >> ~/.zshrc && \
+    echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> ~/.zshrc && \
     echo "sudo setfacl -m u:ubuntu:rw /var/run/docker.sock" >> ~/.zshrc
 
 WORKDIR /workspace
