@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import threading
 from contextlib import asynccontextmanager
 
@@ -379,6 +380,73 @@ def _batch_transcribe(pcm_bytes: bytes, language: str | None = None) -> list:
     return all_tokens
 
 
+def _speaker_to_one_indexed(speaker) -> int:
+    if isinstance(speaker, (int, np.integer)):
+        return int(speaker) + 1
+    match = re.search(r"\d+", str(speaker))
+    if match:
+        return int(match.group(0)) + 1
+    return 1
+
+
+async def _batch_diarize(pcm_bytes: bytes) -> list:
+    """Run the configured diarization backend over full batch PCM audio."""
+    if not getattr(getattr(transcription_engine, "config", None), "diarization", False):
+        return []
+    diarization_model = getattr(transcription_engine, "diarization_model", None)
+    if diarization_model is None:
+        return []
+
+    from whisperlivekit.core import online_diarization_factory
+
+    SAMPLE_RATE = 16000
+    CHUNK_SECONDS = 1.0
+    CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_SECONDS)
+
+    audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    online_diarization = online_diarization_factory(transcription_engine.args, diarization_model)
+    raw_segments = []
+
+    try:
+        for start in range(0, len(audio), CHUNK_SAMPLES):
+            online_diarization.insert_audio_chunk(audio[start:start + CHUNK_SAMPLES])
+            new_segments = await online_diarization.diarize()
+            if new_segments:
+                raw_segments.extend(new_segments)
+
+        # Flush streaming backends that only emit after a full internal chunk.
+        online_diarization.insert_audio_chunk(np.zeros(CHUNK_SAMPLES, dtype=np.float32))
+        new_segments = await online_diarization.diarize()
+        if new_segments:
+            raw_segments.extend(new_segments)
+    finally:
+        close = getattr(online_diarization, "close", None)
+        if close:
+            close()
+
+    duration = len(audio) / SAMPLE_RATE
+    timeline = []
+    seen = set()
+    for segment in raw_segments:
+        start = max(0.0, float(getattr(segment, "start", 0.0) or 0.0))
+        end = min(duration, float(getattr(segment, "end", 0.0) or 0.0))
+        if end <= start:
+            continue
+        item = {
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "speaker": _speaker_to_one_indexed(getattr(segment, "speaker", 0)),
+        }
+        key = (item["start"], item["end"], item["speaker"])
+        if key not in seen:
+            timeline.append(item)
+            seen.add(key)
+
+    timeline.sort(key=lambda item: item["start"])
+    logger.info("Batch diarization complete: %d speaker segments", len(timeline))
+    return timeline
+
+
 def _build_segments_from_tokens(all_tokens: list, all_diarization: list) -> list:
     """Build non-overlapping Segment objects from the full committed token stream.
 
@@ -497,6 +565,19 @@ def _build_segments_from_tokens(all_tokens: list, all_diarization: list) -> list
     # Sort by start time — inverted-timestamp swaps above can disturb order.
     segments.sort(key=lambda s: float(s.start or 0.0))
     return segments
+
+
+def _clamp_segment_overlaps(segments: list) -> list:
+    """Clamp adjacent batch segments so output ranges stay non-overlapping."""
+    ordered = sorted(segments, key=lambda s: float(getattr(s, "start", 0.0) or 0.0))
+    for i in range(len(ordered) - 1):
+        current = ordered[i]
+        next_segment = ordered[i + 1]
+        current_end = float(getattr(current, "end", 0.0) or 0.0)
+        next_start = float(getattr(next_segment, "start", 0.0) or 0.0)
+        if current_end > next_start:
+            current.end = max(float(getattr(current, "start", 0.0) or 0.0), next_start)
+    return ordered
 
 
 def _to_whisperx(front_data, duration: float = 0.0) -> dict:
@@ -770,8 +851,9 @@ async def create_transcription(
             "transcript": [], "diarization": [], "raw_words": [],
         })
 
-    # Build non-overlapping segments (no diarization in batch path — all segments get speaker=1)
-    token_segments = _build_segments_from_tokens(all_tokens, [])
+    all_diarization = await _batch_diarize(pcm_data)
+    token_segments = _build_segments_from_tokens(all_tokens, all_diarization)
+    token_segments = _clamp_segment_overlaps(token_segments)
 
     # Duck-type a minimal object for _to_whisperx — it reads attributes via getattr
     class _FrontData:
