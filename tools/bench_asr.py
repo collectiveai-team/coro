@@ -239,12 +239,19 @@ def run_rep(
         ]
 
     t_start = time.perf_counter_ns()
-    result = subprocess.run(curl_cmd, capture_output=False, text=True,
-                            stdout=open(curl_metrics, "w"))
-    t_end = time.perf_counter_ns()
+    try:
+        with open(curl_metrics, "w") as curl_out:
+            proc = subprocess.run(curl_cmd, stdout=curl_out)
+    finally:
+        t_end = time.perf_counter_ns()
+        stop_event.set()
+        monitor_thread.join()
 
-    stop_event.set()
-    monitor_thread.join()
+    if proc.returncode != 0:
+        print(
+            f"Warning: curl exited with code {proc.returncode} on rep {rep}",
+            file=sys.stderr,
+        )
 
     wall_seconds = (t_end - t_start) / 1_000_000_000
     print(f"wall_seconds_rep{rep}={wall_seconds:.3f}")
