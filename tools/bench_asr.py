@@ -184,6 +184,82 @@ def memory_monitor(
             stop_event.wait(sample_interval)
 
 
+def run_rep(
+    rep: int,
+    audio: Path,
+    mode: str,
+    url: str,
+    pid: int,
+    out_dir: Path,
+    sample_interval: float,
+) -> float:
+    mem_csv = out_dir / f"memory_{rep}.csv"
+    resp_out = out_dir / f"response_{rep}.{mode}"
+    curl_metrics = out_dir / f"curl_metrics_{rep}.txt"
+    time_metrics = out_dir / f"time_metrics_{rep}.txt"
+
+    print(f"\n=== Repetition {rep} ===")
+
+    stop_event = threading.Event()
+    monitor_thread = threading.Thread(
+        target=memory_monitor,
+        args=(pid, mem_csv, stop_event, sample_interval),
+        daemon=True,
+    )
+    monitor_thread.start()
+
+    curl_write_out = (
+        "time_namelookup=%{time_namelookup}\\n"
+        "time_connect=%{time_connect}\\n"
+        "time_starttransfer=%{time_starttransfer}\\n"
+        "time_total=%{time_total}\\n"
+        "http_code=%{http_code}\\n"
+    )
+
+    if mode == "sse":
+        curl_cmd = [
+            "/usr/bin/time", "-v", "-o", str(time_metrics),
+            "curl", "-N", "-sS",
+            "-X", "POST", url,
+            "-F", f"file=@{audio}",
+            "-F", "model=whisper-1",
+            "-F", "stream=true",
+            "-w", curl_write_out,
+            "-o", str(resp_out),
+        ]
+    else:
+        curl_cmd = [
+            "/usr/bin/time", "-v", "-o", str(time_metrics),
+            "curl", "-sS",
+            "-X", "POST", url,
+            "-F", f"file=@{audio}",
+            "-F", "model=whisper-1",
+            "-w", curl_write_out,
+            "-o", str(resp_out),
+        ]
+
+    t_start = time.perf_counter_ns()
+    result = subprocess.run(curl_cmd, capture_output=False, text=True,
+                            stdout=open(curl_metrics, "w"))
+    t_end = time.perf_counter_ns()
+
+    stop_event.set()
+    monitor_thread.join()
+
+    wall_seconds = (t_end - t_start) / 1_000_000_000
+    print(f"wall_seconds_rep{rep}={wall_seconds:.3f}")
+
+    if mode == "sse" and resp_out.exists():
+        text = resp_out.read_text(errors="replace")
+        print(f"[sse event counts rep {rep}]")
+        print(f"progress_events={text.count('transcript.progress')}")
+        print(f"delta_events={text.count('transcript.text.delta')}")
+        print(f"done_events={text.count('transcript.text.done')}")
+        print(f"done_markers={text.count('[DONE]')}")
+
+    return wall_seconds
+
+
 def main() -> None:
     args = parse_args()
 
