@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -50,6 +51,37 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def find_server_pid(server_pid: int | None, server_match: str) -> int:
+    if server_pid is not None:
+        try:
+            os.kill(server_pid, 0)  # signal 0 = existence check
+        except ProcessLookupError:
+            print(f"Error: server PID {server_pid} is not running", file=sys.stderr)
+            sys.exit(1)
+        return server_pid
+
+    result = subprocess.run(
+        ["pgrep", "-f", server_match],
+        capture_output=True,
+        text=True,
+    )
+    pids = result.stdout.strip().splitlines()
+    if not pids:
+        print(
+            f"Error: could not find server process matching '{server_match}'. "
+            "Set --server-pid or --server-match.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    pid = int(pids[0])
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        print(f"Error: found PID {pid} but it is not running", file=sys.stderr)
+        sys.exit(1)
+    return pid
+
+
 def main() -> None:
     args = parse_args()
 
@@ -58,11 +90,17 @@ def main() -> None:
         print(f"Error: audio file not found: {audio}", file=sys.stderr)
         sys.exit(1)
 
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    pid = find_server_pid(args.server_pid, args.server_match)
+
+    print(f"server_pid={pid}")
     print(f"audio={audio}")
     print(f"mode={args.mode}")
     print(f"reps={args.reps}")
     print(f"url={args.url}")
-    print(f"out_dir={args.out_dir}")
+    print(f"out_dir={out_dir}")
 
 
 if __name__ == "__main__":
