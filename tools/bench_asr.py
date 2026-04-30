@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("audio", help="Path to audio file")
     parser.add_argument("mode", nargs="?", default="json", choices=["json", "sse"],
                         help="Response mode (default: json)")
-    parser.add_argument("reps", nargs="?", type=int, default=1,
+    parser.add_argument("--reps", type=int, default=1,
                         help="Number of repetitions (default: 1)")
     parser.add_argument(
         "--url",
