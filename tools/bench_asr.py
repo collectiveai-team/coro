@@ -267,6 +267,34 @@ def run_rep(
     return wall_seconds
 
 
+def compute_peaks(mem_csv: Path) -> dict:
+    peaks = {
+        "peak_rss_kb": 0,
+        "peak_vsz_kb": 0,
+        "peak_server_vram_mib": 0,
+        "peak_total_gpu_used_mib": 0,
+        "peak_gpu_util_pct": 0.0,
+    }
+    if not mem_csv.exists():
+        return peaks
+
+    with mem_csv.open(newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            peaks["peak_rss_kb"] = max(peaks["peak_rss_kb"], int(row.get("rss_kb", 0) or 0))
+            peaks["peak_vsz_kb"] = max(peaks["peak_vsz_kb"], int(row.get("vsz_kb", 0) or 0))
+            peaks["peak_server_vram_mib"] = max(
+                peaks["peak_server_vram_mib"], int(row.get("server_vram_mib", 0) or 0)
+            )
+            peaks["peak_total_gpu_used_mib"] = max(
+                peaks["peak_total_gpu_used_mib"], int(row.get("total_gpu_used_mib", 0) or 0)
+            )
+            peaks["peak_gpu_util_pct"] = max(
+                peaks["peak_gpu_util_pct"], float(row.get("gpu_util_pct", 0) or 0)
+            )
+    return peaks
+
+
 def main() -> None:
     args = parse_args()
 
@@ -286,6 +314,51 @@ def main() -> None:
     print(f"reps={args.reps}")
     print(f"url={args.url}")
     print(f"out_dir={out_dir}")
+
+    wall_times: list[float] = []
+    for rep in range(1, args.reps + 1):
+        w = run_rep(rep, audio, args.mode, args.url, pid, out_dir, args.sample_interval)
+        wall_times.append(w)
+
+    # Build summary
+    summary_lines: list[str] = []
+    summary_lines.append(f"audio={audio}")
+    summary_lines.append(f"mode={args.mode}")
+    summary_lines.append(f"reps={args.reps}")
+    summary_lines.append(f"url={args.url}")
+    summary_lines.append(f"server_pid={pid}")
+    summary_lines.append(f"wall_total_seconds={sum(wall_times):.3f}")
+    summary_lines.append("")
+
+    for rep in range(1, args.reps + 1):
+        summary_lines.append(f"wall_seconds_rep{rep}={wall_times[rep - 1]:.3f}")
+        summary_lines.append(f"[rep {rep} peaks]")
+        peaks = compute_peaks(out_dir / f"memory_{rep}.csv")
+        for k, v in peaks.items():
+            summary_lines.append(f"{k}={v}")
+        summary_lines.append("")
+        curl_metrics = out_dir / f"curl_metrics_{rep}.txt"
+        if curl_metrics.exists():
+            summary_lines.append(f"[curl rep {rep}]")
+            summary_lines.append(curl_metrics.read_text())
+        time_metrics = out_dir / f"time_metrics_{rep}.txt"
+        if time_metrics.exists():
+            summary_lines.append(f"[time rep {rep}]")
+            summary_lines.append(time_metrics.read_text())
+        summary_lines.append("")
+
+    summary_lines.append("[outputs]")
+    for rep in range(1, args.reps + 1):
+        summary_lines.append(f"memory_csv_rep{rep}={out_dir}/memory_{rep}.csv")
+        summary_lines.append(f"response_rep{rep}={out_dir}/response_{rep}.{args.mode}")
+        summary_lines.append(f"curl_metrics_rep{rep}={out_dir}/curl_metrics_{rep}.txt")
+        summary_lines.append(f"time_metrics_rep{rep}={out_dir}/time_metrics_{rep}.txt")
+
+    summary_text = "\n".join(summary_lines)
+    summary_path = out_dir / "summary.txt"
+    summary_path.write_text(summary_text)
+    print(summary_text)
+    print(f"\nSummary written to: {summary_path}")
 
 
 if __name__ == "__main__":
