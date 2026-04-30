@@ -238,6 +238,7 @@ def run_rep(
             "-o", str(resp_out),
         ]
 
+    proc = None
     t_start = time.perf_counter_ns()
     try:
         with open(curl_metrics, "w") as curl_out:
@@ -247,7 +248,7 @@ def run_rep(
         stop_event.set()
         monitor_thread.join()
 
-    if proc.returncode != 0:
+    if proc is not None and proc.returncode != 0:
         print(
             f"Warning: curl exited with code {proc.returncode} on rep {rep}",
             file=sys.stderr,
