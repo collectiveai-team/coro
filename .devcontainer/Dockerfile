@@ -75,6 +75,9 @@ RUN apt update && apt install -y \
     kmod \
     sqlite3 \
     ffmpeg \
+    htop \
+    nvtop \
+    time \
     && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/* \
