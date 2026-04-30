@@ -3,9 +3,18 @@ name = "aymurai-asr"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12, <3.14"
+requires-python = ">=3.12, <3.13"
+classifiers = [
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+]
 dependencies = [
-    "nemo-toolkit[asr]>=2.7.3",
+    "lightning @ https://files.pythonhosted.org/packages/a3/2c/85eaf42c983b0cd81bcda5876da2c8e2a9fd347908666ea9855724369171/lightning-2.4.0-py3-none-any.whl",
+    "nemo-toolkit[asr]>=2.7.0,<2.8.0",
     "python-multipart>=0.0.27",
     "whisperlivekit[cu129,diarization-sortformer]>=0.2.20.post1",
 ]
+
+[dependency-groups]
+benchmark = ["jiwer>=3.1.0", "pyannote-metrics>=4.0.0"]
+dev = ["matplotlib>=3.10.9", "pandas>=3.0.2", "seaborn"]
