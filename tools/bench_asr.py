@@ -55,6 +55,8 @@ def find_server_pid(server_pid: int | None, server_match: str) -> int:
     if server_pid is not None:
         try:
             os.kill(server_pid, 0)  # signal 0 = existence check
+        except PermissionError:
+            pass  # process exists but owned by another user
         except ProcessLookupError:
             print(f"Error: server PID {server_pid} is not running", file=sys.stderr)
             sys.exit(1)
@@ -73,9 +75,17 @@ def find_server_pid(server_pid: int | None, server_match: str) -> int:
             file=sys.stderr,
         )
         sys.exit(1)
+    if len(pids) > 1:
+        print(
+            f"Warning: found {len(pids)} processes matching '{server_match}', "
+            f"using PID {pids[0]}. Use --server-pid to disambiguate.",
+            file=sys.stderr,
+        )
     pid = int(pids[0])
     try:
         os.kill(pid, 0)
+    except PermissionError:
+        pass  # process exists but owned by another user
     except ProcessLookupError:
         print(f"Error: found PID {pid} but it is not running", file=sys.stderr)
         sys.exit(1)
