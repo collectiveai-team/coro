@@ -107,86 +107,79 @@ def memory_monitor(
     ]
     start = time.monotonic()
 
+    has_nvidia_smi = subprocess.run(["which", "nvidia-smi"], capture_output=True).returncode == 0
+
     with mem_csv.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
 
         while not stop_event.is_set():
-            ts = int(time.time())
-            elapsed = int(time.monotonic() - start)
+            try:
+                ts = int(time.time())
+                elapsed = round(time.monotonic() - start, 3)
 
-            # RAM via ps
-            ps = subprocess.run(
-                ["ps", "-o", "rss=,vsz=", "-p", str(pid)],
-                capture_output=True, text=True,
-            )
-            parts = ps.stdout.split()
-            rss = int(parts[0]) if len(parts) >= 1 else 0
-            vsz = int(parts[1]) if len(parts) >= 2 else 0
-
-            server_vram = 0
-            total_gpu_mem = 0
-            total_gpu_used = 0
-            gpu_util = 0.0
-
-            # GPU via nvidia-smi (skip silently if not available)
-            nsmi = subprocess.run(
-                ["which", "nvidia-smi"], capture_output=True
-            )
-            if nsmi.returncode == 0:
-                # per-process VRAM
-                vram_out = subprocess.run(
-                    ["nvidia-smi", "--query-compute-apps=pid,used_memory",
-                     "--format=csv,noheader,nounits"],
+                # RAM via ps
+                ps = subprocess.run(
+                    ["ps", "-o", "rss=,vsz=", "-p", str(pid)],
                     capture_output=True, text=True,
-                ).stdout
-                for line in vram_out.splitlines():
-                    cols = [c.strip() for c in line.split(",")]
-                    if len(cols) == 2 and cols[0] == str(pid):
-                        server_vram += int(cols[1])
-
-                # total GPU memory
-                mem_out = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=memory.total",
-                     "--format=csv,noheader,nounits"],
-                    capture_output=True, text=True,
-                ).stdout
-                total_gpu_mem = sum(
-                    int(v.strip()) for v in mem_out.splitlines() if v.strip().isdigit()
                 )
+                parts = ps.stdout.split()
+                if not parts:
+                    print(f"Warning: process {pid} not found in ps output (may have exited)", file=sys.stderr)
+                    rss, vsz = 0, 0
+                else:
+                    rss = int(parts[0]) if len(parts) >= 1 else 0
+                    vsz = int(parts[1]) if len(parts) >= 2 else 0
 
-                # total GPU used
-                used_out = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=memory.used",
-                     "--format=csv,noheader,nounits"],
-                    capture_output=True, text=True,
-                ).stdout
-                total_gpu_used = sum(
-                    int(v.strip()) for v in used_out.splitlines() if v.strip().isdigit()
-                )
+                server_vram = 0
+                total_gpu_mem = 0
+                total_gpu_used = 0
+                gpu_util = 0.0
 
-                # GPU utilization (average across GPUs)
-                util_out = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=utilization.gpu",
-                     "--format=csv,noheader,nounits"],
-                    capture_output=True, text=True,
-                ).stdout
-                util_vals = [
-                    float(v.strip()) for v in util_out.splitlines() if v.strip().replace(".", "").isdigit()
-                ]
-                gpu_util = sum(util_vals) / len(util_vals) if util_vals else 0.0
+                # GPU via nvidia-smi (skip silently if not available)
+                if has_nvidia_smi:
+                    # per-process VRAM
+                    vram_out = subprocess.run(
+                        ["nvidia-smi", "--query-compute-apps=pid,used_memory",
+                         "--format=csv,noheader,nounits"],
+                        capture_output=True, text=True,
+                    ).stdout
+                    for line in vram_out.splitlines():
+                        cols = [c.strip() for c in line.split(",")]
+                        if len(cols) == 2 and cols[0] == str(pid):
+                            server_vram += int(cols[1])
 
-            writer.writerow({
-                "ts_epoch": ts,
-                "elapsed_s": elapsed,
-                "rss_kb": rss,
-                "vsz_kb": vsz,
-                "server_vram_mib": server_vram,
-                "total_gpu_mem_mib": total_gpu_mem,
-                "total_gpu_used_mib": total_gpu_used,
-                "gpu_util_pct": f"{gpu_util:.1f}",
-            })
-            f.flush()
+                    # total GPU memory, used, and utilization in one call
+                    gpu_out = subprocess.run(
+                        ["nvidia-smi", "--query-gpu=memory.total,memory.used,utilization.gpu",
+                         "--format=csv,noheader,nounits"],
+                        capture_output=True, text=True,
+                    ).stdout
+                    util_vals = []
+                    for line in gpu_out.splitlines():
+                        parts_gpu = [p.strip() for p in line.split(",")]
+                        if len(parts_gpu) == 3:
+                            try:
+                                total_gpu_mem += int(parts_gpu[0])
+                                total_gpu_used += int(parts_gpu[1])
+                                util_vals.append(float(parts_gpu[2]))
+                            except ValueError:
+                                pass
+                    gpu_util = sum(util_vals) / len(util_vals) if util_vals else 0.0
+
+                writer.writerow({
+                    "ts_epoch": ts,
+                    "elapsed_s": elapsed,
+                    "rss_kb": rss,
+                    "vsz_kb": vsz,
+                    "server_vram_mib": server_vram,
+                    "total_gpu_mem_mib": total_gpu_mem,
+                    "total_gpu_used_mib": total_gpu_used,
+                    "gpu_util_pct": round(gpu_util, 1),
+                })
+                f.flush()
+            except Exception as e:
+                print(f"Warning: memory_monitor sampling error: {e}", file=sys.stderr)
 
             stop_event.wait(sample_interval)
 
