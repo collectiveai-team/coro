@@ -21,6 +21,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from asr_diar_server.app import create_app
+from asr_diar_server.core.types import TranscriptDeltaEvent, TranscriptDoneEvent
 from asr_diar_server.runtime import RuntimeState
 from asr_diar_server.settings import ServerSettings
 
@@ -49,8 +50,8 @@ class _FakeV1StreamingPipeline:
 
     async def stream(self, audio, *, language=None, prompt=None):
         """Yield one delta then done."""
-        yield {"type": "transcript.text.delta", "delta": "Hello"}
-        yield {"type": "transcript.text.done", "text": json.dumps(_WHISPERX_EMPTY)}
+        yield TranscriptDeltaEvent(delta="Hello")
+        yield TranscriptDoneEvent(text=json.dumps(_WHISPERX_EMPTY))
 
 
 def _app_with_streaming_pipelines():

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
-from asr_diar_server.core.types import TranscriptToken
+from asr_diar_server.core.types import TranscriptDeltaEvent, TranscriptToken, TokenBatchEvent
 from asr_diar_server.pipelines.windowing import ASRWindowing
 
 
@@ -54,8 +54,29 @@ async def test_asr_windowing_streams_delta_per_accepted_window():
         )
     ]
 
-    delta_events = [event for event in events if event["type"] == "transcript.text.delta"]
-    assert [event["delta"] for event in delta_events] == ["word1", "word2"]
+    delta_events = [e for e in events if isinstance(e, TranscriptDeltaEvent)]
+    assert [e.delta for e in delta_events] == ["word1", "word2"]
+
+
+@pytest.mark.asyncio
+async def test_asr_windowing_streams_typed_token_batch_events():
+    asr = _FakeASR()
+    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
+
+    events = [
+        event
+        async for event in windowing.stream_pcm(
+            _pcm_seconds(1.2),
+            asr=asr,
+            language=None,
+            prompt=None,
+        )
+    ]
+
+    token_events = [e for e in events if isinstance(e, TokenBatchEvent)]
+    assert len(token_events) == 2
+    assert all(isinstance(e.tokens, list) for e in token_events)
+    assert all(isinstance(t, TranscriptToken) for e in token_events for t in e.tokens)
 
 
 def test_window_bytes_are_even_for_pcm_alignment():

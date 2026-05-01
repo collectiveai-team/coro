@@ -13,9 +13,33 @@ import wave
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from asr_diar_server.api.v1.transcriptions import ResponseFormat
 from asr_diar_server.app import create_app
 from asr_diar_server.runtime import RuntimeState
 from asr_diar_server.settings import ServerSettings
+
+
+def test_response_format_enum_has_json_members():
+    """ResponseFormat Enum exposes expected JSON-like and unsupported members."""
+    assert ResponseFormat.JSON.value == "json"
+    assert ResponseFormat.VERBOSE_JSON.value == "verbose_json"
+    assert ResponseFormat.DIARIZED_JSON.value == "diarized_json"
+
+
+def test_response_format_enum_has_unsupported_members():
+    """ResponseFormat Enum includes unsupported format names for validation."""
+    assert ResponseFormat.TEXT.value == "text"
+    assert ResponseFormat.SRT.value == "srt"
+    assert ResponseFormat.VTT.value == "vtt"
+    assert ResponseFormat.TSV.value == "tsv"
+
+
+def test_response_format_enum_json_like_is_iterable():
+    """JSON-like formats can be determined from the Enum without a hard-coded set."""
+    from asr_diar_server.api.v1.transcriptions import _JSON_LIKE_FORMATS
+    assert ResponseFormat.JSON in _JSON_LIKE_FORMATS
+    assert ResponseFormat.VERBOSE_JSON in _JSON_LIKE_FORMATS
+    assert ResponseFormat.DIARIZED_JSON in _JSON_LIKE_FORMATS
 
 
 def _minimal_wav() -> bytes:

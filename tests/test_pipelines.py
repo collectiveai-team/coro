@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from asr_diar_server.audio import AudioInput
-from asr_diar_server.core.types import TranscriptToken
+from asr_diar_server.core.types import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptToken
 from asr_diar_server.pipelines.chunked_file import ChunkedFilePipeline
 from asr_diar_server.pipelines.full_memory import FullMemoryPipeline
 
@@ -58,6 +58,7 @@ async def test_pipeline_stream_emits_delta_and_done():
     ):
         events = [event async for event in pipeline.stream(audio)]
 
-    assert events[0] == {"type": "transcript.text.delta", "delta": "hello."}
-    assert events[-1]["type"] == "transcript.text.done"
-    assert json.loads(events[-1]["text"])["segments"][0]["text"] == "hello."
+    assert isinstance(events[0], TranscriptDeltaEvent)
+    assert events[0].delta == "hello."
+    assert isinstance(events[-1], TranscriptDoneEvent)
+    assert json.loads(events[-1].text)["segments"][0]["text"] == "hello."

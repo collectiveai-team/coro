@@ -6,7 +6,11 @@ from collections.abc import AsyncIterator
 from typing import Protocol
 
 from asr_diar_server.audio import AudioInput
-from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
+from asr_diar_server.core.types import (
+    PipelineStreamEvent,
+    SpeakerSegment,
+    TranscriptToken,
+)
 
 
 # MARK: Backend Adapter Protocols
@@ -46,4 +50,4 @@ class TranscriptionPipeline(Protocol):
         *,
         language: str | None = None,
         prompt: str | None = None,
-    ) -> AsyncIterator[dict]: ...
+    ) -> AsyncIterator[PipelineStreamEvent]: ...

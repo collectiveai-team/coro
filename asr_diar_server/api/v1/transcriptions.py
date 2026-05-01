@@ -6,6 +6,8 @@ The route handler stays thin; orchestration delegates to the configured pipeline
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
@@ -24,21 +26,41 @@ from asr_diar_server.audio import AudioInput
 router = APIRouter(prefix="/v1")
 
 
+# MARK: Response Format Enum
+class ResponseFormat(StrEnum):
+    """All OpenAI response_format values this server recognises."""
+
+    # JSON-like: all map to the WhisperX-Style Response
+    JSON = "json"
+    VERBOSE_JSON = "verbose_json"
+    VERBOSE_JSON_HYPHEN = "verbose-json"
+    DIARIZED_JSON = "diarized_json"
+    DIARIZED_JSON_HYPHEN = "diarized-json"
+
+    # Unsupported OpenAI formats (recognised but not implemented)
+    TEXT = "text"
+    SRT = "srt"
+    VTT = "vtt"
+    TSV = "tsv"
+
+
 # Response Formats ----------------------------------------------------------
-# Response formats treated as aliases for the WhisperX-Style Response.
+# Formats that map to the WhisperX-Style JSON Response.
 _JSON_LIKE_FORMATS = {
-    None,
-    "",
-    "json",
-    "verbose_json",
-    "verbose-json",
-    "diarized_json",
-    "diarized-json",
+    ResponseFormat.JSON,
+    ResponseFormat.VERBOSE_JSON,
+    ResponseFormat.VERBOSE_JSON_HYPHEN,
+    ResponseFormat.DIARIZED_JSON,
+    ResponseFormat.DIARIZED_JSON_HYPHEN,
 }
 
-# Unsupported formats: text, srt, vtt, etc.
-# (Checked in Cycle 5; kept here for single definition.)
-_UNSUPPORTED_FORMATS = {"text", "srt", "vtt", "tsv"}
+# Formats that are valid OpenAI values but not supported here.
+_UNSUPPORTED_FORMATS = {
+    ResponseFormat.TEXT,
+    ResponseFormat.SRT,
+    ResponseFormat.VTT,
+    ResponseFormat.TSV,
+}
 
 
 # MARK: Transcription Endpoint
@@ -60,17 +82,20 @@ async def create_transcription(
     All map to the same enriched WhisperX-Style Response.
     """
     # Request Validation ----------------------------------------------------
-    if response_format and response_format.lower() not in _JSON_LIKE_FORMATS:
-        if response_format.lower() in _UNSUPPORTED_FORMATS:
+    if response_format:
+        try:
+            fmt = ResponseFormat(response_format.lower())
+        except ValueError:
+            raise TranscriptionValidationError(
+                f"Unknown response_format '{response_format}'.",
+                param="response_format",
+            ) from None
+        if fmt in _UNSUPPORTED_FORMATS:
             raise TranscriptionValidationError(
                 f"response_format '{response_format}' is not supported. "
                 "Supported formats: json, verbose_json.",
                 param="response_format",
             )
-        raise TranscriptionValidationError(
-            f"Unknown response_format '{response_format}'.",
-            param="response_format",
-        )
 
     audio = await AudioInput.from_upload(file)
     if not await audio.read_bytes():

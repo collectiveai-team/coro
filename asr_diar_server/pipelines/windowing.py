@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
-from asr_diar_server.core.types import TranscriptToken
+from asr_diar_server.core.types import (
+    StreamEvent,
+    TokenBatchEvent,
+    TranscriptDeltaEvent,
+    TranscriptToken,
+)
 
 
 # MARK: Result Model
@@ -61,9 +66,8 @@ class ASRWindowing:
         tokens: list[TranscriptToken] = []
         prompt_carry = prompt
         async for event in self.stream_pcm(pcm, asr=asr, language=language, prompt=prompt):
-            if event["type"] == "_tokens":
-                accepted = event["tokens"]
-                tokens.extend(accepted)
+            if isinstance(event, TokenBatchEvent):
+                tokens.extend(event.tokens)
                 prompt_carry = "".join(token.text for token in tokens[-50:])[-200:] or prompt_carry
         return ASRWindowingResult(tokens=tokens)
 
@@ -75,7 +79,7 @@ class ASRWindowing:
         asr: Any,
         language: str | None = None,
         prompt: str | None = None,
-    ) -> AsyncIterator[dict]:
+    ) -> AsyncIterator[StreamEvent]:
         tokens: list[TranscriptToken] = []
         prompt_carry = prompt
         for offset_seconds, window in self._windows(pcm):
@@ -97,7 +101,7 @@ class ASRWindowing:
                 continue
             tokens.extend(accepted)
             prompt_carry = "".join(token.text for token in tokens[-50:])[-200:]
-            yield {"type": "_tokens", "tokens": accepted}
+            yield TokenBatchEvent(tokens=accepted)
             delta = "".join(token.text for token in accepted).strip()
             if delta:
-                yield {"type": "transcript.text.delta", "delta": delta}
+                yield TranscriptDeltaEvent(delta=delta)

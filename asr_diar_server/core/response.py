@@ -13,7 +13,12 @@ Key behaviours:
 
 from __future__ import annotations
 
-from asr_diar_server.core.types import SpeakerSegment, TranscriptSegment, TranscriptToken
+from asr_diar_server.core.types import (
+    SpeakerSegment,
+    TranscriptSegment,
+    TranscriptToken,
+    TranscriptWord,
+)
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -115,7 +120,7 @@ def _clamp_overlaps(segments: list[TranscriptSegment]) -> list[TranscriptSegment
     return ordered
 
 
-def _build_words_for_segment(seg: TranscriptSegment) -> list[dict]:
+def _build_words_for_segment(seg: TranscriptSegment) -> list[TranscriptWord]:
     """Build linearly interpolated word-level timestamps for a segment."""
     raw_words = seg.text.split()
     if not raw_words:
@@ -125,13 +130,13 @@ def _build_words_for_segment(seg: TranscriptSegment) -> list[dict]:
     words = []
     for j, word in enumerate(raw_words):
         words.append(
-            {
-                "word": word,
-                "start": round(seg.start + j * word_duration, 2),
-                "end": round(seg.start + (j + 1) * word_duration, 2),
-                "score": 1.0,
-                "speaker": speaker_str,
-            }
+            TranscriptWord(
+                word=word,
+                start=round(seg.start + j * word_duration, 2),
+                end=round(seg.start + (j + 1) * word_duration, 2),
+                score=1.0,
+                speaker=speaker_str,
+            )
         )
     return words
 
@@ -192,14 +197,24 @@ def build_whisperx_response(
     for seg in seg_objects:
         speaker_str = str(seg.speaker)
         words = _build_words_for_segment(seg)
-        word_segments.extend(words)
+        word_dicts = [
+            {
+                "word": w.word,
+                "start": w.start,
+                "end": w.end,
+                "score": w.score,
+                "speaker": w.speaker,
+            }
+            for w in words
+        ]
+        word_segments.extend(word_dicts)
         segments.append(
             {
                 "start": round(seg.start, 2),
                 "end": round(seg.end, 2),
                 "text": seg.text.strip(),
                 "speaker": speaker_str,
-                "words": words,
+                "words": word_dicts,
             }
         )
 

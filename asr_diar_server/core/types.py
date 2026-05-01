@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+# MARK: Token and Segment Types
 @dataclass
 class TranscriptToken:
     """A single transcript word/token with timing and confidence.
@@ -28,6 +29,20 @@ class TranscriptToken:
 
 
 @dataclass
+class TranscriptWord:
+    """A single interpolated word with timing and speaker attribution.
+
+    Produced by ``_build_words_for_segment``; serialised to dict at the API boundary.
+    """
+
+    word: str
+    start: float
+    end: float
+    score: float
+    speaker: str
+
+
+@dataclass
 class TranscriptSegment:
     """A speaker-attributed transcript segment built from one or more tokens."""
 
@@ -35,7 +50,7 @@ class TranscriptSegment:
     end: float
     text: str
     speaker: int = -1
-    words: list[dict] = field(default_factory=list)
+    words: list[TranscriptWord] = field(default_factory=list)
 
 
 @dataclass
@@ -45,3 +60,36 @@ class SpeakerSegment:
     start: float
     end: float
     speaker: int
+
+
+# MARK: Pipeline Stream Event Types
+@dataclass
+class TokenBatchEvent:
+    """Internal event: a batch of accepted tokens from one ASR window.
+
+    Never emitted to SSE clients; consumed internally by pipelines.
+    """
+
+    tokens: list[TranscriptToken]
+    type: str = field(default="_tokens", init=False)
+
+
+@dataclass
+class TranscriptDeltaEvent:
+    """Public SSE event: incremental transcript text delta."""
+
+    delta: str
+    type: str = field(default="transcript.text.delta", init=False)
+
+
+@dataclass
+class TranscriptDoneEvent:
+    """Public SSE event: final transcript JSON string."""
+
+    text: str
+    type: str = field(default="transcript.text.done", init=False)
+
+
+# MARK: Stream Event Union
+StreamEvent = TokenBatchEvent | TranscriptDeltaEvent | TranscriptDoneEvent
+PipelineStreamEvent = TranscriptDeltaEvent | TranscriptDoneEvent

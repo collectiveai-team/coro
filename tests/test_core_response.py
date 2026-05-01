@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import pytest
 
-from asr_diar_server.core.response import build_whisperx_response
-from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
+from asr_diar_server.core.response import _build_words_for_segment, build_whisperx_response
+from asr_diar_server.core.types import (
+    SpeakerSegment,
+    TranscriptSegment,
+    TranscriptToken,
+    TranscriptWord,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -99,3 +104,14 @@ def test_raw_words_contains_probability():
     tokens = [TranscriptToken(start=0.0, end=1.0, text=" word", probability=0.75)]
     result = build_whisperx_response(tokens=tokens, speaker_timeline=[], duration=1.0)
     assert result["raw_words"][0]["score"] == pytest.approx(0.75)
+
+
+def test_build_words_for_segment_returns_typed_words():
+    """_build_words_for_segment returns list[TranscriptWord], not list[dict]."""
+    seg = TranscriptSegment(start=0.0, end=2.0, text="hello world", speaker=1)
+    words = _build_words_for_segment(seg)
+    assert len(words) == 2
+    assert all(isinstance(w, TranscriptWord) for w in words)
+    assert words[0].word == "hello"
+    assert words[0].speaker == "1"
+    assert isinstance(words[0].start, float)

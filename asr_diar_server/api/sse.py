@@ -13,11 +13,13 @@ Event flow::
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import AsyncIterator
-from typing import Any
 
 from fastapi.responses import StreamingResponse
+
+from asr_diar_server.core.types import PipelineStreamEvent
 
 _SSE_HEADERS = {
     "Cache-Control": "no-cache",
@@ -26,15 +28,16 @@ _SSE_HEADERS = {
 }
 
 
-async def _sse_generator(event_source: AsyncIterator[dict[str, Any]]):
+async def _sse_generator(event_source: AsyncIterator[PipelineStreamEvent]):
     r"""Yield SSE-framed lines from an async event source.
 
-    The event source must yield dicts.  After all events the generator
-    emits ``data: [DONE]\n\n``.  On error it emits an error event.
+    The event source must yield ``PipelineStreamEvent`` dataclasses.
+    After all events the generator emits ``data: [DONE]\n\n``.
+    On error it emits an error event.
     """
     try:
         async for event in event_source:
-            yield f"data: {json.dumps(event)}\n\n"
+            yield f"data: {json.dumps(dataclasses.asdict(event))}\n\n"
         yield "data: [DONE]\n\n"
     except Exception as exc:
         error_event = json.dumps(
@@ -49,11 +52,11 @@ async def _sse_generator(event_source: AsyncIterator[dict[str, Any]]):
         yield "data: [DONE]\n\n"
 
 
-def streaming_response(event_source: AsyncIterator[dict[str, Any]]) -> StreamingResponse:
+def streaming_response(event_source: AsyncIterator[PipelineStreamEvent]) -> StreamingResponse:
     """Build a StreamingResponse that emits OpenAI-Exact SSE.
 
     Args:
-        event_source: Async generator of event dicts.
+        event_source: Async generator of ``PipelineStreamEvent`` dataclasses.
 
     Returns:
         StreamingResponse with ``text/event-stream`` media type.
