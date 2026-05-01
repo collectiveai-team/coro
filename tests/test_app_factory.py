@@ -1,0 +1,61 @@
+"""Cycle 1: app factory + /health endpoint shape.
+
+Tests that create_app() produces a FastAPI app whose /health endpoint returns
+the expected shape without loading any real ASR model.
+"""
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from asr_diar_server.runtime import RuntimeState
+from asr_diar_server.settings import ServerSettings
+
+
+@pytest.fixture
+def test_settings():
+    """Minimal settings object suitable for create_app in tests."""
+    return ServerSettings()
+
+
+@pytest.fixture
+def app(test_settings):
+    """Create a test app with a fake RuntimeState injected (no real model)."""
+    from fastapi import FastAPI
+
+    from asr_diar_server.app import create_app
+
+    application: FastAPI = create_app(test_settings)
+    # Inject RuntimeState directly — bypasses lifespan and avoids real model init.
+    application.state.runtime = RuntimeState(backend=test_settings.backend)
+    return application
+
+
+@pytest.mark.asyncio
+async def test_health_response_has_required_keys(app):
+    """GET /health returns status, ready, and backend keys."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "status" in body
+    assert "ready" in body
+    assert "backend" in body
+
+
+@pytest.mark.asyncio
+async def test_health_status_is_ok(app):
+    """GET /health returns status='ok'."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/health")
+
+    assert response.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_health_not_ready_when_no_asr_adapter(app):
+    """GET /health returns ready=False when no ASR adapter is loaded."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/health")
+
+    assert response.json()["ready"] is False
