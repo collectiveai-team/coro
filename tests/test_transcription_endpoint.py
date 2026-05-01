@@ -1,4 +1,4 @@
-"""Cycle 3: v1 transcription route — WhisperX-style response shape.
+"""Public Transcription Endpoint behavior.
 
 Tests use a fake pipeline injected into RuntimeState so no real ASR model
 is loaded.  All assertions target the public Transcription API Contract.
@@ -45,20 +45,20 @@ def _minimal_wav_bytes() -> bytes:
     return buf.getvalue()
 
 
-class _FakeV1Pipeline:
-    """Fake v1 Transcription Pipeline that returns a fixed WhisperX response."""
+class _FakePipeline:
+    """Fake configured pipeline that returns a fixed WhisperX response."""
 
-    async def run(self, audio_bytes: bytes, *, language=None, prompt=None):
+    async def transcribe(self, audio, *, language=None, prompt=None):
         return dict(_EMPTY_WHISPERX)
 
 
-def _app_with_fake_v1_pipeline():
-    """Build app with a fake v1 pipeline injected into RuntimeState."""
+def _app_with_fake_pipeline():
+    """Build app with a fake configured pipeline injected into RuntimeState."""
     from fastapi import FastAPI
 
     application: FastAPI = create_app(ServerSettings())
     runtime = RuntimeState(asr_adapter=object())  # non-None → ready=True
-    runtime.v1_pipeline = _FakeV1Pipeline()
+    runtime.pipeline = _FakePipeline()
     application.state.runtime = runtime
     return application
 
@@ -69,9 +69,9 @@ def _app_with_fake_v1_pipeline():
 
 
 @pytest.mark.asyncio
-async def test_v1_returns_whisperx_keys():
+async def test_transcription_endpoint_returns_whisperx_keys():
     """POST /v1/audio/transcriptions returns all WhisperX-style response keys."""
-    app = _app_with_fake_v1_pipeline()
+    app = _app_with_fake_pipeline()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/audio/transcriptions",
@@ -83,9 +83,9 @@ async def test_v1_returns_whisperx_keys():
 
 
 @pytest.mark.asyncio
-async def test_v1_accepts_openai_compatible_form_params():
+async def test_transcription_endpoint_accepts_openai_compatible_form_params():
     """POST /v1/audio/transcriptions accepts model, language, prompt, stream fields."""
-    app = _app_with_fake_v1_pipeline()
+    app = _app_with_fake_pipeline()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/audio/transcriptions",
@@ -101,9 +101,9 @@ async def test_v1_accepts_openai_compatible_form_params():
 
 
 @pytest.mark.asyncio
-async def test_v1_empty_upload_returns_openai_style_error():
+async def test_transcription_endpoint_empty_upload_returns_openai_style_error():
     """POST /v1/audio/transcriptions with empty body returns OpenAI-style error."""
-    app = _app_with_fake_v1_pipeline()
+    app = _app_with_fake_pipeline()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/audio/transcriptions",

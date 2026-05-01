@@ -15,13 +15,52 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
+import tempfile
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
+from typing import Any
 
 SAMPLE_RATE: int = 16000
 """Canonical audio sample rate in Hz."""
 
 BYTES_PER_SAMPLE: int = 2
 """Bytes per PCM sample (16-bit little-endian mono)."""
+
+
+class AudioInput:
+    """Package-owned uploaded audio representation with cleanup ownership."""
+
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+        self._temp_path: str | None = None
+
+    @classmethod
+    async def from_upload(cls, upload: Any) -> AudioInput:
+        chunks: list[bytes] = []
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return cls(b"".join(chunks))
+
+    async def read_bytes(self) -> bytes:
+        return self._data
+
+    async def temp_path(self) -> str:
+        if self._temp_path is None:
+            fd, path = tempfile.mkstemp(prefix="asr-upload-", suffix=".audio")
+            with os.fdopen(fd, "wb") as tmp:
+                tmp.write(self._data)
+            self._temp_path = path
+        return self._temp_path
+
+    async def cleanup(self) -> None:
+        if self._temp_path is not None:
+            with contextlib.suppress(FileNotFoundError):
+                Path(self._temp_path).unlink()
+            self._temp_path = None
 
 _FFMPEG_PCM_ARGS = (
     "-f",

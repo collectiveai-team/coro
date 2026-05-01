@@ -1,8 +1,4 @@
-"""Health check endpoint for asr_diar_server.
-
-Exposes GET /health.  Returns status, ready flag, and backend identifier.
-The ready flag reflects whether the ASR adapter is loaded in RuntimeState.
-"""
+"""Health check endpoint for asr_diar_server."""
 
 from __future__ import annotations
 
@@ -14,17 +10,27 @@ router = APIRouter()
 
 @router.get("/health")
 async def health(request: Request) -> JSONResponse:
-    """Return server readiness and backend information.
-
-    Returns:
-        JSON with ``status``, ``ready``, and ``backend`` keys.
-
-    """
+    """Return startup selection and capability readiness."""
     runtime = request.app.state.runtime
     return JSONResponse(
         {
             "status": "ok",
             "ready": runtime.ready,
-            "backend": runtime.backend,
+            "startup_selection": {
+                "pipeline": runtime.pipeline_selector,
+                "asr_provider": runtime.asr_provider,
+                "asr_model": runtime.asr_model,
+                "diarization_provider": runtime.diarization_provider,
+                "diarization_model": runtime.diarization_model,
+            },
+            "capability_readiness": {
+                "asr": runtime.asr_adapter is not None,
+                "diarization": (
+                    "disabled"
+                    if runtime.diarization_provider == "none"
+                    else runtime.diarization_adapter is not None
+                ),
+                "transcription": runtime.ready,
+            },
         }
     )

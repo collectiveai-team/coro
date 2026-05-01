@@ -46,9 +46,30 @@ async def test_health_ready_true_with_fake_asr_adapter():
 
 
 @pytest.mark.asyncio
-async def test_health_backend_matches_runtime():
-    """backend in /health response matches the RuntimeState backend field."""
-    app = _make_app(RuntimeState(backend="faster-whisper"))
+async def test_health_reports_startup_selection_and_capability_readiness():
+    """Health separates startup selection from capability readiness."""
+    runtime = RuntimeState(
+        asr_adapter=object(),
+        pipeline_selector="chunked-file",
+        asr_provider="whisperlivekit",
+        asr_model="openai/whisper-medium",
+        diarization_provider="none",
+        diarization_model=None,
+    )
+    app = _make_app(runtime)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/health")
-    assert response.json()["backend"] == "faster-whisper"
+
+    body = response.json()
+    assert body["startup_selection"] == {
+        "pipeline": "chunked-file",
+        "asr_provider": "whisperlivekit",
+        "asr_model": "openai/whisper-medium",
+        "diarization_provider": "none",
+        "diarization_model": None,
+    }
+    assert body["capability_readiness"] == {
+        "asr": True,
+        "diarization": "disabled",
+        "transcription": True,
+    }

@@ -6,8 +6,11 @@ the aligned-chunking logic is tested in isolation using pre-built PCM bytes.
 
 from __future__ import annotations
 
+from pathlib import Path
 
-from asr_diar_server.audio import SAMPLE_RATE, iter_aligned_pcm_chunks
+import pytest
+
+from asr_diar_server.audio import AudioInput, SAMPLE_RATE, iter_aligned_pcm_chunks
 
 
 # ---------------------------------------------------------------------------
@@ -63,3 +66,31 @@ def test_chunks_respect_target_bytes_upper_bound():
 def test_sample_rate_constant():
     """SAMPLE_RATE is 16000 Hz."""
     assert SAMPLE_RATE == 16000
+
+
+class _FakeUpload:
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = list(chunks)
+
+    async def read(self, _size: int = -1) -> bytes:
+        if not self._chunks:
+            return b""
+        return self._chunks.pop(0)
+
+
+@pytest.mark.asyncio
+async def test_audio_input_reads_upload_bytes():
+    audio = await AudioInput.from_upload(_FakeUpload([b"abc", b"def"]))
+
+    assert await audio.read_bytes() == b"abcdef"
+
+
+@pytest.mark.asyncio
+async def test_audio_input_temp_path_is_removed_on_cleanup():
+    audio = await AudioInput.from_upload(_FakeUpload([b"audio"]))
+    path = await audio.temp_path()
+
+    assert Path(path).exists()
+    await audio.cleanup()
+
+    assert not Path(path).exists()

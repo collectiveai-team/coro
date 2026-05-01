@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from asr_diar_server.api.errors import transcription_exception_handler
+from asr_diar_server.api.exceptions import TranscriptionError
 from asr_diar_server.runtime import RuntimeState
 from asr_diar_server.settings import ServerSettings
 
@@ -36,16 +38,24 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     if settings is None:
         settings = ServerSettings()
 
-    runtime = RuntimeState(backend=settings.backend)
+    runtime = RuntimeState(
+        pipeline_selector=settings.pipeline,
+        asr_provider=settings.backend_asr,
+        asr_model=settings.model_asr,
+        diarization_provider=settings.backend_diarization,
+        diarization_model=settings.model_diarization,
+    )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         # Heavy model setup (TranscriptionEngine etc.) would go here in
         # production use.  Tests inject fake state via app.state.runtime.
+        application.state.settings = settings
         application.state.runtime = runtime
         yield
 
     application = FastAPI(title="ASR Diarization Server", lifespan=lifespan)
+    application.add_exception_handler(TranscriptionError, transcription_exception_handler)
 
     application.add_middleware(
         CORSMiddleware,
@@ -58,11 +68,11 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     # Register routers
     from asr_diar_server.api.health import router as health_router
     from asr_diar_server.api.v1.transcriptions import router as v1_router
-    from asr_diar_server.api.v2.transcriptions import router as v2_router
 
+    application.state.settings = settings
+    application.state.runtime = runtime
     application.include_router(health_router)
     application.include_router(v1_router)
-    application.include_router(v2_router)
 
     return application
 

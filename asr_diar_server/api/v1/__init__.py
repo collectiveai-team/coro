@@ -1,1 +1,1 @@
-"""v1 API package — full-memory Transcription Pipeline."""
+"""v1 API package for the public Transcription Endpoint."""

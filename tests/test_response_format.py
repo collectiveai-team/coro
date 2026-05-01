@@ -29,7 +29,7 @@ def _minimal_wav() -> bytes:
 
 
 class _FakePipeline:
-    async def run(self, audio_bytes, *, language=None, prompt=None):
+    async def transcribe(self, audio, *, language=None, prompt=None):
         return {
             "segments": [],
             "word_segments": [],
@@ -37,30 +37,19 @@ class _FakePipeline:
             "diarization": [],
             "raw_words": [],
         }
-
-    async def run_from_path(self, path, *, language=None, prompt=None):
-        return {
-            "segments": [],
-            "word_segments": [],
-            "transcript": [],
-            "diarization": [],
-            "raw_words": [],
-        }
-
 
 def _app():
     from fastapi import FastAPI
 
     application: FastAPI = create_app(ServerSettings())
     runtime = RuntimeState(asr_adapter=object())
-    runtime.v1_pipeline = _FakePipeline()
-    runtime.v2_pipeline = _FakePipeline()
+    runtime.pipeline = _FakePipeline()
     application.state.runtime = runtime
     return application
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("route", ["/v1/audio/transcriptions", "/v2/audio/transcriptions"])
+@pytest.mark.parametrize("route", ["/v1/audio/transcriptions"])
 @pytest.mark.parametrize("fmt", ["text", "srt", "vtt", "tsv"])
 async def test_unsupported_format_returns_openai_error(route, fmt):
     """Unsupported response_format yields 400 with OpenAI-style error body."""
@@ -79,7 +68,7 @@ async def test_unsupported_format_returns_openai_error(route, fmt):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("route", ["/v1/audio/transcriptions", "/v2/audio/transcriptions"])
+@pytest.mark.parametrize("route", ["/v1/audio/transcriptions"])
 @pytest.mark.parametrize("fmt", ["json", "verbose_json", "diarized_json", "", None])
 async def test_json_like_formats_accepted(route, fmt):
     """JSON-like response formats (including empty/None) are accepted."""

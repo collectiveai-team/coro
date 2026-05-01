@@ -1,6 +1,6 @@
-"""Cycle 9: v1 pipeline orchestration with fake ASR and diarization adapters.
+"""Full-Memory Pipeline orchestration with fake ASR and diarization adapters.
 
-Tests verify that the V1Pipeline:
+Tests verify that the FullMemoryPipeline:
 - Calls the ASR adapter with PCM bytes converted from the audio input.
 - Calls the optional diarization adapter.
 - Passes resulting tokens and timeline to the core response builder.
@@ -19,24 +19,25 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from asr_diar_server.audio import AudioInput
 from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
-from asr_diar_server.pipelines.v1 import V1Pipeline
+from asr_diar_server.pipelines.full_memory import FullMemoryPipeline
 
 WHISPERX_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
 
-_FAKE_PCM = struct.pack("<1600h", *([0] * 1600))  # 100 ms silence, already PCM
+_FAKE_PCM = struct.pack("<1600h", *([0] * 1600))
 
 
 def _mock_convert(return_value: bytes):
     """Return a context manager that patches convert_to_pcm_bytes."""
     return patch(
-        "asr_diar_server.pipelines.v1.convert_to_pcm_bytes",
+        "asr_diar_server.pipelines.full_memory.convert_to_pcm_bytes",
         new=AsyncMock(return_value=return_value),
     )
 
 
 class _FakeASRAdapter:
-    """Returns a fixed token list from transcribe_pcm."""
+    """Return a fixed token list from transcribe_pcm."""
 
     def __init__(self, tokens=None):
         self._tokens = tokens or []
@@ -58,53 +59,48 @@ class _FakeDiarizationAdapter:
 
 
 @pytest.mark.asyncio
-async def test_v1_pipeline_returns_whisperx_shape():
-    """V1Pipeline.run returns all WhisperX-style response keys."""
-    pipeline = V1Pipeline(asr=_FakeASRAdapter(), diarization=None)
+async def test_full_memory_pipeline_returns_whisperx_shape():
+    pipeline = FullMemoryPipeline(asr=_FakeASRAdapter(), diarization=None)
     with _mock_convert(_FAKE_PCM):
-        result = await pipeline.run(b"audio")
+        result = await pipeline.transcribe(AudioInput(b"audio"))
     assert WHISPERX_KEYS.issubset(result.keys())
 
 
 @pytest.mark.asyncio
-async def test_v1_pipeline_passes_prompt_to_asr():
-    """run() forwards prompt parameter to the ASR adapter."""
+async def test_full_memory_pipeline_passes_prompt_to_asr():
     asr = _FakeASRAdapter()
-    pipeline = V1Pipeline(asr=asr, diarization=None)
+    pipeline = FullMemoryPipeline(asr=asr, diarization=None)
     with _mock_convert(_FAKE_PCM):
-        await pipeline.run(b"audio", prompt="test prompt")
+        await pipeline.transcribe(AudioInput(b"audio"), prompt="test prompt")
     assert asr.last_prompt == "test prompt"
 
 
 @pytest.mark.asyncio
-async def test_v1_pipeline_passes_language_to_asr():
-    """run() forwards language parameter to the ASR adapter."""
+async def test_full_memory_pipeline_passes_language_to_asr():
     asr = _FakeASRAdapter()
-    pipeline = V1Pipeline(asr=asr, diarization=None)
+    pipeline = FullMemoryPipeline(asr=asr, diarization=None)
     with _mock_convert(_FAKE_PCM):
-        await pipeline.run(b"audio", language="es")
+        await pipeline.transcribe(AudioInput(b"audio"), language="es")
     assert asr.last_language == "es"
 
 
 @pytest.mark.asyncio
-async def test_v1_pipeline_uses_diarization_when_provided():
-    """V1Pipeline calls diarization adapter and includes speaker info in response."""
+async def test_full_memory_pipeline_uses_diarization_when_provided():
     tokens = [TranscriptToken(start=0.0, end=1.0, text=" hola.", probability=0.9)]
     timeline = [SpeakerSegment(start=0.0, end=2.0, speaker=1)]
     asr = _FakeASRAdapter(tokens=tokens)
     diar = _FakeDiarizationAdapter(timeline=timeline)
-    pipeline = V1Pipeline(asr=asr, diarization=diar)
+    pipeline = FullMemoryPipeline(asr=asr, diarization=diar)
     with _mock_convert(_FAKE_PCM):
-        result = await pipeline.run(b"audio")
+        result = await pipeline.transcribe(AudioInput(b"audio"))
     seg = result["segments"][0]
     assert seg["speaker"] == "1"
 
 
 @pytest.mark.asyncio
-async def test_v1_pipeline_empty_tokens_no_crash():
-    """V1Pipeline returns valid empty response when ASR returns no tokens."""
-    pipeline = V1Pipeline(asr=_FakeASRAdapter(tokens=[]), diarization=None)
+async def test_full_memory_pipeline_empty_tokens_no_crash():
+    pipeline = FullMemoryPipeline(asr=_FakeASRAdapter(tokens=[]), diarization=None)
     with _mock_convert(_FAKE_PCM):
-        result = await pipeline.run(b"audio")
+        result = await pipeline.transcribe(AudioInput(b"audio"))
     assert result["segments"] == []
     assert result["raw_words"] == []

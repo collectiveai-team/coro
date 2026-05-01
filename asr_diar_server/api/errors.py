@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from fastapi.responses import JSONResponse
 
+from asr_diar_server.api.exceptions import TranscriptionError
+from asr_diar_server.api.schemas import OpenAIErrorResponse
+
 
 def openai_error(
     message: str,
@@ -29,9 +32,21 @@ def openai_error(
         JSONResponse with ``{"error": {...}}`` body.
 
     """
-    body: dict = {"message": message, "type": error_type}
-    if param is not None:
-        body["param"] = param
-    if code is not None:
-        body["code"] = code
-    return JSONResponse({"error": body}, status_code=status_code)
+    body = OpenAIErrorResponse.from_error(
+        message=message,
+        error_type=error_type,
+        param=param,
+        code=code,
+    )
+    return JSONResponse(body.model_dump(), status_code=status_code)
+
+
+async def transcription_exception_handler(_request, exc: TranscriptionError) -> JSONResponse:
+    """Translate typed transcription failures to OpenAI-style errors."""
+    return openai_error(
+        exc.message,
+        error_type=exc.error_type,
+        param=exc.param,
+        code=exc.code,
+        status_code=exc.status_code,
+    )

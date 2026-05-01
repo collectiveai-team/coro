@@ -1,17 +1,23 @@
-"""v1 transcription router — /v1/audio/transcriptions.
+"""Transcription Endpoint router — /v1/audio/transcriptions.
 
-Accepts OpenAI-compatible form parameters and returns a WhisperX-Style
-Response.  The route handler stays thin; orchestration delegates to the
-v1_pipeline injected in RuntimeState.
+Accepts OpenAI-compatible form parameters and returns a WhisperX-Style Response.
+The route handler stays thin; orchestration delegates to the configured pipeline.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from asr_diar_server.api.errors import openai_error
+from asr_diar_server.api.dependencies import get_pipeline
+from asr_diar_server.api.exceptions import (
+    TranscriptionProcessingError,
+    TranscriptionValidationError,
+    UnsupportedStreamingError,
+)
+from asr_diar_server.api.schemas import WhisperXResponse
 from asr_diar_server.api.sse import streaming_response
+from asr_diar_server.audio import AudioInput
 
 router = APIRouter(prefix="/v1")
 
@@ -33,7 +39,6 @@ _UNSUPPORTED_FORMATS = {"text", "srt", "vtt", "tsv"}
 
 @router.post("/audio/transcriptions")
 async def create_transcription(
-    request: Request,
     file: UploadFile = File(...),
     model: str = Form(
         default="", description="Accepted but ignored; server uses configured backend."
@@ -42,6 +47,7 @@ async def create_transcription(
     prompt: str = Form(default="", description="Optional initial prompt for transcription."),
     response_format: str | None = Form(default=None, description="Response format."),
     stream: bool = Form(default=False, description="If true, return OpenAI-Exact SSE."),
+    pipeline=Depends(get_pipeline),
 ) -> Response:
     """Accept audio and return a WhisperX-Style Response.
 
@@ -51,40 +57,30 @@ async def create_transcription(
     # Validate response_format early.
     if response_format and response_format.lower() not in _JSON_LIKE_FORMATS:
         if response_format.lower() in _UNSUPPORTED_FORMATS:
-            return openai_error(
+            raise TranscriptionValidationError(
                 f"response_format '{response_format}' is not supported. "
                 "Supported formats: json, verbose_json.",
                 param="response_format",
             )
-        return openai_error(
+        raise TranscriptionValidationError(
             f"Unknown response_format '{response_format}'.",
             param="response_format",
         )
 
-    audio_bytes = await file.read()
-    if not audio_bytes:
-        return openai_error("Empty audio file.", param="file")
-
-    runtime = request.app.state.runtime
-    pipeline = getattr(runtime, "v1_pipeline", None)
-    if pipeline is None:
-        return openai_error(
-            "Server is not ready. No v1 pipeline is available.",
-            error_type="server_error",
-            status_code=503,
-        )
+    audio = await AudioInput.from_upload(file)
+    if not await audio.read_bytes():
+        raise TranscriptionValidationError("Empty audio file.", param="file")
 
     if stream:
         stream_method = getattr(pipeline, "stream", None)
         if stream_method is None:
-            return openai_error(
-                "v1 pipeline does not support streaming.",
-                error_type="server_error",
-                status_code=503,
-            )
-        return streaming_response(
-            stream_method(audio_bytes, language=language, prompt=prompt or None)
-        )
+            raise UnsupportedStreamingError("Configured pipeline does not support streaming.")
+        return streaming_response(stream_method(audio, language=language, prompt=prompt or None))
 
-    result = await pipeline.run(audio_bytes, language=language, prompt=prompt or None)
-    return JSONResponse(result)
+    try:
+        result = await pipeline.transcribe(audio, language=language, prompt=prompt or None)
+    except TranscriptionValidationError:
+        raise
+    except Exception as exc:
+        raise TranscriptionProcessingError("Transcription processing failed.") from exc
+    return JSONResponse(WhisperXResponse.model_validate(result).model_dump())

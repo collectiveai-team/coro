@@ -7,7 +7,7 @@ Verifies that stream=True returns:
 - The last event is ``data: [DONE]\\n\\n``
 - No ``transcript.progress`` events (package-specific events are forbidden)
 
-Both v1 and v2 must satisfy the same SSE contract.
+    The supported v1 endpoint must satisfy the SSE contract.
 """
 
 from __future__ import annotations
@@ -44,21 +44,12 @@ def _minimal_wav() -> bytes:
 
 
 class _FakeV1StreamingPipeline:
-    async def run(self, audio_bytes, *, language=None, prompt=None):
+    async def transcribe(self, audio, *, language=None, prompt=None):
         return dict(_WHISPERX_EMPTY)
 
-    async def stream(self, audio_bytes, *, language=None, prompt=None):
+    async def stream(self, audio, *, language=None, prompt=None):
         """Yield one delta then done."""
         yield {"type": "transcript.text.delta", "delta": "Hello"}
-        yield {"type": "transcript.text.done", "text": json.dumps(_WHISPERX_EMPTY)}
-
-
-class _FakeV2StreamingPipeline:
-    async def run_from_path(self, path, *, language=None, prompt=None):
-        return dict(_WHISPERX_EMPTY)
-
-    async def stream_from_path(self, path, *, language=None, prompt=None):
-        yield {"type": "transcript.text.delta", "delta": "World"}
         yield {"type": "transcript.text.done", "text": json.dumps(_WHISPERX_EMPTY)}
 
 
@@ -67,8 +58,7 @@ def _app_with_streaming_pipelines():
 
     application: FastAPI = create_app(ServerSettings())
     runtime = RuntimeState(asr_adapter=object())
-    runtime.v1_pipeline = _FakeV1StreamingPipeline()
-    runtime.v2_pipeline = _FakeV2StreamingPipeline()
+    runtime.pipeline = _FakeV1StreamingPipeline()
     application.state.runtime = runtime
     return application
 
@@ -90,16 +80,12 @@ def _parse_sse_events(raw: str) -> list[dict | str]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("route", "pipeline_attr"),
-    [("/v1/audio/transcriptions", "v1_pipeline"), ("/v2/audio/transcriptions", "v2_pipeline")],
-)
-async def test_streaming_content_type(route, pipeline_attr):
+async def test_streaming_content_type():
     """stream=True returns Content-Type: text/event-stream."""
     app = _app_with_streaming_pipelines()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
-            route,
+            "/v1/audio/transcriptions",
             files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
             data={"stream": "true"},
         )
@@ -107,16 +93,12 @@ async def test_streaming_content_type(route, pipeline_attr):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("route", "pipeline_attr"),
-    [("/v1/audio/transcriptions", "v1_pipeline"), ("/v2/audio/transcriptions", "v2_pipeline")],
-)
-async def test_streaming_ends_with_done_sentinel(route, pipeline_attr):
+async def test_streaming_ends_with_done_sentinel():
     """SSE stream ends with 'data: [DONE]'."""
     app = _app_with_streaming_pipelines()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
-            route,
+            "/v1/audio/transcriptions",
             files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
             data={"stream": "true"},
         )
@@ -125,16 +107,12 @@ async def test_streaming_ends_with_done_sentinel(route, pipeline_attr):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("route", "pipeline_attr"),
-    [("/v1/audio/transcriptions", "v1_pipeline"), ("/v2/audio/transcriptions", "v2_pipeline")],
-)
-async def test_streaming_contains_done_event(route, pipeline_attr):
+async def test_streaming_contains_done_event():
     """SSE stream contains a transcript.text.done event before [DONE]."""
     app = _app_with_streaming_pipelines()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
-            route,
+            "/v1/audio/transcriptions",
             files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
             data={"stream": "true"},
         )
@@ -146,16 +124,12 @@ async def test_streaming_contains_done_event(route, pipeline_attr):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("route", "pipeline_attr"),
-    [("/v1/audio/transcriptions", "v1_pipeline"), ("/v2/audio/transcriptions", "v2_pipeline")],
-)
-async def test_streaming_has_no_progress_events(route, pipeline_attr):
+async def test_streaming_has_no_progress_events():
     """SSE stream contains no transcript.progress events (package-specific events forbidden)."""
     app = _app_with_streaming_pipelines()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
-            route,
+            "/v1/audio/transcriptions",
             files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
             data={"stream": "true"},
         )

@@ -1,9 +1,9 @@
-"""Cycle 10: v2 disk-backed pipeline orchestration with fake adapters.
+"""Chunked-File Pipeline orchestration with fake adapters.
 
-Tests verify that V2Pipeline:
-- Accepts a file path and uses stream_pcm_from_file to read it.
-- Calls ASR adapter with each PCM window chunk.
-- Calls diarization adapter per chunk.
+Tests verify that ChunkedFilePipeline:
+- Uses stream_pcm_from_file to read spooled audio.
+- Calls ASR adapter with PCM windows.
+- Calls diarization adapter when configured.
 - Returns a valid WhisperX-style response dict.
 - Propagates prompt across ASR chunks.
 - Handles empty token output without crashing.
@@ -18,12 +18,13 @@ from unittest.mock import patch
 
 import pytest
 
+from asr_diar_server.audio import AudioInput
 from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
-from asr_diar_server.pipelines.v2 import V2Pipeline
+from asr_diar_server.pipelines.chunked_file import ChunkedFilePipeline
 
 WHISPERX_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
 
-_FAKE_PCM = struct.pack("<1600h", *([0] * 1600))  # 100 ms 16-bit silence
+_FAKE_PCM = struct.pack("<1600h", *([0] * 1600))
 
 
 class _FakeASRAdapter:
@@ -47,55 +48,50 @@ class _FakeDiarizationAdapter:
 
 
 async def _single_chunk_stream(path: str, chunk_seconds: float = 1.0):
-    """Fake stream_pcm_from_file that yields one chunk and stops."""
     yield _FAKE_PCM
 
 
 def _mock_stream():
     return patch(
-        "asr_diar_server.pipelines.v2.stream_pcm_from_file",
+        "asr_diar_server.pipelines.chunked_file.stream_pcm_from_file",
         new=_single_chunk_stream,
     )
 
 
 @pytest.mark.asyncio
-async def test_v2_pipeline_returns_whisperx_shape():
-    """V2Pipeline.run_from_path returns all WhisperX-style response keys."""
-    pipeline = V2Pipeline(asr=_FakeASRAdapter(), diarization=None)
+async def test_chunked_file_pipeline_returns_whisperx_shape():
+    pipeline = ChunkedFilePipeline(asr=_FakeASRAdapter(), diarization=None)
     with _mock_stream():
-        result = await pipeline.run_from_path("/fake/path.wav")
+        result = await pipeline.transcribe(AudioInput(b"audio"))
     assert WHISPERX_KEYS.issubset(result.keys())
 
 
 @pytest.mark.asyncio
-async def test_v2_pipeline_passes_prompt_to_asr():
-    """run_from_path() forwards prompt to the ASR adapter."""
+async def test_chunked_file_pipeline_passes_prompt_to_asr():
     asr = _FakeASRAdapter()
-    pipeline = V2Pipeline(asr=asr, diarization=None)
+    pipeline = ChunkedFilePipeline(asr=asr, diarization=None)
     with _mock_stream():
-        await pipeline.run_from_path("/fake/path.wav", prompt="mi prompt")
+        await pipeline.transcribe(AudioInput(b"audio"), prompt="mi prompt")
     assert asr.last_prompt == "mi prompt"
 
 
 @pytest.mark.asyncio
-async def test_v2_pipeline_uses_diarization_when_provided():
-    """V2Pipeline calls diarization adapter when it is set."""
+async def test_chunked_file_pipeline_uses_diarization_when_provided():
     tokens = [TranscriptToken(start=0.0, end=1.0, text=" hola.", probability=0.9)]
     timeline = [SpeakerSegment(start=0.0, end=2.0, speaker=2)]
     asr = _FakeASRAdapter(tokens=tokens)
     diar = _FakeDiarizationAdapter(timeline=timeline)
-    pipeline = V2Pipeline(asr=asr, diarization=diar)
+    pipeline = ChunkedFilePipeline(asr=asr, diarization=diar)
     with _mock_stream():
-        result = await pipeline.run_from_path("/fake/path.wav")
+        result = await pipeline.transcribe(AudioInput(b"audio"))
     seg = result["segments"][0]
     assert seg["speaker"] == "2"
 
 
 @pytest.mark.asyncio
-async def test_v2_pipeline_empty_tokens_no_crash():
-    """V2Pipeline returns valid empty response when ASR returns no tokens."""
-    pipeline = V2Pipeline(asr=_FakeASRAdapter(tokens=[]), diarization=None)
+async def test_chunked_file_pipeline_empty_tokens_no_crash():
+    pipeline = ChunkedFilePipeline(asr=_FakeASRAdapter(tokens=[]), diarization=None)
     with _mock_stream():
-        result = await pipeline.run_from_path("/fake/path.wav")
+        result = await pipeline.transcribe(AudioInput(b"audio"))
     assert result["segments"] == []
     assert result["raw_words"] == []

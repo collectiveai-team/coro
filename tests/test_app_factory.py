@@ -26,13 +26,13 @@ def app(test_settings):
 
     application: FastAPI = create_app(test_settings)
     # Inject RuntimeState directly — bypasses lifespan and avoids real model init.
-    application.state.runtime = RuntimeState(backend=test_settings.backend)
+    application.state.runtime = RuntimeState()
     return application
 
 
 @pytest.mark.asyncio
 async def test_health_response_has_required_keys(app):
-    """GET /health returns status, ready, and backend keys."""
+    """GET /health returns status, ready, startup selection, and readiness keys."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/health")
 
@@ -40,7 +40,8 @@ async def test_health_response_has_required_keys(app):
     body = response.json()
     assert "status" in body
     assert "ready" in body
-    assert "backend" in body
+    assert "startup_selection" in body
+    assert "capability_readiness" in body
 
 
 @pytest.mark.asyncio

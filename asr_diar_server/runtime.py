@@ -18,16 +18,18 @@ class RuntimeState:
     An instance with ``asr_adapter=None`` is considered not ready.
     The runtime is injected into the FastAPI app via ``app.state``.
 
-    ``v1_pipeline`` and ``v2_pipeline`` are optional pipeline instances
-    injected at startup or in tests.  They are typed as ``Any`` so that
-    protocol-compatible fakes can be used in tests without subclassing.
+    ``pipeline`` is typed as ``Any`` so protocol-compatible fakes can be used
+    in tests without subclassing.
     """
 
-    backend: str = "whisper"
+    pipeline: Any | None = None
+    pipeline_selector: str = "full-memory"
+    asr_provider: str = "whisperlivekit"
+    asr_model: str = "openai/whisper-medium"
+    diarization_provider: str = "none"
+    diarization_model: str | None = None
     asr_adapter: Any | None = None
     diarization_adapter: Any | None = None
-    v1_pipeline: Any | None = None
-    v2_pipeline: Any | None = None
     _extra: dict = field(default_factory=dict, repr=False)
 
     @property
