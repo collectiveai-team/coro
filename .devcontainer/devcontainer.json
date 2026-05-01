@@ -31,7 +31,8 @@
 					}
 				},
 				"remote.autoForwardPorts": false,
-				"remote.restoreForwardedPorts": false
+				"remote.restoreForwardedPorts": false,
+				"python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
 			},
 			// Add the IDs of extensions you want installed when the container is created.
 			"extensions": [
@@ -42,7 +43,8 @@
 				"tamasfe.even-better-toml",
 				"christian-kohler.path-intellisense",
 				"github.vscode-github-actions",
-				"fedaykindev.openchamber"
+				"fedaykindev.openchamber",
+				"meta.pyrefly"
 			]
 		}
 	},
