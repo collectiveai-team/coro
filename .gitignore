@@ -2,5 +2,9 @@ outputs/
 audios/
 __pycache__
 .env
+backup
+benchmark
+notebooks
+.scratch
 
 resources
