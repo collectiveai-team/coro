@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+# MARK: Singleton Runtime State
 @dataclass
 class RuntimeState:
     """Holds all live resources for one running asr_diar_server instance.
@@ -32,6 +33,7 @@ class RuntimeState:
     diarization_adapter: Any | None = None
     _extra: dict = field(default_factory=dict, repr=False)
 
+    # Capability Readiness --------------------------------------------------
     @property
     def ready(self) -> bool:
         """Return True when the ASR adapter is loaded and available."""

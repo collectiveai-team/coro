@@ -8,6 +8,7 @@ from asr_diar_server.api.exceptions import TranscriptionReadinessError
 from asr_diar_server.settings import ServerSettings
 
 
+# MARK: FastAPI Dependencies
 def get_settings(request: Request) -> ServerSettings:
     """Return validated Server Startup Selection from app state."""
     return request.app.state.settings

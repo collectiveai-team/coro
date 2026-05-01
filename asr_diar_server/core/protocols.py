@@ -9,6 +9,7 @@ from asr_diar_server.audio import AudioInput
 from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
 
 
+# MARK: Backend Adapter Protocols
 class ASRAdapter(Protocol):
     """Protocol for ASR adapters used by transcription pipelines."""
 
@@ -27,6 +28,7 @@ class DiarizationAdapter(Protocol):
     async def diarize_pcm(self, pcm: bytes) -> list[SpeakerSegment]: ...
 
 
+# MARK: Pipeline Protocols
 class TranscriptionPipeline(Protocol):
     """Protocol for the configured transcription pipeline."""
 

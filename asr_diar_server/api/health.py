@@ -5,9 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+
+# MARK: Router Configuration
 router = APIRouter()
 
 
+# MARK: Health Endpoint
 @router.get("/health")
 async def health(request: Request) -> JSONResponse:
     """Return startup selection and capability readiness."""

@@ -5,8 +5,11 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 
 
+# MARK: Strict WhisperX Response Schema
+# Item Models ---------------------------------------------------------------
 class WhisperXWord(BaseModel):
     """Word-level timestamp item in a segment."""
+
     model_config = ConfigDict(extra="forbid")
 
     word: str
@@ -14,7 +17,6 @@ class WhisperXWord(BaseModel):
     end: float
     score: float
     speaker: str
-
 
 
 class WhisperXSegment(BaseModel):
@@ -29,9 +31,9 @@ class WhisperXSegment(BaseModel):
     words: list[WhisperXWord]
 
 
-
 class WhisperXTranscriptItem(BaseModel):
     """Transcript convenience item."""
+
     model_config = ConfigDict(extra="forbid")
 
     start: float
@@ -39,9 +41,9 @@ class WhisperXTranscriptItem(BaseModel):
     text: str
 
 
-
 class WhisperXDiarizationItem(BaseModel):
     """Diarization convenience item."""
+
     model_config = ConfigDict(extra="forbid")
 
     start: float
@@ -49,9 +51,9 @@ class WhisperXDiarizationItem(BaseModel):
     speaker: str
 
 
-
 class WhisperXRawWord(BaseModel):
     """Raw ASR word item before segment interpolation."""
+
     model_config = ConfigDict(extra="forbid")
 
     word: str
@@ -60,9 +62,10 @@ class WhisperXRawWord(BaseModel):
     score: float
 
 
-
+# Response Model ------------------------------------------------------------
 class WhisperXResponse(BaseModel):
     """Strict WhisperX Response Schema exposed by the transcription endpoint."""
+
     model_config = ConfigDict(extra="forbid")
 
     segments: list[WhisperXSegment]
@@ -72,7 +75,7 @@ class WhisperXResponse(BaseModel):
     raw_words: list[WhisperXRawWord]
 
 
-
+# MARK: OpenAI-Style Error Schema
 class OpenAIError(BaseModel):
     """OpenAI-style error object."""
 
@@ -82,6 +85,7 @@ class OpenAIError(BaseModel):
     code: str | None = None
 
 
+# Error Response Model ------------------------------------------------------
 class OpenAIErrorResponse(BaseModel):
     """OpenAI-style error response boundary schema."""
 

@@ -11,6 +11,7 @@ from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
 from asr_diar_server.pipelines.windowing import ASRWindowing
 
 
+# MARK: Chunked-File Pipeline
 class ChunkedFilePipeline:
     """Spool upload to a temp file and stream PCM chunks from that file."""
 
@@ -25,12 +26,14 @@ class ChunkedFilePipeline:
         self._diarization = diarization
         self._windowing = windowing or ASRWindowing()
 
+    # PCM Streaming ---------------------------------------------------------
     async def _read_pcm(self, audio: AudioInput) -> bytes:
         chunks: list[bytes] = []
         async for chunk in stream_pcm_from_file(await audio.temp_path(), chunk_seconds=1.0):
             chunks.append(chunk)
         return b"".join(chunks)
 
+    # Batch Transcription ---------------------------------------------------
     async def transcribe(
         self,
         audio: AudioInput,
@@ -54,6 +57,7 @@ class ChunkedFilePipeline:
         finally:
             await audio.cleanup()
 
+    # Streaming Transcription ----------------------------------------------
     async def stream(
         self,
         audio: AudioInput,

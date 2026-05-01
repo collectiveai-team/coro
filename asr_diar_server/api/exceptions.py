@@ -1,8 +1,11 @@
 """Typed transcription exceptions for API boundary handling."""
 
 from __future__ import annotations
+
 from fastapi import status
 
+
+# MARK: Base Transcription Exception
 class TranscriptionError(Exception):
     """Base exception translated to an OpenAI-style error response."""
 
@@ -16,6 +19,7 @@ class TranscriptionError(Exception):
         self.code = code
 
 
+# MARK: Public API Failure Types
 class TranscriptionValidationError(TranscriptionError):
     """Request validation failure."""
 

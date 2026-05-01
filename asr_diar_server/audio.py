@@ -21,6 +21,8 @@ from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
 
+
+# MARK: Audio Constants
 SAMPLE_RATE: int = 16000
 """Canonical audio sample rate in Hz."""
 
@@ -28,6 +30,7 @@ BYTES_PER_SAMPLE: int = 2
 """Bytes per PCM sample (16-bit little-endian mono)."""
 
 
+# MARK: Audio Input
 class AudioInput:
     """Package-owned uploaded audio representation with cleanup ownership."""
 
@@ -62,6 +65,8 @@ class AudioInput:
                 Path(self._temp_path).unlink()
             self._temp_path = None
 
+
+# MARK: FFmpeg Configuration
 _FFMPEG_PCM_ARGS = (
     "-f",
     "s16le",
@@ -76,6 +81,7 @@ _FFMPEG_PCM_ARGS = (
 )
 
 
+# MARK: PCM Chunking
 def iter_aligned_pcm_chunks(
     byte_chunks: Iterator[bytes],
     target_bytes: int,
@@ -110,6 +116,7 @@ def iter_aligned_pcm_chunks(
             yield pending[:flush_len]
 
 
+# MARK: FFmpeg Conversion
 async def convert_to_pcm_bytes(audio_bytes: bytes) -> bytes:
     """Convert any audio format to PCM s16le mono 16 kHz using ffmpeg (full-memory).
 
@@ -139,6 +146,7 @@ async def convert_to_pcm_bytes(audio_bytes: bytes) -> bytes:
     return stdout
 
 
+# MARK: FFmpeg Streaming
 async def stream_pcm_from_file(path: str, chunk_seconds: float = 1.0) -> AsyncIterator[bytes]:
     """Stream PCM chunks from a file path via ffmpeg.
 

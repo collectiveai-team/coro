@@ -10,6 +10,7 @@ from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from asr_diar_server.core.types import TranscriptToken
 
 
+# MARK: Result Model
 @dataclass
 class ASRWindowingResult:
     """Tokens accepted from ASR Windowing."""
@@ -17,6 +18,7 @@ class ASRWindowingResult:
     tokens: list[TranscriptToken]
 
 
+# MARK: ASR Windowing
 class ASRWindowing:
     """Transcribe PCM in overlapping windows behind a small interface."""
 
@@ -29,6 +31,7 @@ class ASRWindowing:
         self.overlap_bytes = self._seconds_to_bytes(overlap_seconds)
         self.step_bytes = self.window_bytes - self.overlap_bytes
 
+    # Window Planning -------------------------------------------------------
     @staticmethod
     def _seconds_to_bytes(seconds: float) -> int:
         byte_count = int(SAMPLE_RATE * BYTES_PER_SAMPLE * seconds)
@@ -46,6 +49,7 @@ class ASRWindowing:
                 break
             offset += self.step_bytes
 
+    # Batch Transcription ---------------------------------------------------
     async def transcribe_pcm(
         self,
         pcm: bytes,
@@ -63,6 +67,7 @@ class ASRWindowing:
                 prompt_carry = "".join(token.text for token in tokens[-50:])[-200:] or prompt_carry
         return ASRWindowingResult(tokens=tokens)
 
+    # Streaming Transcription ----------------------------------------------
     async def stream_pcm(
         self,
         pcm: bytes,

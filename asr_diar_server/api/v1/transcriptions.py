@@ -19,8 +19,12 @@ from asr_diar_server.api.schemas import WhisperXResponse
 from asr_diar_server.api.sse import streaming_response
 from asr_diar_server.audio import AudioInput
 
+
+# MARK: Router Configuration
 router = APIRouter(prefix="/v1")
 
+
+# Response Formats ----------------------------------------------------------
 # Response formats treated as aliases for the WhisperX-Style Response.
 _JSON_LIKE_FORMATS = {
     None,
@@ -37,6 +41,7 @@ _JSON_LIKE_FORMATS = {
 _UNSUPPORTED_FORMATS = {"text", "srt", "vtt", "tsv"}
 
 
+# MARK: Transcription Endpoint
 @router.post("/audio/transcriptions")
 async def create_transcription(
     file: UploadFile = File(...),
@@ -54,7 +59,7 @@ async def create_transcription(
     Supported response formats: json, verbose_json, diarized_json (and empty).
     All map to the same enriched WhisperX-Style Response.
     """
-    # Validate response_format early.
+    # Request Validation ----------------------------------------------------
     if response_format and response_format.lower() not in _JSON_LIKE_FORMATS:
         if response_format.lower() in _UNSUPPORTED_FORMATS:
             raise TranscriptionValidationError(
@@ -71,12 +76,14 @@ async def create_transcription(
     if not await audio.read_bytes():
         raise TranscriptionValidationError("Empty audio file.", param="file")
 
+    # Streaming Response ----------------------------------------------------
     if stream:
         stream_method = getattr(pipeline, "stream", None)
         if stream_method is None:
             raise UnsupportedStreamingError("Configured pipeline does not support streaming.")
         return streaming_response(stream_method(audio, language=language, prompt=prompt or None))
 
+    # JSON Response ---------------------------------------------------------
     try:
         result = await pipeline.transcribe(audio, language=language, prompt=prompt or None)
     except TranscriptionValidationError:

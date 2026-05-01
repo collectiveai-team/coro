@@ -10,6 +10,7 @@ from asr_diar_server.core.protocols import ASRAdapter, DiarizationAdapter
 from asr_diar_server.pipelines.windowing import ASRWindowing
 
 
+# MARK: Full-Memory Pipeline
 class FullMemoryPipeline:
     """Decode the full upload into memory before shared ASR Windowing."""
 
@@ -24,9 +25,11 @@ class FullMemoryPipeline:
         self._diarization = diarization
         self._windowing = windowing or ASRWindowing()
 
+    # PCM Decoding ----------------------------------------------------------
     async def _pcm(self, audio: AudioInput) -> bytes:
         return await convert_to_pcm_bytes(await audio.read_bytes())
 
+    # Batch Transcription ---------------------------------------------------
     async def transcribe(
         self,
         audio: AudioInput,
@@ -47,6 +50,7 @@ class FullMemoryPipeline:
             timeline = await self._diarization.diarize_pcm(pcm)
         return build_whisperx_response(result.tokens, timeline, duration)
 
+    # Streaming Transcription ----------------------------------------------
     async def stream(
         self,
         audio: AudioInput,
