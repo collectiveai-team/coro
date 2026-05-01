@@ -1,20 +1,161 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [project]
-name = "aymurai-asr"
+name = "asr_diar_server"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Packaged ASR diarization server with versioned transcription endpoints."
 requires-python = ">=3.12, <3.13"
 classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
+    "fastapi>=0.115.0",
     "lightning @ https://files.pythonhosted.org/packages/a3/2c/85eaf42c983b0cd81bcda5876da2c8e2a9fd347908666ea9855724369171/lightning-2.4.0-py3-none-any.whl",
     "nemo-toolkit[asr]>=2.7.0,<2.8.0",
+    "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.27",
+    "uvicorn>=0.30.0",
     "whisperlivekit[cu129,diarization-sortformer]>=0.2.20.post1",
 ]
 
+[project.scripts]
+asr-diar-server = "asr_diar_server.cli:main"
+asr-diar-bench = "asr_diar_server.bench.cli:main"
+
 [dependency-groups]
 benchmark = ["jiwer>=3.1.0", "pyannote-metrics>=4.0.0"]
-dev = ["matplotlib>=3.10.9", "pandas>=3.0.2", "seaborn"]
+dev = [
+    "matplotlib>=3.10.9",
+    "pandas>=3.0.2",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
+    "anyio>=4.0.0",
+    "ruff>=0.9.0",
+    "pyrefly>=0.17.0",
+]
+
+# MARK: Ruff
+[tool.ruff]
+line-length = 100
+exclude = [
+    # Prototype scripts — excluded from active verification per PRD.
+    "custom_server.py",
+    "custom_server_chunked.py",
+    "run_transcription.py",
+    "custom_client.py",
+    "tools/",
+    ".worktrees/",
+    ".scratch/",
+    # Legacy top-level tests that import from prototype scripts.
+    "test_batch_diarization.py",
+    "test_no_overlap.py",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",      # rules that indicate likely bugs or errors in code
+    "F",      # rules that indicate likely bugs or errors in code
+    "B",      # flake8-bugbear rules for likely bugs and design problems
+    "SIM",    # rules for code simplification
+    "RET",    # rules for improving code readability
+    "C4",     # rules for enforcing consistent code style
+    "DTZ",    # rules for datetime handling
+    "PTH",    # rules for path handling
+    "LOG",    # rules for logging
+    "S",      # rules for security
+    "C90",    # rules for C90 compatibility
+    "G",      # flake8-logging rules for logging best practices
+    "UP",     # pyupgrade rules for Python version compatibility
+    "RUF",    # Ruff specific rules
+    "ERA001", # Erradicate - commented-out-code
+    "FAST",   # FastAPI specific rules
+    "D200",   # one-line docstring should fit on one line
+    "D205",   # blank line required between summary and description
+    "D212",   # multi-line summary should start at first line
+    "D300",   # use triple double quotes
+    "D301",   # use r""" if backslashes in docstring
+    "D400",   # first line should end with a period
+    "D401",   # first line should be in imperative mood
+    "D403",   # first word of docstring should be capitalized
+    "D405",   # section name should be capitalized
+    "D406",   # section name should end with newline
+    "D407",   # missing dashed underline after section
+    "D408",   # section underline should follow section name
+    "D409",   # section underline should match section name length
+    "D410",   # blank line after section
+    "D411",   # blank line before section
+    "D412",   # no blank lines between section header and content
+    "D413",   # blank line after last section
+    "D414",   # section has no content
+    "D415",   # first line should end with punctuation
+    "D417",   # missing argument descriptions
+    "D418",   # no docstring on @overload
+    "D419",   # empty docstring
+]
+task-tags = ["TODO", "FIXME", "XXX", "MARK"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "D"]
+# FastAPI routes use the idiomatic `= File(...)` / `= Form(...)` default style.
+# C901 — v2 route complexity is inherent to upload spooling + streaming + cleanup.
+"asr_diar_server/api/v1/transcriptions.py" = ["FAST002", "B008"]
+"asr_diar_server/api/v2/transcriptions.py" = ["FAST002", "B008", "C901"]
+# Bench/CLI tools use subprocess calls with partial paths (system tools).
+# PTH123/PTH108 — /proc reads use builtins; SIM105 — benchmark exception swallowing is intentional.
+# C901 — _run_rep is naturally complex due to benchmark sampling orchestration.
+"asr_diar_server/bench/run.py" = [
+    "S603",
+    "S607",
+    "S110",
+    "S108",
+    "PTH123",
+    "SIM105",
+    "C901",
+]
+"asr_diar_server/bench/cli.py" = ["S108", "DTZ005"]
+# Settings and CLI use 0.0.0.0 intentionally.
+"asr_diar_server/settings.py" = ["S104"]
+"asr_diar_server/cli.py" = ["S104"]
+
+
+# MARK: Pyrefly
+[tool.pyrefly]
+project-excludes = [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/venv/**/*",
+    "**/.venv/**/*",
+    "**/.uv_cache/**/*",
+    # Prototype scripts — excluded from active verification per PRD.
+    "custom_server.py",
+    "custom_server_chunked.py",
+    "run_transcription.py",
+    "custom_client.py",
+    "tools/**",
+    ".worktrees/**",
+    ".scratch/**",
+    "test_batch_diarization.py",
+    "test_no_overlap.py",
+]
+use-ignore-files = false
+disable-project-excludes-heuristics = true
+python-interpreter-path = ".venv/bin/python"
+
+
+# MARK: Pytest
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
