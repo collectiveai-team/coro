@@ -1,0 +1,5 @@
+# Package and API Surface
+
+The packaged server will use a root-level `asr_diar_server` package, expose a lightweight module-level `asr_diar_server.app:app`, and register versioned transcription routes under `/v1` and `/v2` in one FastAPI process. We will not keep `custom_server.py` or `custom_server_chunked.py` as compatibility shims, and the packaged endpoint surface is intentionally narrowed to `/health`, `/v1/audio/transcriptions`, and `/v2/audio/transcriptions` so prototype-only UI, WebSocket, Deepgram-compatible, and model-list routes do not keep shaping the package architecture.
+
+Considered alternatives included a `src/` layout, compatibility shims for the old server filenames, factory-only ASGI startup, preserving `/asr` and `/v1/listen`, and running v1/v2 as separate apps. The chosen shape prioritizes simple imports and launch commands, shared model lifecycle, clear API-version URLs, and a smaller supported surface for the refactor. Backend integrations live under `backends/` rather than `models/` so ML backends are not confused with Pydantic schemas or internal data types.

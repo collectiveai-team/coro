@@ -5,6 +5,7 @@ __pycache__
 backup
 benchmark
 notebooks
+docs/superpowers
 .scratch
 
 resources
