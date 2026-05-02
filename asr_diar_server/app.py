@@ -48,11 +48,36 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
-        # Heavy model setup (TranscriptionEngine etc.) would go here in
-        # production use.  Tests inject fake state via app.state.runtime.
+        from asr_diar_server.backends.whisperlivekit import (
+            build_asr_adapter,
+            build_diarization_adapter,
+        )
+        from asr_diar_server.pipelines.chunked_file import ChunkedFilePipeline
+        from asr_diar_server.pipelines.full_memory import FullMemoryPipeline
+
         application.state.settings = settings
         application.state.runtime = runtime
+
+        # Build ASR adapter (always required)
+        asr_adapter = build_asr_adapter(settings.model_asr)
+        runtime.asr_adapter = asr_adapter
+
+        # Build optional diarization adapter
+        diarization_adapter = None
+        if settings.backend_diarization == "whisperlivekit" and settings.model_diarization:
+            diarization_adapter = build_diarization_adapter(settings.model_diarization)
+            runtime.diarization_adapter = diarization_adapter
+
+        # Construct the pipeline
+        pipeline_kwargs = dict(asr=asr_adapter, diarization=diarization_adapter)
+        if settings.pipeline == "chunked-file":
+            runtime.pipeline = ChunkedFilePipeline(**pipeline_kwargs)
+        else:
+            runtime.pipeline = FullMemoryPipeline(**pipeline_kwargs)
+
         yield
+
+        # Cleanup: nothing to tear down for whisperlivekit models currently
 
     application = FastAPI(title="ASR Diarization Server", lifespan=lifespan)
     application.add_exception_handler(TranscriptionError, transcription_exception_handler)

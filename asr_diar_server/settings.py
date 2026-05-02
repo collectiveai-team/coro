@@ -53,5 +53,5 @@ class ServerSettings(BaseSettings):
     @model_validator(mode="after")
     def default_enabled_diarization_model(self) -> ServerSettings:
         if self.backend_diarization == "whisperlivekit" and self.model_diarization is None:
-            self.model_diarization = "nvidia/diar_sortformer_4spk-v1"
+            self.model_diarization = "nvidia/diar_streaming_sortformer_4spk-v2"
         return self

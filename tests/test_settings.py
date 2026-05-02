@@ -24,7 +24,7 @@ def test_whisperlivekit_diarization_gets_default_model():
         _env_file=None,
     )
 
-    assert settings.model_diarization == "nvidia/diar_sortformer_4spk-v1"
+    assert settings.model_diarization == "nvidia/diar_streaming_sortformer_4spk-v2"
 
 
 @pytest.mark.parametrize("pipeline", ["unknown", "v1", "v2", ""])
