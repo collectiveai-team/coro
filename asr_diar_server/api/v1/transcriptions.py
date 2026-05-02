@@ -1,12 +1,15 @@
 """Transcription Endpoint router — /v1/audio/transcriptions.
 
-Accepts OpenAI-compatible form parameters and returns a WhisperX-Style Response.
-The route handler stays thin; orchestration delegates to the configured pipeline.
+Accepts OpenAI-compatible form parameters and returns OpenAI-shaped JSON
+transcription responses. The route handler stays thin; orchestration delegates
+to the configured pipeline.
 """
 
 from __future__ import annotations
 
+import math
 from enum import StrEnum
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -26,41 +29,103 @@ from asr_diar_server.audio import AudioInput
 router = APIRouter(prefix="/v1")
 
 
-# MARK: Response Format Enum
+# MARK: Response
 class ResponseFormat(StrEnum):
     """All OpenAI response_format values this server recognises."""
 
-    # JSON-like: all map to the WhisperX-Style Response
     JSON = "json"
-    VERBOSE_JSON = "verbose_json"
-    VERBOSE_JSON_HYPHEN = "verbose-json"
+    JSON_VERBOSE = "json_verbose"
     DIARIZED_JSON = "diarized_json"
-    DIARIZED_JSON_HYPHEN = "diarized-json"
-
-    # Unsupported OpenAI formats (recognised but not implemented)
-    TEXT = "text"
-    SRT = "srt"
-    VTT = "vtt"
-    TSV = "tsv"
 
 
-# Response Formats ----------------------------------------------------------
-# Formats that map to the WhisperX-Style JSON Response.
-_JSON_LIKE_FORMATS = {
-    ResponseFormat.JSON,
-    ResponseFormat.VERBOSE_JSON,
-    ResponseFormat.VERBOSE_JSON_HYPHEN,
-    ResponseFormat.DIARIZED_JSON,
-    ResponseFormat.DIARIZED_JSON_HYPHEN,
-}
 
-# Formats that are valid OpenAI values but not supported here.
-_UNSUPPORTED_FORMATS = {
-    ResponseFormat.TEXT,
-    ResponseFormat.SRT,
-    ResponseFormat.VTT,
-    ResponseFormat.TSV,
-}
+
+
+
+
+
+
+
+def _text_from_result(result: dict[str, Any]) -> str:
+    transcript = result.get("transcript") or []
+    if transcript:
+        return " ".join(str(item.get("text", "")).strip() for item in transcript).strip()
+    segments = result.get("segments") or []
+    return " ".join(str(item.get("text", "")).strip() for item in segments).strip()
+
+
+def _duration_from_result(result: dict[str, Any]) -> float:
+    ends: list[float] = []
+    for key in ("segments", "word_segments", "raw_words", "transcript", "diarization"):
+        for item in result.get(key) or []:
+            end = item.get("end")
+            if isinstance(end, int | float):
+                ends.append(float(end))
+    return max(ends, default=0.0)
+
+
+def _usage(duration: float) -> dict[str, Any]:
+    return {"type": "duration", "seconds": math.ceil(duration)}
+
+
+def _json_response(result: dict[str, Any]) -> dict[str, Any]:
+    duration = _duration_from_result(result)
+    return {"text": _text_from_result(result), "usage": _usage(duration)}
+
+
+def _verbose_json_response(result: dict[str, Any], *, language: str | None) -> dict[str, Any]:
+    duration = _duration_from_result(result)
+    return {
+        "duration": duration,
+        "language": language or "unknown",
+        "text": _text_from_result(result),
+        "segments": [
+            {
+                "id": index,
+                "start": segment.get("start", 0.0),
+                "end": segment.get("end", 0.0),
+                "text": segment.get("text", ""),
+                "tokens": [],
+                "temperature": 0.0,
+                "avg_logprob": 0.0,
+                "compression_ratio": 0.0,
+                "no_speech_prob": 0.0,
+            }
+            for index, segment in enumerate(result.get("segments") or [])
+        ],
+        "words": [
+            {
+                "word": word.get("word", ""),
+                "start": word.get("start", 0.0),
+                "end": word.get("end", 0.0),
+            }
+            for word in result.get("word_segments") or result.get("raw_words") or []
+        ],
+        "usage": _usage(duration),
+    }
+
+
+def _diarized_json_response(result: dict[str, Any]) -> dict[str, Any]:
+    duration = _duration_from_result(result)
+    return {
+        "task": "transcribe",
+        "duration": duration,
+        "text": _text_from_result(result),
+        "segments": [
+            {
+                "type": "transcript.text.segment",
+                "id": f"seg_{index + 1:03d}",
+                "start": segment.get("start", 0.0),
+                "end": segment.get("end", 0.0),
+                "text": segment.get("text", ""),
+                "speaker": segment.get("speaker", "unknown"),
+            }
+            for index, segment in enumerate(result.get("segments") or [])
+        ],
+        "usage": _usage(duration),
+    }
+
+
 
 
 # MARK: Transcription Endpoint
@@ -72,31 +137,39 @@ async def create_transcription(
     ),
     language: str | None = Form(default=None, description="Optional BCP-47 language hint."),
     prompt: str = Form(default="", description="Optional initial prompt for transcription."),
-    response_format: str | None = Form(default=None, description="Response format."),
+    response_format: ResponseFormat = Form(default=ResponseFormat.JSON, description="Response format."),
+    temperature: float | None = Form(default=None, description="Accepted but ignored."),
+    timestamp_granularities: list[str] | None = Form(
+        default=None,
+        alias="timestamp_granularities[]",
+        description="Accepted but ignored.",
+    ),
     stream: bool = Form(default=False, description="If true, return OpenAI-Exact SSE."),
+    include: list[str] | None = Form(
+        default=None,
+        alias="include[]",
+        description="Accepted but ignored.",
+    ),
+    chunking_strategy: str | None = Form(default=None, description="Accepted but ignored."),
+    known_speaker_names: list[str] | None = Form(
+        default=None,
+        alias="known_speaker_names[]",
+        description="Accepted but ignored.",
+    ),
+    known_speaker_references: list[UploadFile] | None = File(
+        default=None,
+        alias="known_speaker_references[]",
+        description="Accepted but ignored.",
+    ),
     pipeline=Depends(get_pipeline),
 ) -> Response:
-    """Accept audio and return a WhisperX-Style Response.
+    """Accept audio and return an OpenAI-shaped response.
 
-    Supported response formats: json, verbose_json, diarized_json (and empty).
-    All map to the same enriched WhisperX-Style Response.
+    Supported response formats: json, verbose_json/json_verbose,
+    diarized_json/dirized_json (and empty). Other OpenAI text output formats
+    are recognised but not implemented.
     """
     # Request Validation ----------------------------------------------------
-    if response_format:
-        try:
-            fmt = ResponseFormat(response_format.lower())
-        except ValueError:
-            raise TranscriptionValidationError(
-                f"Unknown response_format '{response_format}'.",
-                param="response_format",
-            ) from None
-        if fmt in _UNSUPPORTED_FORMATS:
-            raise TranscriptionValidationError(
-                f"response_format '{response_format}' is not supported. "
-                "Supported formats: json, verbose_json.",
-                param="response_format",
-            )
-
     audio = await AudioInput.from_upload(file)
     if not await audio.read_bytes():
         raise TranscriptionValidationError("Empty audio file.", param="file")
@@ -115,4 +188,18 @@ async def create_transcription(
         raise
     except Exception as exc:
         raise TranscriptionProcessingError("Transcription processing failed.") from exc
-    return JSONResponse(WhisperXResponse.model_validate(result).model_dump())
+    validated = WhisperXResponse.model_validate(result).model_dump()
+
+    match response_format:
+        case ResponseFormat.JSON:
+            return JSONResponse(_json_response(validated))
+        case ResponseFormat.JSON_VERBOSE:
+            return JSONResponse(_verbose_json_response(validated, language=language))
+        case ResponseFormat.DIARIZED_JSON:
+            return JSONResponse(_diarized_json_response(validated))
+
+        case _:
+            raise TranscriptionValidationError(
+                f"Unsupported response_format '{response_format}'.",
+                param="response_format",
+            )

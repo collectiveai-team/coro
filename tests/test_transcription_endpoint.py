@@ -22,13 +22,22 @@ from asr_diar_server.settings import ServerSettings
 # Helpers
 # ---------------------------------------------------------------------------
 
-WHISPERX_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
-
-_EMPTY_WHISPERX = {
-    "segments": [],
-    "word_segments": [],
-    "transcript": [],
-    "diarization": [],
+_PIPELINE_RESULT = {
+    "segments": [
+        {
+            "start": 0.0,
+            "end": 1.0,
+            "text": "hello world",
+            "speaker": "agent",
+            "words": [],
+        }
+    ],
+    "word_segments": [
+        {"word": "hello", "start": 0.0, "end": 0.4, "score": 1.0, "speaker": "agent"},
+        {"word": "world", "start": 0.5, "end": 1.0, "score": 1.0, "speaker": "agent"},
+    ],
+    "transcript": [{"start": 0.0, "end": 1.0, "text": "hello world"}],
+    "diarization": [{"start": 0.0, "end": 1.0, "speaker": "agent"}],
     "raw_words": [],
 }
 
@@ -49,7 +58,7 @@ class _FakePipeline:
     """Fake configured pipeline that returns a fixed WhisperX response."""
 
     async def transcribe(self, audio, *, language=None, prompt=None):
-        return dict(_EMPTY_WHISPERX)
+        return dict(_PIPELINE_RESULT)
 
 
 def _app_with_fake_pipeline():
@@ -69,22 +78,24 @@ def _app_with_fake_pipeline():
 
 
 @pytest.mark.asyncio
-async def test_transcription_endpoint_returns_whisperx_keys():
-    """POST /v1/audio/transcriptions returns all WhisperX-style response keys."""
+async def test_transcription_endpoint_returns_default_openai_json():
+    """POST /v1/audio/transcriptions returns default OpenAI JSON."""
     app = _app_with_fake_pipeline()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/audio/transcriptions",
             files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+            data={"model": "whisper-1"},
         )
     assert response.status_code == 200
     body = response.json()
-    assert WHISPERX_KEYS.issubset(body.keys())
+    assert body["text"] == "hello world"
+    assert body["usage"] == {"type": "duration", "seconds": 1}
 
 
 @pytest.mark.asyncio
 async def test_transcription_endpoint_accepts_openai_compatible_form_params():
-    """POST /v1/audio/transcriptions accepts model, language, prompt, stream fields."""
+    """POST /v1/audio/transcriptions accepts OpenAI-compatible form fields."""
     app = _app_with_fake_pipeline()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -94,6 +105,9 @@ async def test_transcription_endpoint_accepts_openai_compatible_form_params():
                 "model": "whisper-1",
                 "language": "es",
                 "prompt": "some hint",
+                "response_format": "verbose_json",
+                "temperature": "0",
+                "timestamp_granularities[]": ["word", "segment"],
                 "stream": "false",
             },
         )
@@ -108,9 +122,27 @@ async def test_transcription_endpoint_empty_upload_returns_openai_style_error():
         response = await client.post(
             "/v1/audio/transcriptions",
             files={"file": ("empty.wav", b"", "audio/wav")},
+            data={"model": "whisper-1"},
         )
     assert response.status_code == 400
     body = response.json()
     # OpenAI-style error: {"error": {"message": "...", "type": "...", ...}}
     assert "error" in body
     assert "message" in body["error"]
+
+
+@pytest.mark.asyncio
+async def test_transcription_endpoint_returns_diarized_json():
+    """diarized_json returns speaker-annotated OpenAI segments."""
+    app = _app_with_fake_pipeline()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+            data={"model": "gpt-4o-transcribe-diarize", "response_format": "diarized_json"},
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"] == "transcribe"
+    assert body["segments"][0]["type"] == "transcript.text.segment"
+    assert body["segments"][0]["speaker"] == "agent"

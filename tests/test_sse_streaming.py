@@ -88,7 +88,7 @@ async def test_streaming_content_type():
         response = await client.post(
             "/v1/audio/transcriptions",
             files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
-            data={"stream": "true"},
+            data={"model": "whisper-1", "stream": "true"},
         )
     assert "text/event-stream" in response.headers.get("content-type", "")
 
@@ -101,7 +101,7 @@ async def test_streaming_ends_with_done_sentinel():
         response = await client.post(
             "/v1/audio/transcriptions",
             files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
-            data={"stream": "true"},
+            data={"model": "whisper-1", "stream": "true"},
         )
     events = _parse_sse_events(response.text)
     assert events[-1] == "[DONE]"
@@ -115,7 +115,7 @@ async def test_streaming_contains_done_event():
         response = await client.post(
             "/v1/audio/transcriptions",
             files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
-            data={"stream": "true"},
+            data={"model": "whisper-1", "stream": "true"},
         )
     events = _parse_sse_events(response.text)
     done_events = [
@@ -132,7 +132,7 @@ async def test_streaming_has_no_progress_events():
         response = await client.post(
             "/v1/audio/transcriptions",
             files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
-            data={"stream": "true"},
+            data={"model": "whisper-1", "stream": "true"},
         )
     events = _parse_sse_events(response.text)
     progress_events = [
