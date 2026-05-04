@@ -6,6 +6,7 @@ how the runtime was assembled.
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 
 from asr_diar_server.app import create_app
 from asr_diar_server.runtime import RuntimeState
@@ -65,9 +66,7 @@ def test_server_settings_warmup_accepts_disabled():
 
 def test_server_settings_warmup_invalid_raises():
     """Strict Startup Validation rejects unknown warmup values."""
-    import pytest as _pt
-
-    with _pt.raises(Exception):
+    with pytest.raises(ValidationError):
         ServerSettings(warmup="invalid")
 
 
@@ -88,7 +87,7 @@ async def test_health_reports_startup_selection_and_capability_readiness():
     runtime = RuntimeState(
         asr_adapter=object(),
         pipeline_selector="chunked-file",
-        asr_provider="whisperlivekit",
+        asr_provider="faster-whisper",
         asr_model="openai/whisper-medium",
         diarization_provider="none",
         diarization_model=None,
@@ -100,7 +99,7 @@ async def test_health_reports_startup_selection_and_capability_readiness():
     body = response.json()
     assert body["startup_selection"] == {
         "pipeline": "chunked-file",
-        "asr_provider": "whisperlivekit",
+        "asr_provider": "faster-whisper",
         "asr_model": "openai/whisper-medium",
         "diarization_provider": "none",
         "diarization_model": None,

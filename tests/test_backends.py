@@ -1,6 +1,6 @@
-"""Cycle 11: backend adapter conversion using fake whisperlivekit-like native objects.
+"""Cycle 11: backend adapter conversion using fake backend-native objects.
 
-Tests verify that the whisperlivekit backend adapters:
+Tests verify that the backend adapters:
 - Convert native word/segment objects into Project-Owned TranscriptToken types.
 - Convert native diarization segment objects into SpeakerSegment types.
 - Filter no-speech segments (no_speech_prob > 0.9).
@@ -16,10 +16,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from asr_diar_server.backends.whisperlivekit import (
-    convert_asr_segments,
-    convert_diarization_segments,
-)
+from asr_diar_server.backends.faster_whisper import convert_asr_segments
+from asr_diar_server.backends.nemo import convert_diarization_segments
 from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
 
 

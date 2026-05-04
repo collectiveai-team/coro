@@ -1,7 +1,7 @@
 """Core response builder.
 
 Accepts Project-Owned Transcript Model types and produces the enriched
-transcription response dict.  No FastAPI or whisperlivekit types are used.
+transcription response dict.  No FastAPI or backend-native types are used.
 
 Key behaviours:
 - Groups tokens into punctuation-boundary segments.

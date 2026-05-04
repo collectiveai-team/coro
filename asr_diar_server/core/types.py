@@ -1,7 +1,7 @@
 """Project-Owned Transcript Model types.
 
 These lightweight dataclasses are used at package boundaries so that
-backend-native types (e.g. whisperlivekit ASRToken) do not leak through.
+backend-native types do not leak through.
 Backend adapters convert native objects into these types at adapter edges.
 """
 
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 class TranscriptToken:
     """A single transcript word/token with timing and confidence.
 
-    Corresponds to a whisperlivekit ASRToken but is owned by this package.
+    Corresponds to a backend-native word/token but is owned by this package.
     """
 
     start: float
