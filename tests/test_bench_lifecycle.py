@@ -16,7 +16,7 @@ class TestCliMutualExclusivity:
             parse_args([
                 "quality",
                 "--server-url", "http://localhost:8000",
-                "--server-asr-backend", "whisperlivekit",
+                "--server-asr-backend", "faster-whisper",
             ])
 
     def test_server_url_with_server_asr_model_rejected(self):
@@ -32,7 +32,7 @@ class TestCliMutualExclusivity:
             parse_args([
                 "quality",
                 "--server-url", "http://localhost:8000",
-                "--server-diar-backend", "whisperlivekit",
+                "--server-diar-backend", "nemo",
             ])
 
     def test_server_url_with_server_diar_model_rejected(self):
@@ -64,14 +64,14 @@ class TestCliMutualExclusivity:
         assert args.server_url == "http://localhost:8000"
 
     def test_server_asr_backend_alone_accepted(self):
-        args = parse_args(["quality", "--server-asr-backend", "whisperlivekit"])
-        assert args.server_asr_backend == "whisperlivekit"
+        args = parse_args(["quality", "--server-asr-backend", "faster-whisper"])
+        assert args.server_asr_backend == "faster-whisper"
 
 
 class TestCliServerFlags:
     def test_server_asr_backend_default(self):
         args = parse_args(["quality"])
-        assert args.server_asr_backend == "whisperlivekit"
+        assert args.server_asr_backend == "faster-whisper"
 
     def test_server_asr_model_default(self):
         args = parse_args(["quality"])
@@ -79,11 +79,11 @@ class TestCliServerFlags:
 
     def test_server_diar_backend_default(self):
         args = parse_args(["quality"])
-        assert args.server_diar_backend == "whisperlivekit"
+        assert args.server_diar_backend == "nemo"
 
     def test_server_diar_model_default(self):
         args = parse_args(["quality"])
-        assert args.server_diar_model == "nvidia/diar_sortformer_4spk-v1"
+        assert args.server_diar_model == "nvidia/diar_streaming_sortformer_4spk-v2"
 
     def test_server_pipeline_default(self):
         args = parse_args(["quality"])
@@ -152,7 +152,7 @@ class TestBenchManagedServer:
         from asr_diar_server.bench.server_lifecycle import BenchManagedServer
 
         managed = BenchManagedServer(
-            asr_backend="whisperlivekit",
+            asr_backend="faster-whisper",
             asr_model="openai/whisper-medium",
             diar_backend="none",
             diar_model=None,
@@ -176,7 +176,7 @@ class TestBenchManagedServer:
         from asr_diar_server.bench.server_lifecycle import BenchManagedServer
 
         managed = BenchManagedServer(
-            asr_backend="whisperlivekit",
+            asr_backend="faster-whisper",
             asr_model="openai/whisper-medium",
             diar_backend="none",
             diar_model=None,
@@ -200,17 +200,17 @@ class TestBenchManagedServer:
         from asr_diar_server.bench.server_lifecycle import BenchManagedServer
 
         managed = BenchManagedServer(
-            asr_backend="whisperlivekit",
+            asr_backend="faster-whisper",
             asr_model="openai/whisper-medium",
-            diar_backend="whisperlivekit",
+            diar_backend="nemo",
             diar_model="nvidia/some-model",
             pipeline="chunked-file",
             port=19999,
         )
         env = managed._build_env()
-        assert env["ASR_DIAR_BACKEND_ASR"] == "whisperlivekit"
+        assert env["ASR_DIAR_BACKEND_ASR"] == "faster-whisper"
         assert env["ASR_DIAR_MODEL_ASR"] == "openai/whisper-medium"
-        assert env["ASR_DIAR_BACKEND_DIARIZATION"] == "whisperlivekit"
+        assert env["ASR_DIAR_BACKEND_DIARIZATION"] == "nemo"
         assert env["ASR_DIAR_MODEL_DIARIZATION"] == "nvidia/some-model"
         assert env["ASR_DIAR_PIPELINE"] == "chunked-file"
         assert env["ASR_DIAR_PORT"] == "19999"

@@ -66,19 +66,19 @@ async def test_health_not_ready_when_no_asr_adapter(app):
 
 @pytest.mark.asyncio
 async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
-    """ASR_DIAR_WARMUP=disabled skips Server Warmup, logs a warning, and reports warmup_ready=True."""
+    """ASR_DIAR_WARMUP=disabled skips Server Warmup and reports ready."""
     from unittest.mock import patch
 
     from starlette.testclient import TestClient
 
-    with patch("asr_diar_server.backends.whisperlivekit.build_asr_adapter") as mock_build:
+    with patch("asr_diar_server.backends.faster_whisper.build_asr_adapter") as mock_build:
         mock_build.return_value = object()
         settings = ServerSettings(warmup="disabled")
         application = create_app(settings)
 
-        with caplog.at_level(logging.WARNING, logger="asr_diar_server.app"):
-            with TestClient(application) as client:
-                response = client.get("/health")
+        with caplog.at_level(logging.WARNING, logger="asr_diar_server.app"), \
+             TestClient(application) as client:
+            response = client.get("/health")
 
     body = response.json()
     assert body["warmup_ready"] is True
@@ -92,7 +92,7 @@ def test_warmup_failure_fails_server_startup():
 
     from starlette.testclient import TestClient
 
-    with patch("asr_diar_server.backends.whisperlivekit.build_asr_adapter") as mock_build:
+    with patch("asr_diar_server.backends.faster_whisper.build_asr_adapter") as mock_build:
         mock_build.return_value = object()
         settings = ServerSettings(warmup="enabled")
         application = create_app(settings)
@@ -101,7 +101,5 @@ def test_warmup_failure_fails_server_startup():
             "asr_diar_server.pipelines.full_memory.FullMemoryPipeline.transcribe",
             new_callable=AsyncMock,
             side_effect=RuntimeError("warmup failed"),
-        ):
-            with pytest.raises(RuntimeError, match="warmup failed"):
-                with TestClient(application):
-                    pass
+        ), pytest.raises(RuntimeError, match="warmup failed"), TestClient(application):
+            pass

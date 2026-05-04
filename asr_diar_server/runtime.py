@@ -25,7 +25,7 @@ class RuntimeState:
 
     pipeline: Any | None = None
     pipeline_selector: str = "full-memory"
-    asr_provider: str = "whisperlivekit"
+    asr_provider: str = "faster-whisper"
     asr_model: str = "openai/whisper-medium"
     diarization_provider: str = "none"
     diarization_model: str | None = None
