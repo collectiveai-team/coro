@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from asr_diar_server.api.schemas import OpenAIErrorResponse, WhisperXResponse
+from asr_diar_server.api.schemas import OpenAIErrorResponse, TranscriptionResponse
 
 
 def test_whisperx_response_rejects_backend_native_extras():
     with pytest.raises(ValidationError):
-        WhisperXResponse.model_validate(
+        TranscriptionResponse.model_validate(
             {
                 "segments": [],
                 "word_segments": [],
@@ -23,7 +23,7 @@ def test_whisperx_response_rejects_backend_native_extras():
 
 
 def test_whisperx_response_serializes_public_keys_only():
-    response = WhisperXResponse.model_validate(
+    response = TranscriptionResponse.model_validate(
         {
             "segments": [],
             "word_segments": [],
@@ -44,7 +44,7 @@ def test_whisperx_response_serializes_public_keys_only():
 
 def test_whisperx_response_rejects_extra_fields_inside_items():
     with pytest.raises(ValidationError):
-        WhisperXResponse.model_validate(
+        TranscriptionResponse.model_validate(
             {
                 "segments": [
                     {

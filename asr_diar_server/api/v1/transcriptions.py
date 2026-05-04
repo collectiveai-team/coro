@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from enum import StrEnum
-from typing import Any
+from typing import Literal, overload
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import Response
@@ -24,11 +24,11 @@ from asr_diar_server.api.schemas import (
     DiarizadJsonResponse,
     DiarizadJsonSegment,
     JsonResponse,
+    TranscriptionResponse,
     TranscriptionUsage,
     VerboseJsonResponse,
     VerboseJsonSegment,
     VerboseJsonWord,
-    WhisperXResponse,
 )
 from asr_diar_server.api.sse import streaming_response
 from asr_diar_server.audio import AudioInput
@@ -53,37 +53,39 @@ class ResponseFormat(StrEnum):
     # TSV = "tsv"
 
 
+def _text_from_result(result: TranscriptionResponse) -> str:
+    if result.transcript:
+        return " ".join(item.text.strip() for item in result.transcript).strip()
+    return " ".join(segment.text.strip() for segment in result.segments).strip()
 
 
-
-def _text_from_result(result: dict[str, Any]) -> str:
-    transcript = result.get("transcript") or []
-    if transcript:
-        return " ".join(str(item.get("text", "")).strip() for item in transcript).strip()
-    segments = result.get("segments") or []
-    return " ".join(str(item.get("text", "")).strip() for item in segments).strip()
-
-
-def _duration_from_result(result: dict[str, Any]) -> float:
-    ends: list[float] = []
-    for key in ("segments", "word_segments", "raw_words", "transcript", "diarization"):
-        for item in result.get(key) or []:
-            end = item.get("end")
-            if isinstance(end, int | float):
-                ends.append(float(end))
-    return max(ends, default=0.0)
+def _duration_from_result(result: TranscriptionResponse) -> float:
+    return max(
+        [
+            item.end
+            for items in (
+                result.segments,
+                result.word_segments,
+                result.raw_words,
+                result.transcript,
+                result.diarization,
+            )
+            for item in items
+        ],
+        default=0.0,
+    )
 
 
 def _usage(duration: float) -> TranscriptionUsage:
     return TranscriptionUsage(type="duration", seconds=math.ceil(duration))
 
 
-def _json_response(result: dict[str, Any]) -> JsonResponse:
+def _json_response(result: TranscriptionResponse) -> JsonResponse:
     duration = _duration_from_result(result)
     return JsonResponse(text=_text_from_result(result), usage=_usage(duration))
 
 
-def _verbose_json_response(result: dict[str, Any], *, language: str | None) -> VerboseJsonResponse:
+def _verbose_json_response(result: TranscriptionResponse, *, language: str | None) -> VerboseJsonResponse:
     duration = _duration_from_result(result)
     return VerboseJsonResponse(
         duration=duration,
@@ -92,30 +94,30 @@ def _verbose_json_response(result: dict[str, Any], *, language: str | None) -> V
         segments=[
             VerboseJsonSegment(
                 id=index,
-                start=segment.get("start", 0.0),
-                end=segment.get("end", 0.0),
-                text=segment.get("text", ""),
+                start=segment.start,
+                end=segment.end,
+                text=segment.text,
                 tokens=[],
                 temperature=0.0,
                 avg_logprob=0.0,
                 compression_ratio=0.0,
                 no_speech_prob=0.0,
             )
-            for index, segment in enumerate(result.get("segments") or [])
+            for index, segment in enumerate(result.segments)
         ],
         words=[
             VerboseJsonWord(
-                word=word.get("word", ""),
-                start=word.get("start", 0.0),
-                end=word.get("end", 0.0),
+                word=word.word,
+                start=word.start,
+                end=word.end,
             )
-            for word in result.get("word_segments") or result.get("raw_words") or []
+            for word in result.word_segments or result.raw_words
         ],
         usage=_usage(duration),
     )
 
 
-def _diarized_json_response(result: dict[str, Any]) -> DiarizadJsonResponse:
+def _diarized_json_response(result: TranscriptionResponse) -> DiarizadJsonResponse:
     duration = _duration_from_result(result)
     return DiarizadJsonResponse(
         task="transcribe",
@@ -125,14 +127,61 @@ def _diarized_json_response(result: dict[str, Any]) -> DiarizadJsonResponse:
             DiarizadJsonSegment(
                 type="transcript.text.segment",
                 id=f"seg_{index + 1:03d}",
-                start=segment.get("start", 0.0),
-                end=segment.get("end", 0.0),
-                text=segment.get("text", ""),
-                speaker=segment.get("speaker", "unknown"),
+                start=segment.start,
+                end=segment.end,
+                text=segment.text,
+                speaker=segment.speaker,
             )
-            for index, segment in enumerate(result.get("segments") or [])
+            for index, segment in enumerate(result.segments)
         ],
         usage=_usage(duration),
+    )
+
+
+@overload
+def _response_for_format(
+    response_format: Literal[ResponseFormat.JSON],
+    result: TranscriptionResponse,
+    *,
+    language: str | None,
+) -> JsonResponse: ...
+
+
+@overload
+def _response_for_format(
+    response_format: Literal[ResponseFormat.VERBOSE_JSON],
+    result: TranscriptionResponse,
+    *,
+    language: str | None,
+) -> VerboseJsonResponse: ...
+
+
+@overload
+def _response_for_format(
+    response_format: Literal[ResponseFormat.DIARIZED_JSON],
+    result: TranscriptionResponse,
+    *,
+    language: str | None,
+) -> DiarizadJsonResponse: ...
+
+
+def _response_for_format(
+    response_format: ResponseFormat,
+    result: TranscriptionResponse,
+    *,
+    language: str | None,
+) -> JsonResponse | VerboseJsonResponse | DiarizadJsonResponse:
+    match response_format:
+        case ResponseFormat.JSON:
+            return _json_response(result)
+        case ResponseFormat.VERBOSE_JSON:
+            return _verbose_json_response(result, language=language)
+        case ResponseFormat.DIARIZED_JSON:
+            return _diarized_json_response(result)
+
+    raise TranscriptionValidationError(
+        f"Unsupported response_format '{response_format}'.",
+        param="response_format",
     )
 
 
@@ -196,18 +245,6 @@ async def create_transcription(
         raise
     except Exception as exc:
         raise TranscriptionProcessingError("Transcription processing failed.") from exc
-    validated = WhisperXResponse.model_validate(result).model_dump()
+    validated = TranscriptionResponse.model_validate(result)
 
-    match response_format:
-        case ResponseFormat.JSON:
-            return _json_response(validated)
-        case ResponseFormat.VERBOSE_JSON:
-            return _verbose_json_response(validated, language=language)
-        case ResponseFormat.DIARIZED_JSON:
-            return _diarized_json_response(validated)
-
-        case _:
-            raise TranscriptionValidationError(
-                f"Unsupported response_format '{response_format}'.",
-                param="response_format",
-            )
+    return _response_for_format(response_format, validated, language=language)

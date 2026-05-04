@@ -63,8 +63,8 @@ class WhisperXRawWord(BaseModel):
 
 
 # Response Model ------------------------------------------------------------
-class WhisperXResponse(BaseModel):
-    """Strict WhisperX Response Schema exposed by the transcription endpoint."""
+class TranscriptionResponse(BaseModel):
+    """Strict internal transcription response schema exposed by the pipeline."""
 
     model_config = ConfigDict(extra="forbid")
 
