@@ -55,7 +55,7 @@ def _minimal_wav_bytes() -> bytes:
 
 
 class _FakePipeline:
-    """Fake configured pipeline that returns a fixed WhisperX response."""
+    """Fake configured pipeline that returns a fixed transcription response."""
 
     async def transcribe(self, audio, *, language=None, prompt=None):
         return dict(_PIPELINE_RESULT)

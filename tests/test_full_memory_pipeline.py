@@ -4,7 +4,7 @@ Tests verify that the FullMemoryPipeline:
 - Calls the ASR adapter with PCM bytes converted from the audio input.
 - Calls the optional diarization adapter.
 - Passes resulting tokens and timeline to the core response builder.
-- Returns a valid WhisperX-style response dict.
+- Returns a valid transcription response dict.
 - Propagates prompt to ASR adapter.
 - Handles empty token output without crashing.
 
@@ -23,7 +23,7 @@ from asr_diar_server.audio import AudioInput
 from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
 from asr_diar_server.pipelines.full_memory import FullMemoryPipeline
 
-WHISPERX_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
+RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
 
 _FAKE_PCM = struct.pack("<1600h", *([0] * 1600))
 
@@ -59,11 +59,11 @@ class _FakeDiarizationAdapter:
 
 
 @pytest.mark.asyncio
-async def test_full_memory_pipeline_returns_whisperx_shape():
+async def test_full_memory_pipeline_returns_response_shape():
     pipeline = FullMemoryPipeline(asr=_FakeASRAdapter(), diarization=None)
     with _mock_convert(_FAKE_PCM):
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    assert WHISPERX_KEYS.issubset(result.keys())
+    assert RESPONSE_KEYS.issubset(result.keys())
 
 
 @pytest.mark.asyncio

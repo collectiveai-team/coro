@@ -26,10 +26,10 @@ _Avoid_: Implicit ground truth
 
 **Reference RTTM**:
 The canonical diarization quality reference format for DER scoring.
-_Avoid_: Implicit WhisperX ground truth
+_Avoid_: Implicit ground truth
 
 **Hypothesis Diarization**:
-The diarization timeline parsed from the server's WhisperX JSON or SSE response for DER scoring.
+The diarization timeline parsed from the server's transcription JSON or SSE response for DER scoring.
 _Avoid_: Hypothesis RTTM requirement
 
 **DER Policy**:
@@ -172,8 +172,8 @@ _Avoid_: Internal result dict, cleanup opportunity
 A Pydantic model used to serialize successful transcription responses and OpenAI-style error responses at the API boundary.
 _Avoid_: Internal pipeline model, request form model
 
-**Strict WhisperX Response Schema**:
-The boundary response schema containing only the public WhisperX-style transcription fields.
+**Strict Transcription Response Schema**:
+The boundary response schema containing only the public transcription fields.
 _Avoid_: Backend-native extras, permissive response object
 
 **OpenAI-Compatible Request**:
@@ -181,7 +181,7 @@ A transcription form request that accepts OpenAI-style parameters for client com
 _Avoid_: Full OpenAI API clone
 
 **JSON Response Format Alias**:
-A supported `response_format` value that maps to the same strict WhisperX-style JSON response.
+A supported `response_format` value that maps to the same strict transcription JSON response.
 _Avoid_: Separate output contract, OpenAI response-format clone
 
 **Compatibility Model Field**:
@@ -196,7 +196,7 @@ _Avoid_: FastAPI default error
 An app-level handler that converts typed transcription exceptions into OpenAI-style error JSON responses.
 _Avoid_: Inline error response branches, FastAPI default handler
 
-**WhisperX-Style Response**:
+**Transcription Response**:
 The enriched transcription response containing transcript segments, word segments, diarization, transcript convenience data, and raw words.
 _Avoid_: Minimal OpenAI text response
 
@@ -304,8 +304,8 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Pipeline Module** owns orchestration for one or more **Transcription Pipeline** implementations.
 - A **Transcription API Contract** is preserved by the **Transcription Endpoint** unless a new public contract is intentionally introduced.
 - A **Boundary Response Schema** defines response and error JSON shapes without replacing multipart form parsing with a request body model.
-- A **Strict WhisperX Response Schema** prevents backend-native fields from leaking into public transcription responses.
-- An **OpenAI-Compatible Request** returns a **WhisperX-Style Response** in the current package contract.
+- A **Strict Transcription Response Schema** prevents backend-native fields from leaking into public transcription responses.
+- An **OpenAI-Compatible Request** returns a **Transcription Response** in the current package contract.
 - Supported **JSON Response Format Alias** values do not change the response schema.
 - A **Compatibility Model Field** never overrides **Server Startup Selection**.
 - Transcription endpoints return **OpenAI-Style Error** responses for request and processing failures.
@@ -355,7 +355,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "No — compute a **Quality Metric** only when an explicit **Quality Reference** is provided."
 
 > **Dev:** "Does the server need to return RTTM for DER?"
-> **Domain expert:** "No — the benchmark parses **Hypothesis Diarization** from the WhisperX response and compares it to a **Reference RTTM**."
+> **Domain expert:** "No — the benchmark parses **Hypothesis Diarization** from the transcription response and compares it to a **Reference RTTM**."
 
 > **Dev:** "Can we report DER without the collar and overlap settings?"
 > **Domain expert:** "No — DER must be reported with the **DER Policy** because those settings change the score."
@@ -442,16 +442,16 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "No — use **Boundary Response Schema** models for successful and error JSON responses, while the route keeps multipart form parsing."
 
 > **Dev:** "Can backend-specific fields pass through the response model as extras?"
-> **Domain expert:** "No — use a **Strict WhisperX Response Schema** so backend-native data is converted or dropped intentionally."
+> **Domain expert:** "No — use a **Strict Transcription Response Schema** so backend-native data is converted or dropped intentionally."
 
 > **Dev:** "Can v2 remove ignored form fields while adding Pydantic request models?"
 > **Domain expert:** "No — v1 and v2 preserve the same **Transcription API Contract** request fields for now."
 
 > **Dev:** "If a client sends OpenAI-style form fields, should the server emulate every OpenAI response format?"
-> **Domain expert:** "No — an **OpenAI-Compatible Request** is accepted for client compatibility, but the server returns the **WhisperX-Style Response** contract."
+> **Domain expert:** "No — an **OpenAI-Compatible Request** is accepted for client compatibility, but the server returns the **Transcription Response** contract."
 
 > **Dev:** "Should `verbose_json` and `diarized_json` produce different response schemas?"
-> **Domain expert:** "No — they are **JSON Response Format Alias** values for the same strict WhisperX-style response."
+> **Domain expert:** "No — they are **JSON Response Format Alias** values for the same strict transcription response."
 
 > **Dev:** "If a request sends `model=small`, should it override `ASR_DIAR_MODEL_ASR`?"
 > **Domain expert:** "No — `model` is a **Compatibility Model Field** and **Server Startup Selection** remains authoritative."
@@ -527,8 +527,8 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "health backend" was used to imply one backend status — resolved: `/health` reports **Server Startup Selection** and **Capability Readiness** separately.
 - "route code" was used to include transcription orchestration — resolved: orchestration belongs in a **Pipeline Module**.
 - "Pydantic models" was used to imply request parsing, response serialization, and response cleanup — resolved: use **Boundary Response Schema** models for successful and error JSON while preserving multipart form parsing and the existing **Transcription API Contract**.
-- "response schema" was used to imply extensibility for backend-native fields — resolved: use a **Strict WhisperX Response Schema**.
-- "OpenAI compatible" was used to imply full response-format emulation — resolved: the package accepts **OpenAI-Compatible Request** parameters and returns a **WhisperX-Style Response**.
+- "response schema" was used to imply extensibility for backend-native fields — resolved: use a **Strict Transcription Response Schema**.
+- "OpenAI compatible" was used to imply full response-format emulation — resolved: the package accepts **OpenAI-Compatible Request** parameters and returns a **Transcription Response**.
 - "response_format" was used to imply multiple output contracts — resolved: supported JSON-like values are **JSON Response Format Alias** values.
 - "model" in the request was used to imply runtime model switching — resolved: it is a **Compatibility Model Field** and does not override startup-selected models.
 - "HTTP error" was used to imply FastAPI defaults — resolved: transcription endpoints return **OpenAI-Style Error** responses.

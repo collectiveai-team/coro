@@ -5,9 +5,8 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 
 
-# MARK: Strict WhisperX Response Schema
 # Item Models ---------------------------------------------------------------
-class WhisperXWord(BaseModel):
+class WhisperWord(BaseModel):
     """Word-level timestamp item in a segment."""
 
     model_config = ConfigDict(extra="forbid")
@@ -19,8 +18,8 @@ class WhisperXWord(BaseModel):
     speaker: str
 
 
-class WhisperXSegment(BaseModel):
-    """Segment item in the Strict WhisperX Response Schema."""
+class WhisperSegment(BaseModel):
+    """Segment item in the Whisper Response Schema."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -28,10 +27,10 @@ class WhisperXSegment(BaseModel):
     end: float
     text: str
     speaker: str
-    words: list[WhisperXWord]
+    words: list[WhisperWord]
 
 
-class WhisperXTranscriptItem(BaseModel):
+class WhisperTranscriptItem(BaseModel):
     """Transcript convenience item."""
 
     model_config = ConfigDict(extra="forbid")
@@ -41,7 +40,7 @@ class WhisperXTranscriptItem(BaseModel):
     text: str
 
 
-class WhisperXDiarizationItem(BaseModel):
+class WhisperDiarizationItem(BaseModel):
     """Diarization convenience item."""
 
     model_config = ConfigDict(extra="forbid")
@@ -51,7 +50,7 @@ class WhisperXDiarizationItem(BaseModel):
     speaker: str
 
 
-class WhisperXRawWord(BaseModel):
+class RawWord(BaseModel):
     """Raw ASR word item before segment interpolation."""
 
     model_config = ConfigDict(extra="forbid")
@@ -68,11 +67,11 @@ class TranscriptionResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    segments: list[WhisperXSegment]
-    word_segments: list[WhisperXWord]
-    transcript: list[WhisperXTranscriptItem]
-    diarization: list[WhisperXDiarizationItem]
-    raw_words: list[WhisperXRawWord]
+    segments: list[WhisperSegment]
+    word_segments: list[WhisperWord]
+    transcript: list[WhisperTranscriptItem]
+    diarization: list[WhisperDiarizationItem]
+    raw_words: list[RawWord]
 
 
 # MARK: OpenAI-Style Transcription Response Schemas

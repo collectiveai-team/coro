@@ -1,7 +1,7 @@
-"""Core response builder — WhisperX-Style Response.
+"""Core response builder.
 
 Accepts Project-Owned Transcript Model types and produces the enriched
-WhisperX-Style Response dict.  No FastAPI or whisperlivekit types are used.
+transcription response dict.  No FastAPI or whisperlivekit types are used.
 
 Key behaviours:
 - Groups tokens into punctuation-boundary segments.
@@ -146,12 +146,12 @@ def _build_words_for_segment(seg: TranscriptSegment) -> list[TranscriptWord]:
 # ---------------------------------------------------------------------------
 
 
-def build_whisperx_response(
+def build_transcription_response(
     tokens: list[TranscriptToken],
     speaker_timeline: list[SpeakerSegment],
     duration: float,
 ) -> dict:
-    """Build a WhisperX-Style Response from project-owned types.
+    """Build a transcription response dict from project-owned types.
 
     Args:
         tokens: Ordered transcript tokens (Project-Owned Transcript Model).

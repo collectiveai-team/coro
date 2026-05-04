@@ -4,7 +4,7 @@ Tests verify that ChunkedFilePipeline:
 - Uses stream_pcm_from_file to read spooled audio.
 - Calls ASR adapter with PCM windows.
 - Calls diarization adapter when configured.
-- Returns a valid WhisperX-style response dict.
+- Returns a valid transcription response dict.
 - Propagates prompt across ASR chunks.
 - Handles empty token output without crashing.
 
@@ -22,7 +22,7 @@ from asr_diar_server.audio import AudioInput
 from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
 from asr_diar_server.pipelines.chunked_file import ChunkedFilePipeline
 
-WHISPERX_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
+RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
 
 _FAKE_PCM = struct.pack("<1600h", *([0] * 1600))
 
@@ -59,11 +59,11 @@ def _mock_stream():
 
 
 @pytest.mark.asyncio
-async def test_chunked_file_pipeline_returns_whisperx_shape():
+async def test_chunked_file_pipeline_returns_response_shape():
     pipeline = ChunkedFilePipeline(asr=_FakeASRAdapter(), diarization=None)
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    assert WHISPERX_KEYS.issubset(result.keys())
+    assert RESPONSE_KEYS.issubset(result.keys())
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, stream_pcm_from_file
-from asr_diar_server.core.response import build_whisperx_response
+from asr_diar_server.core.response import build_transcription_response
 from asr_diar_server.core.protocols import ASRAdapter, DiarizationAdapter
 from asr_diar_server.core.types import (
     SpeakerSegment,
@@ -58,7 +58,7 @@ class ChunkedFilePipeline:
             timeline: list[SpeakerSegment] = []
             if self._diarization is not None:
                 timeline = await self._diarization.diarize_pcm(pcm)
-            return build_whisperx_response(result.tokens, timeline, duration)
+            return build_transcription_response(result.tokens, timeline, duration)
         finally:
             await audio.cleanup()
 
@@ -88,7 +88,7 @@ class ChunkedFilePipeline:
             if self._diarization is not None:
                 timeline = await self._diarization.diarize_pcm(pcm)
             yield TranscriptDoneEvent(
-                text=json.dumps(build_whisperx_response(tokens, timeline, duration)),
+                text=json.dumps(build_transcription_response(tokens, timeline, duration)),
             )
         finally:
             await audio.cleanup()
