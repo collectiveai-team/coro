@@ -101,7 +101,9 @@ def test_parse_args_no_audio_positional():
 def test_main_quality_prints_not_implemented(capsys):
     from asr_diar_server.bench.cli import main
 
-    with patch.object(sys, "argv", ["asr-diar-bench", "quality"]):
+    with patch.object(sys, "argv", ["asr-diar-bench", "quality"]), \
+         patch("asr_diar_server.bench.cli.ensure_audio_and_annotations"), \
+         patch("asr_diar_server.bench.cli.materialize_reference_stms"):
         main()
     captured = capsys.readouterr()
     assert "quality not yet implemented" in captured.out
@@ -110,7 +112,9 @@ def test_main_quality_prints_not_implemented(capsys):
 def test_main_performance_prints_not_implemented(capsys):
     from asr_diar_server.bench.cli import main
 
-    with patch.object(sys, "argv", ["asr-diar-bench", "performance"]):
+    with patch.object(sys, "argv", ["asr-diar-bench", "performance"]), \
+         patch("asr_diar_server.bench.cli.ensure_audio_and_annotations"), \
+         patch("asr_diar_server.bench.cli.materialize_reference_stms"):
         main()
     captured = capsys.readouterr()
     assert "performance not yet implemented" in captured.out
@@ -119,7 +123,9 @@ def test_main_performance_prints_not_implemented(capsys):
 def test_main_all_prints_not_implemented(capsys):
     from asr_diar_server.bench.cli import main
 
-    with patch.object(sys, "argv", ["asr-diar-bench", "all"]):
+    with patch.object(sys, "argv", ["asr-diar-bench", "all"]), \
+         patch("asr_diar_server.bench.cli.ensure_audio_and_annotations"), \
+         patch("asr_diar_server.bench.cli.materialize_reference_stms"):
         main()
     captured = capsys.readouterr()
     assert "all not yet implemented" in captured.out

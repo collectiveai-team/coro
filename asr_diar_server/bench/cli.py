@@ -7,6 +7,12 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from asr_diar_server.bench.ami import (
+    ensure_audio_and_annotations,
+    materialize_reference_stms,
+    resolve_workload_set,
+)
+
 
 def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
@@ -32,6 +38,15 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         type=float,
         default=float(os.environ.get("SAMPLE_INTERVAL", "0.25")),
     )
+    parser.add_argument("--ami-meetings", nargs="+", default=[])
+    parser.add_argument(
+        "--ami-groups", nargs="+", default=[], choices=["IB", "IN", "ES", "IS", "TS", "EN"],
+    )
+    parser.add_argument(
+        "--ami-preset", choices=["sample", "eval", "full"], default=None,
+    )
+    parser.add_argument("--ami-root", type=Path, default=Path("./amicorpus/"))
+    parser.add_argument("--no-download", action="store_true")
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -50,6 +65,15 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    meetings = resolve_workload_set(
+        ami_meetings=args.ami_meetings,
+        ami_groups=args.ami_groups,
+        ami_preset=args.ami_preset,
+    )
+    ensure_audio_and_annotations(
+        meetings, args.ami_root, no_download=args.no_download,
+    )
+    materialize_reference_stms(meetings, args.ami_root)
     print(f"{args.subcommand} not yet implemented")
 
 
