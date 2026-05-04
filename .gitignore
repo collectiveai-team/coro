@@ -9,3 +9,6 @@ docs/superpowers
 .scratch
 
 resources
+
+# ralph
+.agent/*
