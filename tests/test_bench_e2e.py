@@ -40,7 +40,7 @@ CANNED_HEALTH = {
     "warmup_ready": True,
     "startup_selection": {
         "pipeline": "full-memory",
-        "asr_provider": "whisperlivekit",
+        "asr_provider": "faster-whisper",
         "asr_model": "openai/whisper-medium",
         "diarization_provider": "none",
         "diarization_model": None,

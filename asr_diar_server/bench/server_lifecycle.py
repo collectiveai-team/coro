@@ -65,9 +65,9 @@ class BenchManagedServer:
     def __init__(
         self,
         *,
-        asr_backend: str = "whisperlivekit",
+        asr_backend: str = "faster-whisper",
         asr_model: str = "openai/whisper-medium",
-        diar_backend: str = "whisperlivekit",
+        diar_backend: str = "nemo",
         diar_model: str | None = None,
         pipeline: str = "full-memory",
         port: int = 0,

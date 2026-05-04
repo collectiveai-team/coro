@@ -324,10 +324,10 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - The **Chunked-File Pipeline** is selected with the startup value `chunked-file`; the **Full-Memory Pipeline** is selected with `full-memory`.
 - **Server Startup Selection** uses the `ASR_DIAR_` environment prefix for pipeline, backend provider, and model selection settings.
 - **Server Startup Selection** uses **Strict Startup Validation** for selector values.
-- The default ASR **Backend Provider** is `whisperlivekit`.
+- The default ASR **Backend Provider** is `faster-whisper`.
 - The default diarization **Backend Provider** is `none`.
 - The default **ASR Model Selection** is `openai/whisper-medium`.
-- When whisperlivekit diarization is enabled without an explicit **Diarization Model Selection**, the default is `nvidia/diar_sortformer_4spk-v1`.
+- When NeMo diarization is enabled without an explicit **Diarization Model Selection**, the default is `nvidia/diar_streaming_sortformer_4spk-v2`.
 - A **Configured Transcription Pipeline** preserves the public **Transcription API Contract** while changing internal processing behavior.
 - `/health` reports **Server Startup Selection**, **Capability Readiness**, and **Warmup Readiness** rather than one ambiguous backend field.
 - The **Full-Memory Pipeline** and **Chunked-File Pipeline** both use shared **ASR Windowing**; they differ in how PCM is sourced.
@@ -456,13 +456,13 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "Use `openai/whisper-medium` as the default **ASR Model Selection**."
 
 > **Dev:** "What backend providers should be used with no environment variables?"
-> **Domain expert:** "Use `whisperlivekit` for ASR and `none` for diarization."
+> **Domain expert:** "Use `faster-whisper` for ASR and `none` for diarization."
 
 > **Dev:** "Should model selections use short names like `whisper-medium` or full names?"
 > **Domain expert:** "Use Hugging Face-style full names such as `openai/whisper-medium` and `nvidia/diar_sortformer_4spk-v1`."
 
-> **Dev:** "If whisperlivekit diarization is enabled without a model setting, what should load?"
-> **Domain expert:** "Use `nvidia/diar_sortformer_4spk-v1` as the default **Diarization Model Selection**."
+> **Dev:** "If NeMo diarization is enabled without a model setting, what should load?"
+> **Domain expert:** "Use `nvidia/diar_streaming_sortformer_4spk-v2` as the default **Diarization Model Selection**."
 
 > **Dev:** "Should `/health` still return one `backend` field?"
 > **Domain expert:** "No — it should expose **Server Startup Selection** and **Capability Readiness**, including optional diarization status."
@@ -503,25 +503,25 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Dev:** "Can a helper that accepts `UploadFile` and raises `HTTPException` live in core because both APIs use it?"
 > **Domain expert:** "No — the **Core Boundary** contains only API-agnostic datamodels, interfaces, and pure transformations."
 
-> **Dev:** "Can pipelines pass whisperlivekit `ASRToken` objects around because that is what the prototype uses?"
+> **Dev:** "Can pipelines pass backend-native token objects around because that is what the prototype uses?"
 > **Domain expert:** "No — package boundaries use **Project-Owned Transcript Model** types, and adapters translate backend-native objects."
 
 > **Dev:** "Should ffmpeg conversion live in core because both API versions use it?"
 > **Domain expert:** "No — audio decoding and PCM IO belong in the **Audio Module**, while core stays pure."
 
-> **Dev:** "Should `models/asr` own diarization because whisperlivekit exposes it from the same engine today?"
+> **Dev:** "Should `models/asr` own diarization because one provider exposes ASR and diarization from the same engine today?"
 > **Domain expert:** "No — an **ASR Adapter** produces transcript tokens and a **Diarization Adapter** produces speaker timelines, even if one library currently supplies both."
 
 > **Dev:** "Can `models` refer to both Pydantic models and ASR model integrations?"
 > **Domain expert:** "No — `backends/` contains **ML Model Integration** modules, while core data shapes live in schemas or types."
 
-> **Dev:** "If whisperlivekit can expose Faster Whisper and Sortformer, is `whisperlivekit` the model or the backend?"
-> **Domain expert:** "It is the **Backend Provider**; Faster Whisper is an **ASR Model Selection** and Sortformer is a **Diarization Model Selection**."
+> **Dev:** "If Faster Whisper provides ASR and NeMo provides Sortformer, are those models or backends?"
+> **Domain expert:** "They are **Backend Provider** values; `openai/whisper-medium` is an **ASR Model Selection** and `nvidia/diar_streaming_sortformer_4spk-v2` is a **Diarization Model Selection**."
 
 > **Dev:** "Should backend modules be split first by ASR versus diarization?"
 > **Domain expert:** "No — use a **Provider-First Backend Layout** so one provider can expose both adapter capabilities."
 
-> **Dev:** "Should pipelines call whisperlivekit directly because it owns the selected models?"
+> **Dev:** "Should pipelines call Faster Whisper or NeMo directly because they own the selected models?"
 > **Domain expert:** "No — a **Backend Adapter Factory** creates **ASR Adapter** and **Diarization Adapter** instances, and pipelines call only those protocols."
 
 > **Dev:** "Should the pipeline lock every ASR call because Faster Whisper may mutate state?"
@@ -557,10 +557,10 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "full-memory" was used to imply whole-file ASR — resolved: both pipeline implementations use **ASR Windowing**.
 - "environment variable" was used without namespacing — resolved: **Server Startup Selection** uses `ASR_DIAR_PIPELINE`, `ASR_DIAR_BACKEND_ASR`, `ASR_DIAR_MODEL_ASR`, `ASR_DIAR_BACKEND_DIARIZATION`, and `ASR_DIAR_MODEL_DIARIZATION`.
 - "default pipeline" was used to imply fallback behavior — resolved: defaults apply only when unset; invalid values fail **Strict Startup Validation**.
-- "backend provider default" was unspecified — resolved: ASR defaults to `whisperlivekit` and diarization defaults to `none`.
+- "backend provider default" was unspecified — resolved: ASR defaults to `faster-whisper` and diarization defaults to `none`.
 - "ASR model default" was unspecified — resolved: the default **ASR Model Selection** is `openai/whisper-medium`.
 - "model name" was used to imply short aliases — resolved: **ASR Model Selection** and **Diarization Model Selection** use Hugging Face-style full model identifiers.
-- "diarization model default" was unspecified — resolved: enabled whisperlivekit diarization defaults to `nvidia/diar_sortformer_4spk-v1`.
+- "diarization model default" was unspecified — resolved: enabled NeMo diarization defaults to `nvidia/diar_streaming_sortformer_4spk-v2`.
 - "health backend" was used to imply one backend status — resolved: `/health` reports **Server Startup Selection** and **Capability Readiness** separately.
 - "route code" was used to include transcription orchestration — resolved: orchestration belongs in a **Pipeline Module**.
 - "Pydantic models" was used to imply request parsing, response serialization, and response cleanup — resolved: use **Boundary Response Schema** models for successful and error JSON while preserving multipart form parsing and the existing **Transcription API Contract**.
@@ -572,7 +572,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "JSONResponse errors" was used to imply inline route branches — resolved: typed failures are converted by a **Transcription Exception Handler**.
 - "OpenAI streaming" was used while considering custom progress events — resolved: public streaming uses **OpenAI-Exact SSE** with no package-specific progress events.
 - "core" was used as a general shared-code bucket — resolved: the **Core Boundary** excludes FastAPI-specific helpers and HTTP concerns.
-- "token" and "segment" were used to imply whisperlivekit classes — resolved: package boundaries use **Project-Owned Transcript Model** types.
+- "token" and "segment" were used to imply backend-native classes — resolved: package boundaries use **Project-Owned Transcript Model** types.
 - "API utils" was used to imply audio conversion helpers — resolved: ffmpeg and PCM IO belong in the **Audio Module**.
 - "ASR model integration" was used to include diarization by implication — resolved: **ASR Adapter** and **Diarization Adapter** are separate capabilities.
 - "model" was used to mean both Pydantic data shapes and ML backends — resolved: **ML Model Integration** lives under `backends/`, while core uses schemas and types.

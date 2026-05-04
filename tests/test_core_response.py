@@ -1,6 +1,6 @@
 """Cycle 7: core response builder produces non-overlapping transcription response.
 
-All inputs are Project-Owned Transcript Model types — no whisperlivekit
+All inputs are Project-Owned Transcript Model types — no backend-native types
 objects leak into this test.
 """
 

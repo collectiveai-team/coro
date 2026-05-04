@@ -80,10 +80,10 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
 
 def _apply_defaults(args: argparse.Namespace) -> None:
     defaults = {
-        "server_asr_backend": "whisperlivekit",
+        "server_asr_backend": "faster-whisper",
         "server_asr_model": "openai/whisper-medium",
-        "server_diar_backend": "whisperlivekit",
-        "server_diar_model": "nvidia/diar_sortformer_4spk-v1",
+        "server_diar_backend": "nemo",
+        "server_diar_model": "nvidia/diar_streaming_sortformer_4spk-v2",
         "server_pipeline": "full-memory",
         "server_port": 0,
         "no_diarization": False,

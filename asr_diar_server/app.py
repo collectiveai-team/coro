@@ -51,10 +51,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
-        from asr_diar_server.backends.whisperlivekit import (
-            build_asr_adapter,
-            build_diarization_adapter,
-        )
+        from asr_diar_server.backends.faster_whisper import build_asr_adapter
+        from asr_diar_server.backends.nemo import build_diarization_adapter
         from asr_diar_server.pipelines.chunked_file import ChunkedFilePipeline
         from asr_diar_server.pipelines.full_memory import FullMemoryPipeline
 
@@ -67,12 +65,12 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
         # Build optional diarization adapter
         diarization_adapter = None
-        if settings.backend_diarization == "whisperlivekit" and settings.model_diarization:
+        if settings.backend_diarization == "nemo" and settings.model_diarization:
             diarization_adapter = build_diarization_adapter(settings.model_diarization)
             runtime.diarization_adapter = diarization_adapter
 
         # Construct the pipeline
-        pipeline_kwargs = dict(asr=asr_adapter, diarization=diarization_adapter)
+        pipeline_kwargs = {"asr": asr_adapter, "diarization": diarization_adapter}
         if settings.pipeline == "chunked-file":
             runtime.pipeline = ChunkedFilePipeline(**pipeline_kwargs)
         else:
@@ -92,7 +90,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
         yield
 
-        # Cleanup: nothing to tear down for whisperlivekit models currently
+        # Cleanup: adapters do not currently expose explicit teardown hooks.
 
     application = FastAPI(title="ASR Diarization Server", lifespan=lifespan)
     application.add_exception_handler(TranscriptionError, transcription_exception_handler)
