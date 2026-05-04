@@ -145,12 +145,28 @@ A transcription pipeline implementation that decodes the entire uploaded audio i
 _Avoid_: v1 pipeline, memory pipeline
 
 **Chunked-File Pipeline**:
-A transcription pipeline implementation that spools uploaded audio to a file and processes PCM in sequential chunks.
+A legacy transcription pipeline implementation that spools uploaded audio to a file but still materializes decoded PCM before downstream processing.
 _Avoid_: v2 pipeline, disk pipeline
+
+**Streaming Pipeline**:
+A transcription pipeline implementation that streams uploaded audio through decoding, ASR windowing, and diarization without materializing the full upload or decoded PCM.
+_Avoid_: Chunked-File Pipeline, disk-backed pipeline, v2 pipeline
+
+**Streaming Diarization Feed**:
+A diarization flow where sequential PCM chunks are inserted into the online diarization model during decoding, while speaker assignment remains part of final response construction.
+_Avoid_: Live speaker deltas, post-hoc full-PCM diarization
+
+**No-Disk Audio Flow**:
+A streaming audio flow where request audio is piped directly into ffmpeg rather than written to request-scoped temporary files.
+_Avoid_: Temp-file fallback, disk staging, upload spooling
 
 **ASR Windowing**:
 The shared process of transcribing PCM in overlapping windows and emitting accepted transcript deltas per window.
 _Avoid_: Pipeline versioning, full-audio ASR call
+
+**Incremental ASR Windowing**:
+ASR windowing fed by sequential PCM chunks while preserving the configured window and overlap semantics of full-buffer ASR windowing.
+_Avoid_: Streaming ASR tuning, changed ASR windows
 
 **Configured Transcription Pipeline**:
 The transcription pipeline implementation selected at server startup for the public transcription endpoint.
@@ -167,6 +183,10 @@ _Avoid_: Per-request model load, route-owned runtime
 **Server Startup Selection**:
 The environment-backed configuration that chooses pipeline behavior, backend providers, and model selections before serving requests.
 _Avoid_: Per-request model selection, route version selection
+
+**Pipeline Selector Removal**:
+The intentional removal of an obsolete configured transcription pipeline value rather than preserving it as a compatibility alias.
+_Avoid_: Silent selector alias, deprecated pipeline fallback
 
 **Settings Dependency**:
 A FastAPI dependency that provides validated server settings to API code.
@@ -195,6 +215,10 @@ _Avoid_: API router, core model, ASR adapter
 **Transcription API Contract**:
 The versioned form-request and JSON/SSE-response shape used by transcription endpoints.
 _Avoid_: Internal result dict, cleanup opportunity
+
+**Pipeline-Internal Streaming**:
+Streaming behavior contained behind the configured transcription pipeline while preserving the public transcription API contract.
+_Avoid_: New transcription endpoint, behavior-specific API route
 
 **Boundary Response Schema**:
 A Pydantic model used to serialize successful transcription responses and OpenAI-style error responses at the API boundary.
