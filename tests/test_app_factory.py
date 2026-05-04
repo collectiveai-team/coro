@@ -67,16 +67,41 @@ async def test_health_not_ready_when_no_asr_adapter(app):
 @pytest.mark.asyncio
 async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
     """ASR_DIAR_WARMUP=disabled skips Server Warmup, logs a warning, and reports warmup_ready=True."""
-    settings = ServerSettings(warmup="disabled")
-    application = create_app(settings)
+    from unittest.mock import patch
 
-    with caplog.at_level(logging.WARNING, logger="asr_diar_server.app"):
-        async with AsyncClient(
-            transport=ASGITransport(app=application), base_url="http://test"
-        ) as client:
-            response = await client.get("/health")
+    from starlette.testclient import TestClient
+
+    with patch("asr_diar_server.backends.whisperlivekit.build_asr_adapter") as mock_build:
+        mock_build.return_value = object()
+        settings = ServerSettings(warmup="disabled")
+        application = create_app(settings)
+
+        with caplog.at_level(logging.WARNING, logger="asr_diar_server.app"):
+            with TestClient(application) as client:
+                response = client.get("/health")
 
     body = response.json()
     assert body["warmup_ready"] is True
-    assert body["ready"] is False
+    assert body["ready"] is True
     assert any("warmup" in r.message.lower() for r in caplog.records)
+
+
+def test_warmup_failure_fails_server_startup():
+    """Server Warmup failures fail server startup loudly."""
+    from unittest.mock import AsyncMock, patch
+
+    from starlette.testclient import TestClient
+
+    with patch("asr_diar_server.backends.whisperlivekit.build_asr_adapter") as mock_build:
+        mock_build.return_value = object()
+        settings = ServerSettings(warmup="enabled")
+        application = create_app(settings)
+
+        with patch(
+            "asr_diar_server.pipelines.full_memory.FullMemoryPipeline.transcribe",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("warmup failed"),
+        ):
+            with pytest.raises(RuntimeError, match="warmup failed"):
+                with TestClient(application):
+                    pass

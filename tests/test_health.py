@@ -33,12 +33,12 @@ async def test_health_ready_false_without_asr_adapter():
 
 @pytest.mark.asyncio
 async def test_health_ready_true_with_fake_asr_adapter():
-    """ready=True when RuntimeState carries a non-None ASR adapter."""
+    """ready=True when RuntimeState carries a non-None ASR adapter and warmup is complete."""
 
     class _FakeASRAdapter:
         pass
 
-    app = _make_app(RuntimeState(asr_adapter=_FakeASRAdapter()))
+    app = _make_app(RuntimeState(asr_adapter=_FakeASRAdapter(), warmup_ready=True))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/health")
     assert response.status_code == 200
