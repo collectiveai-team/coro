@@ -394,3 +394,215 @@ class TestFullPerformanceRun:
         assert names.index("resource_a1_rep1") < names.index("resource_a1_rep2")
         assert names.index("resource_a1_rep2") < names.index("resource_a2_rep1")
         assert names.index("resource_a2_rep1") < names.index("resource_a2_rep2")
+
+
+SSE_SEGMENTS = [{"start": 0.0, "end": 1.5, "text": "hello world", "speaker": "A"}]
+
+SSE_RESPONSE_BODY = (
+    b"event: transcript.text.delta\r\n"
+    b'data: {"type": "transcript.text.delta", "delta": "hello"}\r\n'
+    b"\r\n"
+    b"event: transcript.text.done\r\n"
+    + b'data: {"type": "transcript.text.done", "text": '
+    + json.dumps(json.dumps({"segments": SSE_SEGMENTS})).encode()
+    + b"}\r\n"
+    b"\r\n"
+)
+
+
+class _SSEStubHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            body = json.dumps(CANNED_HEALTH).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        if self.path == "/v1/audio/transcriptions":
+            content_length = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(content_length)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(SSE_RESPONSE_BODY)
+            self.wfile.flush()
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+
+@pytest.fixture()
+def sse_stub_server():
+    server = HTTPServer(("127.0.0.1", 0), _SSEStubHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{port}"
+    server.shutdown()
+    thread.join()
+
+
+class TestStreamingPerformanceRun:
+    def test_ttft_column_non_empty_in_streaming_run(self, sse_stub_server, tmp_path: Path):
+        from asr_diar_server.bench.orchestrate import run_performance_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
+
+        run_performance_workload(
+            items=items,
+            base_url=sse_stub_server,
+            out_dir=out_dir,
+            reps=1,
+            server_pid=1,
+            sample_fn=_mock_sample_fn,
+            sample_interval=0.05,
+            stream=True,
+        )
+
+        csv_path = out_dir / "performance" / "resource_meeting1_rep1.csv"
+        with csv_path.open() as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        assert len(rows) > 0
+        ttft_values = [r["time_to_first_delta_s"] for r in rows]
+        assert all(v != "" for v in ttft_values), f"Expected non-empty TTFT, got: {ttft_values}"
+
+    def test_ttft_column_empty_in_non_streaming_run(self, stub_server, tmp_path: Path):
+        from asr_diar_server.bench.orchestrate import run_performance_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
+
+        run_performance_workload(
+            items=items,
+            base_url=stub_server,
+            out_dir=out_dir,
+            reps=1,
+            server_pid=1,
+            sample_fn=_mock_sample_fn,
+            sample_interval=0.05,
+            stream=False,
+        )
+
+        csv_path = out_dir / "performance" / "resource_meeting1_rep1.csv"
+        with csv_path.open() as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        assert len(rows) > 0
+        ttft_values = [r["time_to_first_delta_s"] for r in rows]
+        assert all(v == "" for v in ttft_values), f"Expected empty TTFT, got: {ttft_values}"
+
+    def test_summary_includes_ttft_aggregates_when_streaming(self, sse_stub_server, tmp_path: Path):
+        from asr_diar_server.bench.orchestrate import run_performance_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
+
+        run_performance_workload(
+            items=items,
+            base_url=sse_stub_server,
+            out_dir=out_dir,
+            reps=2,
+            server_pid=1,
+            sample_fn=_mock_sample_fn,
+            sample_interval=0.05,
+            stream=True,
+        )
+
+        summary = json.loads((out_dir / "performance" / "summary.json").read_text())
+        m1_agg = summary["per_item_aggregation"]["meeting1"]
+        assert "time_to_first_delta_s" in m1_agg, f"Expected TTFT aggregates, got: {list(m1_agg.keys())}"
+        ttft_agg = m1_agg["time_to_first_delta_s"]
+        for key in ("median", "min", "max", "mean", "stddev"):
+            assert key in ttft_agg, f"Missing {key} in TTFT aggregates"
+
+    def test_summary_excludes_ttft_when_not_streaming(self, stub_server, tmp_path: Path):
+        from asr_diar_server.bench.orchestrate import run_performance_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
+
+        run_performance_workload(
+            items=items,
+            base_url=stub_server,
+            out_dir=out_dir,
+            reps=1,
+            server_pid=1,
+            sample_fn=_mock_sample_fn,
+            sample_interval=0.05,
+            stream=False,
+        )
+
+        summary = json.loads((out_dir / "performance" / "summary.json").read_text())
+        m1_agg = summary["per_item_aggregation"]["meeting1"]
+        assert "time_to_first_delta_s" not in m1_agg
+
+    def test_manifest_records_stream_true(self, sse_stub_server, tmp_path: Path):
+        from asr_diar_server.bench.orchestrate import run_performance_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
+
+        run_performance_workload(
+            items=items,
+            base_url=sse_stub_server,
+            out_dir=out_dir,
+            reps=1,
+            server_pid=1,
+            sample_fn=_mock_sample_fn,
+            sample_interval=0.05,
+            stream=True,
+        )
+
+        manifest = json.loads((out_dir / "manifest.json").read_text())
+        assert manifest["stream"] is True
+
+    def test_manifest_records_stream_false(self, stub_server, tmp_path: Path):
+        from asr_diar_server.bench.orchestrate import run_performance_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
+
+        run_performance_workload(
+            items=items,
+            base_url=stub_server,
+            out_dir=out_dir,
+            reps=1,
+            server_pid=1,
+            sample_fn=_mock_sample_fn,
+            sample_interval=0.05,
+            stream=False,
+        )
+
+        manifest = json.loads((out_dir / "manifest.json").read_text())
+        assert manifest["stream"] is False

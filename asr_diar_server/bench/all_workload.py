@@ -11,7 +11,7 @@ from asr_diar_server.bench.performance import (
     write_performance_summary,
 )
 from asr_diar_server.bench.sampling import Sampler
-from asr_diar_server.bench.transport import transcribe_audio
+from asr_diar_server.bench.transport import transcribe_audio, transcribe_audio_sse
 
 
 def run_all_workload(
@@ -27,7 +27,10 @@ def run_all_workload(
     der_collar: float = 0.0,
     der_regions: str = "all",
     warmup_audio: Path | None = None,
+    stream: bool = False,
 ) -> None:
+    import time
+
     from asr_diar_server.bench.orchestrate import (
         _audio_duration,
         _fetch_health,
@@ -68,9 +71,13 @@ def run_all_workload(
             )
             sampler.start()
 
-            req_start = __import__("time").monotonic()
-            result = transcribe_audio(base_url, audio_path)
-            wall_seconds = __import__("time").monotonic() - req_start
+            req_start = time.monotonic()
+            if stream:
+                result, ttft = transcribe_audio_sse(base_url, audio_path)
+            else:
+                result = transcribe_audio(base_url, audio_path)
+                ttft = None
+            wall_seconds = time.monotonic() - req_start
 
             sampler.stop()
 
@@ -81,7 +88,7 @@ def run_all_workload(
                 wall_seconds=round(wall_seconds, 3),
                 audio_seconds=round(audio_seconds, 3),
                 transcription_throughput=round(throughput, 6) if throughput else "",
-                time_to_first_delta_s="",
+                time_to_first_delta_s=round(ttft, 6) if ttft is not None else "",
                 observed_hardware_profile=hw_profile,
             )
 
@@ -103,6 +110,8 @@ def run_all_workload(
                 round(throughput, 6) if throughput else 0.0,
             )
             rep_summary.setdefault("observed_hardware_profile", hw_profile)
+            if ttft is not None:
+                rep_summary["time_to_first_delta_s"] = round(ttft, 6)
             rep_summaries.append(rep_summary)
 
         per_item_reps[item_id] = rep_summaries
@@ -123,6 +132,7 @@ def run_all_workload(
         cli_args=cli_args,
         reps=reps,
         subcommand="all",
+        stream=stream,
     )
 
 

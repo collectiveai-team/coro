@@ -152,3 +152,29 @@ def test_parse_args_warmup_audio_implies_warmup(tmp_path):
 def test_legacy_tool_files_deleted():
     assert not os.path.exists("tools/bench_asr.py")
     assert not os.path.exists("tools/whisperx_to_rttm.py")
+
+
+def test_parse_args_stream_rejected_on_quality():
+    with pytest.raises(SystemExit) as exc_info:
+        parse_args(["quality", "--stream"])
+    assert exc_info.value.code != 0
+
+
+def test_parse_args_stream_accepted_on_performance():
+    args = parse_args(["performance", "--stream"])
+    assert args.stream is True
+
+
+def test_parse_args_stream_accepted_on_all():
+    args = parse_args(["all", "--stream"])
+    assert args.stream is True
+
+
+def test_parse_args_stream_defaults_false_on_performance():
+    args = parse_args(["performance"])
+    assert args.stream is False
+
+
+def test_parse_args_stream_defaults_false_on_all():
+    args = parse_args(["all"])
+    assert args.stream is False

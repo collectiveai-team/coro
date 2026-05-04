@@ -15,7 +15,7 @@ from asr_diar_server.bench.performance import (
 )
 from asr_diar_server.bench.sampling import Sampler
 from asr_diar_server.bench.stm import hyp_segments_to_stm
-from asr_diar_server.bench.transport import transcribe_audio
+from asr_diar_server.bench.transport import transcribe_audio, transcribe_audio_sse
 
 
 def run_workload(
@@ -323,6 +323,7 @@ def _write_manifest(
     cli_args: list[str] | None,
     reps: int,
     subcommand: str,
+    stream: bool = False,
 ) -> None:
     git_sha = _git_sha()
     manifest = {
@@ -332,6 +333,7 @@ def _write_manifest(
         "cli_args": cli_args or [],
         "subcommand": subcommand,
         "reps": reps,
+        "stream": stream,
         "workload_set": [
             {
                 "item_id": it["item_id"],
@@ -397,7 +399,10 @@ def run_performance_workload(
     sample_fn: Any | None = None,
     sample_interval: float = 0.25,
     cli_args: list[str] | None = None,
+    stream: bool = False,
 ) -> None:
+    import time
+
     resp_dir = out_dir / "responses"
     perf_dir = out_dir / "performance"
     resp_dir.mkdir(parents=True, exist_ok=True)
@@ -420,9 +425,13 @@ def run_performance_workload(
             )
             sampler.start()
 
-            req_start = __import__("time").monotonic()
-            result = transcribe_audio(base_url, audio_path)
-            wall_seconds = __import__("time").monotonic() - req_start
+            req_start = time.monotonic()
+            if stream:
+                result, ttft = transcribe_audio_sse(base_url, audio_path)
+            else:
+                result = transcribe_audio(base_url, audio_path)
+                ttft = None
+            wall_seconds = time.monotonic() - req_start
 
             sampler.stop()
 
@@ -433,7 +442,7 @@ def run_performance_workload(
                 wall_seconds=round(wall_seconds, 3),
                 audio_seconds=round(audio_seconds, 3),
                 transcription_throughput=round(throughput, 6) if throughput else "",
-                time_to_first_delta_s="",
+                time_to_first_delta_s=round(ttft, 6) if ttft is not None else "",
                 observed_hardware_profile=hw_profile,
             )
 
@@ -451,6 +460,8 @@ def run_performance_workload(
                 round(throughput, 6) if throughput else 0.0,
             )
             rep_summary.setdefault("observed_hardware_profile", hw_profile)
+            if ttft is not None:
+                rep_summary["time_to_first_delta_s"] = round(ttft, 6)
             rep_summaries.append(rep_summary)
 
         per_item_reps[item_id] = rep_summaries
@@ -464,6 +475,7 @@ def run_performance_workload(
         cli_args=cli_args,
         reps=reps,
         subcommand="performance",
+        stream=stream,
     )
 
 

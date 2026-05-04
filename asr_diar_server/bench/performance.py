@@ -17,6 +17,7 @@ def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
     wall_seconds: float | None = None
     throughput: float | None = None
     audio_seconds: float | None = None
+    ttft: float | None = None
     profile: str = ""
 
     with csv_path.open() as f:
@@ -49,6 +50,12 @@ def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
                         audio_seconds = float(aud)
                     except ValueError:
                         pass
+                t = row.get("time_to_first_delta_s", "")
+                if t != "":
+                    try:
+                        ttft = float(t)
+                    except ValueError:
+                        pass
                 profile = row.get("observed_hardware_profile", "")
 
     result: dict[str, Any] = {}
@@ -62,12 +69,14 @@ def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
         result["transcription_throughput"] = throughput
     if audio_seconds is not None:
         result["audio_seconds"] = audio_seconds
+    if ttft is not None:
+        result["time_to_first_delta_s"] = ttft
     result["observed_hardware_profile"] = profile or "cpu-only"
     return result
 
 
 def aggregate_across_reps(per_rep_summaries: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
-    metrics = ["transcription_throughput", "peak_pss_kb", "peak_cpu_pct"]
+    metrics = ["transcription_throughput", "peak_pss_kb", "peak_cpu_pct", "time_to_first_delta_s"]
     result: dict[str, dict[str, float]] = {}
 
     for metric in metrics:

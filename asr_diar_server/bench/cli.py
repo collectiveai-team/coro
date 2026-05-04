@@ -78,6 +78,7 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--der-regions", choices=["all", "nooverlap", "single"], default="all"
     )
+    parser.add_argument("--stream", action="store_true", default=False)
 
 
 def _apply_defaults(args: argparse.Namespace) -> None:
@@ -96,6 +97,9 @@ def _apply_defaults(args: argparse.Namespace) -> None:
 
 
 def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    if getattr(args, "stream", False) and args.subcommand == "quality":
+        parser.error("--stream is not allowed for the 'quality' subcommand.")
+
     has_attached = args.server_url is not None
     has_managed_explicit = any(
         getattr(args, flag) is not None for flag in _MANAGED_FLAGS
@@ -144,6 +148,7 @@ def parse_args(argv=None) -> argparse.Namespace:
 def _run_performance(args: argparse.Namespace, meetings: list[str]) -> None:
     from asr_diar_server.bench.ami import get_audio_path
     from asr_diar_server.bench.orchestrate import run_performance_workload
+    from asr_diar_server.bench.report import build_report, render_markdown, render_stdout
 
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -174,17 +179,18 @@ def _run_performance(args: argparse.Namespace, meetings: list[str]) -> None:
         reps=args.reps,
         server_pid=args.server_pid or 1,
         sample_interval=args.sample_interval,
+        stream=args.stream,
     )
 
-    import json
-    summary_path = out_dir / "performance" / "summary.json"
-    if summary_path.exists():
-        print(json.dumps(json.loads(summary_path.read_text()), indent=2))
+    report = build_report(out_dir)
+    render_stdout(report)
+    (out_dir / "REPORT.md").write_text(render_markdown(report))
 
 
 def _run_quality(args: argparse.Namespace, meetings: list[str]) -> None:
     from asr_diar_server.bench.ami import get_audio_path
     from asr_diar_server.bench.orchestrate import run_workload
+    from asr_diar_server.bench.report import build_report, render_markdown, render_stdout
 
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -223,16 +229,16 @@ def _run_quality(args: argparse.Namespace, meetings: list[str]) -> None:
         der_regions=args.der_regions,
     )
 
-    import json
-    summary_path = out_dir / "quality" / "summary.json"
-    if summary_path.exists():
-        print(json.dumps(json.loads(summary_path.read_text()), indent=2))
+    report = build_report(out_dir)
+    render_stdout(report)
+    (out_dir / "REPORT.md").write_text(render_markdown(report))
 
 
 def _run_all(args: argparse.Namespace, meetings: list[str]) -> None:
     from asr_diar_server.bench.ami import get_audio_path
     from asr_diar_server.bench.data import WARMUP_AUDIO_PATH
     from asr_diar_server.bench.orchestrate import run_all_workload
+    from asr_diar_server.bench.report import build_report, render_markdown, render_stdout
 
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -275,14 +281,12 @@ def _run_all(args: argparse.Namespace, meetings: list[str]) -> None:
         der_collar=args.der_collar,
         der_regions=args.der_regions,
         warmup_audio=warmup_audio,
+        stream=args.stream,
     )
 
-    import json
-    for subdir in ("performance", "quality"):
-        summary_path = out_dir / subdir / "summary.json"
-        if summary_path.exists():
-            print(f"--- {subdir}/summary.json ---")
-            print(json.dumps(json.loads(summary_path.read_text()), indent=2))
+    report = build_report(out_dir)
+    render_stdout(report)
+    (out_dir / "REPORT.md").write_text(render_markdown(report))
 
 
 def main() -> None:
