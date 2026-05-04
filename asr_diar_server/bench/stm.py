@@ -1,0 +1,235 @@
+"""STM conversion library for Quality Benchmark scoring.
+
+Pure functions that convert between server response segments / AMI
+annotations and STM text. No subprocess calls; no IO beyond reading
+AMI XML files from the local annotation tree.
+"""
+
+from __future__ import annotations
+
+import html
+import re
+import xml.etree.ElementTree as ET
+from pathlib import Path
+from typing import Any
+
+
+_ID_RE = re.compile(r"id\(([^)]+)\)")
+
+
+def _clean_text(text: str) -> str:
+    text = text.replace("\n", " ").strip()
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def hyp_segments_to_stm(
+    segments: list[dict[str, Any]],
+    recording_id: str,
+    *,
+    channel: str = "1",
+) -> str:
+    """Convert a diarized_json ``segments`` list to STM text.
+
+    Speaker labels are passed through unchanged from the server response.
+    Segments with missing times, empty text, or zero/negative duration
+    are dropped.  Output lines are sorted by (start_time, speaker).
+    """
+    lines: list[str] = []
+    for seg in segments:
+        start = seg.get("start")
+        end = seg.get("end")
+        text = _clean_text(str(seg.get("text", "")))
+        speaker = str(seg.get("speaker", "UNKNOWN"))
+
+        if start is None or end is None or not text:
+            continue
+
+        start_f = float(start)
+        end_f = float(end)
+
+        if end_f <= start_f:
+            continue
+
+        lines.append(
+            f"{recording_id} {channel} {speaker} "
+            f"{start_f:.3f} {end_f:.3f} {text}"
+        )
+
+    lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+# ---------------------------------------------------------------------------
+# AMI annotation helpers
+# ---------------------------------------------------------------------------
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _get_id(elem: ET.Element) -> str | None:
+    for key, value in elem.attrib.items():
+        if key == "id" or key == "nite:id" or key.endswith("}id"):
+            return value
+    return None
+
+
+def _get_time(elem: ET.Element, name: str) -> float | None:
+    value = elem.attrib.get(name)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _normalize_token(text: str) -> str:
+    text = html.unescape(text or "")
+    text = text.strip()
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def _read_words(path: Path) -> tuple[list[dict], dict[str, int]]:
+    tree = ET.parse(path)
+    words: list[dict] = []
+    for elem in tree.getroot().iter():
+        if _local_name(elem.tag) != "w":
+            continue
+        word_id = _get_id(elem)
+        start = _get_time(elem, "starttime")
+        end = _get_time(elem, "endtime")
+        token = _normalize_token("".join(elem.itertext()))
+        if not word_id or start is None or end is None or not token:
+            continue
+        words.append({"id": word_id, "start": start, "end": end, "word": token})
+    id_to_index = {w["id"]: i for i, w in enumerate(words)}
+    return words, id_to_index
+
+
+def _words_from_child_href(
+    href: str,
+    words: list[dict],
+    id_to_index: dict[str, int],
+) -> list[dict]:
+    ids = _ID_RE.findall(href)
+    if not ids:
+        return []
+    if len(ids) == 1:
+        idx = id_to_index.get(ids[0])
+        return [] if idx is None else [words[idx]]
+    start_idx = id_to_index.get(ids[0])
+    end_idx = id_to_index.get(ids[-1])
+    if start_idx is None or end_idx is None:
+        return []
+    if start_idx > end_idx:
+        start_idx, end_idx = end_idx, start_idx
+    return words[start_idx : end_idx + 1]
+
+
+def _read_segments(
+    path: Path,
+    words: list[dict],
+    id_to_index: dict[str, int],
+) -> list[dict]:
+    tree = ET.parse(path)
+    segments: list[dict] = []
+    for seg in tree.getroot().iter():
+        if _local_name(seg.tag) != "segment":
+            continue
+        seg_words: list[dict] = []
+        for child in seg.iter():
+            if _local_name(child.tag) != "child":
+                continue
+            href = child.attrib.get("href", "")
+            seg_words.extend(_words_from_child_href(href, words, id_to_index))
+        if not seg_words:
+            start = _get_time(seg, "starttime")
+            end = _get_time(seg, "endtime")
+            if start is not None and end is not None:
+                seg_words = [w for w in words if w["start"] >= start and w["end"] <= end]
+        if not seg_words:
+            continue
+        start = min(w["start"] for w in seg_words)
+        end = max(w["end"] for w in seg_words)
+        text = " ".join(w["word"] for w in seg_words)
+        if text.strip():
+            segments.append({"start": start, "end": end, "text": text.strip()})
+    return segments
+
+
+def _fallback_word_segments(words: list[dict], max_gap: float = 1.0) -> list[dict]:
+    if not words:
+        return []
+    chunks = []
+    current = [words[0]]
+    for word in words[1:]:
+        gap = word["start"] - current[-1]["end"]
+        if gap > max_gap:
+            chunks.append(current)
+            current = [word]
+        else:
+            current.append(word)
+    chunks.append(current)
+    return [
+        {
+            "start": min(w["start"] for w in chunk),
+            "end": max(w["end"] for w in chunk),
+            "text": " ".join(w["word"] for w in chunk),
+        }
+        for chunk in chunks
+    ]
+
+
+def _find_annotation_file(root: Path, kind: str, meeting: str, speaker: str) -> Path | None:
+    pattern = f"**/{kind}/{meeting}.{speaker}.{kind}.xml"
+    matches = sorted(root.glob(pattern))
+    return matches[0] if matches else None
+
+
+def _speakers_for_meeting(root: Path, meeting: str) -> list[str]:
+    speakers = set()
+    for path in root.glob(f"**/words/{meeting}.*.words.xml"):
+        parts = path.name.split(".")
+        if len(parts) >= 4:
+            speakers.add(parts[1])
+    return sorted(speakers)
+
+
+def ami_meeting_to_stm(ami_root: Path, meeting_id: str) -> str:
+    """Produce a Reference STM string for an AMI meeting from its annotation tree.
+
+    Walks the AMI annotation XML files under *ami_root*, extracts per-speaker
+    word timing, groups words into segments, and returns STM text sorted by
+    (start_time, speaker).
+    """
+    lines: list[str] = []
+
+    for speaker in _speakers_for_meeting(ami_root, meeting_id):
+        words_path = _find_annotation_file(ami_root, "words", meeting_id, speaker)
+        segments_path = _find_annotation_file(ami_root, "segments", meeting_id, speaker)
+
+        if words_path is None:
+            continue
+
+        words, id_to_index = _read_words(words_path)
+
+        if segments_path is not None:
+            segments = _read_segments(segments_path, words, id_to_index)
+        else:
+            segments = _fallback_word_segments(words)
+
+        for seg in segments:
+            text = seg["text"].replace("\n", " ").strip()
+            if not text:
+                continue
+            lines.append(
+                f"{meeting_id} 1 {speaker} "
+                f"{seg['start']:.3f} {seg['end']:.3f} {text}"
+            )
+
+    lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
+    return "\n".join(lines) + "\n" if lines else ""
