@@ -1,14 +1,10 @@
-"""Cycle 12: benchmark package migration — Resource CSV schema and CLI arg parsing.
-
-Tests verify that:
-- RESOURCE_FIELDNAMES contains all expected Stable Resource Schema columns.
-- The parse_args function accepts the expected arguments without error.
-- The ``asr-diar-bench`` entry point is importable via asr_diar_server.bench.cli.
-
-No real benchmark runs are executed.
-"""
+"""Benchmark package: Resource CSV schema and subcommand CLI."""
 
 from __future__ import annotations
+
+import os
+import sys
+from unittest.mock import patch
 
 import pytest
 
@@ -16,9 +12,13 @@ from asr_diar_server.bench import RESOURCE_FIELDNAMES
 from asr_diar_server.bench.cli import parse_args
 
 
-# ---------------------------------------------------------------------------
-# Stable Resource Schema
-# ---------------------------------------------------------------------------
+_LEGACY_QUALITY_FIELDS = {
+    "wer",
+    "der",
+    "der_collar_s",
+    "der_skip_overlap",
+    "wer_normalization",
+}
 
 _REQUIRED_FIELDS = {
     "ts_epoch",
@@ -44,63 +44,87 @@ _REQUIRED_FIELDS = {
     "audio_seconds",
     "wall_seconds",
     "transcription_throughput",
-    "wer",
-    "der",
-    "der_collar_s",
-    "der_skip_overlap",
-    "wer_normalization",
     "sampling_warning",
+    "time_to_first_delta_s",
 }
 
 
+def test_resource_fieldnames_excludes_legacy_quality():
+    """RESOURCE_FIELDNAMES no longer contains legacy quality columns."""
+    for field in _LEGACY_QUALITY_FIELDS:
+        assert field not in RESOURCE_FIELDNAMES, f"Legacy field {field!r} still present"
+
+
 def test_resource_fieldnames_contains_required_schema():
-    """RESOURCE_FIELDNAMES preserves the Stable Resource Schema columns."""
+    """RESOURCE_FIELDNAMES preserves the required resource columns."""
     assert _REQUIRED_FIELDS.issubset(set(RESOURCE_FIELDNAMES))
 
 
 def test_resource_fieldnames_is_list():
-    """RESOURCE_FIELDNAMES is a list (preserves column ordering)."""
     assert isinstance(RESOURCE_FIELDNAMES, list)
 
 
 def test_resource_fieldnames_no_duplicates():
-    """RESOURCE_FIELDNAMES has no duplicate column names."""
     assert len(RESOURCE_FIELDNAMES) == len(set(RESOURCE_FIELDNAMES))
 
 
-# ---------------------------------------------------------------------------
-# CLI arg parsing
-# ---------------------------------------------------------------------------
+def test_parse_args_accepts_quality():
+    args = parse_args(["quality"])
+    assert args.subcommand == "quality"
 
 
-def test_parse_args_requires_audio(tmp_path):
-    """parse_args exits cleanly when required audio argument is missing."""
-    import sys
-    from unittest.mock import patch
-
-    with patch.object(sys, "argv", ["asr-diar-bench"]), pytest.raises(SystemExit):
-        parse_args()
+def test_parse_args_accepts_performance():
+    args = parse_args(["performance"])
+    assert args.subcommand == "performance"
 
 
-def test_parse_args_accepts_audio_path(tmp_path):
-    """parse_args accepts a valid audio path and returns a Namespace."""
-    import sys
-    from unittest.mock import patch
-
-    audio_file = tmp_path / "test.wav"
-    audio_file.write_bytes(b"\x00" * 100)
-
-    with patch.object(sys, "argv", ["asr-diar-bench", str(audio_file)]):
-        args = parse_args()
-    assert str(args.audio) == str(audio_file)
+def test_parse_args_accepts_all():
+    args = parse_args(["all"])
+    assert args.subcommand == "all"
 
 
-def test_parse_args_default_url_targets_packaged_server():
-    """Default --url points to the packaged server endpoint (not a legacy path)."""
-    import sys
-    from unittest.mock import patch
+def test_parse_args_rejects_unknown_subcommand():
+    with pytest.raises(SystemExit):
+        parse_args(["foobar"])
 
-    with patch.object(sys, "argv", ["asr-diar-bench", "/fake/audio.wav"]):
-        args = parse_args()
-    # The URL should reference /v1/audio/transcriptions (or /v2/...)
-    assert "audio/transcriptions" in args.url
+
+def test_parse_args_requires_subcommand():
+    with pytest.raises(SystemExit):
+        parse_args([])
+
+
+def test_parse_args_no_audio_positional():
+    args = parse_args(["quality"])
+    assert not hasattr(args, "audio")
+
+
+def test_main_quality_prints_not_implemented(capsys):
+    from asr_diar_server.bench.cli import main
+
+    with patch.object(sys, "argv", ["asr-diar-bench", "quality"]):
+        main()
+    captured = capsys.readouterr()
+    assert "quality not yet implemented" in captured.out
+
+
+def test_main_performance_prints_not_implemented(capsys):
+    from asr_diar_server.bench.cli import main
+
+    with patch.object(sys, "argv", ["asr-diar-bench", "performance"]):
+        main()
+    captured = capsys.readouterr()
+    assert "performance not yet implemented" in captured.out
+
+
+def test_main_all_prints_not_implemented(capsys):
+    from asr_diar_server.bench.cli import main
+
+    with patch.object(sys, "argv", ["asr-diar-bench", "all"]):
+        main()
+    captured = capsys.readouterr()
+    assert "all not yet implemented" in captured.out
+
+
+def test_legacy_tool_files_deleted():
+    assert not os.path.exists("tools/bench_asr.py")
+    assert not os.path.exists("tools/whisperx_to_rttm.py")

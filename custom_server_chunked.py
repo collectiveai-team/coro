@@ -98,7 +98,7 @@ async def health():
 
 
 # ---------------------------------------------------------------------------
-# WhisperX REST API  (/v1/audio/transcriptions)
+# Transcription REST API  (/v1/audio/transcriptions)
 # ---------------------------------------------------------------------------
 
 
@@ -800,7 +800,7 @@ def _clamp_segment_overlaps(segments: list) -> list:
 
 
 def _to_whisperx(front_data, duration: float = 0.0) -> dict:
-    """Convert FrontData to WhisperX JSON schema.
+    """Convert FrontData to transcription JSON schema.
 
     Returns:
         {
@@ -1100,9 +1100,9 @@ async def create_transcription(
     ),
     stream: bool = Form(default=False, description="If true, return SSE streaming results."),
 ):
-    """WhisperX-format audio transcription endpoint.
+    """Audio transcription endpoint.
 
-    Always returns WhisperX JSON schema:
+    Always returns transcription JSON schema:
       {"segments": [...], "word_segments": [...]}
 
     When stream=True, returns SSE events with partial transcription deltas.

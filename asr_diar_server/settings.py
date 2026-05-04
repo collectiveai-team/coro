@@ -49,6 +49,13 @@ class ServerSettings(BaseSettings):
     )
     log_level: str = Field(default="info", description="Log level (for CLI use only).")
 
+    # Server Warmup ---------------------------------------------------------
+    warmup: Literal["enabled", "disabled"] = Field(
+        default="enabled",
+        description="Server Warmup runs the Configured Transcription Pipeline against "
+        "the Warmup Audio Asset at startup. Set to 'disabled' to skip warmup.",
+    )
+
     # Derived Defaults ------------------------------------------------------
     @model_validator(mode="after")
     def default_enabled_diarization_model(self) -> ServerSettings:

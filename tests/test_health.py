@@ -45,6 +45,43 @@ async def test_health_ready_true_with_fake_asr_adapter():
     assert response.json()["ready"] is True
 
 
+def test_runtime_state_warmup_ready_defaults_false():
+    """warmup_ready defaults to False on RuntimeState."""
+    rt = RuntimeState()
+    assert rt.warmup_ready is False
+
+
+def test_server_settings_warmup_default_enabled():
+    """ServerSettings.warmup defaults to 'enabled'."""
+    s = ServerSettings()
+    assert s.warmup == "enabled"
+
+
+def test_server_settings_warmup_accepts_disabled():
+    """ServerSettings.warmup accepts 'disabled'."""
+    s = ServerSettings(warmup="disabled")
+    assert s.warmup == "disabled"
+
+
+def test_server_settings_warmup_invalid_raises():
+    """Strict Startup Validation rejects unknown warmup values."""
+    import pytest as _pt
+
+    with _pt.raises(Exception):
+        ServerSettings(warmup="invalid")
+
+
+@pytest.mark.asyncio
+async def test_health_includes_warmup_ready_key():
+    """GET /health includes warmup_ready reflecting RuntimeState."""
+    app = _make_app(RuntimeState(asr_adapter=object()))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/health")
+    body = response.json()
+    assert "warmup_ready" in body
+    assert body["warmup_ready"] is False
+
+
 @pytest.mark.asyncio
 async def test_health_reports_startup_selection_and_capability_readiness():
     """Health separates startup selection from capability readiness."""

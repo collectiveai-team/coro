@@ -10,12 +10,10 @@ from __future__ import annotations
 import argparse
 import csv
 import os
-import string
 import subprocess
 import sys
 import threading
 import time
-import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -147,13 +145,6 @@ def sample_process_tree(root_pid: int) -> dict[str, Any]:
         "write_bytes": total_write_bytes,
         "thread_count": total_threads,
     }
-
-
-def _normalize_text_wer(text: str) -> str:
-    """Spanish-friendly WER normalization: lowercase, NFC, strip punct, collapse ws."""
-    text = unicodedata.normalize("NFC", text.lower())
-    text = text.translate(str.maketrans("", "", string.punctuation))
-    return " ".join(text.split())
 
 
 def find_server_pid(server_pid: int | None, server_match: str) -> int:
@@ -291,11 +282,7 @@ def _run_rep(
                 "audio_seconds": audio_seconds,
                 "wall_seconds": "",
                 "transcription_throughput": "",
-                "wer": "",
-                "der": "",
-                "der_collar_s": args.der_collar,
-                "der_skip_overlap": args.der_skip_overlap,
-                "wer_normalization": "spanish-friendly",
+                "time_to_first_delta_s": "",
                 "sampling_warning": "",
             }
             if prev_sample is not None:
@@ -386,7 +373,7 @@ def _run_rep(
         writer.writeheader()
         writer.writerows(samples)
 
-    return {"wall_seconds": wall_seconds, "throughput": throughput, "wer": None, "der": None}
+    return {"wall_seconds": wall_seconds, "throughput": throughput}
 
 
 def compute_peaks(csv_path: Path) -> dict[str, Any]:
@@ -420,7 +407,6 @@ def _write_summary(args, out_dir: Path, rep_results: list[dict], audio_seconds: 
         f"reps={args.reps}",
         f"url={args.url}",
         f"audio_seconds={audio_seconds:.3f}",
-        f"wer_normalization={'spanish-friendly' if args.reference_transcript else ''}",
         f"wall_total_seconds={sum(float(r['wall_seconds']) for r in rep_results):.3f}",
         "",
     ]

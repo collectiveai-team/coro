@@ -31,6 +31,7 @@ class RuntimeState:
     diarization_model: str | None = None
     asr_adapter: Any | None = None
     diarization_adapter: Any | None = None
+    warmup_ready: bool = False
     _extra: dict = field(default_factory=dict, repr=False)
 
     # Capability Readiness --------------------------------------------------

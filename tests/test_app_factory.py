@@ -4,9 +4,11 @@ Tests that create_app() produces a FastAPI app whose /health endpoint returns
 the expected shape without loading any real ASR model.
 """
 
+import logging
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from asr_diar_server.app import create_app
 from asr_diar_server.runtime import RuntimeState
 from asr_diar_server.settings import ServerSettings
 
@@ -60,3 +62,21 @@ async def test_health_not_ready_when_no_asr_adapter(app):
         response = await client.get("/health")
 
     assert response.json()["ready"] is False
+
+
+@pytest.mark.asyncio
+async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
+    """ASR_DIAR_WARMUP=disabled skips Server Warmup, logs a warning, and reports warmup_ready=True."""
+    settings = ServerSettings(warmup="disabled")
+    application = create_app(settings)
+
+    with caplog.at_level(logging.WARNING, logger="asr_diar_server.app"):
+        async with AsyncClient(
+            transport=ASGITransport(app=application), base_url="http://test"
+        ) as client:
+            response = await client.get("/health")
+
+    body = response.json()
+    assert body["warmup_ready"] is True
+    assert body["ready"] is False
+    assert any("warmup" in r.message.lower() for r in caplog.records)

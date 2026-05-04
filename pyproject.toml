@@ -49,6 +49,7 @@ exclude = [
     "custom_server.py",
     "custom_server_chunked.py",
     "run_transcription.py",
+    "run_dev.py",
     "custom_client.py",
     "tools/",
     ".worktrees/",

@@ -10,6 +10,7 @@ Usage (ASGI):
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,8 @@ from asr_diar_server.settings import ServerSettings
 
 if TYPE_CHECKING:
     pass
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(settings: ServerSettings | None = None) -> FastAPI:
@@ -74,6 +77,18 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             runtime.pipeline = ChunkedFilePipeline(**pipeline_kwargs)
         else:
             runtime.pipeline = FullMemoryPipeline(**pipeline_kwargs)
+
+        # Server Warmup
+        if settings.warmup == "enabled":
+            from asr_diar_server.audio import AudioInput
+            from asr_diar_server.bench.data import WARMUP_AUDIO_PATH
+
+            warmup_audio = AudioInput(WARMUP_AUDIO_PATH.read_bytes())
+            await runtime.pipeline.transcribe(warmup_audio)
+            runtime.warmup_ready = True
+        else:
+            logger.warning("Server Warmup is disabled — first request may pay cold-model costs.")
+            runtime.warmup_ready = True
 
         yield
 
