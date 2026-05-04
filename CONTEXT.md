@@ -16,37 +16,65 @@ _Avoid_: Startup process tree
 A controlled comparison of one server implementation against another under the same audio input, server configuration, and hardware profile.
 _Avoid_: Ad hoc timing, one-off curl
 
-**Resource Benchmark**:
-A benchmark run that compares resource usage and timing without gating results on transcription equivalence.
-_Avoid_: Accuracy benchmark, quality benchmark
+**Performance Benchmark**:
+A benchmark run that measures resource usage and timing of the server process tree across a workload set, without scoring transcription quality.
+_Avoid_: Resource Benchmark (legacy), accuracy benchmark
 
-**Quality Reference**:
-An explicit transcript or diarization artifact used to score benchmark output quality.
-_Avoid_: Implicit ground truth
+**Quality Benchmark**:
+A benchmark run that scores transcription and diarization output of the server against reference STM files using MeetEval metrics, without making resource claims.
+_Avoid_: Accuracy benchmark, WER-only benchmark
 
-**Reference RTTM**:
-The canonical diarization quality reference format for DER scoring.
-_Avoid_: Implicit ground truth
+**Workload Item**:
+One audio input plus its reference STM, transcribed once per repetition and scored once per benchmark run; the unit aggregated by both Performance Benchmark and Quality Benchmark.
+_Avoid_: Single audio file, test case
 
-**Hypothesis Diarization**:
-The diarization timeline parsed from the server's transcription JSON or SSE response for DER scoring.
-_Avoid_: Hypothesis RTTM requirement
+**Workload Set**:
+The ordered collection of workload items processed sequentially in one benchmark run.
+_Avoid_: Test suite, audio batch
 
-**DER Policy**:
-The diarization scoring settings used for a benchmark run: 0.25 second collar and overlapped speech included by default.
-_Avoid_: Unspecified DER settings
+**Reference STM**:
+The canonical reference format for both transcript and diarization quality scoring, holding speaker-attributed segments per workload item.
+_Avoid_: Reference RTTM, reference transcript text file
 
-**WER Normalization**:
-The Spanish-friendly text normalization used before WER scoring: lowercase, Unicode normalization, punctuation removal, and whitespace collapse.
-_Avoid_: Raw WER when normalized WER is intended
+**Hypothesis STM**:
+The server's transcription response converted to STM, written per workload item and consumed by MeetEval.
+_Avoid_: Hypothesis Diarization, response JSON
 
-**Quality Metric**:
-A benchmark result such as WER or DER computed only when the corresponding quality reference is provided.
-_Avoid_: Resource metric
+**MeetEval Metric Set**:
+The fixed set of MeetEval scores reported for each workload item: siWER, cpWER, ORC-WER (greedy), DI-cpWER (greedy), and DER.
+_Avoid_: WER alone, custom metric mix
 
-**Backfilled Quality Column**:
-A resource CSV column whose aggregate quality value is repeated on every sampled row after the repetition is scored.
-_Avoid_: Final-row-only quality field
+**Server Warmup**:
+A pipeline execution against a fixed warmup audio at server startup, completed before the server reports ready, so the first transcription endpoint request does not pay cold-model costs.
+_Avoid_: Lazy first-request warmup, client-driven warmup
+
+**Warmup Readiness**:
+The /health flag indicating the configured transcription pipeline has completed Server Warmup and is ready to serve real requests.
+_Avoid_: Capability Readiness conflation
+
+**Benchmark Warmup Item**:
+An audio request issued by the benchmark client before the measured workload set, whose response and resource samples are discarded, used to neutralize transient cold-cache effects between client and server.
+_Avoid_: Real workload item with discarded results
+
+**Warmup Audio Asset**:
+The vendored short audio (whisper.cpp JFK sample) shared by Server Warmup and Benchmark Warmup, distributed inside the package so warmup never requires network access.
+_Avoid_: Downloaded-on-demand warmup, synthetic silence
+
+**Bench-Managed Server**:
+A server subprocess started by the benchmark client, configured via bench CLI flags translated to ASR_DIAR_ environment variables, with /health polled until Warmup Readiness before the workload set runs and torn down on bench completion or failure.
+_Avoid_: In-process TestClient bench, manually-started server assumption
+
+**Bench-Attached Server**:
+A pre-existing server process the benchmark client connects to via --server-url and samples via --server-pid or --server-match, without managing its lifecycle.
+_Avoid_: Bench owning a server it did not start
+
+**Time To First Delta**:
+Wall time from request start to receipt of the first `transcript.text.delta` SSE event, measured per workload item × rep when streaming is enabled in a Performance Benchmark.
+_Avoid_: Time to first byte, time to consolidated response
+
+**Backfilled Performance Column**:
+A Resource CSV column whose per-(item × rep) scalar value (wall_seconds, transcription_throughput, time_to_first_delta_s) is repeated on every sampled row after the request completes.
+_Avoid_: Final-row-only performance field, Backfilled Quality Column (deprecated)
 
 **Resource CSV**:
 The per-repetition sampled metrics file containing memory, IO, CPU, and GPU observations for the server process tree.
@@ -262,28 +290,32 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 
 ## Relationships
 
-- A **Benchmark Run** measures one **Server Process Tree** per implementation under test.
-- A **Server Process Tree** is sampled as a **Dynamic Process Tree** during a request.
-- A **Resource Benchmark** may compare implementations even when their transcription output differs.
-- A **Resource Benchmark** writes one **Resource CSV** per repetition.
-- A **Resource CSV** uses a **Stable Resource Schema** across hardware profiles.
-- A **Resource CSV** may also carry aggregate **Quality Metric** values for the repetition.
-- A **Quality Metric** stored in a **Resource CSV** is a **Backfilled Quality Column**.
-- A **Quality Metric** is computed only from an explicit **Quality Reference**.
-- DER compares a **Reference RTTM** against **Hypothesis Diarization** parsed by the benchmark.
-- DER results are interpreted only together with the **DER Policy**.
-- WER results are interpreted only together with the **WER Normalization**.
+- A **Benchmark Run** processes a **Workload Set** of **Workload Item** values sequentially against one server process tree.
+- A **Server Process Tree** is sampled as a **Dynamic Process Tree** during each workload item request.
+- A **Performance Benchmark** writes one **Resource CSV** per (workload item × repetition) plus a run-level performance summary aggregating across the workload set.
+- A **Quality Benchmark** writes one MeetEval result per workload item plus a run-level quality summary produced by `combine_error_rates` across the workload set.
+- A **Performance Benchmark** and a **Quality Benchmark** may share one benchmark run; both consume the same hypothesis from the same request.
+- A **Resource CSV** uses a **Stable Resource Schema** across hardware profiles and contains only resource and timing columns; quality columns are not embedded.
+- A **Quality Benchmark** computes the **MeetEval Metric Set** for each workload item using its **Reference STM** and the converted **Hypothesis STM**.
 - A **Resource CSV** contains both cumulative counters and **Sample Rate Field** values.
 - An **Observed Hardware Profile** is inferred from measurements, not from how the server was launched.
 - A **CPU+GPU Run** requires GPU activity attributable to the **Server Process Tree**.
 - A **CPU-Only Run** can occur even when a GPU is visible but unused by the **Server Process Tree**.
-- **Process-Tree PSS** is the headline memory comparison for a **Benchmark Run**.
+- **Process-Tree PSS** is the headline memory comparison for a **Performance Benchmark**.
 - **Process-Tree USS** is the private-growth companion to **Process-Tree PSS**.
-- **Logical IO Rate** describes pipeline work during a **Benchmark Run**.
-- **Physical IO Rate** describes storage pressure during a **Benchmark Run**.
-- **Process-Tree CPU Rate** describes compute pressure during a **Benchmark Run**.
-- **Transcription Throughput** is the headline timing comparison for a **Resource Benchmark**.
+- **Logical IO Rate** describes pipeline work during a **Performance Benchmark**.
+- **Physical IO Rate** describes storage pressure during a **Performance Benchmark**.
+- **Process-Tree CPU Rate** describes compute pressure during a **Performance Benchmark**.
+- **Transcription Throughput** is the headline timing comparison for a **Performance Benchmark**.
 - A **Workload Set** for deciding disk-backed chunking value includes short, medium, and long audio inputs.
+- **Server Warmup** runs at startup against the **Warmup Audio Asset**, gates **Warmup Readiness** on the `/health` response, and is enabled by default.
+- **Server Warmup** failures fail server startup loudly rather than allowing degraded readiness.
+- A **Benchmark Warmup Item** is optional, opt-in via the benchmark CLI, runs once before the first measured workload item, and reuses the **Warmup Audio Asset**.
+- The **Warmup Audio Asset** is vendored inside the package so neither **Server Warmup** nor **Benchmark Warmup Item** requires network access.
+- A **Benchmark Run** uses a **Bench-Managed Server** by default and a **Bench-Attached Server** when `--server-url` is passed; the two modes are mutually exclusive.
+- A **Bench-Managed Server** is configured by translating bench CLI flags into the same `ASR_DIAR_` environment variables used for **Server Startup Selection**.
+- A **Bench-Managed Server** is considered ready only once `/health` reports both **Capability Readiness** and **Warmup Readiness**.
+- Diarization is enabled by default for both quality and performance subcommands so the **Quality Benchmark** can report cpWER, ORC-WER, DI-cpWER, and DER, and the **Performance Benchmark** measures the production-shaped pipeline.
 - The **Supported Endpoint Set** contains `/health` and the `/v1/audio/transcriptions` **Transcription Endpoint** only.
 - The **Transcription Endpoint** receives the **Configured Transcription Pipeline** through a **Pipeline Dependency**.
 - API code receives **Server Startup Selection** through a **Settings Dependency**.
@@ -297,7 +329,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - The default **ASR Model Selection** is `openai/whisper-medium`.
 - When whisperlivekit diarization is enabled without an explicit **Diarization Model Selection**, the default is `nvidia/diar_sortformer_4spk-v1`.
 - A **Configured Transcription Pipeline** preserves the public **Transcription API Contract** while changing internal processing behavior.
-- `/health` reports **Server Startup Selection** and **Capability Readiness** rather than one ambiguous backend field.
+- `/health` reports **Server Startup Selection**, **Capability Readiness**, and **Warmup Readiness** rather than one ambiguous backend field.
 - The **Full-Memory Pipeline** and **Chunked-File Pipeline** both use shared **ASR Windowing**; they differ in how PCM is sourced.
 - A **Transcription Pipeline** receives **Audio Input** rather than FastAPI upload objects, raw bytes only, or temporary file paths only.
 - **Audio Input** owns **Audio Input Cleanup** for any temporary file it creates.
@@ -349,19 +381,16 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "No — use a **Workload Set** with short, medium, and long inputs because memory savings scale with input duration."
 
 > **Dev:** "Should resource numbers be ignored when transcripts differ?"
-> **Domain expert:** "Not for this **Resource Benchmark** — correctness can be checked separately, but this run is about resource usage and timing."
+> **Domain expert:** "Not for the **Performance Benchmark** — quality is scored separately by the **Quality Benchmark**, while performance is about resource usage and timing."
 
 > **Dev:** "Can we compute WER or DER from whatever looks like ground truth in the repo?"
-> **Domain expert:** "No — compute a **Quality Metric** only when an explicit **Quality Reference** is provided."
+> **Domain expert:** "No — score a **Quality Benchmark** only against an explicit **Reference STM** for each **Workload Item**."
 
-> **Dev:** "Does the server need to return RTTM for DER?"
-> **Domain expert:** "No — the benchmark parses **Hypothesis Diarization** from the transcription response and compares it to a **Reference RTTM**."
+> **Dev:** "Does the server need to return RTTM for diarization scoring?"
+> **Domain expert:** "No — the benchmark converts the transcription response to a **Hypothesis STM** and MeetEval scores DER against the **Reference STM**."
 
-> **Dev:** "Can we report DER without the collar and overlap settings?"
-> **Domain expert:** "No — DER must be reported with the **DER Policy** because those settings change the score."
-
-> **Dev:** "Should punctuation and casing differences affect WER?"
-> **Domain expert:** "No — use **WER Normalization** so WER reflects word differences rather than formatting differences."
+> **Dev:** "Should we report only WER for the **Quality Benchmark**?"
+> **Domain expert:** "No — report the **MeetEval Metric Set** (siWER, cpWER, ORC-WER, DI-cpWER, DER) because each captures a different speaker-attribution assumption."
 
 > **Dev:** "Should the sampled metrics file still be called `memory_N.csv`?"
 > **Domain expert:** "No — use a **Resource CSV** because the file contains memory, IO, CPU, and GPU observations."
@@ -369,11 +398,17 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Dev:** "Should CPU-only and GPU runs have different CSV columns?"
 > **Domain expert:** "No — use a **Stable Resource Schema** so notebooks can compare runs without schema branching."
 
-> **Dev:** "Where should WER and DER be stored?"
-> **Domain expert:** "Store them in the **Resource CSV** for the repetition, even though they are aggregate **Quality Metric** values."
+> **Dev:** "Where should MeetEval scores be stored?"
+> **Domain expert:** "In a **Quality Benchmark** artifact per **Workload Item**, plus a run-level summary — not embedded in the **Resource CSV**."
 
-> **Dev:** "Should WER and DER appear only on the last CSV row?"
-> **Domain expert:** "No — use a **Backfilled Quality Column** so every row for the repetition carries the aggregate value."
+> **Dev:** "Should the **Resource CSV** still carry single WER and DER columns?"
+> **Domain expert:** "No — quality lives in the **Quality Benchmark** artifact; the **Resource CSV** holds only resource and timing fields."
+
+> **Dev:** "Should the server be considered ready as soon as adapters load?"
+> **Domain expert:** "No — `/health` waits for **Warmup Readiness** because **Server Warmup** must run before the first real request."
+
+> **Dev:** "Should the benchmark download a warmup clip on first run?"
+> **Domain expert:** "No — the **Warmup Audio Asset** is vendored, so neither **Server Warmup** nor a **Benchmark Warmup Item** needs network access."
 
 > **Dev:** "Should we write only IO rates?"
 > **Domain expert:** "No — write cumulative counters and **Sample Rate Field** values so rates can be audited or recomputed."
@@ -503,8 +538,10 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "server PID" was used to mean both the root process and the full resource footprint — resolved: benchmark metrics target the **Server Process Tree**.
 - "memory" was used to mean RSS, VSZ, and actual footprint — resolved: benchmark memory headline is **Process-Tree PSS**, with **Process-Tree USS** as the private-growth signal.
 - "IO" was used to mean both file-interface activity and storage-device pressure — resolved: benchmark output separates **Logical IO Rate** from **Physical IO Rate**.
-- "benchmark" was used to imply both resource comparison and output-quality validation — resolved: the current scope is a **Resource Benchmark**.
-- "ground truth" was used for existing output artifacts — resolved: quality scoring uses an explicit **Quality Reference**.
+- "benchmark" was used to imply both resource comparison and output-quality validation — resolved: split into **Performance Benchmark** and **Quality Benchmark**, optionally combined in one benchmark run.
+- "ground truth" was used for existing output artifacts — resolved: quality scoring uses an explicit **Reference STM** per **Workload Item**.
+- "WER" was used as a single headline number — resolved: a **Quality Benchmark** reports the **MeetEval Metric Set** (siWER, cpWER, ORC-WER, DI-cpWER, DER).
+- "warmup" was used ambiguously between server lifecycle and benchmark client behavior — resolved: **Server Warmup** runs at startup and gates **Warmup Readiness**, while a **Benchmark Warmup Item** is opt-in client-side and shares the same **Warmup Audio Asset**.
 - "memory CSV" was used for the sampled metrics file — resolved: the file is a **Resource CSV**.
 - "rate" was used without specifying the denominator — resolved: per-sample rates are **Sample Rate Field** values using observed sample duration.
 - "CPU only" and "CPU+GPU" were used as launch intentions — resolved: hardware mode is an **Observed Hardware Profile**.
