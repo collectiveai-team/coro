@@ -24,6 +24,9 @@ dependencies = [
     "whisperlivekit[cu129,diarization-sortformer]>=0.2.20.post1",
 ]
 
+[project.optional-dependencies]
+bench = ["meeteval", "rich"]
+
 [project.scripts]
 asr-diar-server = "asr_diar_server.cli:main"
 asr-diar-bench = "asr_diar_server.bench.cli:main"

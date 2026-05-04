@@ -109,15 +109,15 @@ def test_main_quality_prints_not_implemented(capsys):
     assert "quality not yet implemented" in captured.out
 
 
-def test_main_performance_prints_not_implemented(capsys):
+def test_main_performance_runs_and_outputs_summary(capsys):
     from asr_diar_server.bench.cli import main
 
     with patch.object(sys, "argv", ["asr-diar-bench", "performance"]), \
          patch("asr_diar_server.bench.cli.ensure_audio_and_annotations"), \
-         patch("asr_diar_server.bench.cli.materialize_reference_stms"):
+         patch("asr_diar_server.bench.cli.materialize_reference_stms"), \
+         patch("asr_diar_server.bench.cli._run_performance") as mock_perf:
         main()
-    captured = capsys.readouterr()
-    assert "performance not yet implemented" in captured.out
+    mock_perf.assert_called_once()
 
 
 def test_main_all_prints_not_implemented(capsys):

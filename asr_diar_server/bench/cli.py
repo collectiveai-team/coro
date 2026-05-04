@@ -72,6 +72,10 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument("--audio", type=Path, default=None)
     parser.add_argument("--reference-stm", type=Path, default=None)
+    parser.add_argument("--der-collar", type=float, default=0.0)
+    parser.add_argument(
+        "--der-regions", choices=["all", "nooverlap", "single"], default="all"
+    )
 
 
 def _apply_defaults(args: argparse.Namespace) -> None:
@@ -132,6 +136,47 @@ def parse_args(argv=None) -> argparse.Namespace:
     return args
 
 
+def _run_performance(args: argparse.Namespace, meetings: list[str]) -> None:
+    from asr_diar_server.bench.ami import get_audio_path
+    from asr_diar_server.bench.orchestrate import run_performance_workload
+
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    items: list[dict] = []
+    for meeting_id in meetings:
+        audio_path = get_audio_path(args.ami_root, meeting_id)
+        if audio_path.exists():
+            items.append({
+                "item_id": meeting_id,
+                "audio_path": audio_path,
+                "ref_stm_path": None,
+            })
+
+    if args.audio is not None:
+        items.append({
+            "item_id": args.audio.stem,
+            "audio_path": args.audio,
+            "ref_stm_path": None,
+        })
+
+    base_url = args.server_url or f"http://127.0.0.1:{args.server_port}"
+
+    run_performance_workload(
+        items=items,
+        base_url=base_url,
+        out_dir=out_dir,
+        reps=args.reps,
+        server_pid=args.server_pid or 1,
+        sample_interval=args.sample_interval,
+    )
+
+    import json
+    summary_path = out_dir / "performance" / "summary.json"
+    if summary_path.exists():
+        print(json.dumps(json.loads(summary_path.read_text()), indent=2))
+
+
 def main() -> None:
     args = parse_args()
     meetings = resolve_workload_set(
@@ -143,7 +188,11 @@ def main() -> None:
         meetings, args.ami_root, no_download=args.no_download,
     )
     materialize_reference_stms(meetings, args.ami_root)
-    print(f"{args.subcommand} not yet implemented")
+
+    if args.subcommand == "performance":
+        _run_performance(args, meetings)
+    else:
+        print(f"{args.subcommand} not yet implemented")
 
 
 if __name__ == "__main__":
