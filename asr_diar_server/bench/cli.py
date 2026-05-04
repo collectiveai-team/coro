@@ -13,6 +13,16 @@ from asr_diar_server.bench.ami import (
     resolve_workload_set,
 )
 
+_MANAGED_FLAGS = {
+    "server_asr_backend",
+    "server_asr_model",
+    "server_diar_backend",
+    "server_diar_model",
+    "server_pipeline",
+    "server_port",
+    "no_diarization",
+}
+
 
 def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
@@ -48,6 +58,63 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ami-root", type=Path, default=Path("./amicorpus/"))
     parser.add_argument("--no-download", action="store_true")
 
+    managed = parser.add_argument_group("bench-managed server")
+    managed.add_argument("--server-asr-backend", default=None)
+    managed.add_argument("--server-asr-model", default=None)
+    managed.add_argument("--server-diar-backend", default=None)
+    managed.add_argument("--server-diar-model", default=None)
+    managed.add_argument("--server-pipeline", default=None)
+    managed.add_argument("--no-diarization", action="store_true", default=None)
+    managed.add_argument("--server-port", type=int, default=None)
+
+    attached = parser.add_argument_group("bench-attached server")
+    attached.add_argument("--server-url", type=str, default=None)
+
+    parser.add_argument("--audio", type=Path, default=None)
+    parser.add_argument("--reference-stm", type=Path, default=None)
+
+
+def _apply_defaults(args: argparse.Namespace) -> None:
+    defaults = {
+        "server_asr_backend": "whisperlivekit",
+        "server_asr_model": "openai/whisper-medium",
+        "server_diar_backend": "whisperlivekit",
+        "server_diar_model": "nvidia/diar_sortformer_4spk-v1",
+        "server_pipeline": "full-memory",
+        "server_port": 0,
+        "no_diarization": False,
+    }
+    for flag, default in defaults.items():
+        if getattr(args, flag) is None:
+            setattr(args, flag, default)
+
+
+def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    has_attached = args.server_url is not None
+    has_managed_explicit = any(
+        getattr(args, flag) is not None for flag in _MANAGED_FLAGS
+    )
+
+    if has_attached and has_managed_explicit:
+        parser.error(
+            "--server-url is mutually exclusive with bench-managed server flags "
+            "(--server-asr-backend, --server-asr-model, --server-diar-backend, "
+            "--server-diar-model, --server-pipeline, --server-port, --no-diarization)."
+        )
+
+    _apply_defaults(args)
+
+    if args.no_diarization:
+        args.server_diar_backend = "none"
+
+    if args.reference_stm is not None and args.audio is None:
+        parser.error("--reference-stm requires --audio.")
+
+    if args.audio is not None and args.reference_stm is None and args.subcommand == "quality":
+        parser.error(
+            "--audio without --reference-stm is not allowed for the 'quality' subcommand."
+        )
+
 
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -60,7 +127,9 @@ def parse_args(argv=None) -> argparse.Namespace:
         sub = subparsers.add_parser(name)
         _add_shared_flags(sub)
 
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    _validate_args(args, parser)
+    return args
 
 
 def main() -> None:

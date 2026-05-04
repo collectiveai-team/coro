@@ -126,6 +126,15 @@ max-complexity = 10
     "C901",
 ]
 "asr_diar_server/bench/cli.py" = ["S108", "DTZ005"]
+"asr_diar_server/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
+"asr_diar_server/bench/transport.py" = ["S310"]
+"asr_diar_server/bench/orchestrate.py" = [
+    "S310",
+    "S607",
+    "S110",
+    "SIM105",
+    "UP017",
+]
 # Settings and CLI use 0.0.0.0 intentionally.
 "asr_diar_server/settings.py" = ["S104"]
 "asr_diar_server/cli.py" = ["S104"]

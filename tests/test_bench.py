@@ -93,9 +93,9 @@ def test_parse_args_requires_subcommand():
         parse_args([])
 
 
-def test_parse_args_no_audio_positional():
+def test_parse_args_audio_defaults_none():
     args = parse_args(["quality"])
-    assert not hasattr(args, "audio")
+    assert args.audio is None
 
 
 def test_main_quality_prints_not_implemented(capsys):
