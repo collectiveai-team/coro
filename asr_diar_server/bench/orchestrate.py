@@ -26,6 +26,8 @@ def run_workload(
     reps: int,
     subcommand: str,
     cli_args: list[str] | None = None,
+    der_collar: float = 0.0,
+    der_regions: str = "all",
 ) -> None:
     resp_dir = out_dir / "responses"
     hyp_dir = out_dir / "hyp"
@@ -50,6 +52,14 @@ def run_workload(
                 _write_hyp(hyp_dir, item_id, result)
                 _write_ref(ref_dir, item_id, ref_stm_path)
 
+    if subcommand == "quality":
+        _run_quality_scoring(
+            out_dir=out_dir,
+            items=items,
+            der_collar=der_collar,
+            der_regions=der_regions,
+        )
+
     _write_manifest(
         out_dir=out_dir,
         items=items,
@@ -58,6 +68,57 @@ def run_workload(
         reps=reps,
         subcommand=subcommand,
     )
+
+
+def _run_quality_scoring(
+    *,
+    out_dir: Path,
+    items: list[dict[str, Any]],
+    der_collar: float,
+    der_regions: str,
+) -> None:
+    from asr_diar_server.bench.quality import combine_items, score_item
+
+    quality_dir = out_dir / "quality"
+    quality_dir.mkdir(parents=True, exist_ok=True)
+
+    hyp_dir = out_dir / "hyp"
+    ref_dir = out_dir / "ref"
+
+    item_results: list[dict[str, Any]] = []
+
+    for item in items:
+        item_id = item["item_id"]
+        hyp_path = hyp_dir / f"{item_id}.hyp.stm"
+        ref_path = ref_dir / f"{item_id}.ref.stm"
+
+        scored = score_item(
+            ref_path,
+            hyp_path,
+            der_collar=der_collar,
+            der_regions=der_regions,
+        )
+
+        scored["session_id"] = item_id
+        scored["audio_seconds"] = item.get("audio_seconds", 0.0)
+
+        raw = scored.pop("_raw", None)
+
+        artifact: dict[str, Any] = {
+            "session_id": item_id,
+            "audio_seconds": item.get("audio_seconds", 0.0),
+            "metrics": scored["metrics"],
+        }
+        if scored.get("error"):
+            artifact["error"] = scored["error"]
+
+        (quality_dir / f"{item_id}.json").write_text(json.dumps(artifact, indent=2))
+
+        scored["_raw"] = raw
+        item_results.append(scored)
+
+    summary = combine_items(item_results)
+    (quality_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
 
 def _fetch_health(base_url: str) -> dict[str, Any]:

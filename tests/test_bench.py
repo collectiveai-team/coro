@@ -98,15 +98,15 @@ def test_parse_args_audio_defaults_none():
     assert args.audio is None
 
 
-def test_main_quality_prints_not_implemented(capsys):
+def test_main_quality_calls_run_quality(capsys):
     from asr_diar_server.bench.cli import main
 
     with patch.object(sys, "argv", ["asr-diar-bench", "quality"]), \
          patch("asr_diar_server.bench.cli.ensure_audio_and_annotations"), \
-         patch("asr_diar_server.bench.cli.materialize_reference_stms"):
+         patch("asr_diar_server.bench.cli.materialize_reference_stms"), \
+         patch("asr_diar_server.bench.cli._run_quality") as mock_quality:
         main()
-    captured = capsys.readouterr()
-    assert "quality not yet implemented" in captured.out
+    mock_quality.assert_called_once()
 
 
 def test_main_performance_runs_and_outputs_summary(capsys):

@@ -177,6 +177,53 @@ def _run_performance(args: argparse.Namespace, meetings: list[str]) -> None:
         print(json.dumps(json.loads(summary_path.read_text()), indent=2))
 
 
+def _run_quality(args: argparse.Namespace, meetings: list[str]) -> None:
+    from asr_diar_server.bench.ami import get_audio_path
+    from asr_diar_server.bench.orchestrate import run_workload
+
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    ami_root = args.ami_root
+    items: list[dict] = []
+    for meeting_id in meetings:
+        audio_path = get_audio_path(ami_root, meeting_id)
+        stm_path = ami_root / "stm" / f"{meeting_id}.ref.stm"
+        ref_stm = stm_path if stm_path.exists() else None
+        if audio_path.exists():
+            items.append({
+                "item_id": meeting_id,
+                "audio_path": audio_path,
+                "ref_stm_path": ref_stm,
+                "audio_seconds": 0.0,
+            })
+
+    if args.audio is not None:
+        items.append({
+            "item_id": args.audio.stem,
+            "audio_path": args.audio,
+            "ref_stm_path": args.reference_stm,
+            "audio_seconds": 0.0,
+        })
+
+    base_url = args.server_url or f"http://127.0.0.1:{args.server_port}"
+
+    run_workload(
+        items=items,
+        base_url=base_url,
+        out_dir=out_dir,
+        reps=1,
+        subcommand="quality",
+        der_collar=args.der_collar,
+        der_regions=args.der_regions,
+    )
+
+    import json
+    summary_path = out_dir / "quality" / "summary.json"
+    if summary_path.exists():
+        print(json.dumps(json.loads(summary_path.read_text()), indent=2))
+
+
 def main() -> None:
     args = parse_args()
     meetings = resolve_workload_set(
@@ -191,6 +238,8 @@ def main() -> None:
 
     if args.subcommand == "performance":
         _run_performance(args, meetings)
+    elif args.subcommand == "quality":
+        _run_quality(args, meetings)
     else:
         print(f"{args.subcommand} not yet implemented")
 

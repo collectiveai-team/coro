@@ -240,11 +240,11 @@ class TestMainIntegration:
         ]), patch("asr_diar_server.bench.ami.download_meeting_audio"), \
            patch("asr_diar_server.bench.ami.download_annotations",
                  return_value=zip_path), \
-           patch("asr_diar_server.bench.ami.ami_meeting_to_stm", return_value="STM"):
+           patch("asr_diar_server.bench.ami.ami_meeting_to_stm", return_value="STM"), \
+           patch("asr_diar_server.bench.cli._run_quality") as mock_quality:
             main()
+            mock_quality.assert_called_once()
 
-        captured = capsys.readouterr()
-        assert "quality not yet implemented" in captured.out
         assert (tmp_path / "stm" / "IB4001.ref.stm").exists()
 
     def test_main_no_download_error(self, tmp_path: Path):
