@@ -120,15 +120,33 @@ def test_main_performance_runs_and_outputs_summary(capsys):
     mock_perf.assert_called_once()
 
 
-def test_main_all_prints_not_implemented(capsys):
+def test_main_all_calls_run_all(capsys):
     from asr_diar_server.bench.cli import main
 
     with patch.object(sys, "argv", ["asr-diar-bench", "all"]), \
          patch("asr_diar_server.bench.cli.ensure_audio_and_annotations"), \
-         patch("asr_diar_server.bench.cli.materialize_reference_stms"):
+         patch("asr_diar_server.bench.cli.materialize_reference_stms"), \
+         patch("asr_diar_server.bench.cli._run_all") as mock_all:
         main()
-    captured = capsys.readouterr()
-    assert "all not yet implemented" in captured.out
+    mock_all.assert_called_once()
+
+
+def test_parse_args_accepts_warmup():
+    args = parse_args(["all", "--warmup"])
+    assert args.warmup is True
+
+
+def test_parse_args_warmup_defaults_false():
+    args = parse_args(["all"])
+    assert args.warmup is False
+
+
+def test_parse_args_warmup_audio_implies_warmup(tmp_path):
+    audio = tmp_path / "warmup.wav"
+    audio.touch()
+    args = parse_args(["all", "--warmup-audio", str(audio)])
+    assert args.warmup is True
+    assert args.warmup_audio == audio
 
 
 def test_legacy_tool_files_deleted():

@@ -289,3 +289,269 @@ class TestE2EAdhocAudio:
         args = parse_args(["all", "--audio", str(audio)])
         assert args.audio == audio
         assert args.reference_stm is None
+
+
+class TestE2EAllSubcommand:
+    def test_all_produces_perf_and_quality_artifacts(self, e2e_server, tmp_path: Path):
+        from unittest.mock import patch
+
+        from asr_diar_server.bench.orchestrate import run_all_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+
+        ref_stm = tmp_path / "meeting1.ref.stm"
+        ref_stm.write_text("meeting1 1 SPEAKER_00 0.000 1.500 hello world\n")
+
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+
+        items = [
+            {
+                "item_id": "meeting1",
+                "audio_path": audio,
+                "ref_stm_path": ref_stm,
+            }
+        ]
+
+        mock_score = {
+            "metrics": {"siwer": {"wer": 0.1}},
+            "_raw": object(),
+        }
+
+        with patch("asr_diar_server.bench.quality.score_item", return_value=mock_score), \
+             patch("asr_diar_server.bench.quality.combine_items", return_value={
+                 "workload_set": ["meeting1"],
+                 "n_succeeded": 1,
+                 "n_failed": 0,
+                 "combined": {},
+                 "per_item": [],
+             }):
+            run_all_workload(
+                items=items,
+                base_url=e2e_server,
+                out_dir=out_dir,
+                reps=1,
+                server_pid=1,
+            )
+
+        assert (out_dir / "responses" / "meeting1_rep1.json").exists()
+        assert (out_dir / "performance" / "resource_meeting1_rep1.csv").exists()
+        assert (out_dir / "performance" / "summary.json").exists()
+        assert (out_dir / "hyp" / "meeting1.hyp.stm").exists()
+        assert (out_dir / "ref" / "meeting1.ref.stm").exists()
+        assert (out_dir / "manifest.json").exists()
+
+    def test_warmup_sends_request_before_items(self, e2e_server, tmp_path: Path):
+        from unittest.mock import MagicMock, patch
+
+        from asr_diar_server.bench.orchestrate import run_all_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+
+        items = [
+            {
+                "item_id": "meeting1",
+                "audio_path": audio,
+                "ref_stm_path": None,
+            }
+        ]
+
+        warmup_path = tmp_path / "warmup.wav"
+        warmup_path.write_bytes(b"RIFF" + b"\x00" * 100)
+
+        call_order = []
+        original_transcribe = __import__(
+            "asr_diar_server.bench.transport", fromlist=["transcribe_audio"]
+        ).transcribe_audio
+
+        def tracking_transcribe(base_url, audio_path, **kw):
+            call_order.append(str(audio_path))
+            return original_transcribe(base_url, audio_path, **kw)
+
+        with patch(
+            "asr_diar_server.bench.orchestrate.transcribe_audio",
+            side_effect=tracking_transcribe,
+        ):
+            run_all_workload(
+                items=items,
+                base_url=e2e_server,
+                out_dir=out_dir,
+                reps=1,
+                server_pid=1,
+                warmup_audio=warmup_path,
+            )
+
+        assert len(call_order) == 2
+        assert str(warmup_path) == call_order[0]
+        assert str(audio) == call_order[1]
+
+        assert not any(
+            "warmup" in p.name
+            for p in (out_dir / "responses").iterdir()
+        )
+
+    def test_quality_scored_from_rep1_only(self, e2e_server, tmp_path: Path):
+        from unittest.mock import patch
+
+        from asr_diar_server.bench.orchestrate import run_all_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+
+        ref_stm = tmp_path / "meeting1.ref.stm"
+        ref_stm.write_text("meeting1 1 SPEAKER_00 0.000 1.500 hello world\n")
+
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+
+        items = [
+            {
+                "item_id": "meeting1",
+                "audio_path": audio,
+                "ref_stm_path": ref_stm,
+            }
+        ]
+
+        mock_score = {
+            "metrics": {"siwer": {"wer": 0.1}},
+            "_raw": object(),
+        }
+
+        with patch("asr_diar_server.bench.quality.score_item", return_value=mock_score), \
+             patch("asr_diar_server.bench.quality.combine_items", return_value={
+                 "workload_set": ["meeting1"],
+                 "n_succeeded": 1,
+                 "n_failed": 0,
+                 "combined": {},
+                 "per_item": [],
+             }):
+            run_all_workload(
+                items=items,
+                base_url=e2e_server,
+                out_dir=out_dir,
+                reps=3,
+                server_pid=1,
+            )
+
+        assert (out_dir / "responses" / "meeting1_rep1.json").exists()
+        assert (out_dir / "responses" / "meeting1_rep2.json").exists()
+        assert (out_dir / "responses" / "meeting1_rep3.json").exists()
+        assert (out_dir / "performance" / "resource_meeting1_rep1.csv").exists()
+        assert (out_dir / "performance" / "resource_meeting1_rep2.csv").exists()
+        assert (out_dir / "performance" / "resource_meeting1_rep3.csv").exists()
+        assert (out_dir / "hyp" / "meeting1.hyp.stm").exists()
+        assert not (out_dir / "hyp" / "meeting1_rep2.hyp.stm").exists()
+
+    def test_adhoc_audio_without_ref_skips_quality(self, e2e_server, tmp_path: Path):
+        from asr_diar_server.bench.orchestrate import run_all_workload
+
+        audio = tmp_path / "my.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+
+        items = [
+            {
+                "item_id": "my",
+                "audio_path": audio,
+                "ref_stm_path": None,
+            }
+        ]
+
+        run_all_workload(
+            items=items,
+            base_url=e2e_server,
+            out_dir=out_dir,
+            reps=1,
+            server_pid=1,
+        )
+
+        assert (out_dir / "responses" / "my_rep1.json").exists()
+        assert (out_dir / "performance" / "resource_my_rep1.csv").exists()
+        assert (out_dir / "performance" / "summary.json").exists()
+        assert not (out_dir / "hyp" / "my.hyp.stm").exists()
+        assert not (out_dir / "quality" / "my.json").exists()
+
+        quality_summary = json.loads(
+            (out_dir / "quality" / "summary.json").read_text()
+        )
+        assert quality_summary["n_skipped"] == 1
+        assert quality_summary["n_succeeded"] == 0
+
+    def test_mixed_items_with_skip_and_quality(self, e2e_server, tmp_path: Path):
+        from unittest.mock import patch
+
+        from asr_diar_server.bench.orchestrate import run_all_workload
+
+        audio1 = tmp_path / "IB4001.wav"
+        audio1.write_bytes(b"RIFF" + b"\x00" * 200)
+        ref1 = tmp_path / "IB4001.ref.stm"
+        ref1.write_text("IB4001 1 SPEAKER_00 0.000 1.500 hello world\n")
+
+        audio2 = tmp_path / "IN1001.wav"
+        audio2.write_bytes(b"RIFF" + b"\x00" * 200)
+        ref2 = tmp_path / "IN1001.ref.stm"
+        ref2.write_text("IN1001 1 SPEAKER_00 0.000 1.500 test data\n")
+
+        audio3 = tmp_path / "adhoc.wav"
+        audio3.write_bytes(b"RIFF" + b"\x00" * 200)
+
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+
+        items = [
+            {"item_id": "IB4001", "audio_path": audio1, "ref_stm_path": ref1},
+            {"item_id": "IN1001", "audio_path": audio2, "ref_stm_path": ref2},
+            {"item_id": "adhoc", "audio_path": audio3, "ref_stm_path": None},
+        ]
+
+        mock_score = {
+            "metrics": {"siwer": {"wer": 0.1}},
+            "_raw": object(),
+        }
+
+        with patch("asr_diar_server.bench.quality.score_item", return_value=mock_score), \
+             patch("asr_diar_server.bench.quality.combine_items", return_value={
+                 "workload_set": ["IB4001", "IN1001"],
+                 "n_succeeded": 2,
+                 "n_failed": 0,
+                 "combined": {},
+                 "per_item": [],
+             }):
+            run_all_workload(
+                items=items,
+                base_url=e2e_server,
+                out_dir=out_dir,
+                reps=2,
+                server_pid=1,
+            )
+
+        assert (out_dir / "responses" / "IB4001_rep1.json").exists()
+        assert (out_dir / "responses" / "IB4001_rep2.json").exists()
+        assert (out_dir / "responses" / "IN1001_rep1.json").exists()
+        assert (out_dir / "responses" / "adhoc_rep1.json").exists()
+
+        assert (out_dir / "performance" / "resource_IB4001_rep1.csv").exists()
+        assert (out_dir / "performance" / "resource_IB4001_rep2.csv").exists()
+        assert (out_dir / "performance" / "resource_adhoc_rep1.csv").exists()
+        assert (out_dir / "performance" / "summary.json").exists()
+
+        assert (out_dir / "hyp" / "IB4001.hyp.stm").exists()
+        assert (out_dir / "hyp" / "IN1001.hyp.stm").exists()
+        assert not (out_dir / "hyp" / "adhoc.hyp.stm").exists()
+
+        assert (out_dir / "quality" / "IB4001.json").exists()
+        assert (out_dir / "quality" / "IN1001.json").exists()
+        assert not (out_dir / "quality" / "adhoc.json").exists()
+
+        quality_summary = json.loads(
+            (out_dir / "quality" / "summary.json").read_text()
+        )
+        assert quality_summary["n_skipped"] == 1
+        assert quality_summary["n_succeeded"] == 2

@@ -70,6 +70,8 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     attached = parser.add_argument_group("bench-attached server")
     attached.add_argument("--server-url", type=str, default=None)
 
+    parser.add_argument("--warmup", action="store_true", default=False)
+    parser.add_argument("--warmup-audio", type=Path, default=None)
     parser.add_argument("--audio", type=Path, default=None)
     parser.add_argument("--reference-stm", type=Path, default=None)
     parser.add_argument("--der-collar", type=float, default=0.0)
@@ -107,6 +109,9 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         )
 
     _apply_defaults(args)
+
+    if args.warmup_audio is not None:
+        args.warmup = True
 
     if args.no_diarization:
         args.server_diar_backend = "none"
@@ -224,6 +229,62 @@ def _run_quality(args: argparse.Namespace, meetings: list[str]) -> None:
         print(json.dumps(json.loads(summary_path.read_text()), indent=2))
 
 
+def _run_all(args: argparse.Namespace, meetings: list[str]) -> None:
+    from asr_diar_server.bench.ami import get_audio_path
+    from asr_diar_server.bench.data import WARMUP_AUDIO_PATH
+    from asr_diar_server.bench.orchestrate import run_all_workload
+
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    ami_root = args.ami_root
+    items: list[dict] = []
+    for meeting_id in meetings:
+        audio_path = get_audio_path(ami_root, meeting_id)
+        stm_path = ami_root / "stm" / f"{meeting_id}.ref.stm"
+        ref_stm = stm_path if stm_path.exists() else None
+        if audio_path.exists():
+            items.append({
+                "item_id": meeting_id,
+                "audio_path": audio_path,
+                "ref_stm_path": ref_stm,
+                "audio_seconds": 0.0,
+            })
+
+    if args.audio is not None:
+        items.append({
+            "item_id": args.audio.stem,
+            "audio_path": args.audio,
+            "ref_stm_path": args.reference_stm,
+            "audio_seconds": 0.0,
+        })
+
+    base_url = args.server_url or f"http://127.0.0.1:{args.server_port}"
+
+    warmup_audio = None
+    if args.warmup:
+        warmup_audio = args.warmup_audio or WARMUP_AUDIO_PATH
+
+    run_all_workload(
+        items=items,
+        base_url=base_url,
+        out_dir=out_dir,
+        reps=args.reps,
+        server_pid=args.server_pid or 1,
+        sample_interval=args.sample_interval,
+        der_collar=args.der_collar,
+        der_regions=args.der_regions,
+        warmup_audio=warmup_audio,
+    )
+
+    import json
+    for subdir in ("performance", "quality"):
+        summary_path = out_dir / subdir / "summary.json"
+        if summary_path.exists():
+            print(f"--- {subdir}/summary.json ---")
+            print(json.dumps(json.loads(summary_path.read_text()), indent=2))
+
+
 def main() -> None:
     args = parse_args()
     meetings = resolve_workload_set(
@@ -241,7 +302,7 @@ def main() -> None:
     elif args.subcommand == "quality":
         _run_quality(args, meetings)
     else:
-        print(f"{args.subcommand} not yet implemented")
+        _run_all(args, meetings)
 
 
 if __name__ == "__main__":
