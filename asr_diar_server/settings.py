@@ -17,6 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PipelineSelector = Literal["full-memory", "chunked-file"]
 ASRBackendProvider = Literal["faster-whisper"]
 DiarizationBackendProvider = Literal["none", "nemo"]
+ASRDevice = Literal["auto", "cuda", "cpu"]
 
 
 # MARK: Server Settings
@@ -39,6 +40,12 @@ class ServerSettings(BaseSettings):
     )
     model_asr: str = Field(
         default="openai/whisper-medium", description="ASR Model Selection."
+    )
+    asr_device: ASRDevice = Field(
+        default="auto", description="Faster Whisper device selection."
+    )
+    asr_compute_type: str = Field(
+        default="default", description="Faster Whisper compute type selection."
     )
     backend_diarization: DiarizationBackendProvider = Field(
         default="none",

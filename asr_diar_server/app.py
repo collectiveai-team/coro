@@ -60,7 +60,11 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         application.state.runtime = runtime
 
         # Build ASR adapter (always required)
-        asr_adapter = build_asr_adapter(settings.model_asr)
+        asr_adapter = build_asr_adapter(
+            settings.model_asr,
+            device=settings.asr_device,
+            compute_type=settings.asr_compute_type,
+        )
         runtime.asr_adapter = asr_adapter
 
         # Build optional diarization adapter

@@ -24,15 +24,8 @@ dependencies = [
     "uvicorn>=0.30.0",
 ]
 
+
 [project.optional-dependencies]
-bench = ["meeteval", "rich"]
-
-[project.scripts]
-asr-diar-server = "asr_diar_server.cli:main"
-asr-diar-bench = "asr_diar_server.bench.cli:main"
-
-[dependency-groups]
-benchmark = ["jiwer>=3.1.0", "pyannote-metrics>=4.0.0"]
 dev = [
     "matplotlib>=3.10.9",
     "pandas>=3.0.2",
@@ -43,6 +36,29 @@ dev = [
     "ruff>=0.9.0",
     "pyrefly>=0.17.0",
 ]
+bench = ["meeteval>=0.4.3", "rich>=15.0.0"]
+cpu = ["torch>=2.1.0,<4.0"]
+cuda = [
+    "nvidia-cublas-cu12>=12.0.0.0",
+    "nvidia-cudnn-cu12>=9.0.0.0",
+    "torch>=2.1.0,<4.0",
+]
+
+[tool.uv]
+default-groups = ["cuda"]
+conflicts = [[{ group = "cpu" }, { group = "cuda" }]]
+
+[tool.uv.sources]
+torch = [{ index = "torch-cpu", group = "cpu" }]
+
+[[tool.uv.index]]
+name = "torch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[project.scripts]
+asr-diar-server = "asr_diar_server.cli:main"
+asr-diar-bench = "asr_diar_server.bench.cli:main"
 
 # MARK: Ruff
 [tool.ruff]

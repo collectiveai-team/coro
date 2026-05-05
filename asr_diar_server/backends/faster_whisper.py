@@ -85,12 +85,21 @@ class FasterWhisperASRAdapter:
         return convert_asr_segments(segments)
 
 
-def build_asr_adapter(model_asr: str) -> FasterWhisperASRAdapter:
+def build_asr_adapter(
+    model_asr: str,
+    *,
+    device: str = "auto",
+    compute_type: str = "default",
+) -> FasterWhisperASRAdapter:
     """Construct and return a FasterWhisperASRAdapter.
 
     Args:
         model_asr: Model identifier, e.g. ``"openai/whisper-medium"`` or
             ``"medium"``.
+        device: Faster Whisper device selector, e.g. ``"auto"``, ``"cuda"``,
+            or ``"cpu"``.
+        compute_type: Faster Whisper compute type selector, e.g. ``"default"``,
+            ``"float16"``, or ``"int8"``.
 
     Returns:
         Initialised adapter ready for use.
@@ -100,10 +109,11 @@ def build_asr_adapter(model_asr: str) -> FasterWhisperASRAdapter:
 
     model_size = _model_size_from_id(model_asr)
     logger.info(
-        "Loading ASR model '%s' with faster-whisper size token '%s'.",
+        "Loading ASR model '%s' with faster-whisper size token '%s' on device '%s'.",
         model_asr,
         model_size,
+        device,
     )
-    model = WhisperModel(model_size)
+    model = WhisperModel(model_size, device=device, compute_type=compute_type)
     logger.info("ASR model loaded.")
     return FasterWhisperASRAdapter(model)
