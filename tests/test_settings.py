@@ -12,15 +12,15 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     settings = ServerSettings(_env_file=None)
 
     assert settings.pipeline == "full-memory"
-    assert settings.backend_asr == "whisperlivekit"
+    assert settings.backend_asr == "faster-whisper"
     assert settings.model_asr == "openai/whisper-medium"
     assert settings.backend_diarization == "none"
     assert settings.model_diarization is None
 
 
-def test_whisperlivekit_diarization_gets_default_model():
+def test_nemo_diarization_gets_default_model():
     settings = ServerSettings(
-        backend_diarization="whisperlivekit",
+        backend_diarization="nemo",
         _env_file=None,
     )
 
