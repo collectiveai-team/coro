@@ -39,11 +39,7 @@ RESOURCE_FIELDNAMES: list[str] = [
     "audio_seconds",
     "wall_seconds",
     "transcription_throughput",
-    "wer",
-    "der",
-    "der_collar_s",
-    "der_skip_overlap",
-    "wer_normalization",
+    "time_to_first_delta_s",
     "sampling_warning",
 ]
 """Stable Resource Schema columns written to every Resource CSV row."""

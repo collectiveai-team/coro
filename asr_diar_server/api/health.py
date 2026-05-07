@@ -18,7 +18,8 @@ async def health(request: Request) -> JSONResponse:
     return JSONResponse(
         {
             "status": "ok",
-            "ready": runtime.ready,
+            "ready": runtime.ready and runtime.warmup_ready,
+            "warmup_ready": runtime.warmup_ready,
             "startup_selection": {
                 "pipeline": runtime.pipeline_selector,
                 "asr_provider": runtime.asr_provider,

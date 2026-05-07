@@ -15,8 +15,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # MARK: Startup Selector Types
 PipelineSelector = Literal["full-memory", "chunked-file"]
-ASRBackendProvider = Literal["whisperlivekit"]
-DiarizationBackendProvider = Literal["none", "whisperlivekit"]
+ASRBackendProvider = Literal["faster-whisper"]
+DiarizationBackendProvider = Literal["none", "nemo"]
 
 
 # MARK: Server Settings
@@ -35,7 +35,7 @@ class ServerSettings(BaseSettings):
         default="full-memory", description="Configured Transcription Pipeline selector."
     )
     backend_asr: ASRBackendProvider = Field(
-        default="whisperlivekit", description="ASR Backend Provider selector."
+        default="faster-whisper", description="ASR Backend Provider selector."
     )
     model_asr: str = Field(
         default="openai/whisper-medium", description="ASR Model Selection."
@@ -49,9 +49,16 @@ class ServerSettings(BaseSettings):
     )
     log_level: str = Field(default="info", description="Log level (for CLI use only).")
 
+    # Server Warmup ---------------------------------------------------------
+    warmup: Literal["enabled", "disabled"] = Field(
+        default="enabled",
+        description="Server Warmup runs the Configured Transcription Pipeline against "
+        "the Warmup Audio Asset at startup. Set to 'disabled' to skip warmup.",
+    )
+
     # Derived Defaults ------------------------------------------------------
     @model_validator(mode="after")
     def default_enabled_diarization_model(self) -> ServerSettings:
-        if self.backend_diarization == "whisperlivekit" and self.model_diarization is None:
+        if self.backend_diarization == "nemo" and self.model_diarization is None:
             self.model_diarization = "nvidia/diar_streaming_sortformer_4spk-v2"
         return self

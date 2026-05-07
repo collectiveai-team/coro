@@ -16,13 +16,16 @@ classifiers = [
 ]
 dependencies = [
     "fastapi>=0.115.0",
+    "faster-whisper>=1.2.0,<1.3.0",
     "lightning @ https://files.pythonhosted.org/packages/a3/2c/85eaf42c983b0cd81bcda5876da2c8e2a9fd347908666ea9855724369171/lightning-2.4.0-py3-none-any.whl",
     "nemo-toolkit[asr]>=2.7.0,<2.8.0",
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.27",
     "uvicorn>=0.30.0",
-    "whisperlivekit[cu129,diarization-sortformer]>=0.2.20.post1",
 ]
+
+[project.optional-dependencies]
+bench = ["meeteval", "rich"]
 
 [project.scripts]
 asr-diar-server = "asr_diar_server.cli:main"
@@ -49,6 +52,7 @@ exclude = [
     "custom_server.py",
     "custom_server_chunked.py",
     "run_transcription.py",
+    "run_dev.py",
     "custom_client.py",
     "tools/",
     ".worktrees/",
@@ -125,6 +129,15 @@ max-complexity = 10
     "C901",
 ]
 "asr_diar_server/bench/cli.py" = ["S108", "DTZ005"]
+"asr_diar_server/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
+"asr_diar_server/bench/transport.py" = ["S310"]
+"asr_diar_server/bench/orchestrate.py" = [
+    "S310",
+    "S607",
+    "S110",
+    "SIM105",
+    "UP017",
+]
 # Settings and CLI use 0.0.0.0 intentionally.
 "asr_diar_server/settings.py" = ["S104"]
 "asr_diar_server/cli.py" = ["S104"]
