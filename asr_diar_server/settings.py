@@ -14,10 +14,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 # MARK: Startup Selector Types
-PipelineSelector = Literal["full-memory", "chunked-file"]
+PipelineSelector = Literal["full-memory", "chunked-file", "streaming"]
 ASRBackendProvider = Literal["faster-whisper"]
 DiarizationBackendProvider = Literal["none", "nemo"]
 ASRDevice = Literal["auto", "cuda", "cpu"]
+DiarizationLatencyTier = Literal["very-high", "high", "low", "ultra-low"]
 
 
 # MARK: Server Settings
@@ -55,6 +56,11 @@ class ServerSettings(BaseSettings):
         default=None, description="Diarization Model Selection."
     )
     log_level: str = Field(default="info", description="Log level (for CLI use only).")
+
+    diarization_latency: DiarizationLatencyTier = Field(
+        default="very-high",
+        description="Diarization Latency Selection tier for streaming Sortformer.",
+    )
 
     # Server Warmup ---------------------------------------------------------
     warmup: Literal["enabled", "disabled"] = Field(
