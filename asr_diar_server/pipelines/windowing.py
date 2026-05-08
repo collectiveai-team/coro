@@ -54,6 +54,22 @@ class ASRWindowing:
                 break
             offset += self.step_bytes
 
+    # Batch Transcription via chunk iterator ------------------------------------
+    async def transcribe_chunks(
+        self,
+        chunks,
+        *,
+        asr: Any,
+        language: str | None = None,
+        prompt: str | None = None,
+    ) -> ASRWindowingResult:
+        """Consume an async chunk iterator and return all tokens."""
+        tokens: list[TranscriptToken] = []
+        async for event in self.stream_chunks(chunks, asr=asr, language=language, prompt=prompt):
+            if isinstance(event, TokenBatchEvent):
+                tokens.extend(event.tokens)
+        return ASRWindowingResult(tokens=tokens)
+
     # Batch Transcription ---------------------------------------------------
     async def transcribe_pcm(
         self,
