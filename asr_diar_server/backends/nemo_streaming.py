@@ -13,6 +13,70 @@ from asr_diar_server.core.types import SpeakerSegment
 
 _LEFT_CONTEXT_FRAMES = 99
 
+LATENCY_TIER_PARAMS: dict[str, dict[str, int]] = {
+    "very-high": {
+        "chunk_len": 340,
+        "chunk_right_context": 40,
+        "fifo_len": 40,
+        "spkcache_update_period": 300,
+        "spkcache_len": 188,
+    },
+    "high": {
+        "chunk_len": 124,
+        "chunk_right_context": 1,
+        "fifo_len": 124,
+        "spkcache_update_period": 124,
+        "spkcache_len": 188,
+    },
+    "low": {
+        "chunk_len": 6,
+        "chunk_right_context": 7,
+        "fifo_len": 188,
+        "spkcache_update_period": 144,
+        "spkcache_len": 188,
+    },
+    "ultra-low": {
+        "chunk_len": 3,
+        "chunk_right_context": 1,
+        "fifo_len": 188,
+        "spkcache_update_period": 144,
+        "spkcache_len": 188,
+    },
+}
+
+
+def get_latency_tier_params(tier: str) -> dict[str, int]:
+    return dict(LATENCY_TIER_PARAMS[tier])
+
+
+class StreamingDiarizerFactory:
+    """Produces fresh per-request StreamingDiarizer instances bound to a shared model."""
+
+    def __init__(self, model, *, tier: str = "very-high") -> None:
+        self._model = model
+        self._tier = tier
+        self._tier_params = get_latency_tier_params(tier)
+        subsampling_factor = getattr(model.sortformer_modules, "subsampling_factor", 8)
+        n_spk = getattr(model.sortformer_modules, "n_spk", 4)
+        model.sortformer_modules.chunk_len = self._tier_params["chunk_len"]
+        model.sortformer_modules.chunk_right_context = self._tier_params["chunk_right_context"]
+        model.sortformer_modules.fifo_len = self._tier_params["fifo_len"]
+        model.sortformer_modules.spkcache_update_period = (
+            self._tier_params["spkcache_update_period"]
+        )
+        model.sortformer_modules.spkcache_len = self._tier_params["spkcache_len"]
+        model.sortformer_modules._check_streaming_parameters()
+        self._subsampling_factor = subsampling_factor
+        self._n_spk = n_spk
+
+    def __call__(self) -> StreamingDiarizer:
+        return StreamingDiarizer(
+            self._model,
+            chunk_len=self._tier_params["chunk_len"],
+            subsampling_factor=self._subsampling_factor,
+            n_spk=self._n_spk,
+        )
+
 
 class StreamingDiarizer:
     """Encapsulates streaming Sortformer diarization behind a two-method interface."""

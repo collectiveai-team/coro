@@ -26,6 +26,11 @@ async def health(request: Request) -> JSONResponse:
                 "asr_model": runtime.asr_model,
                 "diarization_provider": runtime.diarization_provider,
                 "diarization_model": runtime.diarization_model,
+                **(
+                    {"diarization_latency": runtime.diarization_latency}
+                    if runtime.diarization_latency is not None
+                    else {}
+                ),
             },
             "capability_readiness": {
                 "asr": runtime.asr_adapter is not None,
