@@ -53,14 +53,18 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     async def lifespan(application: FastAPI):
         from asr_diar_server.backends.faster_whisper import build_asr_adapter
         from asr_diar_server.backends.nemo import build_diarization_adapter
-        from asr_diar_server.pipelines.chunked_file import ChunkedFilePipeline
+        from asr_diar_server.pipelines.streaming import StreamingPipeline
         from asr_diar_server.pipelines.full_memory import FullMemoryPipeline
 
         application.state.settings = settings
         application.state.runtime = runtime
 
         # Build ASR adapter (always required)
-        asr_adapter = build_asr_adapter(settings.model_asr)
+        asr_adapter = build_asr_adapter(
+            settings.model_asr,
+            device=settings.asr_device,
+            compute_type=settings.asr_compute_type,
+        )
         runtime.asr_adapter = asr_adapter
 
         # Build optional diarization adapter
@@ -69,12 +73,23 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             diarization_adapter = build_diarization_adapter(settings.model_diarization)
             runtime.diarization_adapter = diarization_adapter
 
+            if settings.pipeline in ("chunked-file", "streaming"):
+                from asr_diar_server.backends.nemo_streaming import StreamingDiarizerFactory
+
+                streaming_factory = StreamingDiarizerFactory(
+                    diarization_adapter._model, tier=settings.diarization_latency,
+                )
+                runtime.streaming_diarizer_factory = streaming_factory
+                runtime.diarization_latency = settings.diarization_latency
+
         # Construct the pipeline
-        pipeline_kwargs = {"asr": asr_adapter, "diarization": diarization_adapter}
-        if settings.pipeline == "chunked-file":
-            runtime.pipeline = ChunkedFilePipeline(**pipeline_kwargs)
+        if settings.pipeline in ("chunked-file", "streaming"):
+            runtime.pipeline = StreamingPipeline(
+                asr=asr_adapter,
+                streaming_diarizer_factory=runtime.streaming_diarizer_factory,
+            )
         else:
-            runtime.pipeline = FullMemoryPipeline(**pipeline_kwargs)
+            runtime.pipeline = FullMemoryPipeline(asr=asr_adapter, diarization=diarization_adapter)
 
         # Server Warmup
         if settings.warmup == "enabled":

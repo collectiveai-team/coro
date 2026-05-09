@@ -14,9 +14,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 # MARK: Startup Selector Types
-PipelineSelector = Literal["full-memory", "chunked-file"]
+PipelineSelector = Literal["full-memory", "chunked-file", "streaming"]
 ASRBackendProvider = Literal["faster-whisper"]
 DiarizationBackendProvider = Literal["none", "nemo"]
+ASRDevice = Literal["auto", "cuda", "cpu"]
+DiarizationLatencyTier = Literal["very-high", "high", "low", "ultra-low"]
 
 
 # MARK: Server Settings
@@ -40,6 +42,12 @@ class ServerSettings(BaseSettings):
     model_asr: str = Field(
         default="openai/whisper-medium", description="ASR Model Selection."
     )
+    asr_device: ASRDevice = Field(
+        default="auto", description="Faster Whisper device selection."
+    )
+    asr_compute_type: str = Field(
+        default="default", description="Faster Whisper compute type selection."
+    )
     backend_diarization: DiarizationBackendProvider = Field(
         default="none",
         description="Diarization Backend Provider selector.",
@@ -49,12 +57,21 @@ class ServerSettings(BaseSettings):
     )
     log_level: str = Field(default="info", description="Log level (for CLI use only).")
 
+    diarization_latency: DiarizationLatencyTier = Field(
+        default="very-high",
+        description="Diarization Latency Selection tier for streaming Sortformer.",
+    )
+
     # Server Warmup ---------------------------------------------------------
     warmup: Literal["enabled", "disabled"] = Field(
         default="enabled",
         description="Server Warmup runs the Configured Transcription Pipeline against "
         "the Warmup Audio Asset at startup. Set to 'disabled' to skip warmup.",
     )
+
+    # TLS ------------------------------------------------------------------
+    ssl_certfile: str | None = Field(default=None, description="TLS certificate file path.")
+    ssl_keyfile: str | None = Field(default=None, description="TLS private key file path.")
 
     # Derived Defaults ------------------------------------------------------
     @model_validator(mode="after")
