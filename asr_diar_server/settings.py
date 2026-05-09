@@ -69,6 +69,10 @@ class ServerSettings(BaseSettings):
         "the Warmup Audio Asset at startup. Set to 'disabled' to skip warmup.",
     )
 
+    # TLS ------------------------------------------------------------------
+    ssl_certfile: str | None = Field(default=None, description="TLS certificate file path.")
+    ssl_keyfile: str | None = Field(default=None, description="TLS private key file path.")
+
     # Derived Defaults ------------------------------------------------------
     @model_validator(mode="after")
     def default_enabled_diarization_model(self) -> ServerSettings:
