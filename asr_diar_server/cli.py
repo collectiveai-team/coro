@@ -1,56 +1,74 @@
 """Server CLI entry point for asr-diar-server.
 
-Configures logging and launches the packaged ASGI app via uvicorn.
-Heavy model initialization happens in the lifespan, not here.
+CLI flags are auto-derived from ``ServerSettings`` via pydantic-settings'
+``CliSettingsSource``. Every field on ``ServerSettings`` is exposed as a
+``--kebab-case`` flag with the same precedence rules as pydantic-settings:
+
+    CLI flags > environment variables > defaults
 
 Usage:
-    asr-diar-server [--host HOST] [--port PORT] [options]
+    asr-diar-server [--pipeline streaming] [--backend-diarization nemo] ...
+
+Run ``asr-diar-server --help`` to see every available flag.
 """
 
 from __future__ import annotations
 
-import argparse
 import logging
 
+from pydantic_settings import CliSettingsSource
 
-def parse_server_args(argv=None) -> argparse.Namespace:
-    """Parse asr-diar-server command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Launch the asr-diar-server ASGI application.",
-        prog="asr-diar-server",
+from asr_diar_server.settings import ServerSettings
+
+
+def build_settings_from_cli(argv: list[str] | None = None) -> ServerSettings:
+    """Build ServerSettings honouring CLI flags, env vars, and defaults.
+
+    Args:
+        argv: Optional list of CLI arguments. Defaults to ``sys.argv[1:]``.
+
+    Returns:
+        A populated ``ServerSettings`` instance.
+
+    """
+    cli_source = CliSettingsSource(
+        ServerSettings,
+        cli_parse_args=argv if argv is not None else True,
+        cli_kebab_case=True,
+        cli_avoid_json=True,
+        cli_prog_name="asr-diar-server",
+        cli_use_class_docs_for_groups=True,
     )
-    parser.add_argument("--host", default="0.0.0.0", help="Bind host.")
-    parser.add_argument("--port", type=int, default=8000, help="Bind port.")
-    parser.add_argument("--log-level", default="info", help="Uvicorn log level.")
-    parser.add_argument("--ssl-certfile", default=None, help="TLS certificate file path.")
-    parser.add_argument("--ssl-keyfile", default=None, help="TLS private key file path.")
-    return parser.parse_args(argv)
+    return ServerSettings(_cli_settings_source=cli_source)
 
 
 def main() -> None:
     """Entry point for the asr-diar-server command."""
     import uvicorn
 
-    args = parse_server_args()
+    settings = build_settings_from_cli()
 
-    # Configure logging only from CLI/startup paths.
     logging.basicConfig(
-        level=args.log_level.upper(),
+        level=settings.log_level.upper(),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
+    # Build the app with the parsed settings, not module-level defaults.
+    from asr_diar_server.app import create_app
+
+    application = create_app(settings)
+
     uvicorn_kwargs: dict = {
-        "app": "asr_diar_server.app:app",
-        "host": args.host,
-        "port": args.port,
-        "reload": False,
-        "log_level": args.log_level.lower(),
+        "app": application,
+        "host": settings.host,
+        "port": settings.port,
+        "log_level": settings.log_level.lower(),
         "lifespan": "on",
     }
 
-    if args.ssl_certfile and args.ssl_keyfile:
-        uvicorn_kwargs["ssl_certfile"] = args.ssl_certfile
-        uvicorn_kwargs["ssl_keyfile"] = args.ssl_keyfile
+    if settings.ssl_certfile and settings.ssl_keyfile:
+        uvicorn_kwargs["ssl_certfile"] = settings.ssl_certfile
+        uvicorn_kwargs["ssl_keyfile"] = settings.ssl_keyfile
 
     uvicorn.run(**uvicorn_kwargs)
 
