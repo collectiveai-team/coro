@@ -3,7 +3,7 @@
 Tests verify that StreamingPipeline:
 - Uses stream_pcm_from_file to read spooled audio in bounded-memory chunks.
 - Calls ASR adapter with PCM windows no larger than window_bytes.
-- Calls diarization adapter when configured.
+- Calls StreamingDiarizer when factory is configured.
 - Returns a valid transcription response dict.
 - Propagates prompt and language across ASR chunks.
 - Handles empty token output without crashing.
@@ -54,14 +54,6 @@ class _FakeASRAdapter:
         return list(self._tokens)
 
 
-class _FakeDiarizationAdapter:
-    def __init__(self, timeline=None):
-        self._timeline = timeline or []
-
-    async def diarize_pcm(self, pcm_bytes):
-        return list(self._timeline)
-
-
 class _FakeStreamingDiarizer:
     """Fake per-request streaming diarizer tracking ingest calls."""
 
@@ -93,9 +85,6 @@ class _FailingASRAdapter:
     async def transcribe_pcm(self, pcm_bytes, *, language=None, prompt=None):
         raise RuntimeError("ASR failed")
 
-    async def diarize_pcm(self, pcm_bytes):
-        return []
-
 
 async def _multi_chunk_stream(path: str, chunk_seconds: float = 1.0):
     for _ in range(_NUM_CHUNKS):
@@ -115,7 +104,7 @@ def _mock_stream():
 
 @pytest.mark.asyncio
 async def test_streaming_pipeline_returns_response_shape():
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter())
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
     assert RESPONSE_KEYS.issubset(result.keys())
@@ -124,7 +113,7 @@ async def test_streaming_pipeline_returns_response_shape():
 @pytest.mark.asyncio
 async def test_streaming_pipeline_passes_prompt_to_asr():
     asr = _FakeASRAdapter()
-    pipeline = StreamingPipeline(asr=asr, diarization=None)
+    pipeline = StreamingPipeline(asr=asr)
     with _mock_stream():
         await pipeline.transcribe(AudioInput(b"audio"), prompt="mi prompt")
     assert asr.last_prompt == "mi prompt"
@@ -133,7 +122,7 @@ async def test_streaming_pipeline_passes_prompt_to_asr():
 @pytest.mark.asyncio
 async def test_streaming_pipeline_passes_language_to_asr():
     asr = _FakeASRAdapter()
-    pipeline = StreamingPipeline(asr=asr, diarization=None)
+    pipeline = StreamingPipeline(asr=asr)
     with _mock_stream():
         await pipeline.transcribe(AudioInput(b"audio"), language="es")
     assert asr.last_language == "es"
@@ -144,8 +133,8 @@ async def test_streaming_pipeline_uses_diarization_when_provided():
     tokens = [TranscriptToken(start=0.0, end=1.0, text=" hola.", probability=0.9)]
     timeline = [SpeakerSegment(start=0.0, end=2.0, speaker=2)]
     asr = _FakeASRAdapter(tokens=tokens)
-    diar = _FakeDiarizationAdapter(timeline=timeline)
-    pipeline = StreamingPipeline(asr=asr, diarization=diar)
+    factory = _FakeStreamingDiarizerFactory(timeline=timeline)
+    pipeline = StreamingPipeline(asr=asr, streaming_diarizer_factory=factory)
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
     seg = result["segments"][0]
@@ -154,7 +143,7 @@ async def test_streaming_pipeline_uses_diarization_when_provided():
 
 @pytest.mark.asyncio
 async def test_streaming_pipeline_empty_tokens_no_crash():
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=[]), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=[]))
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
     assert result["segments"] == []
@@ -168,7 +157,7 @@ async def test_streaming_pipeline_empty_tokens_no_crash():
 @pytest.mark.asyncio
 async def test_stream_emits_delta_events():
     tokens = [TranscriptToken(start=0.0, end=0.5, text=" hello.", probability=1.0)]
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
         events = [event async for event in pipeline.stream(audio)]
@@ -180,7 +169,7 @@ async def test_stream_emits_delta_events():
 @pytest.mark.asyncio
 async def test_stream_emits_exactly_one_done_event():
     tokens = [TranscriptToken(start=0.0, end=0.5, text=" hello.", probability=1.0)]
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
         events = [event async for event in pipeline.stream(audio)]
@@ -193,7 +182,7 @@ async def test_stream_emits_exactly_one_done_event():
 @pytest.mark.asyncio
 async def test_stream_done_event_comes_after_deltas():
     tokens = [TranscriptToken(start=0.0, end=0.5, text=" hello.", probability=1.0)]
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
         events = [event async for event in pipeline.stream(audio)]
@@ -205,7 +194,7 @@ async def test_stream_done_event_comes_after_deltas():
 @pytest.mark.asyncio
 async def test_stream_emits_no_progress_events():
     tokens = [TranscriptToken(start=0.0, end=0.5, text=" hello.", probability=1.0)]
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
         events = [event async for event in pipeline.stream(audio)]
@@ -219,7 +208,7 @@ async def test_stream_emits_no_progress_events():
 
 @pytest.mark.asyncio
 async def test_transcribe_cleans_up_temp_file_on_success():
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter())
     audio = AudioInput(b"audio")
     with _mock_stream():
         await pipeline.transcribe(audio)
@@ -228,7 +217,7 @@ async def test_transcribe_cleans_up_temp_file_on_success():
 
 @pytest.mark.asyncio
 async def test_transcribe_cleans_up_temp_file_on_error():
-    pipeline = StreamingPipeline(asr=_FailingASRAdapter(), diarization=None)
+    pipeline = StreamingPipeline(asr=_FailingASRAdapter())
     audio = AudioInput(b"audio")
     with _mock_stream(), pytest.raises(RuntimeError, match="ASR failed"):
         await pipeline.transcribe(audio)
@@ -238,7 +227,7 @@ async def test_transcribe_cleans_up_temp_file_on_error():
 @pytest.mark.asyncio
 async def test_stream_cleans_up_temp_file_on_success():
     tokens = [TranscriptToken(start=0.0, end=0.5, text=" hello.", probability=1.0)]
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
         _ = [event async for event in pipeline.stream(audio)]
@@ -247,7 +236,7 @@ async def test_stream_cleans_up_temp_file_on_success():
 
 @pytest.mark.asyncio
 async def test_stream_cleans_up_temp_file_on_error():
-    pipeline = StreamingPipeline(asr=_FailingASRAdapter(), diarization=None)
+    pipeline = StreamingPipeline(asr=_FailingASRAdapter())
     audio = AudioInput(b"audio")
     with _mock_stream(), pytest.raises(RuntimeError):
         _ = [event async for event in pipeline.stream(audio)]

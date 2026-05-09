@@ -58,7 +58,7 @@ def _mock_stream():
 @pytest.mark.asyncio
 async def test_asr_only_transcribe_succeeds():
     """transcribe() works with no diarization at all."""
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter())
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
     assert RESPONSE_KEYS.issubset(result.keys())
@@ -68,7 +68,7 @@ async def test_asr_only_transcribe_succeeds():
 @pytest.mark.asyncio
 async def test_asr_only_transcribe_empty_diarization_when_no_tokens():
     """Response diarization field is empty list when no tokens and no diarizer configured."""
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=[]), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=[]))
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
     assert result["diarization"] == []
@@ -76,7 +76,7 @@ async def test_asr_only_transcribe_empty_diarization_when_no_tokens():
 
 @pytest.mark.asyncio
 async def test_asr_only_transcribe_cleanup_on_success():
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter())
     audio = AudioInput(b"audio")
     with _mock_stream():
         await pipeline.transcribe(audio)
@@ -85,7 +85,7 @@ async def test_asr_only_transcribe_cleanup_on_success():
 
 @pytest.mark.asyncio
 async def test_asr_only_transcribe_cleanup_on_asr_failure():
-    pipeline = StreamingPipeline(asr=_FailingASRAdapter(), diarization=None)
+    pipeline = StreamingPipeline(asr=_FailingASRAdapter())
     audio = AudioInput(b"audio")
     with _mock_stream(), pytest.raises(RuntimeError, match="ASR failure"):
         await pipeline.transcribe(audio)
@@ -99,7 +99,7 @@ async def test_asr_only_transcribe_cleanup_on_asr_failure():
 @pytest.mark.asyncio
 async def test_asr_only_stream_emits_delta_events():
     tokens = [TranscriptToken(start=0.0, end=0.5, text=" hello.", probability=1.0)]
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
         events = [e async for e in pipeline.stream(audio)]
@@ -110,7 +110,7 @@ async def test_asr_only_stream_emits_delta_events():
 @pytest.mark.asyncio
 async def test_asr_only_stream_done_has_empty_diarization_when_no_tokens():
     """Done event payload has empty diarization list when no tokens and no diarizer."""
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=[]), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=[]))
     audio = AudioInput(b"audio")
     with _mock_stream():
         events = [e async for e in pipeline.stream(audio)]
@@ -123,7 +123,7 @@ async def test_asr_only_stream_done_has_empty_diarization_when_no_tokens():
 @pytest.mark.asyncio
 async def test_asr_only_stream_cleanup_on_success():
     tokens = [TranscriptToken(start=0.0, end=0.5, text=" hello.", probability=1.0)]
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
         _ = [e async for e in pipeline.stream(audio)]
@@ -132,7 +132,7 @@ async def test_asr_only_stream_cleanup_on_success():
 
 @pytest.mark.asyncio
 async def test_asr_only_stream_cleanup_on_asr_failure():
-    pipeline = StreamingPipeline(asr=_FailingASRAdapter(), diarization=None)
+    pipeline = StreamingPipeline(asr=_FailingASRAdapter())
     audio = AudioInput(b"audio")
     with _mock_stream(), pytest.raises(RuntimeError):
         _ = [e async for e in pipeline.stream(audio)]
@@ -145,5 +145,5 @@ async def test_asr_only_stream_cleanup_on_asr_failure():
 
 def test_no_factory_when_diarization_none():
     """When no streaming_diarizer_factory provided, pipeline has None factory."""
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter())
     assert pipeline._streaming_diarizer_factory is None
