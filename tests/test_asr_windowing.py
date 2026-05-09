@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 import pytest
 
 from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
@@ -83,3 +85,113 @@ def test_window_bytes_are_even_for_pcm_alignment():
     windowing = ASRWindowing(window_seconds=0.01, overlap_seconds=0.0)
 
     assert windowing.window_bytes % BYTES_PER_SAMPLE == 0
+
+
+async def _async_chunks(chunks: list[bytes]) -> AsyncIterator[bytes]:
+    for chunk in chunks:
+        yield chunk
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_event_equivalence_with_stream_pcm():
+    asr_chunks = _FakeASR()
+    asr_pcm = _FakeASR()
+    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
+    pcm = _pcm_seconds(2.0)
+    chunk_size = int(SAMPLE_RATE * BYTES_PER_SAMPLE * 0.4)
+    chunks = [pcm[i : i + chunk_size] for i in range(0, len(pcm), chunk_size)]
+
+    events_pcm = [
+        e
+        async for e in windowing.stream_pcm(
+            pcm, asr=asr_pcm, language="es", prompt="hint"
+        )
+    ]
+    events_chunks = [
+        e
+        async for e in windowing.stream_chunks(
+            _async_chunks(chunks), asr=asr_chunks, language="es", prompt="hint"
+        )
+    ]
+
+    deltas_pcm = [e.delta for e in events_pcm if isinstance(e, TranscriptDeltaEvent)]
+    deltas_chunks = [
+        e.delta for e in events_chunks if isinstance(e, TranscriptDeltaEvent)
+    ]
+    assert deltas_chunks == deltas_pcm
+
+    batches_pcm = [e.tokens for e in events_pcm if isinstance(e, TokenBatchEvent)]
+    batches_chunks = [
+        e.tokens for e in events_chunks if isinstance(e, TokenBatchEvent)
+    ]
+    assert len(batches_chunks) == len(batches_pcm)
+    for pcm_toks, chunk_toks in zip(batches_pcm, batches_chunks, strict=True):
+        assert [(t.start, t.end, t.text) for t in chunk_toks] == [
+            (t.start, t.end, t.text) for t in pcm_toks
+        ]
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_buffer_never_exceeds_window_plus_max_chunk():
+    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
+    pcm = _pcm_seconds(3.0)
+    chunk_size = int(SAMPLE_RATE * BYTES_PER_SAMPLE * 0.4)
+    chunks = [pcm[i : i + chunk_size] for i in range(0, len(pcm), chunk_size)]
+    max_chunk = max(len(c) for c in chunks)
+
+    asr = _FakeASR()
+    events = [
+        e
+        async for e in windowing.stream_chunks(
+            _async_chunks(chunks), asr=asr, language=None, prompt=None
+        )
+    ]
+
+    assert events is not None
+    assert windowing._stream_chunks_buffer_highwater <= windowing.window_bytes + max_chunk
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_processes_partial_tail():
+    asr = _FakeASR()
+    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
+    pcm = _pcm_seconds(1.5)
+    half = len(pcm) // 2
+    chunks = [pcm[:half], pcm[half:]]
+
+    events = [
+        e
+        async for e in windowing.stream_chunks(
+            _async_chunks(chunks), asr=asr, language=None, prompt=None
+        )
+    ]
+
+    batches = [e for e in events if isinstance(e, TokenBatchEvent)]
+    assert len(batches) == 2
+    tail_start = batches[1].tokens[0].start
+    assert tail_start == pytest.approx(1.0, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_prompt_carry_over_matches_stream_pcm():
+    asr_chunks = _FakeASR()
+    asr_pcm = _FakeASR()
+    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
+    pcm = _pcm_seconds(2.0)
+    chunk_size = int(SAMPLE_RATE * BYTES_PER_SAMPLE * 0.4)
+    chunks = [pcm[i : i + chunk_size] for i in range(0, len(pcm), chunk_size)]
+
+    [
+        e
+        async for e in windowing.stream_pcm(
+            pcm, asr=asr_pcm, language="es", prompt="initial"
+        )
+    ]
+    [
+        e
+        async for e in windowing.stream_chunks(
+            _async_chunks(chunks), asr=asr_chunks, language="es", prompt="initial"
+        )
+    ]
+
+    assert asr_chunks.prompts == asr_pcm.prompts

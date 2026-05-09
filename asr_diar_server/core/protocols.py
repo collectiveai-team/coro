@@ -32,6 +32,13 @@ class DiarizationAdapter(Protocol):
     async def diarize_pcm(self, pcm: bytes) -> list[SpeakerSegment]: ...
 
 
+class StreamingDiarizerFactory(Protocol):
+    """Protocol for factories that produce per-request StreamingDiarizer instances."""
+
+    def __call__(self):
+        """Return a fresh StreamingDiarizer bound to the shared model."""
+
+
 # MARK: Pipeline Protocols
 class TranscriptionPipeline(Protocol):
     """Protocol for the configured transcription pipeline."""

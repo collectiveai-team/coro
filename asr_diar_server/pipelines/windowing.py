@@ -54,6 +54,22 @@ class ASRWindowing:
                 break
             offset += self.step_bytes
 
+    # Batch Transcription via chunk iterator ------------------------------------
+    async def transcribe_chunks(
+        self,
+        chunks,
+        *,
+        asr: Any,
+        language: str | None = None,
+        prompt: str | None = None,
+    ) -> ASRWindowingResult:
+        """Consume an async chunk iterator and return all tokens."""
+        tokens: list[TranscriptToken] = []
+        async for event in self.stream_chunks(chunks, asr=asr, language=language, prompt=prompt):
+            if isinstance(event, TokenBatchEvent):
+                tokens.extend(event.tokens)
+        return ASRWindowingResult(tokens=tokens)
+
     # Batch Transcription ---------------------------------------------------
     async def transcribe_pcm(
         self,
@@ -105,3 +121,83 @@ class ASRWindowing:
             delta = "".join(token.text for token in accepted).strip()
             if delta:
                 yield TranscriptDeltaEvent(delta=delta)
+
+    async def stream_chunks(
+        self,
+        chunks: AsyncIterator[bytes],
+        *,
+        asr: Any,
+        language: str | None = None,
+        prompt: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        buffer = bytearray()
+        consumed_bytes = 0
+        tokens: list[TranscriptToken] = []
+        prompt_carry = prompt
+        max_buffer = 0
+
+        async for chunk in chunks:
+            if not chunk:
+                continue
+            buffer.extend(chunk)
+            if len(buffer) > max_buffer:
+                max_buffer = len(buffer)
+
+            while len(buffer) >= self.window_bytes:
+                offset_seconds = consumed_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
+                window = bytes(buffer[: self.window_bytes])
+                window_tokens = await asr.transcribe_pcm(
+                    window,
+                    language=language,
+                    prompt=prompt_carry,
+                )
+                accepted = [
+                    TranscriptToken(
+                        start=token.start + offset_seconds,
+                        end=token.end + offset_seconds,
+                        text=token.text,
+                        probability=token.probability,
+                    )
+                    for token in window_tokens
+                ]
+                if accepted:
+                    tokens.extend(accepted)
+                    prompt_carry = "".join(
+                        token.text for token in tokens[-50:]
+                    )[-200:]
+                    yield TokenBatchEvent(tokens=accepted)
+                    delta = "".join(token.text for token in accepted).strip()
+                    if delta:
+                        yield TranscriptDeltaEvent(delta=delta)
+
+                del buffer[: self.step_bytes]
+                consumed_bytes += self.step_bytes
+
+        if buffer:
+            offset_seconds = consumed_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
+            window = bytes(buffer)
+            window_tokens = await asr.transcribe_pcm(
+                window,
+                language=language,
+                prompt=prompt_carry,
+            )
+            accepted = [
+                TranscriptToken(
+                    start=token.start + offset_seconds,
+                    end=token.end + offset_seconds,
+                    text=token.text,
+                    probability=token.probability,
+                )
+                for token in window_tokens
+            ]
+            if accepted:
+                tokens.extend(accepted)
+                prompt_carry = "".join(
+                    token.text for token in tokens[-50:]
+                )[-200:]
+                yield TokenBatchEvent(tokens=accepted)
+                delta = "".join(token.text for token in accepted).strip()
+                if delta:
+                    yield TranscriptDeltaEvent(delta=delta)
+
+        self._stream_chunks_buffer_highwater = max_buffer

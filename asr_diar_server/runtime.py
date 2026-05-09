@@ -31,6 +31,8 @@ class RuntimeState:
     diarization_model: str | None = None
     asr_adapter: Any | None = None
     diarization_adapter: Any | None = None
+    streaming_diarizer_factory: Any | None = None
+    diarization_latency: str | None = None
     warmup_ready: bool = False
     _extra: dict = field(default_factory=dict, repr=False)
 

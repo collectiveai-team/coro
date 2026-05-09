@@ -14,6 +14,8 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     assert settings.pipeline == "full-memory"
     assert settings.backend_asr == "faster-whisper"
     assert settings.model_asr == "openai/whisper-medium"
+    assert settings.asr_device == "auto"
+    assert settings.asr_compute_type == "default"
     assert settings.backend_diarization == "none"
     assert settings.model_diarization is None
 
@@ -37,3 +39,9 @@ def test_pipeline_selector_is_strict(pipeline: str):
 def test_backend_provider_selectors_are_strict(field: str):
     with pytest.raises(ValidationError):
         ServerSettings(**{field: "bogus"}, _env_file=None)
+
+
+@pytest.mark.parametrize("asr_device", ["unknown", "gpu", ""])
+def test_asr_device_selector_is_strict(asr_device: str):
+    with pytest.raises(ValidationError):
+        ServerSettings(asr_device=asr_device, _env_file=None)
