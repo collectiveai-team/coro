@@ -83,11 +83,13 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 runtime.diarization_latency = settings.diarization_latency
 
         # Construct the pipeline
-        pipeline_kwargs = {"asr": asr_adapter, "diarization": diarization_adapter}
         if settings.pipeline in ("chunked-file", "streaming"):
-            runtime.pipeline = StreamingPipeline(**pipeline_kwargs)
+            runtime.pipeline = StreamingPipeline(
+                asr=asr_adapter,
+                streaming_diarizer_factory=runtime.streaming_diarizer_factory,
+            )
         else:
-            runtime.pipeline = FullMemoryPipeline(**pipeline_kwargs)
+            runtime.pipeline = FullMemoryPipeline(asr=asr_adapter, diarization=diarization_adapter)
 
         # Server Warmup
         if settings.warmup == "enabled":

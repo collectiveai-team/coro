@@ -12,7 +12,7 @@ import json
 
 from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, stream_pcm_from_file
 from asr_diar_server.core.response import build_transcription_response
-from asr_diar_server.core.protocols import ASRAdapter, DiarizationAdapter
+from asr_diar_server.core.protocols import ASRAdapter
 from asr_diar_server.core.types import (
     SpeakerSegment,
     TokenBatchEvent,
@@ -34,28 +34,12 @@ class StreamingPipeline:
         self,
         *,
         asr: ASRAdapter,
-        diarization: DiarizationAdapter | None = None,
         windowing: ASRWindowing | None = None,
         streaming_diarizer_factory=None,
     ) -> None:
         self._asr = asr
-        self._diarization = diarization
         self._windowing = windowing or ASRWindowing()
         self._streaming_diarizer_factory = streaming_diarizer_factory
-
-    async def _tee_chunks(self, path: str):
-        """Yield (chunk, total_bytes_so_far) while teeing into streaming diarizer."""
-        total = 0
-        diarizer = (
-            self._streaming_diarizer_factory()
-            if self._streaming_diarizer_factory is not None
-            else None
-        )
-        async for chunk in stream_pcm_from_file(path, chunk_seconds=1.0):
-            if diarizer is not None:
-                diarizer.ingest_pcm_chunk(chunk)
-            total += len(chunk)
-            yield chunk, total, diarizer
 
     async def transcribe(
         self,
@@ -92,12 +76,6 @@ class StreamingPipeline:
             timeline: list[SpeakerSegment] = []
             if diarizer is not None:
                 timeline = diarizer.finalize()
-            elif self._diarization is not None:
-                # Fallback: legacy diarization adapter needs full PCM — re-read
-                pcm_chunks: list[bytes] = []
-                async for chunk in stream_pcm_from_file(path, chunk_seconds=1.0):
-                    pcm_chunks.append(chunk)
-                timeline = await self._diarization.diarize_pcm(b"".join(pcm_chunks))
 
             return build_transcription_response(result.tokens, timeline, duration)
         finally:
@@ -144,12 +122,6 @@ class StreamingPipeline:
             timeline: list[SpeakerSegment] = []
             if diarizer is not None:
                 timeline = diarizer.finalize()
-            elif self._diarization is not None:
-                # Fallback: legacy diarization adapter needs full PCM — re-read
-                pcm_chunks: list[bytes] = []
-                async for chunk in stream_pcm_from_file(path, chunk_seconds=1.0):
-                    pcm_chunks.append(chunk)
-                timeline = await self._diarization.diarize_pcm(b"".join(pcm_chunks))
 
             yield TranscriptDoneEvent(
                 text=json.dumps(build_transcription_response(tokens, timeline, duration)),

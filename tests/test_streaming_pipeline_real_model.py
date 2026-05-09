@@ -95,7 +95,7 @@ async def test_streaming_pipeline_warmup_mocked():
     from asr_diar_server.audio import AudioInput
     from asr_diar_server.pipelines.streaming import StreamingPipeline
 
-    pipeline = StreamingPipeline(asr=_FakeASRAdapter(), diarization=None)
+    pipeline = StreamingPipeline(asr=_FakeASRAdapter())
     audio = AudioInput(_FAKE_PCM)
 
     with patch(
