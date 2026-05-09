@@ -509,8 +509,14 @@ def _audio_duration(audio_path: Path) -> float:
 
 
 def _infer_hw_profile(samples: list[dict[str, Any]]) -> str:
+    """Infer hardware profile from collected resource samples.
+
+    Returns ``"cpu+gpu"`` if any sample contains non-empty GPU metrics
+    (either VRAM usage or GPU utilisation), otherwise ``"cpu-only"``.
+    """
     for row in samples:
         vram = row.get("server_vram_mib", "")
-        if vram not in ("", None):
+        util = row.get("gpu_util_pct", "")
+        if vram not in ("", None) or util not in ("", None):
             return "cpu+gpu"
     return "cpu-only"

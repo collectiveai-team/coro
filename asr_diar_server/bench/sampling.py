@@ -6,8 +6,10 @@ import csv
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
+from asr_diar_server.bench.gpu import sample_gpu
 from asr_diar_server.bench.schema import RESOURCE_FIELDNAMES
 
 SampleFn = Callable[[int], dict[str, Any]]
@@ -109,10 +111,7 @@ class Sampler:
                 "io_wchar_bps": 0.0,
                 "io_read_bps": 0.0,
                 "io_write_bps": 0.0,
-                "server_vram_mib": "",
-                "total_gpu_mem_mib": "",
-                "total_gpu_used_mib": "",
-                "gpu_util_pct": "",
+                **sample_gpu(),
                 "observed_hardware_profile": "cpu-only",
                 "audio_seconds": "",
                 "wall_seconds": "",
