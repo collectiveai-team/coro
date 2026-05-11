@@ -39,7 +39,6 @@ def _quality_report(**kwargs) -> BenchReport:
             QualityRow(
                 session_id="IB4001",
                 duration=1837.4,
-                siwer=0.12,
                 cpwer=0.15,
                 orcwer=0.13,
                 dicpwer=0.14,
@@ -48,7 +47,6 @@ def _quality_report(**kwargs) -> BenchReport:
             QualityRow(
                 session_id="IB4002",
                 duration=900.0,
-                siwer=0.10,
                 cpwer=0.11,
                 orcwer=0.10,
                 dicpwer=0.11,
@@ -58,7 +56,6 @@ def _quality_report(**kwargs) -> BenchReport:
         quality_combined=QualityRow(
             session_id="COMBINED",
             duration=2737.4,
-            siwer=0.115,
             cpwer=0.135,
             orcwer=0.12,
             dicpwer=0.13,
@@ -101,6 +98,10 @@ def _performance_report(**kwargs) -> BenchReport:
                 wall_seconds=120.5,
                 throughput=15.24,
                 peak_pss_kb=512000.0,
+                peak_pss_delta_kb=64000.0,
+                peak_vram_mib=4096.0,
+                peak_vram_delta_mib=512.0,
+                peak_gpu_util_pct=75.0,
                 peak_cpu_pct=85.3,
                 observed_profile="cpu-only",
                 ttft=None,
@@ -113,10 +114,10 @@ def _performance_report(**kwargs) -> BenchReport:
     return BenchReport(**defaults)
 
 
-def test_render_markdown_quality_includes_siwer_column():
+def test_render_markdown_quality_includes_cpwer_column():
     report = _quality_report()
     md = render_markdown(report)
-    assert "siWER" in md
+    assert "cpWER" in md
 
 
 def test_render_markdown_quality_table_has_combined_row():
@@ -131,7 +132,6 @@ def test_render_markdown_failed_item_renders_error_row_and_footnote():
             QualityRow(
                 session_id="IB4001",
                 duration=1837.4,
-                siwer=None,
                 cpwer=None,
                 orcwer=None,
                 dicpwer=None,
@@ -164,6 +164,10 @@ def test_render_markdown_stream_true_includes_ttft_column():
                 wall_seconds=120.5,
                 throughput=15.24,
                 peak_pss_kb=512000.0,
+                peak_pss_delta_kb=64000.0,
+                peak_vram_mib=4096.0,
+                peak_vram_delta_mib=512.0,
+                peak_gpu_util_pct=75.0,
                 peak_cpu_pct=85.3,
                 observed_profile="cpu-only",
                 ttft=2.34,
@@ -257,6 +261,59 @@ def test_build_report_reads_manifest_and_summaries(tmp_path):
     assert report.quality_combined.session_id == "COMBINED"
 
 
+def test_build_report_reads_normalized_quality_summaries(tmp_path):
+    manifest = {
+        "timestamp": "2026-05-04T10:00:00+00:00",
+        "git_sha": "deadbeef",
+        "subcommand": "quality",
+        "workload_set": [
+            {"item_id": "IB4001", "audio_path": "/data/IB4001.wav"},
+        ],
+        "server_health": {"startup_selection": {}},
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    quality_summary = {
+        "combined": {
+            "cpwer": {"wer": 0.30},
+            "orcwer": {"wer": 0.25},
+            "dicpwer": {"wer": 0.20},
+            "der": {"der": 0.10},
+            "normalized": {
+                "cpwer": {"wer": 0.21},
+                "orcwer": {"wer": 0.16},
+                "dicpwer": {"wer": 0.11},
+            },
+        },
+        "per_item": [
+            {
+                "session_id": "IB4001",
+                "audio_seconds": 10.0,
+                "cpwer": 0.30,
+                "orcwer": 0.25,
+                "dicpwer": 0.20,
+                "der": 0.10,
+                "normalized_cpwer": 0.21,
+                "normalized_orcwer": 0.16,
+                "normalized_dicpwer": 0.11,
+            },
+        ],
+    }
+    (quality_dir / "summary.json").write_text(json.dumps(quality_summary))
+
+    report = build_report(tmp_path)
+    md = render_markdown(report)
+
+    assert len(report.normalized_quality_rows) == 1
+    assert report.normalized_quality_combined is not None
+    assert report.normalized_quality_rows[0].cpwer == 0.21
+    assert "## Quality Results" in md
+    assert "## Normalized Quality Results" in md
+    assert "| IB4001 | 10.0 | 0.2100 | 0.1600 | 0.1100 |" in md
+
+
 def test_both_renderers_produce_consistent_session_ids():
     """Verify both renderers use the same underlying data model."""
     report = _quality_report()
@@ -271,6 +328,40 @@ def test_render_markdown_performance_includes_wall_column():
     report = _performance_report()
     md = render_markdown(report)
     assert "wall" in md.lower() or "wall (s)" in md
+
+
+def test_render_markdown_performance_includes_memory_and_gpu_columns():
+    report = _performance_report()
+    md = render_markdown(report)
+    assert "peak VRAM" in md
+    assert "pred VRAM" in md
+    assert "peak GPU" in md
+    assert "4096 MiB" in md
+    assert "512 MiB" in md
+
+
+def test_render_markdown_performance_uses_dash_for_missing_gpu():
+    report = _performance_report(
+        performance_rows=[
+            PerformanceRow(
+                session_id="IB4001",
+                rep=1,
+                duration=1837.4,
+                wall_seconds=120.5,
+                throughput=15.24,
+                peak_pss_kb=512000.0,
+                peak_pss_delta_kb=64000.0,
+                peak_vram_mib=None,
+                peak_vram_delta_mib=None,
+                peak_gpu_util_pct=None,
+                peak_cpu_pct=85.3,
+                observed_profile="cpu-only",
+                ttft=None,
+            ),
+        ]
+    )
+    md = render_markdown(report)
+    assert "| IB4001 | 1 | 1837.4 | 120.50 | 15.24x | 500 MB | 62 MB | - | - | - | 85.3% | cpu-only |" in md
 
 
 def test_render_markdown_all_subcommand_shows_rep_note():

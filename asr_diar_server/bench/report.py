@@ -30,8 +30,12 @@ class PerformanceRow:
     duration: float
     wall_seconds: float
     throughput: float
-    peak_pss_kb: float
-    peak_cpu_pct: float
+    peak_pss_kb: float | None
+    peak_pss_delta_kb: float | None
+    peak_vram_mib: float | None
+    peak_vram_delta_mib: float | None
+    peak_gpu_util_pct: float | None
+    peak_cpu_pct: float | None
     observed_profile: str
     ttft: float | None = None
 
@@ -50,6 +54,8 @@ class BenchReport:
     workload_set: list[str]
     quality_rows: list[QualityRow] = field(default_factory=list)
     quality_combined: QualityRow | None = None
+    normalized_quality_rows: list[QualityRow] = field(default_factory=list)
+    normalized_quality_combined: QualityRow | None = None
     quality_footnotes: list[str] = field(default_factory=list)
     performance_rows: list[PerformanceRow] = field(default_factory=list)
     versions: dict = field(default_factory=dict)
@@ -82,7 +88,13 @@ def build_report(out_dir: Path) -> BenchReport:
 
     stream = "--stream" in cli_args
 
-    quality_rows, quality_combined, quality_footnotes = _load_quality(out_dir)
+    (
+        quality_rows,
+        quality_combined,
+        normalized_quality_rows,
+        normalized_quality_combined,
+        quality_footnotes,
+    ) = _load_quality(out_dir)
     performance_rows = _load_performance(out_dir, stream=stream)
 
     total_wall = _compute_total_wall(performance_rows, quality_rows)
@@ -98,6 +110,8 @@ def build_report(out_dir: Path) -> BenchReport:
         workload_set=workload_set,
         quality_rows=quality_rows,
         quality_combined=quality_combined,
+        normalized_quality_rows=normalized_quality_rows,
+        normalized_quality_combined=normalized_quality_combined,
         quality_footnotes=quality_footnotes,
         performance_rows=performance_rows,
         versions=versions,
@@ -107,16 +121,17 @@ def build_report(out_dir: Path) -> BenchReport:
 
 def _load_quality(
     out_dir: Path,
-) -> tuple[list[QualityRow], QualityRow | None, list[str]]:
+) -> tuple[list[QualityRow], QualityRow | None, list[QualityRow], QualityRow | None, list[str]]:
     summary_path = out_dir / "quality" / "summary.json"
     if not summary_path.exists():
-        return [], None, []
+        return [], None, [], None, []
 
     summary = _read_json(summary_path)
     per_item = summary.get("per_item", [])
     combined_data = summary.get("combined", {})
 
     rows: list[QualityRow] = []
+    normalized_rows: list[QualityRow] = []
     footnotes: list[str] = []
 
     for item in per_item:
@@ -145,6 +160,15 @@ def _load_quality(
                 dicpwer=_wer_val(item.get("dicpwer")),
                 der=_wer_val(item.get("der")),
             ))
+            if item.get("normalized_cpwer") is not None:
+                normalized_rows.append(QualityRow(
+                    session_id=session_id,
+                    duration=duration,
+                    cpwer=_wer_val(item.get("normalized_cpwer")),
+                    orcwer=_wer_val(item.get("normalized_orcwer")),
+                    dicpwer=_wer_val(item.get("normalized_dicpwer")),
+                    der=None,
+                ))
 
     combined: QualityRow | None = None
     if combined_data:
@@ -157,7 +181,19 @@ def _load_quality(
             der=_nested_der(combined_data),
         )
 
-    return rows, combined, footnotes
+    normalized_combined: QualityRow | None = None
+    normalized_combined_data = combined_data.get("normalized", {})
+    if normalized_combined_data:
+        normalized_combined = QualityRow(
+            session_id="COMBINED",
+            duration=sum(r.duration for r in normalized_rows),
+            cpwer=_nested_wer(normalized_combined_data, "cpwer"),
+            orcwer=_nested_wer(normalized_combined_data, "orcwer"),
+            dicpwer=_nested_wer(normalized_combined_data, "dicpwer"),
+            der=None,
+        )
+
+    return rows, combined, normalized_rows, normalized_combined, footnotes
 
 
 def _wer_val(v: Any) -> float | None:
@@ -202,8 +238,12 @@ def _load_performance(out_dir: Path, *, stream: bool) -> list[PerformanceRow]:
         duration = float(rep_data.get("audio_seconds", 0.0))
         wall_seconds = float(rep_data.get("wall_seconds", 0.0))
         throughput = float(rep_data.get("transcription_throughput", 0.0))
-        peak_pss_kb = float(rep_data.get("peak_pss_kb", 0.0))
-        peak_cpu_pct = float(rep_data.get("peak_cpu_pct", 0.0))
+        peak_pss_kb = _wer_val(rep_data.get("peak_pss_kb"))
+        peak_pss_delta_kb = _wer_val(rep_data.get("peak_pss_delta_kb"))
+        peak_vram_mib = _wer_val(rep_data.get("peak_vram_mib"))
+        peak_vram_delta_mib = _wer_val(rep_data.get("peak_vram_delta_mib"))
+        peak_gpu_util_pct = _wer_val(rep_data.get("peak_gpu_util_pct"))
+        peak_cpu_pct = _wer_val(rep_data.get("peak_cpu_pct"))
         observed_profile = rep_data.get("observed_hardware_profile", "cpu-only")
         ttft = _wer_val(rep_data.get("time_to_first_delta_s")) if stream else None
 
@@ -214,6 +254,10 @@ def _load_performance(out_dir: Path, *, stream: bool) -> list[PerformanceRow]:
             wall_seconds=wall_seconds,
             throughput=throughput,
             peak_pss_kb=peak_pss_kb,
+            peak_pss_delta_kb=peak_pss_delta_kb,
+            peak_vram_mib=peak_vram_mib,
+            peak_vram_delta_mib=peak_vram_delta_mib,
+            peak_gpu_util_pct=peak_gpu_util_pct,
             peak_cpu_pct=peak_cpu_pct,
             observed_profile=observed_profile,
             ttft=ttft,
@@ -264,6 +308,10 @@ def render_markdown(report: BenchReport) -> str:
     if report.quality_rows or report.quality_combined:
         lines.append("")
         lines += _quality_table_md(report)
+
+    if report.normalized_quality_rows or report.normalized_quality_combined:
+        lines.append("")
+        lines += _normalized_quality_table_md(report)
 
     if report.performance_rows:
         lines.append("")
@@ -327,6 +375,31 @@ def _quality_table_md(report: BenchReport) -> list[str]:
     return lines
 
 
+def _normalized_quality_table_md(report: BenchReport) -> list[str]:
+    lines: list[str] = []
+    lines.append("## Normalized Quality Results")
+    lines.append("")
+    lines.append("WER metrics after removing punctuation and collapsing whitespace.")
+    lines.append("")
+    lines.append("| session | duration | cpWER | ORC-WER | DI-cpWER |")
+    lines.append("|---------|----------|-------|---------|----------|")
+
+    for row in report.normalized_quality_rows:
+        lines.append(
+            f"| {row.session_id} | {row.duration:.1f} "
+            f"| {_fmt(row.cpwer)} | {_fmt(row.orcwer)} | {_fmt(row.dicpwer)} |"
+        )
+
+    if report.normalized_quality_combined is not None:
+        c = report.normalized_quality_combined
+        lines.append(
+            f"| **{c.session_id}** | {c.duration:.1f} "
+            f"| {_fmt(c.cpwer)} | {_fmt(c.orcwer)} | {_fmt(c.dicpwer)} |"
+        )
+
+    return lines
+
+
 def _performance_table_md(report: BenchReport) -> list[str]:
     lines: list[str] = []
     lines.append("## Performance Results")
@@ -336,31 +409,32 @@ def _performance_table_md(report: BenchReport) -> list[str]:
     if has_ttft:
         hdr = (
             "| session | rep | duration | wall (s) | throughput"
-            " | peak PSS | peak CPU | TTFT (s) | observed profile |"
+            " | peak PSS | pred PSS | peak VRAM | pred VRAM | peak GPU | peak CPU | TTFT (s) | observed profile |"
         )
         sep = (
             "|---------|-----|----------|----------"
-            "|------------|----------|----------|----------|-----------------|"
+            "|------------|----------|----------|-----------|-----------|----------|----------|----------|-----------------|"
         )
     else:
         hdr = (
             "| session | rep | duration | wall (s) | throughput"
-            " | peak PSS | peak CPU | observed profile |"
+            " | peak PSS | pred PSS | peak VRAM | pred VRAM | peak GPU | peak CPU | observed profile |"
         )
         sep = (
             "|---------|-----|----------|----------"
-            "|------------|----------|----------|-----------------|"
+            "|------------|----------|----------|-----------|-----------|----------|----------|-----------------|"
         )
     lines.append(hdr)
     lines.append(sep)
 
     for row in report.performance_rows:
-        pss_mb = row.peak_pss_kb / 1024.0
         if has_ttft:
             lines.append(
                 f"| {row.session_id} | {row.rep} | {row.duration:.1f} "
                 f"| {row.wall_seconds:.2f} | {row.throughput:.2f}x "
-                f"| {pss_mb:.0f} MB | {row.peak_cpu_pct:.1f}% "
+                f"| {_fmt_kb_as_mb(row.peak_pss_kb)} | {_fmt_kb_as_mb(row.peak_pss_delta_kb)} "
+                f"| {_fmt_mib(row.peak_vram_mib)} | {_fmt_mib(row.peak_vram_delta_mib)} "
+                f"| {_fmt_pct(row.peak_gpu_util_pct)} | {_fmt_pct(row.peak_cpu_pct)} "
                 f"| {_fmt(row.ttft)} "
                 f"| {row.observed_profile} |"
             )
@@ -368,7 +442,9 @@ def _performance_table_md(report: BenchReport) -> list[str]:
             lines.append(
                 f"| {row.session_id} | {row.rep} | {row.duration:.1f} "
                 f"| {row.wall_seconds:.2f} | {row.throughput:.2f}x "
-                f"| {pss_mb:.0f} MB | {row.peak_cpu_pct:.1f}% "
+                f"| {_fmt_kb_as_mb(row.peak_pss_kb)} | {_fmt_kb_as_mb(row.peak_pss_delta_kb)} "
+                f"| {_fmt_mib(row.peak_vram_mib)} | {_fmt_mib(row.peak_vram_delta_mib)} "
+                f"| {_fmt_pct(row.peak_gpu_util_pct)} | {_fmt_pct(row.peak_cpu_pct)} "
                 f"| {row.observed_profile} |"
             )
 
@@ -377,8 +453,26 @@ def _performance_table_md(report: BenchReport) -> list[str]:
 
 def _fmt(value: float | None, decimals: int = 4) -> str:
     if value is None:
-        return "—"
+        return "-"
     return f"{value:.{decimals}f}"
+
+
+def _fmt_kb_as_mb(value: float | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value / 1024.0:.0f} MB"
+
+
+def _fmt_mib(value: float | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value:.0f} MiB"
+
+
+def _fmt_pct(value: float | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value:.1f}%"
 
 
 def render_stdout(report: BenchReport) -> None:
@@ -396,6 +490,7 @@ def _render_stdout_rich(report: BenchReport) -> None:
     console = Console()
     console.print(Panel(_rich_header(report), title="Benchmark Report"))
     _rich_quality_table(console, report)
+    _rich_normalized_quality_table(console, report)
     _rich_performance_table(console, report)
 
 
@@ -448,6 +543,34 @@ def _rich_quality_table(console: object, report: BenchReport) -> None:
         console.print(f"  * {note}")  # type: ignore[attr-defined]
 
 
+def _rich_normalized_quality_table(console: object, report: BenchReport) -> None:
+    if not (report.normalized_quality_rows or report.normalized_quality_combined):
+        return
+    from rich.table import Table
+
+    qt = Table(title="Normalized Quality Results", show_lines=True)
+    for col in ("session", "duration", "cpWER", "ORC-WER", "DI-cpWER"):
+        qt.add_column(col)
+    for row in report.normalized_quality_rows:
+        qt.add_row(
+            row.session_id,
+            f"{row.duration:.1f}",
+            _fmt(row.cpwer),
+            _fmt(row.orcwer),
+            _fmt(row.dicpwer),
+        )
+    if report.normalized_quality_combined is not None:
+        c = report.normalized_quality_combined
+        qt.add_row(
+            f"[bold]{c.session_id}[/bold]",
+            f"{c.duration:.1f}",
+            _fmt(c.cpwer),
+            _fmt(c.orcwer),
+            _fmt(c.dicpwer),
+        )
+    console.print(qt)  # type: ignore[attr-defined]
+
+
 def _rich_performance_table(console: object, report: BenchReport) -> None:
     if not report.performance_rows:
         return
@@ -455,18 +578,25 @@ def _rich_performance_table(console: object, report: BenchReport) -> None:
 
     has_ttft = report.stream
     pt = Table(title="Performance Results", show_lines=True)
-    cols = ["session", "rep", "duration", "wall (s)", "throughput", "peak PSS", "peak CPU"]
+    cols = [
+        "session", "rep", "duration", "wall (s)", "throughput",
+        "peak PSS", "pred PSS", "peak VRAM", "pred VRAM", "peak GPU", "peak CPU",
+    ]
     if has_ttft:
         cols.append("TTFT (s)")
     cols.append("observed profile")
     for col in cols:
         pt.add_column(col)
     for row in report.performance_rows:
-        pss_mb = row.peak_pss_kb / 1024.0
         cells = [
             row.session_id, str(row.rep), f"{row.duration:.1f}",
             f"{row.wall_seconds:.2f}", f"{row.throughput:.2f}x",
-            f"{pss_mb:.0f} MB", f"{row.peak_cpu_pct:.1f}%",
+            _fmt_kb_as_mb(row.peak_pss_kb),
+            _fmt_kb_as_mb(row.peak_pss_delta_kb),
+            _fmt_mib(row.peak_vram_mib),
+            _fmt_mib(row.peak_vram_delta_mib),
+            _fmt_pct(row.peak_gpu_util_pct),
+            _fmt_pct(row.peak_cpu_pct),
         ]
         if has_ttft:
             cells.append(_fmt(row.ttft))

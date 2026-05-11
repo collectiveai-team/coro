@@ -14,10 +14,14 @@ from asr_diar_server.bench.schema import RESOURCE_FIELDNAMES
 def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
     pss_values: list[float] = []
     cpu_values: list[float] = []
+    vram_values: list[float] = []
+    gpu_util_values: list[float] = []
     wall_seconds: float | None = None
     throughput: float | None = None
     audio_seconds: float | None = None
     ttft: float | None = None
+    baseline_pss_kb: float | None = None
+    baseline_vram_mib: float | None = None
     profile: str = ""
 
     with csv_path.open() as f:
@@ -29,6 +33,18 @@ def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
                 pass
             try:
                 cpu_values.append(float(row.get("cpu_pct", 0) or 0))
+            except ValueError:
+                pass
+            try:
+                value = row.get("server_vram_mib", "")
+                if value != "":
+                    vram_values.append(float(value))
+            except ValueError:
+                pass
+            try:
+                value = row.get("gpu_util_pct", "")
+                if value != "":
+                    gpu_util_values.append(float(value))
             except ValueError:
                 pass
             if wall_seconds is None:
@@ -56,13 +72,37 @@ def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
                         ttft = float(t)
                     except ValueError:
                         pass
+                base_pss = row.get("baseline_pss_kb", "")
+                if base_pss != "":
+                    try:
+                        baseline_pss_kb = float(base_pss)
+                    except ValueError:
+                        pass
+                base_vram = row.get("baseline_vram_mib", "")
+                if base_vram != "":
+                    try:
+                        baseline_vram_mib = float(base_vram)
+                    except ValueError:
+                        pass
                 profile = row.get("observed_hardware_profile", "")
 
     result: dict[str, Any] = {}
     if pss_values:
-        result["peak_pss_kb"] = max(pss_values)
+        peak_pss_kb = max(pss_values)
+        result["peak_pss_kb"] = peak_pss_kb
+        if baseline_pss_kb is not None:
+            result["baseline_pss_kb"] = baseline_pss_kb
+            result["peak_pss_delta_kb"] = max(0.0, peak_pss_kb - baseline_pss_kb)
     if cpu_values:
         result["peak_cpu_pct"] = max(cpu_values)
+    if vram_values:
+        peak_vram_mib = max(vram_values)
+        result["peak_vram_mib"] = peak_vram_mib
+        if baseline_vram_mib is not None:
+            result["baseline_vram_mib"] = baseline_vram_mib
+            result["peak_vram_delta_mib"] = max(0.0, peak_vram_mib - baseline_vram_mib)
+    if gpu_util_values:
+        result["peak_gpu_util_pct"] = max(gpu_util_values)
     if wall_seconds is not None:
         result["wall_seconds"] = wall_seconds
     if throughput is not None:
@@ -76,7 +116,11 @@ def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
 
 
 def aggregate_across_reps(per_rep_summaries: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
-    metrics = ["transcription_throughput", "peak_pss_kb", "peak_cpu_pct", "time_to_first_delta_s"]
+    metrics = [
+        "transcription_throughput", "peak_pss_kb", "peak_pss_delta_kb",
+        "peak_cpu_pct", "peak_vram_mib", "peak_vram_delta_mib",
+        "peak_gpu_util_pct", "time_to_first_delta_s",
+    ]
     result: dict[str, dict[str, float]] = {}
 
     for metric in metrics:

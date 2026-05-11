@@ -124,6 +124,24 @@ def _make_mock_meeteval():
 
 
 class TestScoreItem:
+    def test_normalize_transcript_text_removes_punctuation_and_extra_spaces(self):
+        from asr_diar_server.bench.quality import _normalize_transcript_text
+
+        assert _normalize_transcript_text("Hello,   world!!") == "Hello world"
+
+    def test_write_normalized_stm_preserves_metadata_and_normalizes_text(
+        self, tmp_path: Path,
+    ):
+        from asr_diar_server.bench.quality import _write_normalized_stm
+
+        src = tmp_path / "in.stm"
+        dst = tmp_path / "out.stm"
+        src.write_text("meeting 1 A 0.000 1.500 Hello,   world!!\n")
+
+        _write_normalized_stm(src, dst)
+
+        assert dst.read_text() == "meeting 1 A 0.000 1.500 Hello world\n"
+
     def test_score_item_returns_metrics_with_all_five(self, tmp_path: Path):
         ref_stm = tmp_path / "meeting1.ref.stm"
         ref_stm.write_text("meeting1 1 A 0.000 1.500 hello world\n")

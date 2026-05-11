@@ -149,6 +149,7 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 def _run_performance(args: argparse.Namespace, meetings: list[str]) -> None:
     from asr_diar_server.bench.ami import get_audio_path
+    from asr_diar_server.bench.data import WARMUP_AUDIO_PATH
     from asr_diar_server.bench.orchestrate import run_performance_workload
     from asr_diar_server.bench.report import build_report, render_markdown, render_stdout
 
@@ -174,6 +175,8 @@ def _run_performance(args: argparse.Namespace, meetings: list[str]) -> None:
 
     base_url = args.server_url or f"http://127.0.0.1:{args.server_port}"
 
+    warmup_audio = args.warmup_audio or WARMUP_AUDIO_PATH
+
     run_performance_workload(
         items=items,
         base_url=base_url,
@@ -182,6 +185,7 @@ def _run_performance(args: argparse.Namespace, meetings: list[str]) -> None:
         server_pid=args.server_pid or 1,
         sample_interval=args.sample_interval,
         stream=args.stream,
+        warmup_audio=warmup_audio,
     )
 
     report = build_report(out_dir)
@@ -269,9 +273,7 @@ def _run_all(args: argparse.Namespace, meetings: list[str]) -> None:
 
     base_url = args.server_url or f"http://127.0.0.1:{args.server_port}"
 
-    warmup_audio = None
-    if args.warmup:
-        warmup_audio = args.warmup_audio or WARMUP_AUDIO_PATH
+    warmup_audio = args.warmup_audio or WARMUP_AUDIO_PATH
 
     run_all_workload(
         items=items,

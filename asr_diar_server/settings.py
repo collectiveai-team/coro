@@ -18,6 +18,7 @@ PipelineSelector = Literal["full-memory", "chunked-file", "streaming"]
 ASRBackendProvider = Literal["faster-whisper"]
 DiarizationBackendProvider = Literal["none", "nemo"]
 ASRDevice = Literal["auto", "cuda", "cpu"]
+DiarizationDevice = Literal["auto", "cuda", "cpu"]
 DiarizationLatencyTier = Literal["very-high", "high", "low", "ultra-low"]
 
 
@@ -54,6 +55,9 @@ class ServerSettings(BaseSettings):
     )
     model_diarization: str | None = Field(
         default=None, description="Diarization Model Selection."
+    )
+    diarization_device: DiarizationDevice = Field(
+        default="auto", description="NeMo diarization device selection."
     )
     log_level: str = Field(default="info", description="Log level (for CLI use only).")
 
