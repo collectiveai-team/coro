@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from asr_diar_server.bench.ami import (
     materialize_reference_stms,
     resolve_workload_set,
 )
+from asr_diar_server.bench.errors import ServerUnreachableError
 
 _MANAGED_FLAGS = {
     "server_asr_backend",
@@ -301,12 +303,16 @@ def main() -> None:
     )
     materialize_reference_stms(meetings, args.ami_root)
 
-    if args.subcommand == "performance":
-        _run_performance(args, meetings)
-    elif args.subcommand == "quality":
-        _run_quality(args, meetings)
-    else:
-        _run_all(args, meetings)
+    try:
+        if args.subcommand == "performance":
+            _run_performance(args, meetings)
+        elif args.subcommand == "quality":
+            _run_quality(args, meetings)
+        else:
+            _run_all(args, meetings)
+    except ServerUnreachableError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

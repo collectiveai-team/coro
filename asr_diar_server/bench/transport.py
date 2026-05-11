@@ -9,6 +9,30 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from asr_diar_server.bench.errors import ServerUnreachableError
+
+
+def _is_connection_refused(exc: BaseException) -> bool:
+    """Return True if exc represents a refused/unreachable TCP connection.
+
+    Covers ConnectionRefusedError directly as well as urllib.error.URLError
+    wrapping it (which is what urlopen typically raises in practice).
+    """
+    import urllib.error
+
+    if isinstance(exc, ConnectionRefusedError):
+        return True
+    if isinstance(exc, urllib.error.URLError):
+        reason = getattr(exc, "reason", None)
+        if isinstance(reason, ConnectionRefusedError):
+            return True
+        if isinstance(reason, OSError) and reason.errno in (
+            111,  # ECONNREFUSED on Linux
+            61,   # ECONNREFUSED on macOS
+        ):
+            return True
+    return False
+
 
 def transcribe_audio(
     base_url: str,
@@ -42,8 +66,13 @@ def transcribe_audio(
         headers={"Content-Type": content_type},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+            return json.loads(resp.read())
+    except Exception as exc:
+        if _is_connection_refused(exc):
+            raise ServerUnreachableError(base_url, cause=exc) from exc
+        raise
 
 
 def transcribe_audio_sse(
@@ -86,7 +115,14 @@ def transcribe_audio_sse(
     done_payload: dict[str, Any] | None = None
     event_type: str = ""
 
-    with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+    try:
+        resp_cm = urllib.request.urlopen(req, timeout=timeout_seconds)
+    except Exception as exc:
+        if _is_connection_refused(exc):
+            raise ServerUnreachableError(base_url, cause=exc) from exc
+        raise
+
+    with resp_cm as resp:
         for raw_line in resp:
             line = raw_line.decode("utf-8").rstrip("\n\r")
             if line.startswith("event:"):

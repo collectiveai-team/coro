@@ -9,6 +9,8 @@ full PCM buffer.
 from __future__ import annotations
 
 import json
+import logging
+import time
 
 from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, stream_pcm_from_file
 from asr_diar_server.core.response import build_transcription_response
@@ -20,6 +22,8 @@ from asr_diar_server.core.types import (
     TranscriptToken,
 )
 from asr_diar_server.pipelines.windowing import ASRWindowing
+
+logger = logging.getLogger(__name__)
 
 
 class StreamingPipeline:
@@ -48,6 +52,9 @@ class StreamingPipeline:
         language: str | None = None,
         prompt: str | None = None,
     ) -> dict:
+        started = time.perf_counter()
+        chunk_count = 0
+        diarizer_chunks = 0
         try:
             path = await audio.temp_path()
             total_bytes = 0
@@ -56,13 +63,28 @@ class StreamingPipeline:
                 if self._streaming_diarizer_factory is not None
                 else None
             )
+            logger.info(
+                "streaming_pipeline transcribe start path=%s diarizer=%s",
+                path,
+                diarizer is not None,
+            )
 
             async def _chunks():
-                nonlocal total_bytes
+                nonlocal total_bytes, chunk_count, diarizer_chunks
                 async for chunk in stream_pcm_from_file(path, chunk_seconds=1.0):
+                    chunk_count += 1
                     if diarizer is not None:
                         diarizer.ingest_pcm_chunk(chunk)
+                        diarizer_chunks = getattr(diarizer, "processed_chunks", diarizer_chunks)
                     total_bytes += len(chunk)
+                    if chunk_count == 1 or chunk_count % 10 == 0:
+                        logger.info(
+                            "streaming_pipeline transcribe chunk=%d bytes=%d total_audio_s=%.2f diarizer_chunks=%d",
+                            chunk_count,
+                            len(chunk),
+                            total_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE),
+                            diarizer_chunks,
+                        )
                     yield chunk
 
             result = await self._windowing.transcribe_chunks(
@@ -75,9 +97,34 @@ class StreamingPipeline:
 
             timeline: list[SpeakerSegment] = []
             if diarizer is not None:
+                logger.info(
+                    "streaming_pipeline transcribe diarizer finalize start chunks=%d total_audio_s=%.2f",
+                    getattr(diarizer, "processed_chunks", diarizer_chunks),
+                    duration,
+                )
                 timeline = diarizer.finalize()
+                logger.info(
+                    "streaming_pipeline transcribe diarizer finalize complete timeline=%d",
+                    len(timeline),
+                )
 
+            logger.info(
+                "streaming_pipeline transcribe complete elapsed=%.3fs chunks=%d total_audio_s=%.2f tokens=%d timeline=%d",
+                time.perf_counter() - started,
+                chunk_count,
+                duration,
+                len(result.tokens),
+                len(timeline),
+            )
             return build_transcription_response(result.tokens, timeline, duration)
+        except Exception:
+            logger.exception(
+                "streaming_pipeline transcribe failed elapsed=%.3fs chunks=%d diarizer_chunks=%d",
+                time.perf_counter() - started,
+                chunk_count,
+                diarizer_chunks,
+            )
+            raise
         finally:
             await audio.cleanup()
 
@@ -88,6 +135,9 @@ class StreamingPipeline:
         language: str | None = None,
         prompt: str | None = None,
     ):
+        started = time.perf_counter()
+        chunk_count = 0
+        diarizer_chunks = 0
         try:
             path = await audio.temp_path()
             total_bytes = 0
@@ -96,13 +146,24 @@ class StreamingPipeline:
                 if self._streaming_diarizer_factory is not None
                 else None
             )
+            logger.info("streaming_pipeline sse start path=%s diarizer=%s", path, diarizer is not None)
 
             async def _chunks():
-                nonlocal total_bytes
+                nonlocal total_bytes, chunk_count, diarizer_chunks
                 async for chunk in stream_pcm_from_file(path, chunk_seconds=1.0):
+                    chunk_count += 1
                     if diarizer is not None:
                         diarizer.ingest_pcm_chunk(chunk)
+                        diarizer_chunks = getattr(diarizer, "processed_chunks", diarizer_chunks)
                     total_bytes += len(chunk)
+                    if chunk_count == 1 or chunk_count % 10 == 0:
+                        logger.info(
+                            "streaming_pipeline sse chunk=%d bytes=%d total_audio_s=%.2f diarizer_chunks=%d",
+                            chunk_count,
+                            len(chunk),
+                            total_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE),
+                            diarizer_chunks,
+                        )
                     yield chunk
 
             tokens: list[TranscriptToken] = []
@@ -114,6 +175,11 @@ class StreamingPipeline:
             ):
                 if isinstance(event, TokenBatchEvent):
                     tokens.extend(event.tokens)
+                    logger.info(
+                        "streaming_pipeline sse token_batch tokens=%d total_tokens=%d",
+                        len(event.tokens),
+                        len(tokens),
+                    )
                     continue
                 yield event
 
@@ -121,10 +187,32 @@ class StreamingPipeline:
 
             timeline: list[SpeakerSegment] = []
             if diarizer is not None:
+                logger.info(
+                    "streaming_pipeline sse diarizer finalize start chunks=%d total_audio_s=%.2f",
+                    getattr(diarizer, "processed_chunks", diarizer_chunks),
+                    duration,
+                )
                 timeline = diarizer.finalize()
+                logger.info("streaming_pipeline sse diarizer finalize complete timeline=%d", len(timeline))
 
+            logger.info(
+                "streaming_pipeline sse complete elapsed=%.3fs chunks=%d total_audio_s=%.2f tokens=%d timeline=%d",
+                time.perf_counter() - started,
+                chunk_count,
+                duration,
+                len(tokens),
+                len(timeline),
+            )
             yield TranscriptDoneEvent(
                 text=json.dumps(build_transcription_response(tokens, timeline, duration)),
             )
+        except Exception:
+            logger.exception(
+                "streaming_pipeline sse failed elapsed=%.3fs chunks=%d diarizer_chunks=%d",
+                time.perf_counter() - started,
+                chunk_count,
+                diarizer_chunks,
+            )
+            raise
         finally:
             await audio.cleanup()

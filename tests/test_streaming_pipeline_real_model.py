@@ -46,13 +46,13 @@ async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
     from nemo.collections.asr.models import SortformerEncLabelModel
 
     from asr_diar_server.audio import AudioInput
-    from asr_diar_server.backends.faster_whisper import FasterWhisperASRAdapter
+    from asr_diar_server.backends.faster_whisper import build_asr_adapter
     from asr_diar_server.backends.nemo_streaming import StreamingDiarizerFactory
     from asr_diar_server.pipelines.streaming import StreamingPipeline
-    from asr_diar_server.app import WARMUP_AUDIO_PATH
+    from asr_diar_server.bench.data import WARMUP_AUDIO_PATH
 
     # Load real models
-    asr = FasterWhisperASRAdapter(model_name="openai/whisper-small", device="cpu")
+    asr = build_asr_adapter("openai/whisper-small", device="cpu")
     diar_model = SortformerEncLabelModel.from_pretrained(
         "nvidia/diar_streaming_sortformer_4spk-v2"
     )

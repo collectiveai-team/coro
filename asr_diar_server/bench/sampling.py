@@ -111,8 +111,11 @@ class Sampler:
                 "io_wchar_bps": 0.0,
                 "io_read_bps": 0.0,
                 "io_write_bps": 0.0,
-                **sample_gpu(),
-                "observed_hardware_profile": "cpu-only",
+                **(_gpu := sample_gpu()),
+                "observed_hardware_profile": (
+                    "cpu+gpu" if _gpu.get("server_vram_mib") not in ("", None)
+                    else "cpu-only"
+                ),
                 "audio_seconds": "",
                 "wall_seconds": "",
                 "transcription_throughput": "",

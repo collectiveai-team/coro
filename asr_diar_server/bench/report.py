@@ -14,7 +14,6 @@ class QualityRow:
 
     session_id: str
     duration: float
-    siwer: float | None
     cpwer: float | None
     orcwer: float | None
     dicpwer: float | None
@@ -125,13 +124,12 @@ def _load_quality(
         duration = float(item.get("audio_seconds", 0.0))
         error_str = item.get("error")
 
-        if error_str or (item.get("siwer") is None and item.get("metrics") is None):
+        if error_str or item.get("cpwer") is None:
             err_msg = str(error_str) if error_str else "unknown error"
             footnotes.append(f"ERROR for {session_id}: {err_msg}")
             rows.append(QualityRow(
                 session_id=session_id,
                 duration=duration,
-                siwer=None,
                 cpwer=None,
                 orcwer=None,
                 dicpwer=None,
@@ -142,7 +140,6 @@ def _load_quality(
             rows.append(QualityRow(
                 session_id=session_id,
                 duration=duration,
-                siwer=_wer_val(item.get("siwer")),
                 cpwer=_wer_val(item.get("cpwer")),
                 orcwer=_wer_val(item.get("orcwer")),
                 dicpwer=_wer_val(item.get("dicpwer")),
@@ -154,7 +151,6 @@ def _load_quality(
         combined = QualityRow(
             session_id="COMBINED",
             duration=sum(r.duration for r in rows),
-            siwer=_nested_wer(combined_data, "siwer"),
             cpwer=_nested_wer(combined_data, "cpwer"),
             orcwer=_nested_wer(combined_data, "orcwer"),
             dicpwer=_nested_wer(combined_data, "dicpwer"),
@@ -298,18 +294,18 @@ def _quality_table_md(report: BenchReport) -> list[str]:
     lines: list[str] = []
     lines.append("## Quality Results")
     lines.append("")
-    lines.append("| session | duration | siWER | cpWER | ORC-WER | DI-cpWER | DER |")
-    lines.append("|---------|----------|-------|-------|---------|----------|-----|")
+    lines.append("| session | duration | cpWER | ORC-WER | DI-cpWER | DER |")
+    lines.append("|---------|----------|-------|---------|----------|-----|")
 
     for row in report.quality_rows:
         if row.error is not None:
             lines.append(
-                f"| {row.session_id} | {row.duration:.1f} | ERROR | ERROR | ERROR | ERROR | ERROR |"
+                f"| {row.session_id} | {row.duration:.1f} | ERROR | ERROR | ERROR | ERROR |"
             )
         else:
             lines.append(
                 f"| {row.session_id} | {row.duration:.1f} "
-                f"| {_fmt(row.siwer)} | {_fmt(row.cpwer)} "
+                f"| {_fmt(row.cpwer)} "
                 f"| {_fmt(row.orcwer)} | {_fmt(row.dicpwer)} "
                 f"| {_fmt(row.der)} |"
             )
@@ -318,7 +314,7 @@ def _quality_table_md(report: BenchReport) -> list[str]:
         c = report.quality_combined
         lines.append(
             f"| **{c.session_id}** | {c.duration:.1f} "
-            f"| {_fmt(c.siwer)} | {_fmt(c.cpwer)} "
+            f"| {_fmt(c.cpwer)} "
             f"| {_fmt(c.orcwer)} | {_fmt(c.dicpwer)} "
             f"| {_fmt(c.der)} |"
         )
@@ -426,25 +422,25 @@ def _rich_quality_table(console: object, report: BenchReport) -> None:
     from rich.table import Table
 
     qt = Table(title="Quality Results", show_lines=True)
-    for col in ("session", "duration", "siWER", "cpWER", "ORC-WER", "DI-cpWER", "DER"):
+    for col in ("session", "duration", "cpWER", "ORC-WER", "DI-cpWER", "DER"):
         qt.add_column(col)
     for row in report.quality_rows:
         if row.error is not None:
             qt.add_row(
                 row.session_id, f"{row.duration:.1f}",
-                "ERROR", "ERROR", "ERROR", "ERROR", "ERROR",
+                "ERROR", "ERROR", "ERROR", "ERROR",
             )
         else:
             qt.add_row(
                 row.session_id, f"{row.duration:.1f}",
-                _fmt(row.siwer), _fmt(row.cpwer),
+                _fmt(row.cpwer),
                 _fmt(row.orcwer), _fmt(row.dicpwer), _fmt(row.der),
             )
     if report.quality_combined is not None:
         c = report.quality_combined
         qt.add_row(
             f"[bold]{c.session_id}[/bold]", f"{c.duration:.1f}",
-            _fmt(c.siwer), _fmt(c.cpwer),
+            _fmt(c.cpwer),
             _fmt(c.orcwer), _fmt(c.dicpwer), _fmt(c.der),
         )
     console.print(qt)  # type: ignore[attr-defined]
