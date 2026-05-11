@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+import logging
+import time
 from typing import Any
 
 from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
@@ -13,6 +15,8 @@ from asr_diar_server.core.types import (
     TranscriptDeltaEvent,
     TranscriptToken,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # MARK: Result Model
@@ -135,6 +139,8 @@ class ASRWindowing:
         tokens: list[TranscriptToken] = []
         prompt_carry = prompt
         max_buffer = 0
+        window_count = 0
+        started = time.perf_counter()
 
         async for chunk in chunks:
             if not chunk:
@@ -146,10 +152,25 @@ class ASRWindowing:
             while len(buffer) >= self.window_bytes:
                 offset_seconds = consumed_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
                 window = bytes(buffer[: self.window_bytes])
+                window_count += 1
+                logger.info(
+                    "asr_windowing window=%d start=%.2fs duration=%.2fs buffer_bytes=%d",
+                    window_count,
+                    offset_seconds,
+                    len(window) / (SAMPLE_RATE * BYTES_PER_SAMPLE),
+                    len(buffer),
+                )
+                asr_started = time.perf_counter()
                 window_tokens = await asr.transcribe_pcm(
                     window,
                     language=language,
                     prompt=prompt_carry,
+                )
+                logger.info(
+                    "asr_windowing window=%d asr_complete elapsed=%.3fs raw_tokens=%d",
+                    window_count,
+                    time.perf_counter() - asr_started,
+                    len(window_tokens),
                 )
                 accepted = [
                     TranscriptToken(
@@ -176,10 +197,25 @@ class ASRWindowing:
         if buffer:
             offset_seconds = consumed_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
             window = bytes(buffer)
+            window_count += 1
+            logger.info(
+                "asr_windowing final_window=%d start=%.2fs duration=%.2fs buffer_bytes=%d",
+                window_count,
+                offset_seconds,
+                len(window) / (SAMPLE_RATE * BYTES_PER_SAMPLE),
+                len(buffer),
+            )
+            asr_started = time.perf_counter()
             window_tokens = await asr.transcribe_pcm(
                 window,
                 language=language,
                 prompt=prompt_carry,
+            )
+            logger.info(
+                "asr_windowing final_window=%d asr_complete elapsed=%.3fs raw_tokens=%d",
+                window_count,
+                time.perf_counter() - asr_started,
+                len(window_tokens),
             )
             accepted = [
                 TranscriptToken(
@@ -201,3 +237,10 @@ class ASRWindowing:
                     yield TranscriptDeltaEvent(delta=delta)
 
         self._stream_chunks_buffer_highwater = max_buffer
+        logger.info(
+            "asr_windowing complete elapsed=%.3fs windows=%d accepted_tokens=%d max_buffer_bytes=%d",
+            time.perf_counter() - started,
+            window_count,
+            len(tokens),
+            max_buffer,
+        )

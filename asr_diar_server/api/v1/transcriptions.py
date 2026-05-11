@@ -8,6 +8,9 @@ to the configured pipeline.
 from __future__ import annotations
 
 import math
+import logging
+import time
+from uuid import uuid4
 from enum import StrEnum
 from typing import Literal, overload
 
@@ -36,6 +39,7 @@ from asr_diar_server.audio import AudioInput
 
 # MARK: Router Configuration
 router = APIRouter(prefix="/v1")
+logger = logging.getLogger(__name__)
 
 
 # MARK: Response
@@ -227,8 +231,21 @@ async def create_transcription(
     are recognised but not implemented.
     """
     # Request Validation ----------------------------------------------------
+    request_id = uuid4().hex[:8]
+    started = time.perf_counter()
+    logger.info(
+        "transcription[%s] request start filename=%s content_type=%s stream=%s response_format=%s language=%s",
+        request_id,
+        file.filename,
+        file.content_type,
+        stream,
+        response_format,
+        language,
+    )
     audio = await AudioInput.from_upload(file)
-    if not await audio.read_bytes():
+    audio_bytes = await audio.read_bytes()
+    logger.info("transcription[%s] upload read bytes=%d", request_id, len(audio_bytes))
+    if not audio_bytes:
         raise TranscriptionValidationError("Empty audio file.", param="file")
 
     # Streaming Response ----------------------------------------------------
@@ -236,6 +253,7 @@ async def create_transcription(
         stream_method = getattr(pipeline, "stream", None)
         if stream_method is None:
             raise UnsupportedStreamingError("Configured pipeline does not support streaming.")
+        logger.info("transcription[%s] handing off to streaming response", request_id)
         return streaming_response(stream_method(audio, language=language, prompt=prompt or None))
 
     # JSON Response ---------------------------------------------------------
@@ -244,7 +262,16 @@ async def create_transcription(
     except TranscriptionValidationError:
         raise
     except Exception as exc:
+        logger.exception("transcription[%s] pipeline failed after %.3fs", request_id, time.perf_counter() - started)
         raise TranscriptionProcessingError("Transcription processing failed.") from exc
     validated = TranscriptionResponse.model_validate(result)
+    logger.info(
+        "transcription[%s] request complete elapsed=%.3fs segments=%d words=%d diarization=%d",
+        request_id,
+        time.perf_counter() - started,
+        len(validated.segments),
+        len(validated.word_segments or validated.raw_words),
+        len(validated.diarization),
+    )
 
     return _response_for_format(response_format, validated, language=language)

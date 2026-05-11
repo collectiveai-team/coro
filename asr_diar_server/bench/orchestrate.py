@@ -9,13 +9,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from asr_diar_server.bench.errors import ServerUnreachableError
 from asr_diar_server.bench.performance import (
     compute_per_rep_summary,
     write_performance_summary,
 )
 from asr_diar_server.bench.sampling import Sampler
 from asr_diar_server.bench.stm import hyp_segments_to_stm
-from asr_diar_server.bench.transport import transcribe_audio, transcribe_audio_sse
+from asr_diar_server.bench.transport import (
+    _is_connection_refused,
+    transcribe_audio,
+    transcribe_audio_sse,
+)
 
 
 def run_workload(
@@ -303,12 +308,23 @@ def _run_quality_scoring(
 
 
 def _fetch_health(base_url: str) -> dict[str, Any]:
+    """Fetch /health from the server.
+
+    Raises ServerUnreachableError if the TCP connection is refused, so the
+    bench fails fast with a clear actionable message instead of crashing
+    later inside transcribe_audio with a raw urllib stack trace.
+
+    Other failures (e.g. 404, JSON parse errors) are swallowed and return
+    {} to preserve the previous behavior of treating /health as optional.
+    """
     import urllib.request
 
     try:
         with urllib.request.urlopen(f"{base_url.rstrip('/')}/health", timeout=10) as resp:
             return json.loads(resp.read())
-    except Exception:
+    except Exception as exc:
+        if _is_connection_refused(exc):
+            raise ServerUnreachableError(base_url, cause=exc) from exc
         return {}
 
 

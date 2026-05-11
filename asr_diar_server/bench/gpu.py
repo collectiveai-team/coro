@@ -1,36 +1,18 @@
-"""GPU resource sampling via pynvml.
+"""GPU resource sampling via torch.cuda.
 
 Provides a single public function, ``sample_gpu``, that returns per-tick GPU
-metrics aggregated across all visible NVIDIA devices.  When pynvml is not
-installed or no CUDA devices are present the function returns empty strings so
-callers can treat the absence of GPU data uniformly.
+metrics aggregated across all visible CUDA devices.  When CUDA is not available
+the function returns empty strings so callers can treat the absence of GPU data
+uniformly.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# Lazy module-level initialisation state so we only call nvmlInit once.
-_nvml_available: bool | None = None  # None = not yet probed
-
-
-def _ensure_nvml() -> bool:
-    """Return True if pynvml was successfully initialised, False otherwise."""
-    global _nvml_available
-    if _nvml_available is not None:
-        return _nvml_available
-    try:
-        import pynvml
-
-        pynvml.nvmlInit()
-        _nvml_available = True
-    except Exception:
-        _nvml_available = False
-    return _nvml_available
-
 
 def sample_gpu() -> dict[str, Any]:
-    """Sample GPU memory and utilisation across all visible NVIDIA devices.
+    """Sample GPU memory and utilisation across all visible CUDA devices.
 
     Returns a dict with these keys:
 
@@ -39,7 +21,7 @@ def sample_gpu() -> dict[str, Any]:
     - ``total_gpu_used_mib`` - alias of server_vram_mib (kept for schema compat)
     - ``gpu_util_pct``       - mean GPU utilisation across all devices (%)
 
-    All values are empty strings when pynvml is unavailable or raises.
+    All values are empty strings when CUDA is unavailable or raises.
     """
     empty: dict[str, Any] = {
         "server_vram_mib": "",
@@ -48,13 +30,13 @@ def sample_gpu() -> dict[str, Any]:
         "gpu_util_pct": "",
     }
 
-    if not _ensure_nvml():
-        return empty
-
     try:
-        import pynvml
+        import torch
 
-        count = pynvml.nvmlDeviceGetCount()
+        if not torch.cuda.is_available():
+            return empty
+
+        count = torch.cuda.device_count()
         if count == 0:
             return empty
 
@@ -63,12 +45,10 @@ def sample_gpu() -> dict[str, Any]:
         util_sum = 0.0
 
         for i in range(count):
-            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-            mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-            total_mem += mem.total
-            used_mem += mem.used
-            util_sum += util.gpu
+            free, total = torch.cuda.mem_get_info(i)
+            total_mem += total
+            used_mem += total - free
+            util_sum += torch.cuda.utilization(i)
 
         return {
             "server_vram_mib": round(used_mem / 1024**2, 1),

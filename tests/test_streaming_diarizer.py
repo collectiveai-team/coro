@@ -19,7 +19,6 @@ CHUNK_LEN = 6
 SUBSAMPLING_FACTOR = 8
 CHUNK_AUDIO_SECONDS = CHUNK_LEN * SUBSAMPLING_FACTOR * 0.01
 CHUNK_AUDIO_BYTES = int(CHUNK_AUDIO_SECONDS * SAMPLE_RATE * BYTES_PER_SAMPLE)
-LEFT_CONTEXT_FRAMES = 99
 N_MEL_FEATURES = 128
 
 
@@ -41,12 +40,14 @@ def _make_mock_model():
     def _forward_streaming_step(
         processed_signal, processed_signal_length, streaming_state, total_preds, **kwargs
     ):
+        # processed_signal arrives as (batch, time, features) after transpose in _process_chunk.
+        # total_preds is now initialised as (1, 0, n_spk) — never None.
         step_count[0] += 1
         new_state = {"step": step_count[0]}
-        if total_preds is None:
-            total_preds = torch.zeros(1, 4, 100)
-        total_preds = total_preds + torch.rand_like(total_preds) * 0.01
-        return new_state, total_preds
+        chunk_frames = 4  # arbitrary small chunk pred length
+        chunk_preds = torch.rand(1, chunk_frames, 4) * 0.01
+        new_total_preds = torch.cat([total_preds, chunk_preds], dim=1)
+        return new_state, new_total_preds
 
     model.forward_streaming_step = MagicMock(side_effect=_forward_streaming_step)
     model._step_count = step_count
@@ -56,8 +57,9 @@ def _make_mock_model():
 def _make_mock_preprocessor():
     outputs = []
 
-    def _process(audio_signal, length):
-        n_samples = audio_signal.shape[-1]
+    def _process(*, input_signal, length):
+        # Called with kwargs — matches the NeMo typecheck requirement.
+        n_samples = input_signal.shape[-1]
         n_mel_frames = n_samples // 160
         if n_mel_frames == 0:
             n_mel_frames = 1
@@ -182,40 +184,51 @@ def test_ingest_processes_multiple_chunks(diarizer, mock_model, mock_preprocesso
 
 
 # ---------------------------------------------------------------------------
-# Test 5: left context zero-padded for first chunk
+# Test 5: signal passed to forward_streaming_step is time-first (batch, time, features)
 # ---------------------------------------------------------------------------
 
 
-def test_left_context_zero_padded_for_first_chunk(diarizer, mock_model, mock_preprocessor):
+def test_signal_is_time_first_on_first_chunk(diarizer, mock_model, mock_preprocessor):
+    """forward_streaming_step expects (batch, time, features).
+    The preprocessor returns (batch, features, time) — we must transpose before passing.
+    No external left-context is prepended; streaming_state carries history internally.
+    """
     pcm = _make_pcm_bytes(CHUNK_AUDIO_SECONDS)
     diarizer.ingest_pcm_chunk(pcm)
 
     first_call = mock_model.forward_streaming_step.call_args
     signal = first_call[0][0]
 
-    left_ctx = signal[:, :, :LEFT_CONTEXT_FRAMES]
-    assert torch.all(left_ctx == 0)
+    # (batch, time, features): dim 2 must be N_MEL_FEATURES
+    assert signal.ndim == 3
+    assert signal.shape[2] == N_MEL_FEATURES
+    # No left-context prepended — time frames equal what preprocessor produced
+    mel, _ = mock_preprocessor.outputs[0]
+    assert signal.shape[1] == mel.shape[2]
 
 
 # ---------------------------------------------------------------------------
-# Test 6: left context carried between chunks
+# Test 6: each chunk passes only its own frames — no accumulation across chunks
 # ---------------------------------------------------------------------------
 
 
-def test_left_context_carried_between_chunks(diarizer, mock_model, mock_preprocessor):
+def test_each_chunk_passes_only_its_own_frames(diarizer, mock_model, mock_preprocessor):
+    """streaming_state carries left-context history internally; each call to
+    forward_streaming_step receives only the current chunk's mel frames."""
     pcm = _make_pcm_bytes(CHUNK_AUDIO_SECONDS * 2)
     diarizer.ingest_pcm_chunk(pcm)
 
     assert mock_preprocessor.call_count == 2
+
     first_mel, _ = mock_preprocessor.outputs[0]
+    second_mel, _ = mock_preprocessor.outputs[1]
 
-    second_call = mock_model.forward_streaming_step.call_args_list[1]
-    second_signal = second_call[0][0]
+    first_signal = mock_model.forward_streaming_step.call_args_list[0][0][0]
+    second_signal = mock_model.forward_streaming_step.call_args_list[1][0][0]
 
-    carried_frames = min(LEFT_CONTEXT_FRAMES, first_mel.shape[-1])
-    expected_left_ctx = first_mel[:, :, -carried_frames:]
-    actual_left_ctx = second_signal[:, :, :carried_frames]
-    assert torch.allclose(expected_left_ctx, actual_left_ctx)
+    # Each call's time dimension matches only its own mel output — no growth
+    assert first_signal.shape[1] == first_mel.shape[2]
+    assert second_signal.shape[1] == second_mel.shape[2]
 
 
 # ---------------------------------------------------------------------------
@@ -302,3 +315,93 @@ def test_two_instances_independent(mock_model, mock_preprocessor, mock_post_proc
     mock_model2.forward_streaming_step.assert_not_called()
     assert d1._pcm_buffer == b""
     assert len(d2._pcm_buffer) > 0
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for warmup bugs fixed in production
+# ---------------------------------------------------------------------------
+
+
+def test_preprocessor_called_with_kwargs_only(diarizer, mock_model, mock_preprocessor):
+    """NeMo's @typecheck decorator rejects positional args — preprocessor must be called
+    with input_signal= and length= as keyword arguments."""
+    pcm = _make_pcm_bytes(CHUNK_AUDIO_SECONDS)
+    diarizer.ingest_pcm_chunk(pcm)
+
+    call_kwargs = mock_preprocessor.call_args.kwargs
+    assert "input_signal" in call_kwargs, "input_signal must be passed as kwarg"
+    assert "length" in call_kwargs, "length must be passed as kwarg"
+    assert mock_preprocessor.call_args.args == (), "no positional args allowed"
+
+
+def test_total_preds_never_none_on_construction(mock_model, mock_preprocessor, mock_post_processor):
+    """total_preds must be a (1, 0, n_spk) zero tensor at construction time,
+    not None — torch.cat rejects None elements."""
+    from asr_diar_server.backends.nemo_streaming import StreamingDiarizer
+
+    d = StreamingDiarizer(
+        mock_model,
+        chunk_len=CHUNK_LEN,
+        subsampling_factor=SUBSAMPLING_FACTOR,
+        n_spk=4,
+        preprocessor=mock_preprocessor,
+        post_processor=mock_post_processor,
+    )
+
+    assert d._total_preds is not None
+    assert isinstance(d._total_preds, torch.Tensor)
+    assert d._total_preds.shape == (1, 0, 4)
+
+
+
+def test_length_tensor_on_same_device_as_audio(mock_model, mock_preprocessor, mock_post_processor):
+    """The length tensor passed to the preprocessor must be on the model's device
+    to avoid cross-device matmul errors."""
+    from asr_diar_server.backends.nemo_streaming import StreamingDiarizer
+
+    device = torch.device("cpu")
+    mock_model.device = device
+
+    d = StreamingDiarizer(
+        mock_model,
+        chunk_len=CHUNK_LEN,
+        subsampling_factor=SUBSAMPLING_FACTOR,
+        n_spk=4,
+        preprocessor=mock_preprocessor,
+        post_processor=mock_post_processor,
+    )
+    d.ingest_pcm_chunk(_make_pcm_bytes(CHUNK_AUDIO_SECONDS))
+
+    call_kwargs = mock_preprocessor.call_args.kwargs
+    assert call_kwargs["length"].device.type == device.type
+
+
+def test_default_post_process_returns_speaker_segments(mock_model):
+    """_default_post_process must return SpeakerSegments without relying on the
+    post_processor override — exercises ts_vad_post_processing integration."""
+    from asr_diar_server.backends.nemo_streaming import StreamingDiarizer
+
+    mock_preprocessor = _make_mock_preprocessor()
+    # No post_processor — forces _default_post_process path
+    d = StreamingDiarizer(
+        mock_model,
+        chunk_len=CHUNK_LEN,
+        subsampling_factor=SUBSAMPLING_FACTOR,
+        n_spk=4,
+        preprocessor=mock_preprocessor,
+    )
+
+    # Seed total_preds with realistic sigmoid-like values: (1, 20, 4)
+    d._total_preds = torch.sigmoid(torch.randn(1, 20, 4))
+    d._total_audio_bytes = int(20 * SUBSAMPLING_FACTOR * 0.01 * SAMPLE_RATE * BYTES_PER_SAMPLE)
+
+    segments = d._default_post_process(
+        duration=d._total_audio_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
+    )
+
+    assert isinstance(segments, list)
+    for seg in segments:
+        assert isinstance(seg, SpeakerSegment)
+        assert seg.speaker >= 1
+        assert seg.start >= 0.0
+        assert seg.end > seg.start

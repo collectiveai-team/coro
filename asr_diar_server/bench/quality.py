@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -20,26 +21,13 @@ def _require_meeteval():
         sys.exit(1)
 
 
-def _parse_stm(path: Path) -> list[dict[str, Any]]:
-    segments: list[dict[str, Any]] = []
-    for line in path.read_text().strip().splitlines():
-        parts = line.strip().split(maxsplit=5)
-        if len(parts) < 6:
-            continue
-        segments.append({
-            "recording_id": parts[0],
-            "channel": parts[1],
-            "speaker": parts[2],
-            "start_time": float(parts[3]),
-            "end_time": float(parts[4]),
-            "text": parts[5],
-        })
-    return segments
-
-
 def _wer_to_dict(result) -> dict[str, Any]:
+    """Convert a meeteval WER result object to a plain dict.
+
+    meeteval 0.4.x uses `error_rate` instead of `wer` as the attribute name.
+    """
     return {
-        "wer": result.wer,
+        "wer": result.error_rate,
         "errors": result.errors,
         "length": result.length,
         "insertions": result.insertions,
@@ -49,13 +37,23 @@ def _wer_to_dict(result) -> dict[str, Any]:
 
 
 def _der_to_dict(result) -> dict[str, Any]:
+    """Convert a meeteval DER result object to a plain dict.
+
+    meeteval 0.4.x DiaErrorRate uses `*_speaker_time` field names and
+    returns Decimal values; cast to float for JSON serialisability.
+    """
     return {
-        "der": result.der,
-        "false_alarm": result.false_alarm,
-        "missed_detection": result.missed_detection,
-        "speaker_error": result.speaker_error,
-        "total_speech": result.total_speech,
+        "der": float(result.error_rate),
+        "false_alarm": float(result.falarm_speaker_time),
+        "missed_detection": float(result.missed_speaker_time),
+        "speaker_error": float(result.speaker_error_time),
+        "total_speech": float(result.scored_speaker_time),
     }
+
+
+def _combine_multifile(meeteval, results: dict) -> Any:
+    """Combine per-session meeteval results into a single aggregate."""
+    return meeteval.wer.combine_error_rates(*results.values())
 
 
 def score_item(
@@ -65,30 +63,55 @@ def score_item(
     der_collar: float = 0.0,
     der_regions: str = "all",
 ) -> dict[str, Any]:
+    """Score one hypothesis STM against the reference STM.
+
+    Passes file paths directly to meeteval so it handles STM parsing
+    internally. The multifile API returns dict[session_id -> result];
+    results are combined across sessions with combine_error_rates.
+
+    siWER (SISO-WER) is omitted because AMI data has multiple speakers
+    per session, making (session, speaker) pairs non-unique — a hard
+    requirement of siWER.
+    """
     meeteval = _require_meeteval()
 
     try:
-        ref = _parse_stm(ref_stm_path)
-        hyp = _parse_stm(hyp_stm_path)
-
         raw: dict[str, Any] = {}
         metrics: dict[str, Any] = {}
 
-        raw["siwer"] = meeteval.wer.siwer(ref, hyp)
-        metrics["siwer"] = _wer_to_dict(raw["siwer"])
-        raw["cpwer"] = meeteval.wer.cpwer(ref, hyp)
-        metrics["cpwer"] = _wer_to_dict(raw["cpwer"])
-        raw["orcwer"] = meeteval.wer.greedy_orcwer(ref, hyp)
-        metrics["orcwer"] = _wer_to_dict(raw["orcwer"])
-        raw["dicpwer"] = meeteval.wer.greedy_dicpwer(ref, hyp)
-        metrics["dicpwer"] = _wer_to_dict(raw["dicpwer"])
-        raw["der"] = meeteval.der.md_eval_22(
-            ref, hyp, collar=der_collar, regions=der_regions
+        raw["cpwer"] = _combine_multifile(
+            meeteval, meeteval.wer.cpwer(ref_stm_path, hyp_stm_path)
         )
+        metrics["cpwer"] = _wer_to_dict(raw["cpwer"])
+
+        raw["orcwer"] = _combine_multifile(
+            meeteval, meeteval.wer.greedy_orcwer(ref_stm_path, hyp_stm_path)
+        )
+        metrics["orcwer"] = _wer_to_dict(raw["orcwer"])
+
+        raw["dicpwer"] = _combine_multifile(
+            meeteval, meeteval.wer.greedy_dicpwer(ref_stm_path, hyp_stm_path)
+        )
+        metrics["dicpwer"] = _wer_to_dict(raw["dicpwer"])
+
+        der_results = meeteval.der.md_eval_22(
+            ref_stm_path, hyp_stm_path,
+            collar=der_collar,
+            regions=der_regions,
+        )
+        raw["der"] = _combine_multifile(meeteval, der_results)
         metrics["der"] = _der_to_dict(raw["der"])
 
         return {"metrics": metrics, "_raw": raw}
+
     except Exception as exc:
+        # Print full traceback to stderr so the operator can see the real cause
+        # without having to dig into the JSON artifact.
+        print(
+            f"[bench/quality] scoring failed for {hyp_stm_path.name}:\n"
+            f"{traceback.format_exc()}",
+            file=sys.stderr,
+        )
         return {
             "metrics": None,
             "error": {
@@ -98,10 +121,13 @@ def score_item(
         }
 
 
-WER_METRIC_KEYS = ("siwer", "cpwer", "orcwer", "dicpwer")
+# sisower removed: SISO-WER requires unique (session, speaker) pairs,
+# which AMI multi-speaker meetings do not satisfy.
+WER_METRIC_KEYS = ("cpwer", "orcwer", "dicpwer")
 
 
 def combine_items(item_results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate per-item score_item results into a workload-level summary."""
     meeteval = _require_meeteval()
 
     succeeded = [r for r in item_results if r.get("metrics") is not None]
@@ -111,8 +137,9 @@ def combine_items(item_results: list[dict[str, Any]]) -> dict[str, Any]:
     for key in WER_METRIC_KEYS:
         raw_objects = [r["_raw"][key] for r in succeeded]
         if raw_objects:
-            combined_result = meeteval.wer.combine_error_rates(*raw_objects)
-            combined[key] = _wer_to_dict(combined_result)
+            combined[key] = _wer_to_dict(
+                meeteval.wer.combine_error_rates(*raw_objects)
+            )
         else:
             combined[key] = None
 
