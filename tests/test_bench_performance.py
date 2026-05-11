@@ -9,6 +9,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -95,9 +96,10 @@ class TestSampler:
         from asr_diar_server.bench.sampling import Sampler
 
         sampler = Sampler(pid=123, interval=0.05, sample_fn=_mock_sample_fn)
-        sampler.start()
-        time.sleep(0.2)
-        sampler.stop()
+        with patch("asr_diar_server.bench.sampling.sample_gpu", return_value={}):
+            sampler.start()
+            time.sleep(0.2)
+            sampler.stop()
 
         assert len(sampler.samples) >= 2
         assert sampler.samples[0]["root_pid"] == 123
@@ -152,6 +154,10 @@ def _make_csv_rows(
     *,
     pss_kb: float = 100000,
     cpu_pct: float = 50.0,
+    server_vram_mib: float | str = "",
+    gpu_util_pct: float | str = "",
+    baseline_pss_kb: float | str = "",
+    baseline_vram_mib: float | str = "",
     wall_seconds: float = 2.0,
     audio_seconds: float = 10.0,
     observed_hardware_profile: str = "cpu-only",
@@ -159,6 +165,10 @@ def _make_csv_rows(
     base = {fn: "" for fn in RESOURCE_FIELDNAMES}
     base["pss_kb"] = pss_kb
     base["cpu_pct"] = cpu_pct
+    base["server_vram_mib"] = server_vram_mib
+    base["gpu_util_pct"] = gpu_util_pct
+    base["baseline_pss_kb"] = baseline_pss_kb
+    base["baseline_vram_mib"] = baseline_vram_mib
     base["wall_seconds"] = wall_seconds
     base["audio_seconds"] = audio_seconds
     base["observed_hardware_profile"] = observed_hardware_profile
@@ -202,6 +212,28 @@ class TestComputePerRepSummary:
         summary = compute_per_rep_summary(csv_path)
         assert summary["peak_pss_kb"] == 200000.0
         assert summary["peak_cpu_pct"] == 80.0
+
+    def test_extracts_gpu_and_baseline_adjusted_memory(self, tmp_path: Path):
+        from asr_diar_server.bench.performance import compute_per_rep_summary
+
+        rows = _make_csv_rows(
+            pss_kb=180000,
+            server_vram_mib=2048.0,
+            gpu_util_pct=91.0,
+            baseline_pss_kb=100000,
+            baseline_vram_mib=1536.0,
+        )
+        csv_path = tmp_path / "resource_item1_rep1.csv"
+        _write_resource_csv(csv_path, rows)
+
+        summary = compute_per_rep_summary(csv_path)
+        assert summary["peak_pss_kb"] == 180000.0
+        assert summary["baseline_pss_kb"] == 100000.0
+        assert summary["peak_pss_delta_kb"] == 80000.0
+        assert summary["peak_vram_mib"] == 2048.0
+        assert summary["baseline_vram_mib"] == 1536.0
+        assert summary["peak_vram_delta_mib"] == 512.0
+        assert summary["peak_gpu_util_pct"] == 91.0
 
 
 class TestAggregateAcrossReps:
@@ -304,6 +336,7 @@ class TestFullPerformanceRun:
             assert "wall_seconds" in row
             assert "transcription_throughput" in row
             assert "peak_pss_kb" in row
+            assert "peak_pss_delta_kb" in row
             assert "peak_cpu_pct" in row
             assert "observed_hardware_profile" in row
 

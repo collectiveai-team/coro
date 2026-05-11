@@ -14,6 +14,8 @@ import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
+import asr_diar_server
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -58,6 +60,13 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
         application.state.settings = settings
         application.state.runtime = runtime
+        logging.getLogger("asr_diar_server").setLevel(settings.log_level.upper())
+        logger.warning(
+            "asr_diar_server startup package_file=%s app_file=%s settings=%s",
+            getattr(asr_diar_server, "__file__", None),
+            __file__,
+            settings.model_dump(mode="json"),
+        )
 
         # Build ASR adapter (always required)
         asr_adapter = build_asr_adapter(
@@ -70,7 +79,10 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         # Build optional diarization adapter
         diarization_adapter = None
         if settings.backend_diarization == "nemo" and settings.model_diarization:
-            diarization_adapter = build_diarization_adapter(settings.model_diarization)
+            diarization_adapter = build_diarization_adapter(
+                settings.model_diarization,
+                device=settings.diarization_device,
+            )
             runtime.diarization_adapter = diarization_adapter
 
             if settings.pipeline in ("chunked-file", "streaming"):

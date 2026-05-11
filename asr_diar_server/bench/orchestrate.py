@@ -14,7 +14,7 @@ from asr_diar_server.bench.performance import (
     compute_per_rep_summary,
     write_performance_summary,
 )
-from asr_diar_server.bench.sampling import Sampler
+from asr_diar_server.bench.sampling import Sampler, sample_resource_baseline
 from asr_diar_server.bench.stm import hyp_segments_to_stm
 from asr_diar_server.bench.transport import (
     _is_connection_refused,
@@ -47,6 +47,8 @@ def run_workload(
         item_id = item["item_id"]
         audio_path = item["audio_path"]
         ref_stm_path = item.get("ref_stm_path")
+        if not item.get("audio_seconds"):
+            item["audio_seconds"] = round(_audio_duration(audio_path), 3)
 
         for rep in range(1, reps + 1):
             result = transcribe_audio(base_url, audio_path)
@@ -105,6 +107,7 @@ def run_all_workload(
 
     if warmup_audio is not None:
         transcribe_audio(base_url, warmup_audio)
+    memory_baseline = sample_resource_baseline(server_pid, sample_fn=sample_fn)
 
     per_item_reps: dict[str, list[dict[str, Any]]] = {}
 
@@ -113,6 +116,7 @@ def run_all_workload(
         audio_path = item["audio_path"]
         ref_stm_path = item.get("ref_stm_path")
         audio_seconds = _audio_duration(audio_path)
+        item["audio_seconds"] = round(audio_seconds, 3)
         rep_summaries: list[dict[str, Any]] = []
 
         for rep in range(1, reps + 1):
@@ -142,6 +146,7 @@ def run_all_workload(
                 transcription_throughput=round(throughput, 6) if throughput else "",
                 time_to_first_delta_s=round(ttft, 6) if ttft is not None else "",
                 observed_hardware_profile=hw_profile,
+                **memory_baseline,
             )
 
             csv_path = perf_dir / f"resource_{item_id}_rep{rep}.csv"
@@ -162,6 +167,8 @@ def run_all_workload(
                 round(throughput, 6) if throughput else 0.0,
             )
             rep_summary.setdefault("observed_hardware_profile", hw_profile)
+            rep_summary.setdefault("baseline_pss_kb", memory_baseline.get("baseline_pss_kb", ""))
+            rep_summary.setdefault("baseline_vram_mib", memory_baseline.get("baseline_vram_mib", ""))
             if ttft is not None:
                 rep_summary["time_to_first_delta_s"] = round(ttft, 6)
             rep_summaries.append(rep_summary)
@@ -185,6 +192,7 @@ def run_all_workload(
         reps=reps,
         subcommand="all",
         stream=stream,
+        warmup=warmup_audio is not None,
     )
 
 
@@ -350,6 +358,7 @@ def _write_manifest(
     reps: int,
     subcommand: str,
     stream: bool = False,
+    warmup: bool = False,
 ) -> None:
     git_sha = _git_sha()
     manifest = {
@@ -359,6 +368,7 @@ def _write_manifest(
         "cli_args": cli_args or [],
         "subcommand": subcommand,
         "reps": reps,
+        "warmup": warmup,
         "stream": stream,
         "workload_set": [
             {
@@ -426,6 +436,7 @@ def run_performance_workload(
     sample_interval: float = 0.25,
     cli_args: list[str] | None = None,
     stream: bool = False,
+    warmup_audio: Path | None = None,
 ) -> None:
     import time
 
@@ -435,6 +446,9 @@ def run_performance_workload(
     perf_dir.mkdir(parents=True, exist_ok=True)
 
     server_health = _fetch_health(base_url)
+    if warmup_audio is not None:
+        transcribe_audio(base_url, warmup_audio)
+    memory_baseline = sample_resource_baseline(server_pid, sample_fn=sample_fn)
     per_item_reps: dict[str, list[dict[str, Any]]] = {}
 
     for item in items:
@@ -470,6 +484,7 @@ def run_performance_workload(
                 transcription_throughput=round(throughput, 6) if throughput else "",
                 time_to_first_delta_s=round(ttft, 6) if ttft is not None else "",
                 observed_hardware_profile=hw_profile,
+                **memory_baseline,
             )
 
             csv_path = perf_dir / f"resource_{item_id}_rep{rep}.csv"
@@ -486,6 +501,8 @@ def run_performance_workload(
                 round(throughput, 6) if throughput else 0.0,
             )
             rep_summary.setdefault("observed_hardware_profile", hw_profile)
+            rep_summary.setdefault("baseline_pss_kb", memory_baseline.get("baseline_pss_kb", ""))
+            rep_summary.setdefault("baseline_vram_mib", memory_baseline.get("baseline_vram_mib", ""))
             if ttft is not None:
                 rep_summary["time_to_first_delta_s"] = round(ttft, 6)
             rep_summaries.append(rep_summary)
@@ -502,6 +519,7 @@ def run_performance_workload(
         reps=reps,
         subcommand="performance",
         stream=stream,
+        warmup=warmup_audio is not None,
     )
 
 

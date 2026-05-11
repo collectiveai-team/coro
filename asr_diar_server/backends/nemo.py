@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import torch
 
 from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from asr_diar_server.core.types import SpeakerSegment
@@ -111,12 +112,24 @@ class NemoDiarizationAdapter:
         return convert_diarization_segments(predicted, duration=duration)
 
 
-def build_diarization_adapter(model_diarization: str) -> NemoDiarizationAdapter:
+def build_diarization_adapter(
+    model_diarization: str,
+    *,
+    device: str = "auto",
+) -> NemoDiarizationAdapter:
     """Construct and return a NemoDiarizationAdapter."""
     from nemo.collections.asr.models import SortformerEncLabelModel
 
-    logger.info("Loading diarization model '%s' with NeMo.", model_diarization)
-    model: Any = SortformerEncLabelModel.from_pretrained(model_diarization)
+    logger.info(
+        "Loading diarization model '%s' with NeMo on device '%s'.",
+        model_diarization,
+        device,
+    )
+    map_location = torch.device(device) if device != "auto" else None
+    model: Any = SortformerEncLabelModel.from_pretrained(
+        model_diarization,
+        map_location=map_location,
+    )
     model.eval()
-    logger.info("Diarization model loaded.")
+    logger.info("Diarization model loaded on device '%s'.", getattr(model, "device", "unknown"))
     return NemoDiarizationAdapter(model)

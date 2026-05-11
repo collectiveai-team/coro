@@ -21,6 +21,19 @@ def _default_sample_fn(root_pid: int) -> dict[str, Any]:
     return sample_process_tree(root_pid)
 
 
+def sample_resource_baseline(
+    pid: int,
+    sample_fn: SampleFn | None = None,
+) -> dict[str, Any]:
+    """Capture process/GPU memory after warmup for prediction-memory deltas."""
+    raw = (sample_fn or _default_sample_fn)(pid)
+    gpu = sample_gpu()
+    return {
+        "baseline_pss_kb": raw.get("pss_kb", ""),
+        "baseline_vram_mib": gpu.get("server_vram_mib", ""),
+    }
+
+
 class Sampler:
     def __init__(
         self,
@@ -112,6 +125,10 @@ class Sampler:
                 "io_read_bps": 0.0,
                 "io_write_bps": 0.0,
                 **(_gpu := sample_gpu()),
+                "baseline_pss_kb": "",
+                "peak_pss_delta_kb": "",
+                "baseline_vram_mib": "",
+                "peak_vram_delta_mib": "",
                 "observed_hardware_profile": (
                     "cpu+gpu" if _gpu.get("server_vram_mib") not in ("", None)
                     else "cpu-only"

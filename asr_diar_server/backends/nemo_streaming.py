@@ -115,6 +115,7 @@ class StreamingDiarizer:
         self._total_preds: torch.Tensor = torch.zeros(
             (1, 0, self._n_spk), device=self._device
         )
+        self._pred_chunks: list[torch.Tensor] = []
         self._total_audio_bytes = 0
         self._processed_chunks = 0
 
@@ -140,25 +141,39 @@ class StreamingDiarizer:
             self._pcm_buffer = b""
             self._process_chunk(padded)
 
-        if self._total_preds.shape[1] == 0:
-            logger.info("streaming_diarizer finalize no_predictions processed_chunks=%d", self._processed_chunks)
+        total_preds = self._combined_preds()
+        if total_preds.shape[1] == 0:
+            logger.info(
+                "streaming_diarizer finalize no_predictions processed_chunks=%d",
+                self._processed_chunks,
+            )
             return []
 
         duration = self._total_audio_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
         logger.info(
             "streaming_diarizer finalize predictions_shape=%s duration=%.2fs processed_chunks=%d",
-            tuple(self._total_preds.shape),
+            tuple(total_preds.shape),
             duration,
             self._processed_chunks,
         )
 
         if self._post_processor is not None:
-            raw_segments = self._post_processor(self._total_preds, self._n_spk)
+            raw_segments = self._post_processor(total_preds, self._n_spk)
             return convert_diarization_segments(raw_segments, duration=duration)
 
-        return self._default_post_process(duration)
+        return self._default_post_process(duration, total_preds=total_preds)
 
-    def _default_post_process(self, duration: float) -> list[SpeakerSegment]:
+    def _combined_preds(self) -> torch.Tensor:
+        if self._pred_chunks:
+            return torch.cat(self._pred_chunks, dim=1)
+        return self._total_preds.cpu()
+
+    def _default_post_process(
+        self,
+        duration: float,
+        *,
+        total_preds: torch.Tensor | None = None,
+    ) -> list[SpeakerSegment]:
         """Run per-speaker VAD post-processing matching the NeMo model's own approach."""
         started = time.perf_counter()
         from nemo.collections.asr.models.sortformer_diar_models import ts_vad_post_processing
@@ -166,7 +181,9 @@ class StreamingDiarizer:
 
         cfg_vad_params = load_postprocessing_from_yaml(None)
         # total_preds: (1, n_frames, n_spk) — process each speaker independently
-        preds_cpu = self._total_preds.squeeze(0).cpu()  # (n_frames, n_spk)
+        preds_cpu = (
+            total_preds if total_preds is not None else self._combined_preds()
+        ).squeeze(0).cpu()
         subsampling_factor = self._subsampling_factor
 
         raw_segments: list[tuple[float, float, int]] = []
@@ -208,34 +225,40 @@ class StreamingDiarizer:
         forward_streaming_step expects (batch, time, features), i.e. time-first,
         which is the opposite of the preprocessor's (batch, features, time) output.
         """
-        audio_np = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
-        audio_tensor = torch.from_numpy(audio_np).unsqueeze(0).to(self._device)
+        with torch.inference_mode():
+            audio_np = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+            audio_tensor = torch.from_numpy(audio_np).unsqueeze(0).to(self._device)
 
-        preprocessor = self._get_preprocessor()
-        mel, mel_len = preprocessor(
-            input_signal=audio_tensor,
-            length=torch.tensor([len(audio_np)], device=self._device),
-        )
+            preprocessor = self._get_preprocessor()
+            mel, mel_len = preprocessor(
+                input_signal=audio_tensor,
+                length=torch.tensor([len(audio_np)], device=self._device),
+            )
 
-        # Transpose from (batch, features, time) → (batch, time, features)
-        signal_t = mel.transpose(1, 2)
+            # Transpose from (batch, features, time) → (batch, time, features)
+            signal_t = mel.transpose(1, 2)
 
-        self._streaming_state, self._total_preds = self._model.forward_streaming_step(
-            signal_t,
-            mel_len,
-            self._streaming_state,
-            self._total_preds,
-            left_offset=0,
-            right_offset=0,
-        )
+            seed_preds = torch.zeros((1, 0, self._n_spk), device=self._device)
+            self._streaming_state, chunk_preds = self._model.forward_streaming_step(
+                signal_t,
+                mel_len,
+                self._streaming_state,
+                seed_preds,
+                left_offset=0,
+                right_offset=0,
+            )
+        self._pred_chunks.append(chunk_preds.detach().cpu())
+        self._total_preds = seed_preds
 
         self._total_audio_bytes += len(pcm)
         self._processed_chunks += 1
         if self._processed_chunks == 1 or self._processed_chunks % 5 == 0:
             logger.info(
-                "streaming_diarizer chunk=%d pcm_bytes=%d mel_shape=%s preds_shape=%s",
+                "streaming_diarizer chunk=%d pcm_bytes=%d mel_shape=%s "
+                "chunk_preds_shape=%s stored_pred_chunks=%d",
                 self._processed_chunks,
                 len(pcm),
                 tuple(mel.shape),
-                tuple(self._total_preds.shape),
+                tuple(chunk_preds.shape),
+                len(self._pred_chunks),
             )

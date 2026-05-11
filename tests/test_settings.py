@@ -18,6 +18,7 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     assert settings.asr_compute_type == "default"
     assert settings.backend_diarization == "none"
     assert settings.model_diarization is None
+    assert settings.diarization_device == "auto"
 
 
 def test_nemo_diarization_gets_default_model():
@@ -45,3 +46,9 @@ def test_backend_provider_selectors_are_strict(field: str):
 def test_asr_device_selector_is_strict(asr_device: str):
     with pytest.raises(ValidationError):
         ServerSettings(asr_device=asr_device, _env_file=None)
+
+
+@pytest.mark.parametrize("diarization_device", ["unknown", "gpu", ""])
+def test_diarization_device_selector_is_strict(diarization_device: str):
+    with pytest.raises(ValidationError):
+        ServerSettings(diarization_device=diarization_device, _env_file=None)

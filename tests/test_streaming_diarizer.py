@@ -25,6 +25,7 @@ N_MEL_FEATURES = 128
 def _make_mock_model():
     model = MagicMock()
     model.device = torch.device("cpu")
+    model.grad_enabled_during_forward = []
 
     sortformer_modules = MagicMock()
     sortformer_modules.chunk_len = CHUNK_LEN
@@ -40,6 +41,7 @@ def _make_mock_model():
     def _forward_streaming_step(
         processed_signal, processed_signal_length, streaming_state, total_preds, **kwargs
     ):
+        model.grad_enabled_during_forward.append(torch.is_grad_enabled())
         # processed_signal arrives as (batch, time, features) after transpose in _process_chunk.
         # total_preds is now initialised as (1, 0, n_spk) — never None.
         step_count[0] += 1
@@ -56,8 +58,12 @@ def _make_mock_model():
 
 def _make_mock_preprocessor():
     outputs = []
+    grad_enabled = []
+    inputs = []
 
     def _process(*, input_signal, length):
+        grad_enabled.append(torch.is_grad_enabled())
+        inputs.append(input_signal.clone())
         # Called with kwargs — matches the NeMo typecheck requirement.
         n_samples = input_signal.shape[-1]
         n_mel_frames = n_samples // 160
@@ -70,6 +76,8 @@ def _make_mock_preprocessor():
 
     preprocessor = MagicMock(side_effect=_process)
     preprocessor.outputs = outputs
+    preprocessor.grad_enabled = grad_enabled
+    preprocessor.inputs = inputs
     return preprocessor
 
 
@@ -181,6 +189,41 @@ def test_ingest_processes_multiple_chunks(diarizer, mock_model, mock_preprocesso
 
     assert mock_model.forward_streaming_step.call_count == 2
     assert diarizer._pcm_buffer == b""
+
+
+def test_forward_receives_empty_total_preds_each_chunk(diarizer, mock_model):
+    """Only the current prediction chunk should live on the model device.
+
+    NeMo only uses total_preds for concatenation after inference, so passing an
+    empty tensor every step prevents cumulative GPU prediction history.
+    """
+    two_chunks = _make_pcm_bytes(CHUNK_AUDIO_SECONDS * 2)
+    diarizer.ingest_pcm_chunk(two_chunks)
+
+    first_total_preds = mock_model.forward_streaming_step.call_args_list[0][0][3]
+    second_total_preds = mock_model.forward_streaming_step.call_args_list[1][0][3]
+
+    assert first_total_preds.shape == (1, 0, 4)
+    assert second_total_preds.shape == (1, 0, 4)
+    assert len(diarizer._pred_chunks) == 2
+    assert diarizer._pred_chunks[0].device.type == "cpu"
+    assert diarizer._pred_chunks[1].device.type == "cpu"
+
+
+def test_chunk_processing_runs_with_grad_disabled(diarizer, mock_model, mock_preprocessor):
+    """Eval mode alone does not disable autograd memory retention."""
+    diarizer.ingest_pcm_chunk(_make_pcm_bytes(CHUNK_AUDIO_SECONDS))
+
+    assert mock_preprocessor.grad_enabled == [False]
+    assert mock_model.grad_enabled_during_forward == [False]
+
+
+def test_preprocessor_receives_normalized_float_audio(diarizer, mock_preprocessor):
+    diarizer.ingest_pcm_chunk(_make_pcm_bytes(CHUNK_AUDIO_SECONDS))
+
+    audio_signal = mock_preprocessor.inputs[0]
+    assert audio_signal.dtype == torch.float32
+    assert torch.max(torch.abs(audio_signal)).item() <= 1.0
 
 
 # ---------------------------------------------------------------------------
