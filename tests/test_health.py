@@ -86,7 +86,7 @@ async def test_health_reports_startup_selection_and_capability_readiness():
     """Health separates startup selection from capability readiness."""
     runtime = RuntimeState(
         asr_adapter=object(),
-        pipeline_selector="chunked-file",
+        pipeline_selector="streaming",
         asr_provider="faster-whisper",
         asr_model="openai/whisper-medium",
         diarization_provider="none",
@@ -98,7 +98,7 @@ async def test_health_reports_startup_selection_and_capability_readiness():
 
     body = response.json()
     assert body["startup_selection"] == {
-        "pipeline": "chunked-file",
+        "pipeline": "streaming",
         "asr_provider": "faster-whisper",
         "asr_model": "openai/whisper-medium",
         "diarization_provider": "none",

@@ -144,9 +144,9 @@ _Avoid_: Endpoint handler, model call
 A transcription pipeline implementation that decodes the entire uploaded audio into PCM before chunked ASR processing.
 _Avoid_: v1 pipeline, memory pipeline
 
-**Chunked-File Pipeline**:
-A legacy transcription pipeline implementation that spools uploaded audio to a file but still materializes decoded PCM before downstream processing.
-_Avoid_: v2 pipeline, disk pipeline
+**Chunked-File Pipeline** *(removed)*:
+A former transcription pipeline implementation that spooled uploaded audio to a file but still materialized decoded PCM before downstream processing. It and the `chunked-file` startup selector have been removed (not aliased) and replaced by the **Streaming Pipeline**; the term is retained only as historical context. See ADR 0002.
+_Avoid_: v2 pipeline, disk pipeline, active implementation, compatibility alias
 
 **Streaming Pipeline**:
 A transcription pipeline implementation that streams uploaded audio through decoding, ASR windowing, and diarization without materializing the full upload or decoded PCM.
@@ -345,7 +345,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - API code receives **Server Startup Selection** through a **Settings Dependency**.
 - A **Pipeline Dependency** returns the **Configured Transcription Pipeline** from the **Singleton Runtime**.
 - The default **Configured Transcription Pipeline** is the **Full-Memory Pipeline**.
-- The **Chunked-File Pipeline** is selected with the startup value `chunked-file`; the **Full-Memory Pipeline** is selected with `full-memory`.
+- The **Streaming Pipeline** is selected with the startup value `streaming`; the **Full-Memory Pipeline** is selected with `full-memory`. There is no `chunked-file` selector — it was removed, and **Strict Startup Validation** rejects it.
 - **Server Startup Selection** uses the `ASR_DIAR_` environment prefix for pipeline, backend provider, and model selection settings.
 - **Server Startup Selection** uses **Strict Startup Validation** for selector values.
 - The default ASR **Backend Provider** is `faster-whisper`.
@@ -354,7 +354,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - When NeMo diarization is enabled without an explicit **Diarization Model Selection**, the default is `nvidia/diar_streaming_sortformer_4spk-v2`.
 - A **Configured Transcription Pipeline** preserves the public **Transcription API Contract** while changing internal processing behavior.
 - `/health` reports **Server Startup Selection**, **Capability Readiness**, and **Warmup Readiness** rather than one ambiguous backend field.
-- The **Full-Memory Pipeline** and **Chunked-File Pipeline** both use shared **ASR Windowing**; they differ in how PCM is sourced.
+- The **Full-Memory Pipeline** and **Streaming Pipeline** both use shared **ASR Windowing**; they differ in how PCM is sourced.
 - A **Transcription Pipeline** receives **Audio Input** rather than FastAPI upload objects, raw bytes only, or temporary file paths only.
 - **Audio Input** owns **Audio Input Cleanup** for any temporary file it creates.
 - A **Pipeline Module** owns orchestration for one or more **Transcription Pipeline** implementations.
@@ -453,13 +453,13 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "Yes — keep them as separately named **Transcription Pipeline** implementations, not separate public API versions."
 
 > **Dev:** "What should replace `V1Pipeline` and `V2Pipeline`?"
-> **Domain expert:** "Use **Full-Memory Pipeline** and **Chunked-File Pipeline**, with `full-memory` as the default configured value."
+> **Domain expert:** "Use **Full-Memory Pipeline** and **Streaming Pipeline**, with `full-memory` as the default configured value."
 
 > **Dev:** "Does the **Full-Memory Pipeline** mean one ASR call over the whole file?"
 > **Domain expert:** "No — both pipelines use **ASR Windowing**; full-memory means the PCM source is fully decoded in memory first."
 
 > **Dev:** "Should the merged endpoint read uploads into bytes before calling the configured pipeline?"
-> **Domain expert:** "No — wrap the upload as **Audio Input** so the **Full-Memory Pipeline** can read bytes and the **Chunked-File Pipeline** can spool to a path."
+> **Domain expert:** "No — wrap the upload as **Audio Input** so the **Full-Memory Pipeline** can read bytes and the **Streaming Pipeline** can spool to a path."
 
 > **Dev:** "Should the chunked pipeline delete the temporary upload path when it finishes?"
 > **Domain expert:** "No — **Audio Input Cleanup** owns temporary file removal, including after streaming completes."
@@ -575,7 +575,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "dependency" was used to imply object construction — resolved: settings can be cached, but loaded adapters and pipelines live in the **Singleton Runtime**.
 - "current server" was used to imply all prototype routes — resolved: the **Supported Endpoint Set** excludes `/`, `/asr`, Deepgram-compatible `/v1/listen`, `/v1/models`, `/v2/audio/transcriptions`, and behavior-specific transcription routes.
 - "refactor" was used to imply one pipeline implementation — resolved: full-memory and disk-backed behavior remain distinct **Transcription Pipeline** implementations selected by startup configuration.
-- "v1 pipeline" and "v2 pipeline" were used for processing strategies — resolved: use **Full-Memory Pipeline** and **Chunked-File Pipeline**.
+- "v1 pipeline" and "v2 pipeline" were used for processing strategies — resolved: use **Full-Memory Pipeline** and **Streaming Pipeline**.
 - "audio file" was used to imply both in-memory bytes and filesystem paths — resolved: pipelines receive **Audio Input** and choose the access mode they require.
 - "temp file cleanup" was used to imply endpoint or pipeline ownership — resolved: **Audio Input Cleanup** owns temporary file lifecycle.
 - "full-memory" was used to imply whole-file ASR — resolved: both pipeline implementations use **ASR Windowing**.

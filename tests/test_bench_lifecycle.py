@@ -204,7 +204,7 @@ class TestBenchManagedServer:
             asr_model="openai/whisper-medium",
             diar_backend="nemo",
             diar_model="nvidia/some-model",
-            pipeline="chunked-file",
+            pipeline="streaming",
             port=19999,
         )
         env = managed._build_env()
@@ -212,7 +212,7 @@ class TestBenchManagedServer:
         assert env["ASR_DIAR_MODEL_ASR"] == "openai/whisper-medium"
         assert env["ASR_DIAR_BACKEND_DIARIZATION"] == "nemo"
         assert env["ASR_DIAR_MODEL_DIARIZATION"] == "nvidia/some-model"
-        assert env["ASR_DIAR_PIPELINE"] == "chunked-file"
+        assert env["ASR_DIAR_PIPELINE"] == "streaming"
         assert env["ASR_DIAR_PORT"] == "19999"
         assert env["ASR_DIAR_WARMUP"] == "enabled"
 
