@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 # MARK: Startup Selector Types
-PipelineSelector = Literal["full-memory", "chunked-file", "streaming"]
+PipelineSelector = Literal["full-memory", "streaming"]
 ASRBackendProvider = Literal["faster-whisper"]
 DiarizationBackendProvider = Literal["none", "nemo"]
 ASRDevice = Literal["auto", "cuda", "cpu"]

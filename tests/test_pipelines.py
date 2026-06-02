@@ -9,7 +9,6 @@ import pytest
 
 from asr_diar_server.audio import AudioInput
 from asr_diar_server.core.types import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptToken
-from asr_diar_server.pipelines.chunked_file import ChunkedFilePipeline
 from asr_diar_server.pipelines.full_memory import FullMemoryPipeline
 
 
@@ -30,20 +29,6 @@ async def test_full_memory_pipeline_uses_audio_input_bytes_and_windowing():
         result = await pipeline.transcribe(audio, prompt="hint")
 
     convert.assert_awaited_once_with(b"encoded")
-    assert result["segments"][0]["text"] == "hello."
-
-
-@pytest.mark.asyncio
-async def test_chunked_file_pipeline_uses_audio_input_temp_path_and_cleans_up():
-    pipeline = ChunkedFilePipeline(asr=_FakeASR())
-    audio = AudioInput(b"encoded")
-
-    async def fake_stream(_path: str, chunk_seconds: float = 1.0):
-        yield b"\x00\x00" * 16000
-
-    with patch("asr_diar_server.pipelines.chunked_file.stream_pcm_from_file", new=fake_stream):
-        result = await pipeline.transcribe(audio)
-
     assert result["segments"][0]["text"] == "hello."
 
 

@@ -85,7 +85,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             )
             runtime.diarization_adapter = diarization_adapter
 
-            if settings.pipeline in ("chunked-file", "streaming"):
+            if settings.pipeline == "streaming":
                 from asr_diar_server.backends.nemo_streaming import StreamingDiarizerFactory
 
                 streaming_factory = StreamingDiarizerFactory(
@@ -95,7 +95,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 runtime.diarization_latency = settings.diarization_latency
 
         # Construct the pipeline
-        if settings.pipeline in ("chunked-file", "streaming"):
+        if settings.pipeline == "streaming":
             runtime.pipeline = StreamingPipeline(
                 asr=asr_adapter,
                 streaming_diarizer_factory=runtime.streaming_diarizer_factory,
