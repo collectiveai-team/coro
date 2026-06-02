@@ -27,7 +27,7 @@ def sample_resource_baseline(
 ) -> dict[str, Any]:
     """Capture process/GPU memory after warmup for prediction-memory deltas."""
     raw = (sample_fn or _default_sample_fn)(pid)
-    gpu = sample_gpu()
+    gpu = sample_gpu(raw.get("pids"))
     return {
         "baseline_pss_kb": raw.get("pss_kb", ""),
         "baseline_vram_mib": gpu.get("server_vram_mib", ""),
@@ -99,6 +99,14 @@ class Sampler:
                     if dt > self.interval * 2:
                         self._sampling_warning = True
 
+            gpu = sample_gpu(raw["pids"])
+            server_vram = gpu.get("server_vram_mib")
+            profile = (
+                "cpu+gpu"
+                if server_vram not in ("", None) and float(server_vram) > 0
+                else "cpu-only"
+            )
+
             row: dict[str, Any] = {
                 "ts_epoch": round(ts, 3),
                 "elapsed_s": round(elapsed, 3),
@@ -124,15 +132,12 @@ class Sampler:
                 "io_wchar_bps": 0.0,
                 "io_read_bps": 0.0,
                 "io_write_bps": 0.0,
-                **(_gpu := sample_gpu()),
+                **gpu,
                 "baseline_pss_kb": "",
                 "peak_pss_delta_kb": "",
                 "baseline_vram_mib": "",
                 "peak_vram_delta_mib": "",
-                "observed_hardware_profile": (
-                    "cpu+gpu" if _gpu.get("server_vram_mib") not in ("", None)
-                    else "cpu-only"
-                ),
+                "observed_hardware_profile": profile,
                 "audio_seconds": "",
                 "wall_seconds": "",
                 "transcription_throughput": "",
