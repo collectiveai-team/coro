@@ -73,6 +73,59 @@ async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
     assert len(result["segments"]) > 0, "Expected at least one segment"
 
 
+@skip_unless_real
+def test_streaming_diarizer_frame_count_matches_audio_duration():
+    """Streaming diarizer output frames must align with the audio timeline.
+
+    Regression test for the per-chunk-mel drift bug: computing the mel
+    spectrogram independently per PCM chunk introduced a boundary edge frame
+    (~+1 output frame per chunk) plus a zero-padded finalize chunk, inflating
+    the prediction frame count.  Over a long recording this accumulated into
+    several seconds of temporal drift and wrecked DER on later segments.
+
+    The total number of predicted frames must equal the audio duration in
+    subsampled frames (sample_rate / window_stride / subsampling_factor), with
+    at most one frame of rounding slack.
+    """
+    import numpy as np
+    from nemo.collections.asr.models import SortformerEncLabelModel
+
+    from asr_diar_server.backends.nemo_streaming import StreamingDiarizerFactory
+
+    SAMPLE_RATE = 16000
+    SUBSAMPLING = 8
+    MEL_STRIDE_S = 0.01  # window_stride
+    # Use a multi-chunk duration so cross-chunk drift would be detectable: a
+    # very-high tier chunk is ~27.2s, so 95s exercises 3 full chunks + remainder.
+    DURATION_S = 95
+
+    model = SortformerEncLabelModel.from_pretrained(
+        "nvidia/diar_streaming_sortformer_4spk-v2"
+    )
+    model.eval()
+    factory = StreamingDiarizerFactory(model, tier="very-high")
+    diar = factory()
+
+    rng = np.random.default_rng(0)
+    pcm = (rng.standard_normal(SAMPLE_RATE * DURATION_S) * 0.1 * 32768).astype(
+        np.int16
+    ).tobytes()
+
+    # Feed 1-second PCM chunks like the streaming pipeline does.
+    one_second = SAMPLE_RATE * 2
+    for i in range(0, len(pcm), one_second):
+        diar.ingest_pcm_chunk(pcm[i : i + one_second])
+    diar.finalize()
+
+    total_frames = diar._combined_preds().shape[1]
+    expected_frames = int(DURATION_S / MEL_STRIDE_S / SUBSAMPLING)
+    assert abs(total_frames - expected_frames) <= 1, (
+        f"Frame drift detected: got {total_frames} prediction frames for "
+        f"{DURATION_S}s audio, expected ~{expected_frames}. The per-chunk mel "
+        f"trim / no-pad finalize fix prevents accumulating temporal drift."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Warmup path with mocked-model (always runs)
 # ---------------------------------------------------------------------------
