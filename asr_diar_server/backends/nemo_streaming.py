@@ -75,6 +75,7 @@ class StreamingDiarizerFactory:
         return StreamingDiarizer(
             self._model,
             chunk_len=self._tier_params["chunk_len"],
+            chunk_right_context=self._tier_params["chunk_right_context"],
             subsampling_factor=self._subsampling_factor,
             n_spk=self._n_spk,
         )
@@ -88,6 +89,7 @@ class StreamingDiarizer:
         model,
         *,
         chunk_len: int = 6,
+        chunk_right_context: int = 1,
         subsampling_factor: int = 8,
         n_spk: int = 4,
         preprocessor=None,
@@ -96,6 +98,7 @@ class StreamingDiarizer:
         self._model = model
         self._device = model.device
         self._chunk_len = chunk_len
+        self._chunk_right_context = chunk_right_context
         self._subsampling_factor = subsampling_factor
         self._n_spk = n_spk
         self._preprocessor = preprocessor
@@ -103,6 +106,15 @@ class StreamingDiarizer:
 
         chunk_audio_seconds = chunk_len * subsampling_factor * 0.01
         self._chunk_audio_bytes = int(chunk_audio_seconds * SAMPLE_RATE * BYTES_PER_SAMPLE)
+
+        # Right-context PCM: extra audio beyond each chunk boundary so the
+        # non-causal transformer has future context for frames near the chunk
+        # end.  NeMo's streaming_feat_loader includes
+        # chunk_right_context * subsampling_factor mel frames of right context
+        # and sets right_offset so the model trims those frames from output.
+        right_context_seconds = chunk_right_context * subsampling_factor * 0.01
+        self._right_context_bytes = int(right_context_seconds * SAMPLE_RATE * BYTES_PER_SAMPLE)
+        self._model_right_context_frames = chunk_right_context * subsampling_factor
 
         self._pcm_buffer = b""
         self._streaming_state = model.sortformer_modules.init_streaming_state(
@@ -125,21 +137,30 @@ class StreamingDiarizer:
 
     def ingest_pcm_chunk(self, pcm: bytes) -> None:
         self._pcm_buffer += pcm
-        while len(self._pcm_buffer) >= self._chunk_audio_bytes:
-            chunk = self._pcm_buffer[: self._chunk_audio_bytes]
+        min_chunk = self._chunk_audio_bytes + self._right_context_bytes
+        while len(self._pcm_buffer) >= min_chunk:
+            chunk_pcm = self._pcm_buffer[:min_chunk]
             self._pcm_buffer = self._pcm_buffer[self._chunk_audio_bytes :]
-            self._process_chunk(chunk)
+            self._total_audio_bytes += self._chunk_audio_bytes
+            self._process_chunk(chunk_pcm, right_offset=self._model_right_context_frames)
 
     def finalize(self) -> list[SpeakerSegment]:
         if self._pcm_buffer:
+            remainder_len = len(self._pcm_buffer)
             logger.info(
                 "streaming_diarizer finalize flush_remainder bytes=%d processed_chunks=%d",
-                len(self._pcm_buffer),
+                remainder_len,
                 self._processed_chunks,
             )
-            padded = self._pcm_buffer + b"\x00" * (self._chunk_audio_bytes - len(self._pcm_buffer))
+            # Process the real remainder without zero-padding.  Padding to a full
+            # chunk produces spurious prediction frames for the silent tail that
+            # inflate the output frame count and misalign the timeline; the mel
+            # trim in _process_chunk (right_offset=0 branch) instead floors the
+            # remainder to a whole number of output frames.
+            remainder = self._pcm_buffer
             self._pcm_buffer = b""
-            self._process_chunk(padded)
+            self._process_chunk(remainder, right_offset=0)
+            self._total_audio_bytes += remainder_len
 
         total_preds = self._combined_preds()
         if total_preds.shape[1] == 0:
@@ -217,11 +238,14 @@ class StreamingDiarizer:
         ).to(self._device)
         return self._preprocessor
 
-    def _process_chunk(self, pcm: bytes) -> None:
+    def _process_chunk(self, pcm: bytes, right_offset: int = 0) -> None:
         """Run one chunk through the streaming diarizer.
 
         The NeMo streaming_state (spkcache + fifo) carries all historical
-        left-context internally — we pass only the current chunk's mel frames.
+        left-context internally.  When ``right_offset > 0`` the PCM includes
+        extra future audio so the non-causal transformer has right-context for
+        frames near the chunk end; ``forward_streaming_step`` trims those
+        extra prediction frames via ``right_offset`` (in mel-frame units).
         forward_streaming_step expects (batch, time, features), i.e. time-first,
         which is the opposite of the preprocessor's (batch, features, time) output.
         """
@@ -238,6 +262,29 @@ class StreamingDiarizer:
             # Transpose from (batch, features, time) → (batch, time, features)
             signal_t = mel.transpose(1, 2)
 
+            # Trim mel to an exact target frame count.  Computing the mel
+            # spectrogram per-PCM-chunk introduces a boundary edge frame that the
+            # batch path (which computes one mel over the full audio) never
+            # produces.  Left unchecked this adds ~1 output frame per chunk,
+            # accumulating temporal drift across a long recording and degrading
+            # DER on later segments.  We trim to a multiple of the subsampling
+            # factor so each chunk emits exactly chunk_len prediction frames.
+            mel_frames = signal_t.shape[1]
+            if right_offset > 0:
+                target_frames = (
+                    self._chunk_len * self._subsampling_factor + right_offset
+                )
+            else:
+                target_frames = (
+                    mel_frames // self._subsampling_factor
+                ) * self._subsampling_factor
+            target_frames = min(target_frames, mel_frames)
+            if target_frames < self._subsampling_factor:
+                # Too little audio to yield even one output frame; skip.
+                return
+            signal_t = signal_t[:, :target_frames, :]
+            mel_len = torch.tensor([target_frames], device=self._device)
+
             seed_preds = torch.zeros((1, 0, self._n_spk), device=self._device)
             self._streaming_state, chunk_preds = self._model.forward_streaming_step(
                 signal_t,
@@ -245,19 +292,19 @@ class StreamingDiarizer:
                 self._streaming_state,
                 seed_preds,
                 left_offset=0,
-                right_offset=0,
+                right_offset=right_offset,
             )
         self._pred_chunks.append(chunk_preds.detach().cpu())
         self._total_preds = seed_preds
 
-        self._total_audio_bytes += len(pcm)
         self._processed_chunks += 1
         if self._processed_chunks == 1 or self._processed_chunks % 5 == 0:
             logger.info(
-                "streaming_diarizer chunk=%d pcm_bytes=%d mel_shape=%s "
+                "streaming_diarizer chunk=%d pcm_bytes=%d right_offset=%d mel_shape=%s "
                 "chunk_preds_shape=%s stored_pred_chunks=%d",
                 self._processed_chunks,
                 len(pcm),
+                right_offset,
                 tuple(mel.shape),
                 tuple(chunk_preds.shape),
                 len(self._pred_chunks),
