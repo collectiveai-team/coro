@@ -150,7 +150,10 @@ def _load_quality(
                 f"will look good regardless; check DER/cpWER."
             )
 
-        if error_str or item.get("cpwer") is None:
+        # Diarization-only items (e.g. VoxConverse) carry a valid DER but no WER;
+        # a missing cpwer is expected for them and must not be flagged as an error.
+        diarization_only = bool(item.get("diarization_only"))
+        if not diarization_only and (error_str or item.get("cpwer") is None):
             err_msg = str(error_str) if error_str else "unknown error"
             footnotes.append(f"ERROR for {session_id}: {err_msg}")
             rows.append(QualityRow(
