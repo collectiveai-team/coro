@@ -1,4 +1,4 @@
-"""Tests for clip-directory workload resolution and the curated Spanish reference."""
+"""Tests for clip-directory workload resolution."""
 
 from __future__ import annotations
 
@@ -48,23 +48,3 @@ class TestResolveClipItems:
 
     def test_missing_directory_returns_empty(self, tmp_path: Path):
         assert resolve_clip_items(tmp_path / "does-not-exist") == []
-
-
-class TestSpanishReference:
-    def test_bundled_spanish_reference_exists_and_is_valid_stm(self):
-        from asr_diar_server.bench.data import SPANISH_REFERENCE_STMS
-
-        path = SPANISH_REFERENCE_STMS["RNE14-agosto-13"]
-        assert path.exists()
-        lines = path.read_text(encoding="utf-8").splitlines()
-        assert lines, "reference STM must be non-empty"
-        speakers = set()
-        for line in lines:
-            parts = line.split(maxsplit=5)
-            assert len(parts) == 6, f"malformed STM line: {line!r}"
-            assert parts[0] == "RNE14-agosto-13"
-            float(parts[3])
-            float(parts[4])
-            speakers.add(parts[2])
-        # Curated reference is multi-speaker (diarization is meaningful).
-        assert len(speakers) >= 2

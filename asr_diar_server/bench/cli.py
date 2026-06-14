@@ -81,8 +81,7 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         type=Path,
         default=None,
         help="Directory of (<stem>.wav, <stem>.ref.stm) pairs to benchmark as a "
-        "short-clip / curated workload (e.g. make_ami_clip output or the Spanish "
-        "RNE14 reference).",
+        "short-clip / curated workload (e.g. make_ami_clip output).",
     )
     parser.add_argument("--der-collar", type=float, default=0.0)
     parser.add_argument(
