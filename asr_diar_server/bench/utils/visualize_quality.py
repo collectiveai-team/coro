@@ -3,17 +3,24 @@
 r"""Render side-by-side reference/hypothesis alignment HTML for a quality run.
 
 Convenience over meeteval's own ``meeteval-viz html``: discovers the per-session
-(ref, hyp) STM pairs written by ``asr-diar-bench quality`` / ``all`` and renders
+(ref, hyp) STM pairs written by ``asr-diar-bench quality`` / ``all`` under
+``<out-dir>/ref/<id>.ref.stm`` and ``<out-dir>/hyp/<id>.hyp.stm``, and renders
 them in one call under ``<out-dir>/viz/`` (index + per-session + the synced
 ``side_by_side_sync.html`` when multiple alignments are given).
 
-    asr-diar-bench quality --clips-dir clips --server-url ... --out-dir run
-    python -m asr_diar_server.bench.utils.visualize_quality run --alignment tcp cp
+Run from the environment where this package and meeteval are installed (e.g. the
+project venv: ``.venv/bin/python -m ...``); ``uv run`` from a different repo may
+resolve a venv that lacks meeteval's viz extras (simplejson).
 
-To visualise a single pair directly, call meeteval-viz yourself:
+    asr-diar-bench quality --clips-dir clips --server-url ... --out-dir OUT
+    python -m asr_diar_server.bench.utils.visualize_quality OUT --alignment tcp cp
 
-    meeteval-viz html --alignment tcp -r run/ref/RNE14-es_0_120.ref.stm \\
-        -h run/hyp/RNE14-es_0_120.hyp.stm -o run/viz
+To visualise a single pair directly, call meeteval-viz on the discovered files
+(note hypotheses are named ``<id>.hyp.stm``):
+
+    meeteval-viz html --alignment tcp cp \\
+        -r OUT/ref/RNE14-es_0_120.ref.stm \\
+        -h OUT/hyp/RNE14-es_0_120.hyp.stm -o OUT/viz
 """
 
 from __future__ import annotations
