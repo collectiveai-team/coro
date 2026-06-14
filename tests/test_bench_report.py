@@ -147,6 +147,37 @@ def test_render_markdown_failed_item_renders_error_row_and_footnote():
     assert "RuntimeError" in md
 
 
+def test_build_report_diarization_only_item_shows_der_not_error(tmp_path: Path):
+    """A diarization-only item (no WER) renders DER without an ERROR footnote."""
+    der = {
+        "der": 0.0943, "false_alarm": 0.1, "missed_detection": 0.1,
+        "speaker_error": 0.0, "total_speech": 5.3,
+    }
+    summary = {
+        "workload_set": ["voxc_clip"],
+        "n_succeeded": 1, "n_failed": 0, "n_degenerate_diarization": 0,
+        "combined": {
+            "cpwer": None, "orcwer": None, "dicpwer": None,
+            "normalized": {"cpwer": None, "orcwer": None, "dicpwer": None},
+            "der": der,
+        },
+        "per_item": [{
+            "session_id": "voxc_clip", "audio_seconds": 6.0,
+            "diarization_only": True, "der": 0.0943,
+            "diarization": {"ref_speakers": 2, "hyp_speakers": 2, "degenerate": False},
+        }],
+    }
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    (quality_dir / "summary.json").write_text(json.dumps(summary))
+
+    md = render_markdown(build_report(tmp_path))
+
+    assert "ERROR for voxc_clip" not in md
+    assert "0.0943" in md
+    assert "| voxc_clip | 6.0 | - | - | - | 0.0943 |" in md
+
+
 def test_render_markdown_stream_false_omits_ttft_column():
     report = _performance_report(stream=False)
     md = render_markdown(report)

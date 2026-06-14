@@ -123,6 +123,40 @@ class TestHypSegmentsToStm:
         assert "hello world" in result
 
 
+class TestRttmToStm:
+    """rttm_to_stm converts RTTM SPEAKER turns to a diarization-only STM."""
+
+    _RTTM = (
+        "SPEAKER rec 1 2.50 1.50 <NA> <NA> spkB <NA> <NA>\n"
+        "SPEAKER rec 1 0.00 2.00 <NA> <NA> spkA <NA> <NA>\n"
+    )
+
+    def test_speaker_turns_become_sorted_stm_with_sentinel_text(self):
+        from asr_diar_server.bench.stm import DIARIZATION_ONLY_TEXT, rttm_to_stm
+
+        lines = rttm_to_stm(self._RTTM, "rec").strip().split("\n")
+        # Sorted by start time; end = onset + duration; sentinel text.
+        assert lines[0] == f"rec 1 spkA 0.000 2.000 {DIARIZATION_ONLY_TEXT}"
+        assert lines[1] == f"rec 1 spkB 2.500 4.000 {DIARIZATION_ONLY_TEXT}"
+
+    def test_non_speaker_and_nonpositive_duration_rows_dropped(self):
+        from asr_diar_server.bench.stm import rttm_to_stm
+
+        rttm = (
+            "SPKR-INFO rec 1 <NA> <NA> <NA> unknown spkA <NA> <NA>\n"
+            "SPEAKER rec 1 1.00 0.00 <NA> <NA> spkA <NA> <NA>\n"
+            "SPEAKER rec 1 1.00 0.50 <NA> <NA> spkA <NA> <NA>\n"
+        )
+        assert rttm_to_stm(rttm, "rec").strip().split("\n") == [
+            "rec 1 spkA 1.000 1.500 <sd>"
+        ]
+
+    def test_empty_rttm_yields_empty_string(self):
+        from asr_diar_server.bench.stm import rttm_to_stm
+
+        assert rttm_to_stm("\n# comment\n", "rec") == ""
+
+
 class TestAmiMeetingToStm:
     """ami_meeting_to_stm produces Reference STM from AMI annotation tree."""
 

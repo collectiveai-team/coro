@@ -16,6 +16,14 @@ from typing import Any
 
 _ID_RE = re.compile(r"id\(([^)]+)\)")
 
+DIARIZATION_ONLY_TEXT = "<sd>"
+"""Placeholder text for references that carry speaker turns but no transcript.
+
+Diarization-only corpora (e.g. VoxConverse RTTM) have no words, but STM lines
+require a text field. Lines whose text is exactly this sentinel mark the item as
+diarization-only so scoring reports DER and omits the (meaningless) WER.
+"""
+
 
 def _clean_text(text: str) -> str:
     text = text.replace("\n", " ").strip()
@@ -100,6 +108,43 @@ def slice_stm_window(
         lines.append(
             f"{session} {parts[1]} {parts[2]} "
             f"{clamped_start:.3f} {clamped_end:.3f} {parts[5]}"
+        )
+    lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def rttm_to_stm(
+    rttm_text: str,
+    recording_id: str,
+    *,
+    channel: str = "1",
+    text: str = DIARIZATION_ONLY_TEXT,
+) -> str:
+    """Convert RTTM ``SPEAKER`` turns to a diarization-only reference STM.
+
+    RTTM has no transcript, so every emitted STM line carries ``text`` (the
+    diarization-only sentinel by default) — enough for DER scoring, which uses
+    only speaker labels and timings. ``SPEAKER`` lines provide onset/duration in
+    columns 4/5 and the speaker label in column 8; turns with non-positive
+    duration are dropped. Output is sorted by (start_time, speaker).
+    """
+    lines: list[str] = []
+    for raw in rttm_text.splitlines():
+        parts = raw.split()
+        if len(parts) < 8 or parts[0] != "SPEAKER":
+            continue
+        try:
+            start_f = float(parts[3])
+            dur_f = float(parts[4])
+        except ValueError:
+            continue
+        end_f = start_f + dur_f
+        if dur_f <= 0:
+            continue
+        speaker = parts[7]
+        lines.append(
+            f"{recording_id} {channel} {speaker} "
+            f"{start_f:.3f} {end_f:.3f} {text}"
         )
     lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
     return "\n".join(lines) + "\n" if lines else ""

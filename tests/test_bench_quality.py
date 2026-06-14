@@ -282,6 +282,45 @@ class TestCombineItems:
         assert summary["per_item"][1]["session_id"] == "B"
 
 
+class TestDiarizationOnly:
+    """Diarization-only references (VoxConverse-style) score DER but omit WER."""
+
+    _REF = "rec 1 spkA 0.000 2.000 <sd>\nrec 1 spkB 2.500 4.000 <sd>\n"
+    _HYP = "rec 1 0 0.100 2.100 hola mundo\nrec 1 1 2.600 3.900 que tal\n"
+
+    def test_is_diarization_only_stm_detects_sentinel(self, tmp_path: Path):
+        from asr_diar_server.bench.quality import is_diarization_only_stm
+
+        ref, hyp = _write_stm_pair(tmp_path, "rec", self._REF, self._HYP)
+        assert is_diarization_only_stm(ref) is True
+        assert is_diarization_only_stm(hyp) is False
+
+    def test_score_item_skips_wer_keeps_der(self, tmp_path: Path):
+        from asr_diar_server.bench.quality import score_item
+
+        ref, hyp = _write_stm_pair(tmp_path, "rec", self._REF, self._HYP)
+        result = score_item(ref, hyp)
+
+        assert result["diarization_only"] is True
+        assert set(result["metrics"].keys()) == {"der"}
+        assert result["metrics"]["der"]["der"] >= 0.0
+
+    def test_combine_items_aggregates_der_without_wer(self, tmp_path: Path):
+        from asr_diar_server.bench.quality import combine_items
+
+        result = _scored(tmp_path, "rec", self._REF, self._HYP, 4.0)
+        summary = combine_items([result])
+
+        assert summary["n_succeeded"] == 1
+        assert summary["n_failed"] == 0
+        assert summary["combined"]["cpwer"] is None
+        assert summary["combined"]["der"] is not None
+        entry = summary["per_item"][0]
+        assert entry["diarization_only"] is True
+        assert "cpwer" not in entry
+        assert "der" in entry
+
+
 class TestCLIFlags:
     def test_der_collar_flag_accepted(self):
         from asr_diar_server.bench.cli import parse_args

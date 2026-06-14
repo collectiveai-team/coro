@@ -68,6 +68,25 @@ def _normalize_transcript_text(text: str) -> str:
     return re.sub(r"\s+", " ", no_punctuation).strip()
 
 
+def is_diarization_only_stm(path: Path) -> bool:
+    """Return True when every STM line's text is the diarization-only sentinel.
+
+    Such references (e.g. VoxConverse RTTM converted via rttm_to_stm) carry
+    speaker turns but no transcript, so only DER is meaningful.
+    """
+    from asr_diar_server.bench.stm import DIARIZATION_ONLY_TEXT
+
+    saw_line = False
+    for line in path.read_text().splitlines():
+        parts = line.strip().split(maxsplit=5)
+        if len(parts) < 6:
+            continue
+        saw_line = True
+        if parts[5].strip() != DIARIZATION_ONLY_TEXT:
+            return False
+    return saw_line
+
+
 def _count_stm_speakers(path: Path) -> int:
     """Count distinct speaker labels (column 3) in an STM file."""
     speakers: set[str] = set()
@@ -132,44 +151,50 @@ def score_item(
         raw: dict[str, Any] = {}
         metrics: dict[str, Any] = {}
 
-        raw["cpwer"] = _combine_multifile(
-            meeteval, meeteval.wer.cpwer(ref_stm_path, hyp_stm_path)
-        )
-        metrics["cpwer"] = _wer_to_dict(raw["cpwer"])
+        # Diarization-only references (speaker turns, no transcript) can only be
+        # scored for DER; computing WER against a sentinel transcript would be
+        # meaningless, so it is skipped.
+        diarization_only = is_diarization_only_stm(ref_stm_path)
 
-        raw["orcwer"] = _combine_multifile(
-            meeteval, meeteval.wer.greedy_orcwer(ref_stm_path, hyp_stm_path)
-        )
-        metrics["orcwer"] = _wer_to_dict(raw["orcwer"])
-
-        raw["dicpwer"] = _combine_multifile(
-            meeteval, meeteval.wer.greedy_dicpwer(ref_stm_path, hyp_stm_path)
-        )
-        metrics["dicpwer"] = _wer_to_dict(raw["dicpwer"])
-
-        with tempfile.TemporaryDirectory(prefix="asr-diar-quality-") as tmp:
-            tmp_dir = Path(tmp)
-            normalized_ref = tmp_dir / ref_stm_path.name
-            normalized_hyp = tmp_dir / hyp_stm_path.name
-            _write_normalized_stm(ref_stm_path, normalized_ref)
-            _write_normalized_stm(hyp_stm_path, normalized_hyp)
-
-            normalized_metrics: dict[str, Any] = {}
-            raw["normalized_cpwer"] = _combine_multifile(
-                meeteval, meeteval.wer.cpwer(normalized_ref, normalized_hyp)
+        if not diarization_only:
+            raw["cpwer"] = _combine_multifile(
+                meeteval, meeteval.wer.cpwer(ref_stm_path, hyp_stm_path)
             )
-            normalized_metrics["cpwer"] = _wer_to_dict(raw["normalized_cpwer"])
+            metrics["cpwer"] = _wer_to_dict(raw["cpwer"])
 
-            raw["normalized_orcwer"] = _combine_multifile(
-                meeteval, meeteval.wer.greedy_orcwer(normalized_ref, normalized_hyp)
+            raw["orcwer"] = _combine_multifile(
+                meeteval, meeteval.wer.greedy_orcwer(ref_stm_path, hyp_stm_path)
             )
-            normalized_metrics["orcwer"] = _wer_to_dict(raw["normalized_orcwer"])
+            metrics["orcwer"] = _wer_to_dict(raw["orcwer"])
 
-            raw["normalized_dicpwer"] = _combine_multifile(
-                meeteval, meeteval.wer.greedy_dicpwer(normalized_ref, normalized_hyp)
+            raw["dicpwer"] = _combine_multifile(
+                meeteval, meeteval.wer.greedy_dicpwer(ref_stm_path, hyp_stm_path)
             )
-            normalized_metrics["dicpwer"] = _wer_to_dict(raw["normalized_dicpwer"])
-            metrics["normalized"] = normalized_metrics
+            metrics["dicpwer"] = _wer_to_dict(raw["dicpwer"])
+
+            with tempfile.TemporaryDirectory(prefix="asr-diar-quality-") as tmp:
+                tmp_dir = Path(tmp)
+                normalized_ref = tmp_dir / ref_stm_path.name
+                normalized_hyp = tmp_dir / hyp_stm_path.name
+                _write_normalized_stm(ref_stm_path, normalized_ref)
+                _write_normalized_stm(hyp_stm_path, normalized_hyp)
+
+                normalized_metrics: dict[str, Any] = {}
+                raw["normalized_cpwer"] = _combine_multifile(
+                    meeteval, meeteval.wer.cpwer(normalized_ref, normalized_hyp)
+                )
+                normalized_metrics["cpwer"] = _wer_to_dict(raw["normalized_cpwer"])
+
+                raw["normalized_orcwer"] = _combine_multifile(
+                    meeteval, meeteval.wer.greedy_orcwer(normalized_ref, normalized_hyp)
+                )
+                normalized_metrics["orcwer"] = _wer_to_dict(raw["normalized_orcwer"])
+
+                raw["normalized_dicpwer"] = _combine_multifile(
+                    meeteval, meeteval.wer.greedy_dicpwer(normalized_ref, normalized_hyp)
+                )
+                normalized_metrics["dicpwer"] = _wer_to_dict(raw["normalized_dicpwer"])
+                metrics["normalized"] = normalized_metrics
 
         der_results = meeteval.der.md_eval_22(
             ref_stm_path, hyp_stm_path,
@@ -182,6 +207,7 @@ def score_item(
         return {
             "metrics": metrics,
             "_raw": raw,
+            "diarization_only": diarization_only,
             "diarization": diarization_sanity(ref_stm_path, hyp_stm_path),
         }
 
@@ -235,13 +261,17 @@ def _per_item_entry(result: dict[str, Any]) -> dict[str, Any]:
     entry: dict[str, Any] = {"session_id": result.get("session_id", "")}
     if "audio_seconds" in result:
         entry["audio_seconds"] = result["audio_seconds"]
+    if result.get("diarization_only"):
+        entry["diarization_only"] = True
     if result.get("diarization") is not None:
         entry["diarization"] = result["diarization"]
     metrics = result.get("metrics")
     if metrics is not None:
         for key in WER_METRIC_KEYS:
-            entry[key] = metrics[key]["wer"]
-        entry["der"] = metrics["der"]["der"]
+            if metrics.get(key) is not None:
+                entry[key] = metrics[key]["wer"]
+        if metrics.get("der") is not None:
+            entry["der"] = metrics["der"]["der"]
         normalized = metrics.get("normalized", {})
         for key in WER_METRIC_KEYS:
             if normalized.get(key) is not None:
