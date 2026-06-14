@@ -64,14 +64,25 @@ normalized ORC-WER, lower is better. (Absolute WER is high because AMI
 | onnx-asr `parakeet-tdt-0.6b-v3` | int8 (CPU) / fp32 (GPU) | 5.0× | **~120×** | 44–57% |
 | onnx-genai `nemotron-…-int4` | int4 streaming | ~0.4× (impractical) | ~10× | 44–57% |
 
+Memory footprint (peak, model + runtime):
+
+| Backend / model | CPU RAM | GPU VRAM |
+|---|---|---|
+| faster-whisper `whisper-medium` | ~2.0 GB (int8) | ~2.3 GB (fp16) |
+| onnx-asr `parakeet-tdt-0.6b-v3` | ~1.2 GB (int8) / ~2.7 GB (fp32) | ~3.6 GB (fp32) / ~0.6 GB (int8) |
+| onnx-genai `nemotron-…-int4` | ~1.0 GB | ~1.4 GB |
+
 Takeaways:
 - **Quality** is close across all three on this benchmark; faster-whisper
   `medium` is marginally the most accurate.
 - **Parakeet on GPU is the throughput winner** (~120× — its offline encoder
   batches frames). On GPU use **fp32**: int8 is *slower* there (onnxruntime
-  inserts many CPU↔GPU copies) and also lowers accuracy.
+  inserts many CPU↔GPU copies), lowers accuracy, and only saves VRAM
+  (~0.6 GB vs ~3.6 GB) — rarely worth it.
 - **Nemotron** is a *streaming* model: ~10× on GPU and impractical on CPU
   (~0.4×). Its value is low-latency real-time transcription, not batch speed.
+- **Memory**: all backends fit comfortably on an 8 GB GPU; nemotron (int4) is
+  the lightest, and parakeet int8 is the smallest CPU footprint (~1.2 GB).
 
 ### Recommended configuration
 
