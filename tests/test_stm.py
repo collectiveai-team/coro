@@ -265,6 +265,13 @@ class TestSliceStmWindow:
 
         assert slice_stm_window(self.SAMPLE, 5.0, 5.0) == ""
 
+    def test_recording_id_override_rewrites_session_column(self):
+        from asr_diar_server.bench.stm import slice_stm_window
+
+        out = slice_stm_window(self.SAMPLE, 0.0, 8.0, recording_id="clip_0_8")
+        sessions = {line.split()[0] for line in out.splitlines()}
+        assert sessions == {"clip_0_8"}
+
     def test_output_sorted_by_time_then_speaker(self):
         from asr_diar_server.bench.stm import slice_stm_window
 
