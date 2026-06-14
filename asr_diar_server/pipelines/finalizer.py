@@ -8,43 +8,32 @@ finalizer exploits that to emit finalized segments incrementally, keeping only
 the current open run of tokens in memory and spilling finalized segments and
 raw words to a :class:`TranscriptSpillStore`.
 
-Speaker labels are resolved per segment at finalization time via an injected
-resolver (online assignment), so no global pass over the full transcript and
-diarization timeline is needed.
+Speaker labels are NOT assigned here: the streaming diarizer only produces its
+complete timeline once the audio ends, so attribution is deferred to assembly
+(:func:`build_streaming_response`), which runs the same global max-overlap pass
+as the batch builder in a flat, one-segment-at-a-time sweep over the store.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 
 from asr_diar_server.core.response import (
     build_segment_dict,
     closes_segment,
+    merge_speaker_timeline,
     segment_span_from_tokens,
+    speaker_for_span,
 )
-from asr_diar_server.core.types import TranscriptSegment, TranscriptToken
+from asr_diar_server.core.types import SpeakerSegment, TranscriptSegment, TranscriptToken
 from asr_diar_server.pipelines.transcript_store import TranscriptSpillStore
-
-# Resolve a speaker label for a finalized ``[start, end)`` segment span.
-SpeakerResolver = Callable[[float, float], int]
-
-
-def _default_speaker(start: float, end: float) -> int:
-    """Default resolver: speaker 1, matching the no-diarization batch default."""
-    return 1
 
 
 class StreamingTranscriptFinalizer:
     """Group tokens into finalized segments and spill them to a store."""
 
-    def __init__(
-        self,
-        store: TranscriptSpillStore,
-        *,
-        speaker_resolver: SpeakerResolver | None = None,
-    ) -> None:
+    def __init__(self, store: TranscriptSpillStore) -> None:
         self._store = store
-        self._resolve = speaker_resolver or _default_speaker
         self._open: list[TranscriptToken] = []
 
     def add_tokens(self, tokens: list[TranscriptToken]) -> None:
@@ -78,20 +67,48 @@ class StreamingTranscriptFinalizer:
         if span is None:
             return
         start, end, text = span
-        speaker = self._resolve(start, end)
-        seg = TranscriptSegment(start=start, end=end, text=text, speaker=speaker)
+        # Provisional speaker 1; real attribution happens at assembly once the
+        # diarizer has produced its complete timeline.
+        seg = TranscriptSegment(start=start, end=end, text=text, speaker=1)
         self._store.append_segment(build_segment_dict(seg))
 
 
-def iter_response_segments(store: TranscriptSpillStore) -> Iterator[dict]:
-    """Yield finalized segments with a one-segment-lookahead overlap clamp.
+def _assign_segment_speaker(
+    seg: dict,
+    merged: list[SpeakerSegment],
+    last_end: float,
+    has_timeline: bool,
+) -> None:
+    """Assign a segment's (and its words') speaker from the merged timeline.
 
-    Adjacent segments are clamped so a segment never ends past the next one's
-    start, matching the batch builder's ``_clamp_overlaps`` for in-order input
-    while buffering only a single segment (flat memory).
+    Uses the segment's stored (pre-clamp) end so assignment matches the batch
+    builder's order of assign-then-clamp.  With no timeline every segment
+    defaults to speaker 1, mirroring ``_assign_speakers``.
     """
+    spk = speaker_for_span(seg["start"], seg["end"], merged, last_end) if has_timeline else 1
+    seg["speaker"] = str(spk)
+    for word in seg["words"]:
+        word["speaker"] = str(spk)
+
+
+def iter_response_segments(
+    store: TranscriptSpillStore,
+    speaker_timeline: list[SpeakerSegment] | None = None,
+) -> Iterator[dict]:
+    """Yield finalized segments, speaker-attributed and overlap-clamped.
+
+    Speakers are assigned per segment from the (complete) diarization timeline,
+    then a one-segment-lookahead clamp ensures a segment never ends past the
+    next one's start (matching ``_clamp_overlaps`` for in-order input).  Only a
+    single segment is buffered, so memory stays flat.
+    """
+    merged = merge_speaker_timeline(speaker_timeline or [])
+    last_end = merged[-1].end if merged else 0.0
+    has_timeline = bool(merged)
+
     prev: dict | None = None
     for seg in store.iter_segments():
+        _assign_segment_speaker(seg, merged, last_end, has_timeline)
         if prev is not None:
             if prev["end"] > seg["start"]:
                 prev["end"] = round(max(prev["start"], seg["start"]), 2)
@@ -101,7 +118,10 @@ def iter_response_segments(store: TranscriptSpillStore) -> Iterator[dict]:
         yield prev
 
 
-def build_streaming_response(store: TranscriptSpillStore) -> dict:
+def build_streaming_response(
+    store: TranscriptSpillStore,
+    speaker_timeline: list[SpeakerSegment] | None = None,
+) -> dict:
     """Assemble the full response dict from a spill store.
 
     Mirrors the keys of the batch builder.  This materialises the lists once
@@ -110,7 +130,7 @@ def build_streaming_response(store: TranscriptSpillStore) -> dict:
     """
     segments: list[dict] = []
     word_segments: list[dict] = []
-    for seg in iter_response_segments(store):
+    for seg in iter_response_segments(store, speaker_timeline):
         segments.append(seg)
         word_segments.extend(seg["words"])
     transcript = [{"start": s["start"], "end": s["end"], "text": s["text"]} for s in segments]
