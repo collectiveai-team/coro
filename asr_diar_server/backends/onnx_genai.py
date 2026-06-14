@@ -130,13 +130,18 @@ class OnnxGenaiASRAdapter:
         return convert_onnx_asr_result(result)
 
 
-def _providers_for_device(device: str):
-    """Map an ASR device selector to onnxruntime-genai execution providers."""
+def _apply_device(config, device: str) -> None:
+    """Select the execution provider on a GenAI config for the given device.
+
+    onnxruntime-genai ships as separate CPU and CUDA builds; CPU is the implicit
+    default when no provider is appended (appending ``"cpu"`` is rejected). ``"auto"``
+    follows whatever the model's ``genai_config.json`` declares.
+    """
     if device == "cuda":
-        return ["cuda"]
-    if device == "cpu":
-        return ["cpu"]
-    return None  # auto -> follow genai_config.json
+        config.clear_providers()
+        config.append_provider("cuda")
+    elif device == "cpu":
+        config.clear_providers()
 
 
 def build_onnx_genai_adapter(
@@ -181,11 +186,7 @@ def build_onnx_genai_adapter(
         device,
     )
     config = og.Config(model_path)
-    providers = _providers_for_device(device)
-    if providers is not None:
-        config.clear_providers()
-        for provider in providers:
-            config.append_provider(provider)
+    _apply_device(config, device)
     model = og.Model(config)
     logger.info("onnx-genai model loaded.")
     return OnnxGenaiASRAdapter(model, chunk_samples=chunk_samples, sample_rate=sample_rate)
