@@ -1,7 +1,8 @@
 # aymurai-asr
 
-OpenAI-compatible ASR + diarization HTTP server (`asr_diar_server`), backed by
-Faster-Whisper (ASR) and NVIDIA NeMo Sortformer (diarization).
+OpenAI-compatible ASR + diarization HTTP server (`asr_diar_server`), with three
+pluggable ASR backends (Faster-Whisper, onnx-asr Parakeet, onnx-genai Nemotron)
+and NVIDIA NeMo Sortformer diarization.
 
 It exposes the OpenAI transcription contract, so **clients integrate using the
 official `openai` SDK types — no custom schema package is needed.**
@@ -26,6 +27,73 @@ uv run asr-diar-server            # or: uv run uvicorn asr_diar_server.app:app
 
 Configuration is via `ASR_DIAR_`-prefixed environment variables (host, port,
 backends, devices, etc.); see `asr_diar_server/settings.py`.
+
+Install the runtime that matches your hardware (the `cpu` / `cuda` extras are
+mutually exclusive and carry the matching `onnxruntime` / `onnxruntime-genai`
+wheels):
+
+```bash
+uv sync --extra cpu     # CPU-only deployment
+uv sync --extra cuda    # NVIDIA GPU deployment
+```
+
+## ASR backends
+
+The ASR backend is pluggable behind a single adapter contract. Select it with
+`ASR_DIAR_BACKEND_ASR` + `ASR_DIAR_MODEL_ASR`; pick the device with
+`ASR_DIAR_ASR_DEVICE` (`auto` | `cpu` | `cuda`).
+
+| Backend (`ASR_DIAR_BACKEND_ASR`) | Runtime | Typical model (`ASR_DIAR_MODEL_ASR`) | Notes |
+|---|---|---|---|
+| `faster-whisper` | CTranslate2 | `openai/whisper-medium` | Default. Best accuracy; multilingual. `ASR_DIAR_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
+| `onnx-asr` | onnxruntime | `nemo-parakeet-tdt-0.6b-v3` | NeMo Parakeet/Canary; multilingual. Offline (batched) → very high GPU throughput. `ASR_DIAR_ASR_QUANTIZATION` = `int8` (CPU) or unset = fp32 (GPU). |
+| `onnx-genai` | onnxruntime-genai | `onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4` | NVIDIA Nemotron **cache-aware streaming**; 40 locales. Built for low-latency real-time, not batch throughput. Timestamps are 560 ms-resolution. GPU strongly recommended. |
+
+### Benchmarks
+
+Long-form English meetings from AMI (`Mix-Headset`, far-field, overlapping
+speech), diarization off, on an RTX 3070 Laptop (8 GB) and a loaded laptop CPU.
+**RTFx** = audio ÷ processing time (higher is faster). **Quality** =
+normalized ORC-WER, lower is better. (Absolute WER is high because AMI
+`Mix-Headset` is a hard far-field/overlap benchmark; treat the numbers as a
+*relative* comparison.)
+
+| Backend / model | precision | RTFx (CPU) | RTFx (GPU) | ORC-WER (norm) |
+|---|---|---:|---:|---:|
+| faster-whisper `whisper-medium` | int8/fp16 | 1.3× | ~20× | **42–53%** |
+| onnx-asr `parakeet-tdt-0.6b-v3` | int8 (CPU) / fp32 (GPU) | 5.0× | **~120×** | 44–57% |
+| onnx-genai `nemotron-…-int4` | int4 streaming | ~0.4× (impractical) | ~10× | 44–57% |
+
+Takeaways:
+- **Quality** is close across all three on this benchmark; faster-whisper
+  `medium` is marginally the most accurate.
+- **Parakeet on GPU is the throughput winner** (~120× — its offline encoder
+  batches frames). On GPU use **fp32**: int8 is *slower* there (onnxruntime
+  inserts many CPU↔GPU copies) and also lowers accuracy.
+- **Nemotron** is a *streaming* model: ~10× on GPU and impractical on CPU
+  (~0.4×). Its value is low-latency real-time transcription, not batch speed.
+
+### Recommended configuration
+
+**GPU (`--extra cuda`):**
+```bash
+ASR_DIAR_BACKEND_ASR=onnx-asr
+ASR_DIAR_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
+ASR_DIAR_ASR_DEVICE=cuda           # fp32 (leave ASR_DIAR_ASR_QUANTIZATION unset)
+```
+Fastest by a wide margin with near-best accuracy. Use `faster-whisper` +
+`float16` if you want the top accuracy point; use `onnx-genai` only for
+real-time low-latency streaming.
+
+**CPU (`--extra cpu`):**
+```bash
+ASR_DIAR_BACKEND_ASR=onnx-asr
+ASR_DIAR_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
+ASR_DIAR_ASR_DEVICE=cpu
+ASR_DIAR_ASR_QUANTIZATION=int8     # ~4× faster than whisper-medium
+```
+For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
+`ASR_DIAR_ASR_COMPUTE_TYPE=int8`. `onnx-genai` is not recommended on CPU.
 
 ## Client integration (the important part)
 
