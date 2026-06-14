@@ -76,21 +76,31 @@ Memory footprint — **baseline** (peak, model + runtime, short clip):
 pipeline decodes and holds the entire PCM plus the accumulated
 tokens/segments/words, so **host RAM grows ~linearly with recording length**.
 The **streaming** pipeline (`ASR_DIAR_PIPELINE=streaming`) streams 1 s PCM chunks
-from disk instead of buffering the whole recording, which trims the growth
-(peak RSS, 11 s → 58 min, GPU):
+from disk instead of buffering the whole recording, and spills the growing
+transcript to a per-request on-disk SQLite (WAL) store instead of Python lists.
 
-| Backend | full-memory | streaming |
-|---|---|---|
-| onnx-asr parakeet (fp32) | 1.06 → 1.52 GB | 1.06 → 1.39 GB |
-| faster-whisper (fp16) | 1.67 → 2.43 GB | 1.67 → 2.30 GB |
-| onnx-genai nemotron (int4) | 0.97 → 1.49 GB | 0.97 → 1.25 GB |
+When consumed over **SSE (`stream=true`)**, the streaming pipeline keeps
+**flat peak host RSS, independent of recording length** (11 s ≈ 58 min ≈
+multi-hour): finalized segments and raw words live on disk during the stream,
+only bounded working buffers stay resident, and the final
+`transcript.text.done` frame is rendered straight from the store one
+segment/word at a time (never materialised). The wire format is unchanged.
+
+| Consumption | host RSS vs. length |
+|---|---|
+| streaming + `stream=true` (SSE) | **flat** (bounded working set + on-disk store) |
+| streaming, non-SSE `transcribe()` | flat steady-state, one O(length) peak when the single response dict is built |
+| full-memory | grows ~linearly with length |
 
 Notes:
-- Streaming saves roughly the decoded-audio buffer (~2 MB/min of audio); for a
-  58 min file that is ~0.13–0.24 GB. Host RAM **still grows** with length in both
-  pipelines because each accumulates the full transcript (tokens/segments) for
-  the response — for truly bounded memory on unbounded audio, consume the SSE
-  `stream=true` deltas rather than retaining the final aggregate.
+- The on-disk store **must live on real disk** for the flat-RSS property. Set
+  `ASR_DIAR_TRANSCRIPT_SPILL_DIR` to a persistent path; the default temp dir is
+  tmpfs (RAM-backed) on many systems, which would keep the transcript in memory.
+- The **non-streaming** `transcribe()` response inherently returns the whole
+  transcript as one object, so its peak is O(length) at assembly time — use SSE
+  consumption for unbounded audio.
+- Diarizer prediction state grows ~0.7 MB/hour (frames × speakers × 4 bytes),
+  negligible beside the model.
 - **GPU VRAM is length-independent** in both pipelines (inference is
   windowed/streamed): parakeet ~3.6 GB, nemotron ~1.4 GB, faster-whisper
   ~2.3–2.9 GB.
@@ -128,6 +138,11 @@ ASR_DIAR_ASR_QUANTIZATION=int8     # ~4× faster than whisper-medium
 ```
 For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
 `ASR_DIAR_ASR_COMPUTE_TYPE=int8`. `onnx-genai` is not recommended on CPU.
+
+**Streaming on long audio:** set `ASR_DIAR_PIPELINE=streaming` and point
+`ASR_DIAR_TRANSCRIPT_SPILL_DIR` at a persistent (non-tmpfs) directory so the
+per-request transcript spills to disk and host RSS stays flat regardless of
+recording length. Consume the result over SSE (`stream=true`).
 
 ## Client integration (the important part)
 
