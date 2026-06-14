@@ -64,13 +64,30 @@ normalized ORC-WER, lower is better. (Absolute WER is high because AMI
 | onnx-asr `parakeet-tdt-0.6b-v3` | int8 (CPU) / fp32 (GPU) | 5.0× | **~120×** | 44–57% |
 | onnx-genai `nemotron-…-int4` | int4 streaming | ~0.4× (impractical) | ~10× | 44–57% |
 
-Memory footprint (peak, model + runtime):
+Memory footprint — **baseline** (peak, model + runtime, short clip):
 
 | Backend / model | CPU RAM | GPU VRAM |
 |---|---|---|
 | faster-whisper `whisper-medium` | ~2.0 GB (int8) | ~2.3 GB (fp16) |
 | onnx-asr `parakeet-tdt-0.6b-v3` | ~1.2 GB (int8) / ~2.7 GB (fp32) | ~3.6 GB (fp32) / ~0.6 GB (int8) |
 | onnx-genai `nemotron-…-int4` | ~1.0 GB | ~1.4 GB |
+
+**Memory is not just the model on long audio.** The default **full-memory**
+pipeline decodes and holds the entire PCM plus the accumulated
+tokens/segments/words, so **host RAM grows ~linearly with recording length**
+(peak RSS, 11 s → 58 min):
+
+| Backend | 11 s | 58 min | Δ |
+|---|---:|---:|---:|
+| onnx-asr parakeet (fp32, GPU) | 1.06 GB | 1.52 GB | +0.46 GB |
+| faster-whisper (fp16, GPU) | 1.67 GB | 2.43 GB | +0.76 GB |
+| onnx-genai nemotron (int4, GPU) | 0.97 GB | 1.49 GB | +0.52 GB |
+
+**GPU VRAM stays roughly flat** with length (inference is windowed/streamed, so
+the working set is bounded): parakeet ~3.6 GB and nemotron ~1.4 GB are
+length-independent; faster-whisper grows mildly (~2.3 → ~2.9 GB). For long or
+continuous recordings, use the **streaming pipeline** (`ASR_DIAR_PIPELINE=streaming`)
+to bound host memory instead of buffering the whole recording.
 
 Takeaways:
 - **Quality** is close across all three on this benchmark; faster-whisper
