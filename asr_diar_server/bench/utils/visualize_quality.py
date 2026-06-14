@@ -19,8 +19,8 @@ To visualise a single pair directly, call meeteval-viz on the discovered files
 (note hypotheses are named ``<id>.hyp.stm``):
 
     meeteval-viz html --alignment tcp cp \\
-        -r OUT/ref/RNE14-es_0_120.ref.stm \\
-        -h OUT/hyp/RNE14-es_0_120.hyp.stm -o OUT/viz
+        -r OUT/ref/IB4001_180_60.ref.stm \\
+        -h OUT/hyp/IB4001_180_60.hyp.stm -o OUT/viz
 """
 
 from __future__ import annotations

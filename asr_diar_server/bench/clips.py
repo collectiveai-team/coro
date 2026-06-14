@@ -1,8 +1,7 @@
 """Resolve a directory of (audio, reference STM) pairs into workload items.
 
-Used for short, reliable-reference benchmarks (AMI clips via make_ami_clip, or
-curated non-AMI audio such as the Spanish RNE14 reference). Each ``<stem>.wav``
-is paired with a sibling ``<stem>.ref.stm`` when present.
+Used for short, reliable-reference benchmarks (e.g. AMI clips via make_ami_clip).
+Each ``<stem>.wav`` is paired with a sibling ``<stem>.ref.stm`` when present.
 """
 
 from __future__ import annotations
