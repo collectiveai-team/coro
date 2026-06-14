@@ -98,6 +98,7 @@ def _verbose_json_response(result: TranscriptionResponse, *, language: str | Non
         segments=[
             VerboseJsonSegment(
                 id=index,
+                seek=int(segment.start * 100),
                 start=segment.start,
                 end=segment.end,
                 text=segment.text,

@@ -99,6 +99,7 @@ class VerboseJsonSegment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int
+    seek: int
     start: float
     end: float
     text: str
