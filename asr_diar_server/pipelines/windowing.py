@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 import logging
@@ -136,7 +137,11 @@ class ASRWindowing:
     ) -> AsyncIterator[StreamEvent]:
         buffer = bytearray()
         consumed_bytes = 0
-        tokens: list[TranscriptToken] = []
+        # Only the most recent tokens feed prompt carry-over; retaining the full
+        # transcript here would grow memory O(audio length).  A bounded deque
+        # keeps the carry identical (last 50 tokens) at constant memory.
+        prompt_tokens: deque[TranscriptToken] = deque(maxlen=50)
+        accepted_count = 0
         prompt_carry = prompt
         max_buffer = 0
         window_count = 0
@@ -182,9 +187,10 @@ class ASRWindowing:
                     for token in window_tokens
                 ]
                 if accepted:
-                    tokens.extend(accepted)
+                    prompt_tokens.extend(accepted)
+                    accepted_count += len(accepted)
                     prompt_carry = "".join(
-                        token.text for token in tokens[-50:]
+                        token.text for token in prompt_tokens
                     )[-200:]
                     yield TokenBatchEvent(tokens=accepted)
                     delta = "".join(token.text for token in accepted).strip()
@@ -227,9 +233,10 @@ class ASRWindowing:
                 for token in window_tokens
             ]
             if accepted:
-                tokens.extend(accepted)
+                prompt_tokens.extend(accepted)
+                accepted_count += len(accepted)
                 prompt_carry = "".join(
-                    token.text for token in tokens[-50:]
+                    token.text for token in prompt_tokens
                 )[-200:]
                 yield TokenBatchEvent(tokens=accepted)
                 delta = "".join(token.text for token in accepted).strip()
@@ -238,9 +245,10 @@ class ASRWindowing:
 
         self._stream_chunks_buffer_highwater = max_buffer
         logger.info(
-            "asr_windowing complete elapsed=%.3fs windows=%d accepted_tokens=%d max_buffer_bytes=%d",
+            "asr_windowing complete elapsed=%.3fs windows=%d accepted_tokens=%d "
+            "max_buffer_bytes=%d",
             time.perf_counter() - started,
             window_count,
-            len(tokens),
+            accepted_count,
             max_buffer,
         )
