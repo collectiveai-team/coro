@@ -150,15 +150,20 @@ def clip_reference_stm(
     meeting_id: str,
     start: float,
     duration: float,
+    *,
+    recording_id: str | None = None,
 ) -> str:
     """Build a rebased reference STM for a short ``[start, start+duration)`` clip.
 
     Reuses the full-meeting AMI annotation conversion, then windows it so the
     references stay reliable on short, manually verifiable audio. Times are
-    rebased to 0.0 to match a cut audio clip.
+    rebased to 0.0 to match a cut audio clip. ``recording_id`` overrides the STM
+    session id (column 1) so it matches a hypothesis keyed by the clip stem.
     """
     full = ami_meeting_to_stm(ami_root, meeting_id)
-    return slice_stm_window(full, start, start + duration, rebase=True)
+    return slice_stm_window(
+        full, start, start + duration, rebase=True, recording_id=recording_id,
+    )
 
 
 def materialize_reference_stms(

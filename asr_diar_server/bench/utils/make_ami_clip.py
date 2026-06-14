@@ -54,7 +54,11 @@ def main() -> None:
         args.start,
         args.duration,
     )
-    stm_text = clip_reference_stm(args.ami_root, args.meeting_id, args.start, args.duration)
+    # The clip stem is the benchmark item_id, so the reference session id must
+    # match it (the hypothesis STM is keyed by item_id).
+    stm_text = clip_reference_stm(
+        args.ami_root, args.meeting_id, args.start, args.duration, recording_id=stem,
+    )
     stm_dst.write_text(stm_text, encoding="utf-8")
 
     print(f"wrote {audio_dst}")

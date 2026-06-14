@@ -66,12 +66,15 @@ def slice_stm_window(
     end: float,
     *,
     rebase: bool = True,
+    recording_id: str | None = None,
 ) -> str:
     """Slice an STM to the ``[start, end)`` time window for short-clip benchmarks.
 
     Lines overlapping the window are kept and their times clamped to it; lines
     fully outside are dropped. When ``rebase`` is True (the default for cut audio
     that starts at 0), kept times are shifted so the window start becomes 0.0.
+    When ``recording_id`` is given, the STM session id (column 1) is rewritten to
+    it so the clip's reference matches a hypothesis keyed by the clip stem.
     Output is sorted by (start_time, speaker), matching the other STM builders.
     """
     if end <= start:
@@ -93,8 +96,9 @@ def slice_stm_window(
         clamped_end = min(seg_end, end) - shift
         if clamped_end <= clamped_start:
             continue
+        session = recording_id if recording_id is not None else parts[0]
         lines.append(
-            f"{parts[0]} {parts[1]} {parts[2]} "
+            f"{session} {parts[1]} {parts[2]} "
             f"{clamped_start:.3f} {clamped_end:.3f} {parts[5]}"
         )
     lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
