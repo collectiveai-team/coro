@@ -173,6 +173,35 @@ async def test_stream_chunks_processes_partial_tail():
 
 
 @pytest.mark.asyncio
+async def test_stream_chunks_prompt_carry_is_bounded_over_long_stream():
+    """Prompt carry must reflect only recent tokens, never the whole transcript.
+
+    With one token emitted per window, after many windows the earliest token
+    text must have aged out of the carry, proving retention is bounded and does
+    not grow O(audio length).
+    """
+    asr = _FakeASR()
+    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
+    pcm = _pcm_seconds(80.0)  # ~80 windows, well past the 50-token carry bound
+    chunk_size = int(SAMPLE_RATE * BYTES_PER_SAMPLE * 1.0)
+    chunks = [pcm[i : i + chunk_size] for i in range(0, len(pcm), chunk_size)]
+
+    _ = [
+        e
+        async for e in windowing.stream_chunks(
+            _async_chunks(chunks), asr=asr, language=None, prompt=None
+        )
+    ]
+
+    last_prompt = asr.prompts[-1] or ""
+    assert len(last_prompt) <= 200
+    # word1 (the first emitted token) must have aged out of the bounded carry.
+    assert "word1 " not in last_prompt
+    # but a recent token must still be present.
+    assert f"word{len(asr.prompts) - 1}" in last_prompt
+
+
+@pytest.mark.asyncio
 async def test_stream_chunks_prompt_carry_over_matches_stream_pcm():
     asr_chunks = _FakeASR()
     asr_pcm = _FakeASR()
