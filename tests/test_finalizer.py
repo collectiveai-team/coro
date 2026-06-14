@@ -43,6 +43,43 @@ def test_finalizer_matches_batch_builder_without_diarization(tmp_path):
     assert streamed["raw_words"] == batch["raw_words"]
 
 
+def test_finalizer_matches_batch_builder_with_diarization(tmp_path):
+    """Deferred speaker assignment equals the batch global pass, in-order input."""
+    timeline = [
+        SpeakerSegment(start=0.0, end=0.8, speaker=2),
+        SpeakerSegment(start=0.8, end=1.6, speaker=3),
+        SpeakerSegment(start=1.6, end=2.4, speaker=2),
+    ]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(_TOKENS)
+        finalizer.finish()
+        streamed = build_streaming_response(store, timeline)
+
+    batch = build_transcription_response(_TOKENS, timeline, duration=2.4)
+    assert streamed["segments"] == batch["segments"]
+    assert streamed["word_segments"] == batch["word_segments"]
+    assert streamed["transcript"] == batch["transcript"]
+    assert streamed["diarization"] == batch["diarization"]
+    assert streamed["raw_words"] == batch["raw_words"]
+
+
+def test_finalizer_marks_segments_beyond_timeline_unknown(tmp_path):
+    """Segments past the diarization horizon get speaker -1, matching batch."""
+    timeline = [SpeakerSegment(start=0.0, end=1.0, speaker=2)]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(_TOKENS)
+        finalizer.finish()
+        streamed = build_streaming_response(store, timeline)
+
+    batch = build_transcription_response(_TOKENS, timeline, duration=2.4)
+    assert [s["speaker"] for s in streamed["segments"]] == [
+        s["speaker"] for s in batch["segments"]
+    ]
+    assert "-1" in [s["speaker"] for s in streamed["segments"]]
+
+
 def test_finalizer_emits_three_segments(tmp_path):
     with TranscriptSpillStore(directory=str(tmp_path)) as store:
         finalizer = StreamingTranscriptFinalizer(store)
@@ -51,27 +88,21 @@ def test_finalizer_emits_three_segments(tmp_path):
         assert store.segment_count == 3
 
 
-def test_finalizer_applies_online_speaker_resolver(tmp_path):
+def test_finalizer_defers_speaker_assignment_to_assembly(tmp_path):
+    """Finalizer spills provisional speaker 1; assembly assigns from timeline."""
     timeline = [
-        SpeakerSegment(start=0.0, end=1.0, speaker=2),
-        SpeakerSegment(start=1.0, end=2.4, speaker=3),
+        SpeakerSegment(start=0.0, end=0.8, speaker=2),
+        SpeakerSegment(start=0.8, end=2.4, speaker=3),
     ]
-
-    def resolver(start, end):
-        # Pick the speaker whose span contains the segment midpoint.
-        mid = (start + end) / 2
-        for s in timeline:
-            if s.start <= mid < s.end:
-                return s.speaker
-        return 1
-
     with TranscriptSpillStore(directory=str(tmp_path)) as store:
-        finalizer = StreamingTranscriptFinalizer(store, speaker_resolver=resolver)
+        finalizer = StreamingTranscriptFinalizer(store)
         finalizer.add_tokens(_TOKENS)
         finalizer.finish()
-        speakers = [s["speaker"] for s in store.iter_segments()]
+        # Stored provisionally as speaker 1 before assembly.
+        assert [s["speaker"] for s in store.iter_segments()] == ["1", "1", "1"]
+        streamed = build_streaming_response(store, timeline)
 
-    assert speakers == ["2", "3", "3"]
+    assert [s["speaker"] for s in streamed["segments"]] == ["2", "3", "3"]
 
 
 def test_finalizer_flushes_unterminated_tail(tmp_path):
