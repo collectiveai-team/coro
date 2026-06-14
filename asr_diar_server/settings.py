@@ -15,7 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # MARK: Startup Selector Types
 PipelineSelector = Literal["full-memory", "streaming"]
-ASRBackendProvider = Literal["faster-whisper"]
+ASRBackendProvider = Literal["faster-whisper", "onnx-asr", "onnx-genai"]
 DiarizationBackendProvider = Literal["none", "nemo"]
 ASRDevice = Literal["auto", "cuda", "cpu"]
 DiarizationDevice = Literal["auto", "cuda", "cpu"]
@@ -47,7 +47,13 @@ class ServerSettings(BaseSettings):
         default="auto", description="Faster Whisper device selection."
     )
     asr_compute_type: str = Field(
-        default="default", description="Faster Whisper compute type selection."
+        default="default",
+        description="Faster Whisper compute type selection (ignored by the onnx-asr backend).",
+    )
+    asr_quantization: str | None = Field(
+        default=None,
+        description="onnx-asr model quantization selector (e.g. 'int8'); ignored by "
+        "the faster-whisper backend.",
     )
     backend_diarization: DiarizationBackendProvider = Field(
         default="none",
