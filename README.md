@@ -74,20 +74,26 @@ Memory footprint — **baseline** (peak, model + runtime, short clip):
 
 **Memory is not just the model on long audio.** The default **full-memory**
 pipeline decodes and holds the entire PCM plus the accumulated
-tokens/segments/words, so **host RAM grows ~linearly with recording length**
-(peak RSS, 11 s → 58 min):
+tokens/segments/words, so **host RAM grows ~linearly with recording length**.
+The **streaming** pipeline (`ASR_DIAR_PIPELINE=streaming`) streams 1 s PCM chunks
+from disk instead of buffering the whole recording, which trims the growth
+(peak RSS, 11 s → 58 min, GPU):
 
-| Backend | 11 s | 58 min | Δ |
-|---|---:|---:|---:|
-| onnx-asr parakeet (fp32, GPU) | 1.06 GB | 1.52 GB | +0.46 GB |
-| faster-whisper (fp16, GPU) | 1.67 GB | 2.43 GB | +0.76 GB |
-| onnx-genai nemotron (int4, GPU) | 0.97 GB | 1.49 GB | +0.52 GB |
+| Backend | full-memory | streaming |
+|---|---|---|
+| onnx-asr parakeet (fp32) | 1.06 → 1.52 GB | 1.06 → 1.39 GB |
+| faster-whisper (fp16) | 1.67 → 2.43 GB | 1.67 → 2.30 GB |
+| onnx-genai nemotron (int4) | 0.97 → 1.49 GB | 0.97 → 1.25 GB |
 
-**GPU VRAM stays roughly flat** with length (inference is windowed/streamed, so
-the working set is bounded): parakeet ~3.6 GB and nemotron ~1.4 GB are
-length-independent; faster-whisper grows mildly (~2.3 → ~2.9 GB). For long or
-continuous recordings, use the **streaming pipeline** (`ASR_DIAR_PIPELINE=streaming`)
-to bound host memory instead of buffering the whole recording.
+Notes:
+- Streaming saves roughly the decoded-audio buffer (~2 MB/min of audio); for a
+  58 min file that is ~0.13–0.24 GB. Host RAM **still grows** with length in both
+  pipelines because each accumulates the full transcript (tokens/segments) for
+  the response — for truly bounded memory on unbounded audio, consume the SSE
+  `stream=true` deltas rather than retaining the final aggregate.
+- **GPU VRAM is length-independent** in both pipelines (inference is
+  windowed/streamed): parakeet ~3.6 GB, nemotron ~1.4 GB, faster-whisper
+  ~2.3–2.9 GB.
 
 Takeaways:
 - **Quality** is close across all three on this benchmark; faster-whisper
