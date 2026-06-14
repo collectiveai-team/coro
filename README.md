@@ -117,6 +117,31 @@ Takeaways:
 - **Memory**: all backends fit comfortably on an 8 GB GPU; nemotron (int4) is
   the lightest, and parakeet int8 is the smallest CPU footprint (~1.2 GB).
 
+#### Benchmark datasets
+
+Quality runs score against trustworthy, human-or-openly-labelled references
+only. Each is materialized into a `--clips-dir` of `(<stem>.wav,
+<stem>.ref.stm)` pairs; the bench scores WER and/or DER per the reference:
+
+| Dataset | License | Metrics | Materialize with |
+|---|---|---|---|
+| **AMI** (English meetings) | CC-BY | WER + DER | `utils.make_ami_clip` |
+| **VoxConverse** (multi-speaker, in-the-wild) | CC-BY-4.0 | DER only (no transcript) | `utils.make_rttm_clip` |
+| **Common Voice** (single-speaker read speech, any language incl. `es`) | CC0 | WER only (single speaker) | `utils.make_common_voice_clips` |
+
+Diarization-only references (e.g. VoxConverse) carry speaker turns but no
+words; the report shows their DER and leaves WER blank rather than emitting a
+meaningless score.
+
+> **TODO — apply for Albayzín-RTVE2020.** It is the strongest Spanish target
+> (real peninsular broadcast, *fully human-revised* transcripts **and** speaker
+> labels → trustworthy WER **and** DER), but it is gated: an accredited
+> researcher/company must request access via the RTVE archive
+> (<http://catedrartve.unizar.es/rtvedatabase.html>) and it cannot be
+> redistributed/vendored. Once obtained locally, its RTTM diarization refs feed
+> straight into `utils.make_rttm_clip`. (Avoid the RTVE2018 subtitle-only
+> partitions — those captions are not verbatim.)
+
 ### Recommended configuration
 
 **GPU (`--extra cuda`):**
