@@ -173,6 +173,7 @@ dependencies = [
     { name = "faster-whisper" },
     { name = "lightning" },
     { name = "nemo-toolkit", extra = ["asr"] },
+    { name = "onnx-asr", extra = ["hub"] },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "uvicorn" },
@@ -180,12 +181,16 @@ dependencies = [
 
 [package.optional-dependencies]
 cpu = [
+    { name = "onnxruntime", version = "1.26.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "onnxruntime-genai" },
     { name = "torch", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-15-asr-diar-server-cpu') or (platform_machine == 's390x' and extra == 'extra-15-asr-diar-server-cpu' and extra == 'extra-15-asr-diar-server-cuda') or (sys_platform != 'darwin' and extra == 'extra-15-asr-diar-server-cpu' and extra == 'extra-15-asr-diar-server-cuda')" },
     { name = "torch", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-15-asr-diar-server-cpu') or (platform_machine != 's390x' and extra == 'extra-15-asr-diar-server-cpu' and extra == 'extra-15-asr-diar-server-cuda') or (sys_platform != 'darwin' and extra == 'extra-15-asr-diar-server-cpu')" },
 ]
 cuda = [
     { name = "nvidia-cublas-cu12" },
     { name = "nvidia-cudnn-cu12" },
+    { name = "onnxruntime-genai-cuda" },
+    { name = "onnxruntime-gpu" },
     { name = "torch", version = "2.11.0", source = { registry = "https://pypi.org/simple" } },
 ]
 
@@ -215,6 +220,11 @@ requires-dist = [
     { name = "nemo-toolkit", extras = ["asr"], specifier = ">=2.7.0,<2.8.0" },
     { name = "nvidia-cublas-cu12", marker = "extra == 'cuda'", specifier = ">=12.0.0.0" },
     { name = "nvidia-cudnn-cu12", marker = "extra == 'cuda'", specifier = ">=9.0.0.0" },
+    { name = "onnx-asr", extras = ["hub"], specifier = ">=0.11.0" },
+    { name = "onnxruntime", marker = "extra == 'cpu'", specifier = ">=1.22,!=1.24.1" },
+    { name = "onnxruntime-genai", marker = "extra == 'cpu'", specifier = ">=0.14.0" },
+    { name = "onnxruntime-genai-cuda", marker = "extra == 'cuda'", specifier = ">=0.14.0" },
+    { name = "onnxruntime-gpu", marker = "extra == 'cuda'", specifier = ">=1.22,!=1.24.1" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "python-multipart", specifier = ">=0.0.27" },
     { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.1.0,<4.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "asr-diar-server", extra = "cpu" } },
@@ -670,7 +680,8 @@ dependencies = [
     { name = "av" },
     { name = "ctranslate2" },
     { name = "huggingface-hub" },
-    { name = "onnxruntime" },
+    { name = "onnxruntime", version = "1.25.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-asr-diar-server-cuda'" },
+    { name = "onnxruntime", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-asr-diar-server-cpu' or extra != 'extra-15-asr-diar-server-cuda'" },
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
@@ -2133,8 +2144,114 @@ wheels = [
 ]
 
 [[package]]
+name = "onnx-asr"
+version = "0.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/f6/b154881761a593312f509522f99542acffa2516f7a1df6ddf5660ad4a162/onnx_asr-0.11.0.tar.gz", hash = "sha256:57ad8d9571dc17db95f0daf9ba432b9472383de320c610735850e56b5375a37d", size = 43665, upload-time = "2026-03-23T02:30:57.349Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/04/bdffd682cc38b43144b6528186c80451f219a05e3fd0eb331a548f455b9a/onnx_asr-0.11.0-py3-none-any.whl", hash = "sha256:142d8b3ce7716684992826a269304f5ce9cf1c0fe704b751358e223f45d2a5cf", size = 138349, upload-time = "2026-03-23T02:30:58.566Z" },
+]
+
+[package.optional-dependencies]
+hub = [
+    { name = "huggingface-hub" },
+]
+
+[[package]]
 name = "onnxruntime"
 version = "1.25.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "platform_machine != 's390x' and sys_platform == 'win32'",
+    "platform_machine == 's390x' and sys_platform == 'win32'",
+    "platform_machine != 's390x' and sys_platform == 'emscripten'",
+    "platform_machine == 's390x' and sys_platform == 'emscripten'",
+    "platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "flatbuffers", marker = "extra == 'extra-15-asr-diar-server-cuda'" },
+    { name = "numpy", marker = "extra == 'extra-15-asr-diar-server-cuda'" },
+    { name = "packaging", marker = "extra == 'extra-15-asr-diar-server-cuda'" },
+    { name = "protobuf", marker = "extra == 'extra-15-asr-diar-server-cuda'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c0/52/8b2a10e8dedf5d486332bc2b3bca0b1ed8049c0b9e4a5cced95413aadfdd/onnxruntime-1.25.1-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:66e52f7a30d1f780a34aa84d68a0a04d382d9f5b141884ecbf45b7566b9fbde9", size = 17770987, upload-time = "2026-04-27T22:00:47.985Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/87/a424d2867477c42ef8c60172709281120797f7b0f1fd33cc36b24329c825/onnxruntime-1.25.1-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:a5f41779f044d1ff75593df5c10a4d311bc82563687796d5218e2685b8f9da25", size = 15871829, upload-time = "2026-04-27T21:59:39.088Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/55/7819e64c515f17c86005447ede8122b974ca851255a94125e2119376f0f8/onnxruntime-1.25.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:905409e9eb2ef87f8226e073f56e71faf731c3e480ebd34952cf953730e4a4ff", size = 18024586, upload-time = "2026-04-27T22:00:05.359Z" },
+    { url = "https://files.pythonhosted.org/packages/89/36/b4f3eb5e95c66389aafd490950b5255e87c9333742cf90516eb50898e1dc/onnxruntime-1.25.1-cp312-cp312-win_amd64.whl", hash = "sha256:d4097b75b77486bb45835a8ed25b9a67976040ec6c258aeabae6aadfbdd1201c", size = 12905112, upload-time = "2026-04-27T22:00:36.478Z" },
+    { url = "https://files.pythonhosted.org/packages/38/fa/e5c43397632a399f542663ed3e3e37763ee203ba845b10b266cd2ede8925/onnxruntime-1.25.1-cp312-cp312-win_arm64.whl", hash = "sha256:b6c7aa5cae606d5c90a392679fac074b60f80025a2e83e1e90fdf882bd2a97f0", size = 12634433, upload-time = "2026-04-27T22:00:25.918Z" },
+]
+
+[[package]]
+name = "onnxruntime"
+version = "1.26.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "platform_machine != 's390x' and sys_platform == 'win32' and extra == 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine == 's390x' and sys_platform == 'win32' and extra == 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine != 's390x' and sys_platform == 'emscripten' and extra == 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine == 's390x' and sys_platform == 'emscripten' and extra == 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine == 's390x' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine == 's390x' and sys_platform == 'darwin' and extra == 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine != 's390x' and sys_platform == 'win32' and extra != 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine == 's390x' and sys_platform == 'win32' and extra != 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine != 's390x' and sys_platform == 'emscripten' and extra != 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine == 's390x' and sys_platform == 'emscripten' and extra != 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+    "platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra != 'extra-15-asr-diar-server-cpu' and extra != 'extra-15-asr-diar-server-cuda'",
+]
+dependencies = [
+    { name = "flatbuffers", marker = "extra == 'extra-15-asr-diar-server-cpu' or extra != 'extra-15-asr-diar-server-cuda'" },
+    { name = "numpy", marker = "extra == 'extra-15-asr-diar-server-cpu' or extra != 'extra-15-asr-diar-server-cuda'" },
+    { name = "packaging", marker = "extra == 'extra-15-asr-diar-server-cpu' or extra != 'extra-15-asr-diar-server-cuda'" },
+    { name = "protobuf", marker = "extra == 'extra-15-asr-diar-server-cpu' or extra != 'extra-15-asr-diar-server-cuda'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/b1/d111b1df656761f980d9e298a60039a9cb66036b1d039e777537743d0ac3/onnxruntime-1.26.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:05b028781b322ad74b57ce5b50aa5280bb1fe96ceec334628ade681e0b24c1ac", size = 18016624, upload-time = "2026-05-12T00:41:01.735Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/a0/3f9d896a0385a36bd04345d6d0b802821a5782adde562e7e135f6bb71c73/onnxruntime-1.26.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:91f2bb870a4b9224eba0a6728c1fa7a9e552b8e59e1083c51fbbc3d013f2b5c0", size = 16052692, upload-time = "2026-05-08T19:07:13.829Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/43/2a4e04f8dbeffad19bbcced4bcd4289bf478921518437404d6b92bdf213b/onnxruntime-1.26.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:9b6dd70599005bd1bf29779f04a91978b92b5e719c11a20068a8f8e535f725b6", size = 18185439, upload-time = "2026-05-08T19:07:36.299Z" },
+    { url = "https://files.pythonhosted.org/packages/44/fc/026d0a7162b9c2153dac292baea9e027c42304dc1d9dc6f8ff5b4cfbaedd/onnxruntime-1.26.0-cp312-cp312-win_amd64.whl", hash = "sha256:a26374dc7fbcaae593601086b242120e13f2310558df0991da6dd8b8fac00414", size = 13026427, upload-time = "2026-05-08T19:08:03.503Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/27/1dcf88e45e4c69db5f7b106f2dacc3801ba98994e082ca03e1dfdf7bfe57/onnxruntime-1.26.0-cp312-cp312-win_arm64.whl", hash = "sha256:54a8053410fd31fd66469bd754fcfe8a4df9f7eb44756b4b5479bf50c842d948", size = 12796647, upload-time = "2026-05-08T19:07:52.108Z" },
+]
+
+[[package]]
+name = "onnxruntime-genai"
+version = "0.14.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "onnxruntime", version = "1.26.0", source = { registry = "https://pypi.org/simple" } },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e6/ae/624358619fb0ab2c220589983b52d32ae5fd2631d7e22581cd0bc232ff74/onnxruntime_genai-0.14.1-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:c3a636ed7523ca9ead852ed183de1ed82eeba08e73e613f7f7ceb3a9f184b051", size = 3809847, upload-time = "2026-06-02T20:36:25.065Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/3c/d0c8938399f2ea13696ad85ad99a019f926edb683044eac0e3afd69bc18a/onnxruntime_genai-0.14.1-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:09053361be024625df60cdb1349a3287f3d51b312ad3e41d3473016acf7b1db8", size = 57938740, upload-time = "2026-06-02T20:36:27.792Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/71/dc72d6301a5e2693689c33d1db214d5ce492bfd1320b7e018ba49900eab9/onnxruntime_genai-0.14.1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:cd8b4e9dd59c389168c68e7144e4c0c1ed8f7784491150ab53f17db0f72259ed", size = 58585801, upload-time = "2026-06-02T20:36:31.826Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/be/b1607f976d926a57bc59587cbb0d93342ef4e22ff36131d818f9a1fe5100/onnxruntime_genai-0.14.1-cp312-cp312-win_amd64.whl", hash = "sha256:8387b9124f9bc9d179d747c61679cae084c3fd4ae1c061fd7714fac8f45f1f62", size = 2749895, upload-time = "2026-06-02T20:36:34.536Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/dd/c3fd09db178198950cfe12d599137f306ea72858c27001c5c8eb20108539/onnxruntime_genai-0.14.1-cp312-cp312-win_arm64.whl", hash = "sha256:624a657e19f3c02292daf832450fdbd540ed1c124c78b088e019ef31c7c5f70b", size = 2669826, upload-time = "2026-06-02T20:36:36.242Z" },
+]
+
+[[package]]
+name = "onnxruntime-genai-cuda"
+version = "0.14.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "onnxruntime-gpu" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/34/d12a75726f9553fe5803a4300cc9fe5028df71e43ad79ce59c17377c5ec2/onnxruntime_genai_cuda-0.14.1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:930d607a9be428b8079d87dce25ab14edb225f55da9a53164c1c5aefbe517dc3", size = 88937700, upload-time = "2026-06-02T20:33:00.915Z" },
+    { url = "https://files.pythonhosted.org/packages/35/a6/5ec25d0cf9d268fcd6280fddcd150a4e960d4b35e93d4e58f5822bece6af/onnxruntime_genai_cuda-0.14.1-cp312-cp312-win_amd64.whl", hash = "sha256:243ae1eb5f9f48b9b86b08f9c2ea8ef9459f565890f79f5ba98599488c7b0ddc", size = 29329890, upload-time = "2026-06-02T20:33:04.591Z" },
+]
+
+[[package]]
+name = "onnxruntime-gpu"
+version = "1.26.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "flatbuffers" },
@@ -2143,11 +2260,8 @@ dependencies = [
     { name = "protobuf" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/52/8b2a10e8dedf5d486332bc2b3bca0b1ed8049c0b9e4a5cced95413aadfdd/onnxruntime-1.25.1-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:66e52f7a30d1f780a34aa84d68a0a04d382d9f5b141884ecbf45b7566b9fbde9", size = 17770987, upload-time = "2026-04-27T22:00:47.985Z" },
-    { url = "https://files.pythonhosted.org/packages/3f/87/a424d2867477c42ef8c60172709281120797f7b0f1fd33cc36b24329c825/onnxruntime-1.25.1-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:a5f41779f044d1ff75593df5c10a4d311bc82563687796d5218e2685b8f9da25", size = 15871829, upload-time = "2026-04-27T21:59:39.088Z" },
-    { url = "https://files.pythonhosted.org/packages/d4/55/7819e64c515f17c86005447ede8122b974ca851255a94125e2119376f0f8/onnxruntime-1.25.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:905409e9eb2ef87f8226e073f56e71faf731c3e480ebd34952cf953730e4a4ff", size = 18024586, upload-time = "2026-04-27T22:00:05.359Z" },
-    { url = "https://files.pythonhosted.org/packages/89/36/b4f3eb5e95c66389aafd490950b5255e87c9333742cf90516eb50898e1dc/onnxruntime-1.25.1-cp312-cp312-win_amd64.whl", hash = "sha256:d4097b75b77486bb45835a8ed25b9a67976040ec6c258aeabae6aadfbdd1201c", size = 12905112, upload-time = "2026-04-27T22:00:36.478Z" },
-    { url = "https://files.pythonhosted.org/packages/38/fa/e5c43397632a399f542663ed3e3e37763ee203ba845b10b266cd2ede8925/onnxruntime-1.25.1-cp312-cp312-win_arm64.whl", hash = "sha256:b6c7aa5cae606d5c90a392679fac074b60f80025a2e83e1e90fdf882bd2a97f0", size = 12634433, upload-time = "2026-04-27T22:00:25.918Z" },
+    { url = "https://files.pythonhosted.org/packages/94/fd/59bee7cffaa435da44fefdeb63e29c61de4dbfa4b279852f59cd02c042ae/onnxruntime_gpu-1.26.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3c01119ed4d9449d60367fa8ccffcd02bd3fe736754284e4b198d131f54edad6", size = 276971796, upload-time = "2026-05-08T19:15:46.192Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/e4/9b378a5466ea0bed65e5beb8e09254973c580a6522810a38afbcc45e5105/onnxruntime_gpu-1.26.0-cp312-cp312-win_amd64.whl", hash = "sha256:5f49c44689894650990e4c8a857d2edafc276fbd79bba57ceb224bd18d25d491", size = 226548963, upload-time = "2026-05-08T19:09:34.925Z" },
 ]
 
 [[package]]
