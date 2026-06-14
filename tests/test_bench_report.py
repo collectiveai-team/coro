@@ -314,6 +314,50 @@ def test_build_report_reads_normalized_quality_summaries(tmp_path):
     assert "| IB4001 | 10.0 | 0.2100 | 0.1600 | 0.1100 |" in md
 
 
+def test_build_report_surfaces_degenerate_diarization_warning(tmp_path):
+    manifest = {
+        "timestamp": "2026-05-04T10:00:00+00:00",
+        "git_sha": "deadbeef",
+        "subcommand": "quality",
+        "workload_set": [{"item_id": "IB4001", "audio_path": "/data/IB4001.wav"}],
+        "server_health": {"startup_selection": {}},
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    quality_summary = {
+        "n_succeeded": 1,
+        "n_failed": 0,
+        "n_degenerate_diarization": 1,
+        "combined": {
+            "cpwer": {"wer": 0.30},
+            "orcwer": {"wer": 0.05},
+            "dicpwer": {"wer": 0.20},
+            "der": {"der": 0.55},
+        },
+        "per_item": [
+            {
+                "session_id": "IB4001",
+                "audio_seconds": 1837.4,
+                "cpwer": 0.30,
+                "orcwer": 0.05,
+                "dicpwer": 0.20,
+                "der": 0.55,
+                "diarization": {"ref_speakers": 4, "hyp_speakers": 1, "degenerate": True},
+            },
+        ],
+    }
+    (quality_dir / "summary.json").write_text(json.dumps(quality_summary))
+
+    report = build_report(tmp_path)
+    md = render_markdown(report)
+
+    assert any("degenerate diarization" in note for note in report.quality_footnotes)
+    assert "degenerate diarization" in md
+    assert "IB4001" in md
+
+
 def test_both_renderers_produce_consistent_session_ids():
     """Verify both renderers use the same underlying data model."""
     report = _quality_report()
