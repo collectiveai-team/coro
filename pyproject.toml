@@ -161,8 +161,9 @@ max-complexity = 10
 ]
 "asr_diar_server/bench/cli.py" = ["S108", "DTZ005"]
 "asr_diar_server/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
-# Clip utility shells out to the system ffmpeg binary by name.
+# Clip utilities shell out to the system ffmpeg binary by name.
 "asr_diar_server/bench/utils/make_ami_clip.py" = ["S603", "S607"]
+"asr_diar_server/bench/utils/make_common_voice_clips.py" = ["S603", "S607"]
 "asr_diar_server/bench/transport.py" = ["S310"]
 "asr_diar_server/bench/orchestrate.py" = [
     "S310",
