@@ -30,6 +30,12 @@ def test_nemo_diarization_gets_default_model():
     assert settings.model_diarization == "nvidia/diar_streaming_sortformer_4spk-v2"
 
 
+def test_transcript_spill_dir_defaults_none_and_reads_env(monkeypatch):
+    assert ServerSettings(_env_file=None).transcript_spill_dir is None
+    monkeypatch.setenv("ASR_DIAR_TRANSCRIPT_SPILL_DIR", "/var/lib/asr-spill")
+    assert ServerSettings(_env_file=None).transcript_spill_dir == "/var/lib/asr-spill"
+
+
 @pytest.mark.parametrize("pipeline", ["unknown", "v1", "v2", ""])
 def test_pipeline_selector_is_strict(pipeline: str):
     with pytest.raises(ValidationError):

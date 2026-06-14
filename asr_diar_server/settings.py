@@ -65,6 +65,13 @@ class ServerSettings(BaseSettings):
     diarization_device: DiarizationDevice = Field(
         default="auto", description="NeMo diarization device selection."
     )
+    transcript_spill_dir: str | None = Field(
+        default=None,
+        description="Directory for the streaming pipeline's per-request transcript "
+        "spill store. MUST be on real disk for flat host RAM: a tmpfs path (e.g. "
+        "/tmp on many systems) keeps the transcript in memory and defeats the spill. "
+        "None uses the system temp dir.",
+    )
     log_level: str = Field(default="info", description="Log level (for CLI use only).")
 
     diarization_latency: DiarizationLatencyTier = Field(
