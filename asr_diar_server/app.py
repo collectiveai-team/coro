@@ -117,6 +117,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             runtime.pipeline = StreamingPipeline(
                 asr=asr_adapter,
                 streaming_diarizer_factory=runtime.streaming_diarizer_factory,
+                spill_dir=settings.transcript_spill_dir,
             )
         else:
             runtime.pipeline = FullMemoryPipeline(asr=asr_adapter, diarization=diarization_adapter)
