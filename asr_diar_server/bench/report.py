@@ -139,6 +139,15 @@ def _load_quality(
         duration = float(item.get("audio_seconds", 0.0))
         error_str = item.get("error")
 
+        diar = item.get("diarization") or {}
+        if diar.get("degenerate"):
+            footnotes.append(
+                f"WARNING for {session_id}: degenerate diarization "
+                f"({diar.get('hyp_speakers')} hyp speaker(s) vs "
+                f"{diar.get('ref_speakers')} ref) — speaker-blind WER (ORC-WER) "
+                f"will look good regardless; check DER/cpWER."
+            )
+
         if error_str or item.get("cpwer") is None:
             err_msg = str(error_str) if error_str else "unknown error"
             footnotes.append(f"ERROR for {session_id}: {err_msg}")
