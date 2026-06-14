@@ -57,7 +57,7 @@ dev = [
     "ruff>=0.9.0",
     "pyrefly>=0.17.0",
 ]
-bench = ["meeteval>=0.4.3", "nvidia-ml-py>=12.0.0", "rich>=15.0.0"]
+bench = ["meeteval>=0.4.3", "nvidia-ml-py>=12.0.0", "rich>=15.0.0", "simplejson>=3.0.0"]
 
 [tool.uv]
 conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
