@@ -53,7 +53,6 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
-        from asr_diar_server.backends.faster_whisper import build_asr_adapter
         from asr_diar_server.backends.nemo import build_diarization_adapter
         from asr_diar_server.pipelines.streaming import StreamingPipeline
         from asr_diar_server.pipelines.full_memory import FullMemoryPipeline
@@ -68,12 +67,31 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             settings.model_dump(mode="json"),
         )
 
-        # Build ASR adapter (always required)
-        asr_adapter = build_asr_adapter(
-            settings.model_asr,
-            device=settings.asr_device,
-            compute_type=settings.asr_compute_type,
-        )
+        # Build ASR adapter (always required), dispatching on the configured backend.
+        if settings.backend_asr == "onnx-asr":
+            from asr_diar_server.backends.onnx_asr import build_onnx_asr_adapter
+
+            asr_adapter = build_onnx_asr_adapter(
+                settings.model_asr,
+                device=settings.asr_device,
+                quantization=settings.asr_quantization,
+            )
+        elif settings.backend_asr == "onnx-genai":
+            from asr_diar_server.backends.onnx_genai import build_onnx_genai_adapter
+
+            asr_adapter = build_onnx_genai_adapter(
+                settings.model_asr,
+                device=settings.asr_device,
+                quantization=settings.asr_quantization,
+            )
+        else:
+            from asr_diar_server.backends.faster_whisper import build_asr_adapter
+
+            asr_adapter = build_asr_adapter(
+                settings.model_asr,
+                device=settings.asr_device,
+                compute_type=settings.asr_compute_type,
+            )
         runtime.asr_adapter = asr_adapter
 
         # Build optional diarization adapter

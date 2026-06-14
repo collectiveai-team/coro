@@ -19,18 +19,29 @@ dependencies = [
     "faster-whisper>=1.2.0,<1.3.0",
     "lightning @ https://files.pythonhosted.org/packages/a3/2c/85eaf42c983b0cd81bcda5876da2c8e2a9fd347908666ea9855724369171/lightning-2.4.0-py3-none-any.whl",
     "nemo-toolkit[asr]>=2.7.0,<2.8.0",
+    "onnx-asr[hub]>=0.11.0",
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.27",
     "uvicorn>=0.30.0",
 ]
 
 
+# onnxruntime and onnxruntime-genai each ship as two mutually-exclusive wheels (CPU vs GPU),
+# so they are split across the existing cpu/cuda conflicting extras alongside torch.
+# onnxruntime 1.24.1 is excluded for a known onnx-asr incompatibility.
+# onnxruntime-genai powers the optional onnx-genai (nemotron streaming) backend.
 [project.optional-dependencies]
-cpu = ["torch>=2.1.0,<4.0"]
+cpu = [
+    "torch>=2.1.0,<4.0",
+    "onnxruntime>=1.22,!=1.24.1",
+    "onnxruntime-genai>=0.14.0",
+]
 cuda = [
     "nvidia-cublas-cu12>=12.0.0.0",
     "nvidia-cudnn-cu12>=9.0.0.0",
     "torch>=2.1.0,<4.0",
+    "onnxruntime-gpu>=1.22,!=1.24.1",
+    "onnxruntime-genai-cuda>=0.14.0",
 ]
 
 # Internal-only groups (PEP 735). Not exposed via pip; uv-native.
