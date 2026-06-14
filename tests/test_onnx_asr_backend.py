@@ -22,6 +22,7 @@ from asr_diar_server.backends.onnx_asr import (
     OnnxAsrASRAdapter,
     _LAST_WORD_PAD,
     convert_onnx_asr_result,
+    convert_onnx_asr_segments,
 )
 from asr_diar_server.core.types import TranscriptToken
 
@@ -172,3 +173,58 @@ async def test_adapter_omits_language_when_absent():
     await adapter.transcribe_pcm(pcm)
 
     assert "language" not in model.calls[0]
+
+
+# ---------------------------------------------------------------------------
+# VAD-segmented path (convert_onnx_asr_segments + adapter vad_enabled)
+# ---------------------------------------------------------------------------
+
+
+def _segment(start, end, tokens, timestamps, logprobs=None):
+    """A TimestampedSegmentResult-like object (segment-relative token timestamps)."""
+    return SimpleNamespace(
+        start=start, end=end, text="", tokens=tokens, timestamps=timestamps, logprobs=logprobs
+    )
+
+
+def test_convert_segments_rebases_token_times_by_segment_start():
+    """Per-segment relative timestamps become absolute via the segment start offset."""
+    segments = [
+        _segment(0.0, 1.0, [" hello", " world"], [0.0, 0.5]),
+        _segment(10.0, 11.0, [" foo", " bar"], [0.0, 0.4]),
+    ]
+    tokens = convert_onnx_asr_segments(segments)
+
+    assert [t.text for t in tokens] == [" hello", " world", " foo", " bar"]
+    # First segment starts at 0.0; second segment's tokens are offset by 10.0s.
+    assert tokens[0].start == pytest.approx(0.0)
+    assert tokens[2].start == pytest.approx(10.0)
+    assert tokens[3].start == pytest.approx(10.4)
+
+
+def test_convert_segments_empty_iterable_returns_empty():
+    assert convert_onnx_asr_segments([]) == []
+
+
+class _VadStubModel:
+    """Stub VAD model: recognize yields an iterator of segment results."""
+
+    def recognize(self, audio, **kwargs):
+        return iter(
+            [
+                _segment(0.0, 1.0, [" hello"], [0.0]),
+                _segment(5.0, 6.0, [" world"], [0.0]),
+            ]
+        )
+
+
+async def test_adapter_vad_enabled_merges_segments_with_offsets():
+    """vad_enabled adapter consumes the segment iterator and re-bases timestamps."""
+    adapter = OnnxAsrASRAdapter(_VadStubModel(), vad_enabled=True)
+    pcm = np.zeros(16000, dtype=np.int16).tobytes()
+
+    tokens = await adapter.transcribe_pcm(pcm)
+
+    assert [t.text for t in tokens] == [" hello", " world"]
+    assert tokens[0].start == pytest.approx(0.0)
+    assert tokens[1].start == pytest.approx(5.0)

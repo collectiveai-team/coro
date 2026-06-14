@@ -124,12 +124,27 @@ def convert_onnx_asr_result(result, *, offset_seconds: float = 0.0) -> list[Tran
     return out
 
 
+def convert_onnx_asr_segments(segments) -> list[TranscriptToken]:
+    """Convert VAD-segmented onnx-asr results into absolute-timed TranscriptTokens.
+
+    With VAD enabled, ``recognize`` yields one TimestampedSegmentResult per speech
+    segment whose token timestamps are *relative to the segment start*. Each
+    segment's ``start`` is the absolute offset, so tokens are re-based by it.
+    """
+    tokens: list[TranscriptToken] = []
+    for seg in segments:
+        offset = float(getattr(seg, "start", 0.0) or 0.0)
+        tokens.extend(convert_onnx_asr_result(seg, offset_seconds=offset))
+    return tokens
+
+
 class OnnxAsrASRAdapter:
     """ASRAdapter that wraps an onnx-asr timestamped model."""
 
-    def __init__(self, model) -> None:
+    def __init__(self, model, *, vad_enabled: bool = False) -> None:
         self._model = model
         self._lock = threading.Lock()
+        self._vad_enabled = vad_enabled
 
     async def transcribe_pcm(
         self,
@@ -156,6 +171,9 @@ class OnnxAsrASRAdapter:
                 return self._model.recognize(audio, **kwargs)
 
         result = await asyncio.to_thread(_recognize)
+        if self._vad_enabled:
+            # VAD adapter yields an iterator of per-speech-segment results.
+            return convert_onnx_asr_segments(result)
         return convert_onnx_asr_result(result)
 
 
@@ -182,6 +200,8 @@ def build_onnx_asr_adapter(
     device: str = "auto",
     quantization: str | None = None,
     providers=None,
+    vad_enabled: bool = False,
+    vad_threshold: float | None = None,
 ) -> OnnxAsrASRAdapter:
     """Construct and return an OnnxAsrASRAdapter.
 
@@ -191,6 +211,11 @@ def build_onnx_asr_adapter(
             when ``providers`` is not given explicitly.
         quantization: onnx-asr quantization selector, e.g. ``None`` or ``"int8"``.
         providers: Explicit onnxruntime providers; overrides ``device`` when supplied.
+        vad_enabled: Wrap the model with Silero VAD speech segmentation
+            (``onnx_asr.load_vad('silero')``). When True, ``recognize`` yields one
+            result per detected speech segment.
+        vad_threshold: Optional Silero VAD speech-probability threshold; only applied
+            when ``vad_enabled`` is True. ``None`` keeps onnx-asr's default.
 
     Returns:
         Initialised adapter ready for use.
@@ -200,15 +225,24 @@ def build_onnx_asr_adapter(
 
     resolved_providers = providers if providers is not None else _providers_for_device(device)
     logger.info(
-        "Loading onnx-asr model '%s' (quantization=%s, providers=%s).",
+        "Loading onnx-asr model '%s' (quantization=%s, providers=%s, vad=%s).",
         model_asr,
         quantization,
         resolved_providers,
+        vad_enabled,
     )
     model = onnx_asr.load_model(
         model_asr,
         quantization=quantization,
         providers=resolved_providers,
-    ).with_timestamps()
+    )
+    if vad_enabled:
+        vad = onnx_asr.load_vad("silero", providers=resolved_providers)
+        vad_options: dict = {}
+        if vad_threshold is not None:
+            vad_options["threshold"] = vad_threshold
+        model = model.with_vad(vad, **vad_options).with_timestamps()
+    else:
+        model = model.with_timestamps()
     logger.info("onnx-asr model loaded.")
-    return OnnxAsrASRAdapter(model)
+    return OnnxAsrASRAdapter(model, vad_enabled=vad_enabled)
