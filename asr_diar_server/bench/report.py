@@ -74,11 +74,13 @@ def build_report(out_dir: Path) -> BenchReport:
 
     server_health = manifest.get("server_health", {})
     startup = server_health.get("startup_selection", {})
+    # /health reports provider/model under *_provider keys; accept the older
+    # *_backend names too so the report records the run config either way.
     server_config = {
-        "asr_backend": startup.get("asr_backend", ""),
+        "asr_backend": startup.get("asr_backend") or startup.get("asr_provider", ""),
         "asr_model": startup.get("asr_model", ""),
-        "diar_backend": startup.get("diar_backend", ""),
-        "diar_model": startup.get("diar_model", ""),
+        "diar_backend": startup.get("diar_backend") or startup.get("diarization_provider", ""),
+        "diar_model": startup.get("diar_model") or startup.get("diarization_model", ""),
         "pipeline": startup.get("pipeline", ""),
         "warmup": manifest.get("warmup", False),
     }
