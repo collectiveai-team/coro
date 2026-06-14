@@ -60,6 +60,47 @@ def hyp_segments_to_stm(
     return "\n".join(lines) + "\n" if lines else ""
 
 
+def slice_stm_window(
+    stm_text: str,
+    start: float,
+    end: float,
+    *,
+    rebase: bool = True,
+) -> str:
+    """Slice an STM to the ``[start, end)`` time window for short-clip benchmarks.
+
+    Lines overlapping the window are kept and their times clamped to it; lines
+    fully outside are dropped. When ``rebase`` is True (the default for cut audio
+    that starts at 0), kept times are shifted so the window start becomes 0.0.
+    Output is sorted by (start_time, speaker), matching the other STM builders.
+    """
+    if end <= start:
+        return ""
+    shift = start if rebase else 0.0
+    lines: list[str] = []
+    for raw in stm_text.splitlines():
+        parts = raw.strip().split(maxsplit=5)
+        if len(parts) < 6:
+            continue
+        try:
+            seg_start = float(parts[3])
+            seg_end = float(parts[4])
+        except ValueError:
+            continue
+        if seg_end <= start or seg_start >= end:
+            continue
+        clamped_start = max(seg_start, start) - shift
+        clamped_end = min(seg_end, end) - shift
+        if clamped_end <= clamped_start:
+            continue
+        lines.append(
+            f"{parts[0]} {parts[1]} {parts[2]} "
+            f"{clamped_start:.3f} {clamped_end:.3f} {parts[5]}"
+        )
+    lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
 # ---------------------------------------------------------------------------
 # AMI annotation helpers
 # ---------------------------------------------------------------------------
