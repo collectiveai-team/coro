@@ -24,13 +24,26 @@ from asr_diar_server.audio import AudioInput
 from asr_diar_server.core.types import (
     SpeakerSegment,
     TranscriptDeltaEvent,
-    TranscriptDoneEvent,
     TranscriptToken,
 )
+from asr_diar_server.pipelines.done_frame import StreamingDoneFrame
 from asr_diar_server.pipelines.streaming import StreamingPipeline
 from asr_diar_server.pipelines.windowing import ASRWindowing
 
 RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
+
+
+def _render_done_frame(frame: StreamingDoneFrame) -> dict:
+    """Render a StreamingDoneFrame to its SSE bytes and parse the response dict.
+
+    Rendering also closes the frame's spill store.
+    """
+    sse = "".join(frame.iter_sse())
+    assert sse.startswith('data: {"text": "')
+    assert sse.endswith('", "type": "transcript.text.done"}\n\n')
+    outer = json.loads(sse[len("data: ") :].rstrip("\n"))
+    assert outer["type"] == "transcript.text.done"
+    return json.loads(outer["text"])
 
 # Multi-chunk fixture: 3 chunks of 0.1s (1600 bytes each) so total < window_bytes
 _CHUNK_BYTES = struct.pack("<1600h", *([0] * 1600))
@@ -167,28 +180,30 @@ async def test_stream_emits_delta_events():
 
 
 @pytest.mark.asyncio
-async def test_stream_emits_exactly_one_done_event():
+async def test_stream_emits_exactly_one_done_frame():
     tokens = [TranscriptToken(start=0.0, end=0.5, text=" hello.", probability=1.0)]
     pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
         events = [event async for event in pipeline.stream(audio)]
-    done_events = [e for e in events if isinstance(e, TranscriptDoneEvent)]
-    assert len(done_events) == 1
-    parsed = json.loads(done_events[0].text)
+    done_frames = [e for e in events if isinstance(e, StreamingDoneFrame)]
+    assert len(done_frames) == 1
+    parsed = _render_done_frame(done_frames[0])
     assert RESPONSE_KEYS.issubset(parsed.keys())
 
 
 @pytest.mark.asyncio
-async def test_stream_done_event_comes_after_deltas():
+async def test_stream_done_frame_comes_after_deltas():
     tokens = [TranscriptToken(start=0.0, end=0.5, text=" hello.", probability=1.0)]
     pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
         events = [event async for event in pipeline.stream(audio)]
     delta_indices = [i for i, e in enumerate(events) if isinstance(e, TranscriptDeltaEvent)]
-    done_indices = [i for i, e in enumerate(events) if isinstance(e, TranscriptDoneEvent)]
+    done_indices = [i for i, e in enumerate(events) if isinstance(e, StreamingDoneFrame)]
     assert done_indices[0] > delta_indices[0]
+    # Close the store opened by the frame.
+    _render_done_frame(events[done_indices[0]])
 
 
 @pytest.mark.asyncio
@@ -230,7 +245,11 @@ async def test_stream_cleans_up_temp_file_on_success():
     pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
-        _ = [event async for event in pipeline.stream(audio)]
+        events = [event async for event in pipeline.stream(audio)]
+    # Render the done frame to release its spill store.
+    for event in events:
+        if isinstance(event, StreamingDoneFrame):
+            _render_done_frame(event)
     assert audio._temp_path is None
 
 

@@ -20,6 +20,7 @@ from collections.abc import AsyncIterator
 from fastapi.responses import StreamingResponse
 
 from asr_diar_server.core.types import PipelineStreamEvent
+from asr_diar_server.pipelines.done_frame import StreamingDoneFrame
 
 _SSE_HEADERS = {
     "Cache-Control": "no-cache",
@@ -37,6 +38,12 @@ async def _sse_generator(event_source: AsyncIterator[PipelineStreamEvent]):
     """
     try:
         async for event in event_source:
+            if isinstance(event, StreamingDoneFrame):
+                # Rendered straight from the spill store, one row at a time, so
+                # the final frame never materialises the whole transcript.
+                for line in event.iter_sse():
+                    yield line
+                continue
             yield f"data: {json.dumps(dataclasses.asdict(event))}\n\n"
         yield "data: [DONE]\n\n"
     except Exception as exc:

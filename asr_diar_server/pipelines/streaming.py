@@ -8,19 +8,18 @@ full PCM buffer.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 
 from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, stream_pcm_from_file
-from asr_diar_server.core.response import build_transcription_response
 from asr_diar_server.core.protocols import ASRAdapter
-from asr_diar_server.core.types import (
-    SpeakerSegment,
-    TokenBatchEvent,
-    TranscriptDoneEvent,
-    TranscriptToken,
+from asr_diar_server.core.types import SpeakerSegment, TokenBatchEvent
+from asr_diar_server.pipelines.done_frame import StreamingDoneFrame
+from asr_diar_server.pipelines.finalizer import (
+    StreamingTranscriptFinalizer,
+    build_streaming_response,
 )
+from asr_diar_server.pipelines.transcript_store import TranscriptSpillStore
 from asr_diar_server.pipelines.windowing import ASRWindowing
 
 logger = logging.getLogger(__name__)
@@ -40,10 +39,14 @@ class StreamingPipeline:
         asr: ASRAdapter,
         windowing: ASRWindowing | None = None,
         streaming_diarizer_factory=None,
+        spill_dir: str | None = None,
     ) -> None:
         self._asr = asr
         self._windowing = windowing or ASRWindowing()
         self._streaming_diarizer_factory = streaming_diarizer_factory
+        # Directory for the per-request transcript spill store. MUST be real
+        # disk for flat RSS (on this platform /tmp is tmpfs/RAM-backed).
+        self._spill_dir = spill_dir
 
     async def transcribe(
         self,
@@ -55,6 +58,7 @@ class StreamingPipeline:
         started = time.perf_counter()
         chunk_count = 0
         diarizer_chunks = 0
+        store = TranscriptSpillStore(directory=self._spill_dir)
         try:
             path = await audio.temp_path()
             total_bytes = 0
@@ -79,7 +83,8 @@ class StreamingPipeline:
                     total_bytes += len(chunk)
                     if chunk_count == 1 or chunk_count % 10 == 0:
                         logger.info(
-                            "streaming_pipeline transcribe chunk=%d bytes=%d total_audio_s=%.2f diarizer_chunks=%d",
+                            "streaming_pipeline transcribe chunk=%d bytes=%d "
+                            "total_audio_s=%.2f diarizer_chunks=%d",
                             chunk_count,
                             len(chunk),
                             total_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE),
@@ -87,18 +92,23 @@ class StreamingPipeline:
                         )
                     yield chunk
 
-            result = await self._windowing.transcribe_chunks(
+            finalizer = StreamingTranscriptFinalizer(store)
+            async for event in self._windowing.stream_chunks(
                 _chunks(),
                 asr=self._asr,
                 language=language,
                 prompt=prompt,
-            )
+            ):
+                if isinstance(event, TokenBatchEvent):
+                    finalizer.add_tokens(event.tokens)
+            finalizer.finish()
             duration = total_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
 
             timeline: list[SpeakerSegment] = []
             if diarizer is not None:
                 logger.info(
-                    "streaming_pipeline transcribe diarizer finalize start chunks=%d total_audio_s=%.2f",
+                    "streaming_pipeline transcribe diarizer finalize start "
+                    "chunks=%d total_audio_s=%.2f",
                     getattr(diarizer, "processed_chunks", diarizer_chunks),
                     duration,
                 )
@@ -109,14 +119,15 @@ class StreamingPipeline:
                 )
 
             logger.info(
-                "streaming_pipeline transcribe complete elapsed=%.3fs chunks=%d total_audio_s=%.2f tokens=%d timeline=%d",
+                "streaming_pipeline transcribe complete elapsed=%.3fs chunks=%d "
+                "total_audio_s=%.2f segments=%d timeline=%d",
                 time.perf_counter() - started,
                 chunk_count,
                 duration,
-                len(result.tokens),
+                store.segment_count,
                 len(timeline),
             )
-            return build_transcription_response(result.tokens, timeline, duration)
+            return build_streaming_response(store, timeline)
         except Exception:
             logger.exception(
                 "streaming_pipeline transcribe failed elapsed=%.3fs chunks=%d diarizer_chunks=%d",
@@ -126,6 +137,7 @@ class StreamingPipeline:
             )
             raise
         finally:
+            store.close()
             await audio.cleanup()
 
     async def stream(
@@ -138,6 +150,8 @@ class StreamingPipeline:
         started = time.perf_counter()
         chunk_count = 0
         diarizer_chunks = 0
+        store = TranscriptSpillStore(directory=self._spill_dir)
+        store_released = False
         try:
             path = await audio.temp_path()
             total_bytes = 0
@@ -146,7 +160,9 @@ class StreamingPipeline:
                 if self._streaming_diarizer_factory is not None
                 else None
             )
-            logger.info("streaming_pipeline sse start path=%s diarizer=%s", path, diarizer is not None)
+            logger.info(
+                "streaming_pipeline sse start path=%s diarizer=%s", path, diarizer is not None
+            )
 
             async def _chunks():
                 nonlocal total_bytes, chunk_count, diarizer_chunks
@@ -158,7 +174,8 @@ class StreamingPipeline:
                     total_bytes += len(chunk)
                     if chunk_count == 1 or chunk_count % 10 == 0:
                         logger.info(
-                            "streaming_pipeline sse chunk=%d bytes=%d total_audio_s=%.2f diarizer_chunks=%d",
+                            "streaming_pipeline sse chunk=%d bytes=%d "
+                            "total_audio_s=%.2f diarizer_chunks=%d",
                             chunk_count,
                             len(chunk),
                             total_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE),
@@ -166,7 +183,7 @@ class StreamingPipeline:
                         )
                     yield chunk
 
-            tokens: list[TranscriptToken] = []
+            finalizer = StreamingTranscriptFinalizer(store)
             async for event in self._windowing.stream_chunks(
                 _chunks(),
                 asr=self._asr,
@@ -174,14 +191,10 @@ class StreamingPipeline:
                 prompt=prompt,
             ):
                 if isinstance(event, TokenBatchEvent):
-                    tokens.extend(event.tokens)
-                    logger.info(
-                        "streaming_pipeline sse token_batch tokens=%d total_tokens=%d",
-                        len(event.tokens),
-                        len(tokens),
-                    )
+                    finalizer.add_tokens(event.tokens)
                     continue
                 yield event
+            finalizer.finish()
 
             duration = total_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
 
@@ -193,19 +206,24 @@ class StreamingPipeline:
                     duration,
                 )
                 timeline = diarizer.finalize()
-                logger.info("streaming_pipeline sse diarizer finalize complete timeline=%d", len(timeline))
+                logger.info(
+                    "streaming_pipeline sse diarizer finalize complete timeline=%d",
+                    len(timeline),
+                )
 
             logger.info(
-                "streaming_pipeline sse complete elapsed=%.3fs chunks=%d total_audio_s=%.2f tokens=%d timeline=%d",
+                "streaming_pipeline sse complete elapsed=%.3fs chunks=%d "
+                "total_audio_s=%.2f segments=%d timeline=%d",
                 time.perf_counter() - started,
                 chunk_count,
                 duration,
-                len(tokens),
+                store.segment_count,
                 len(timeline),
             )
-            yield TranscriptDoneEvent(
-                text=json.dumps(build_transcription_response(tokens, timeline, duration)),
-            )
+            # Ownership of the store passes to the frame, which closes it once
+            # rendered; the final transcript is never materialised in memory.
+            store_released = True
+            yield StreamingDoneFrame(store=store, timeline=timeline)
         except Exception:
             logger.exception(
                 "streaming_pipeline sse failed elapsed=%.3fs chunks=%d diarizer_chunks=%d",
@@ -215,4 +233,6 @@ class StreamingPipeline:
             )
             raise
         finally:
+            if not store_released:
+                store.close()
             await audio.cleanup()

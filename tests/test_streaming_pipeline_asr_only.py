@@ -15,10 +15,17 @@ import pytest
 from asr_diar_server.audio import AudioInput
 from asr_diar_server.core.types import (
     TranscriptDeltaEvent,
-    TranscriptDoneEvent,
     TranscriptToken,
 )
+from asr_diar_server.pipelines.done_frame import StreamingDoneFrame
 from asr_diar_server.pipelines.streaming import StreamingPipeline
+
+
+def _render_done_frame(frame: StreamingDoneFrame) -> dict:
+    """Render the done frame's SSE bytes (and close its store), returning the dict."""
+    sse = "".join(frame.iter_sse())
+    outer = json.loads(sse[len("data: ") :].rstrip("\n"))
+    return json.loads(outer["text"])
 
 RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
 
@@ -109,14 +116,14 @@ async def test_asr_only_stream_emits_delta_events():
 
 @pytest.mark.asyncio
 async def test_asr_only_stream_done_has_empty_diarization_when_no_tokens():
-    """Done event payload has empty diarization list when no tokens and no diarizer."""
+    """Done frame payload has empty diarization list when no tokens and no diarizer."""
     pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=[]))
     audio = AudioInput(b"audio")
     with _mock_stream():
         events = [e async for e in pipeline.stream(audio)]
-    done = [e for e in events if isinstance(e, TranscriptDoneEvent)]
+    done = [e for e in events if isinstance(e, StreamingDoneFrame)]
     assert len(done) == 1
-    parsed = json.loads(done[0].text)
+    parsed = _render_done_frame(done[0])
     assert parsed["diarization"] == []
 
 
@@ -126,7 +133,10 @@ async def test_asr_only_stream_cleanup_on_success():
     pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=tokens))
     audio = AudioInput(b"audio")
     with _mock_stream():
-        _ = [e async for e in pipeline.stream(audio)]
+        events = [e async for e in pipeline.stream(audio)]
+    for event in events:
+        if isinstance(event, StreamingDoneFrame):
+            _render_done_frame(event)
     assert audio._temp_path is None
 
 
