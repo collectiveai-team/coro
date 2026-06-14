@@ -358,6 +358,32 @@ def test_build_report_surfaces_degenerate_diarization_warning(tmp_path):
     assert "IB4001" in md
 
 
+def test_build_report_reads_provider_keys_from_health(tmp_path):
+    """/health uses *_provider keys; the report must still record the config."""
+    manifest = {
+        "subcommand": "quality",
+        "server_health": {
+            "startup_selection": {
+                "pipeline": "full-memory",
+                "asr_provider": "faster-whisper",
+                "asr_model": "openai/whisper-medium",
+                "diarization_provider": "nemo",
+                "diarization_model": "nvidia/diar_streaming_sortformer_4spk-v2",
+            },
+        },
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+    report = build_report(tmp_path)
+
+    assert report.server_config["asr_backend"] == "faster-whisper"
+    assert report.server_config["diar_backend"] == "nemo"
+    assert report.server_config["diar_model"] == "nvidia/diar_streaming_sortformer_4spk-v2"
+    md = render_markdown(report)
+    assert "faster-whisper" in md
+    assert "nemo" in md
+
+
 def test_both_renderers_produce_consistent_session_ids():
     """Verify both renderers use the same underlying data model."""
     report = _quality_report()
