@@ -74,54 +74,93 @@ def _group_subwords(
     return groups
 
 
-def convert_onnx_asr_result(result, *, offset_seconds: float = 0.0) -> list[TranscriptToken]:
+def _words_from_text(
+    text: str, start: float, span_end: float | None
+) -> list[TranscriptToken]:
+    """Synthesise word-level tokens from a text-only result (no token timestamps).
+
+    onnx-asr's Whisper exposes ``text`` but leaves ``tokens``/``timestamps`` None, so
+    word timings are spread evenly across ``[start, span_end]`` (the VAD segment span,
+    or the whole clip). Each word keeps a leading space so the response builder's
+    ``"".join(...)`` reconstructs spaced text.
+    """
+    words = text.split()
+    if not words:
+        return []
+    step = (span_end - start) / len(words) if span_end and span_end > start else _LAST_WORD_PAD
+    out: list[TranscriptToken] = []
+    for i, word in enumerate(words):
+        word_start = start + i * step
+        word_end = start + (i + 1) * step
+        out.append(
+            TranscriptToken(
+                start=round(word_start, 3),
+                end=round(max(word_end, word_start), 3),
+                text=" " + word,
+                probability=None,
+            )
+        )
+    return out
+
+
+def convert_onnx_asr_result(
+    result, *, offset_seconds: float = 0.0, span_end: float | None = None
+) -> list[TranscriptToken]:
     """Convert an onnx-asr TimestampedResult into word-level TranscriptTokens.
 
+    NeMo models (Parakeet/Canary) emit parallel ``tokens``/``timestamps`` lists that
+    are grouped into words. onnx-asr's Whisper instead leaves those None and only
+    fills ``text``; that case falls back to ``_words_from_text`` (timings spread over
+    ``[offset_seconds, span_end]``).
+
     Args:
-        result: Object with ``tokens``, ``timestamps`` and optional ``logprobs`` lists.
+        result: Object with ``tokens``/``timestamps``/``logprobs`` lists or a ``text``.
         offset_seconds: Timestamp offset added to each word's start/end.
+        span_end: Absolute end of the result's audio span (used by the text fallback).
 
     Returns:
-        List of TranscriptToken (one per reconstructed word). Each word's ``start`` is its
-        first subword's emission time; its ``end`` is the next word's start (the final word
-        is padded by ``_LAST_WORD_PAD``). ``probability`` is ``exp(mean(logprobs))`` over the
-        word's subwords, or None when log-probabilities are unavailable.
+        List of TranscriptToken (one per reconstructed word). For the token path each
+        word's ``start`` is its first subword's emission time and its ``end`` is the next
+        word's start (final word padded by ``_LAST_WORD_PAD``); ``probability`` is
+        ``exp(mean(logprobs))`` or None.
 
     """
     tokens = getattr(result, "tokens", None)
     timestamps = getattr(result, "timestamps", None)
     logprobs = getattr(result, "logprobs", None)
 
-    if not tokens or not timestamps:
-        return []
+    if tokens and timestamps:
+        groups = _group_subwords(tokens, timestamps, logprobs)
+        if groups:
+            out: list[TranscriptToken] = []
+            for i, group in enumerate(groups):
+                start = group["start"] + offset_seconds
+                if i + 1 < len(groups):
+                    end = groups[i + 1]["start"] + offset_seconds
+                else:
+                    end = group["start"] + _LAST_WORD_PAD + offset_seconds
+                end = max(end, start)
 
-    groups = _group_subwords(tokens, timestamps, logprobs)
-    if not groups:
-        return []
+                word_logprobs = group["logprobs"]
+                probability = (
+                    math.exp(sum(word_logprobs) / len(word_logprobs))
+                    if word_logprobs
+                    else None
+                )
 
-    out: list[TranscriptToken] = []
-    for i, group in enumerate(groups):
-        start = group["start"] + offset_seconds
-        if i + 1 < len(groups):
-            end = groups[i + 1]["start"] + offset_seconds
-        else:
-            end = group["start"] + _LAST_WORD_PAD + offset_seconds
-        end = max(end, start)
+                out.append(
+                    TranscriptToken(
+                        start=round(start, 3),
+                        end=round(end, 3),
+                        text=group["text"],
+                        probability=probability,
+                    )
+                )
+            return out
 
-        word_logprobs = group["logprobs"]
-        probability = (
-            math.exp(sum(word_logprobs) / len(word_logprobs)) if word_logprobs else None
-        )
-
-        out.append(
-            TranscriptToken(
-                start=round(start, 3),
-                end=round(end, 3),
-                text=group["text"],
-                probability=probability,
-            )
-        )
-    return out
+    # Text-only result (e.g. onnx-asr Whisper): no token timestamps.
+    text = (getattr(result, "text", "") or "").strip()
+    return _words_from_text(text, offset_seconds, span_end)
 
 
 def convert_onnx_asr_segments(segments) -> list[TranscriptToken]:
@@ -134,7 +173,11 @@ def convert_onnx_asr_segments(segments) -> list[TranscriptToken]:
     tokens: list[TranscriptToken] = []
     for seg in segments:
         offset = float(getattr(seg, "start", 0.0) or 0.0)
-        tokens.extend(convert_onnx_asr_result(seg, offset_seconds=offset))
+        seg_end = getattr(seg, "end", None)
+        span_end = float(seg_end) if seg_end is not None else None
+        tokens.extend(
+            convert_onnx_asr_result(seg, offset_seconds=offset, span_end=span_end)
+        )
     return tokens
 
 
@@ -174,7 +217,10 @@ class OnnxAsrASRAdapter:
         if self._vad_enabled:
             # VAD adapter yields an iterator of per-speech-segment results.
             return convert_onnx_asr_segments(result)
-        return convert_onnx_asr_result(result)
+        # Non-VAD: a single result spanning the whole clip; pass its duration so the
+        # text-only (Whisper) fallback can spread word timings across it.
+        duration = len(audio) / _SAMPLE_RATE
+        return convert_onnx_asr_result(result, span_end=duration)
 
 
 def _providers_for_device(device: str):
