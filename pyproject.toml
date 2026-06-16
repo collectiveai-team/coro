@@ -30,6 +30,10 @@ dependencies = [
 # so they are split across the existing cpu/cuda conflicting extras alongside torch.
 # onnxruntime 1.24.1 is excluded for a known onnx-asr incompatibility.
 # onnxruntime-genai powers the optional onnx-genai (nemotron streaming) backend.
+# faster-whisper unconditionally requires `onnxruntime` (its Silero VAD); under the
+# cuda extra that CPU wheel installs alongside onnxruntime-gpu and shadows the GPU
+# build at import time. tool.uv.dependency-metadata (below) strips that dependency so
+# the runtime is supplied solely by the selected extra (onnxruntime / onnxruntime-gpu).
 [project.optional-dependencies]
 cpu = [
     "torch>=2.1.0,<4.0",
@@ -62,6 +66,20 @@ bench = ["meeteval>=0.4.3", "nvidia-ml-py>=12.0.0", "rich>=15.0.0", "simplejson>
 [tool.uv]
 conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
 default-groups = ["dev"]
+
+# Drop faster-whisper's unconditional `onnxruntime` dep so it does not pull the CPU
+# wheel into the cuda resolution (where it would shadow onnxruntime-gpu). The runtime
+# is provided by the cpu extra (onnxruntime) or cuda extra (onnxruntime-gpu). Mirrors
+# faster-whisper 1.2.x base requires-dist minus onnxruntime; re-check on upgrade.
+[[tool.uv.dependency-metadata]]
+name = "faster-whisper"
+requires-dist = [
+    "ctranslate2<5,>=4.0",
+    "huggingface-hub>=0.21",
+    "tokenizers<1,>=0.13",
+    "av>=11",
+    "tqdm",
+]
 
 [tool.uv.sources]
 torch = [{ index = "torch-cpu", extra = "cpu" }]
