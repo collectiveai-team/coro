@@ -6,9 +6,9 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [project]
-name = "asr_diar_server"
+name = "coro"
 version = "0.1.0"
-description = "Packaged ASR diarization server with versioned transcription endpoints."
+description = "Coro: OpenAI-compatible ASR + speaker-diarization server with pluggable backends."
 requires-python = ">=3.12, <3.13"
 classifiers = [
     "Operating System :: MacOS",
@@ -72,26 +72,13 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [project.scripts]
-asr-diar-server = "asr_diar_server.cli:main"
-asr-diar-bench = "asr_diar_server.bench.cli:main"
+coro = "coro.cli:main"
+coro-bench = "coro.bench.cli:main"
 
 # MARK: Ruff
 [tool.ruff]
 line-length = 100
-exclude = [
-    # Prototype scripts — excluded from active verification per PRD.
-    "custom_server.py",
-    "custom_server_chunked.py",
-    "run_transcription.py",
-    "run_dev.py",
-    "custom_client.py",
-    "tools/",
-    ".worktrees/",
-    ".scratch/",
-    # Legacy top-level tests that import from prototype scripts.
-    "test_batch_diarization.py",
-    "test_no_overlap.py",
-]
+exclude = [".worktrees/"]
 
 [tool.ruff.lint]
 select = [
@@ -145,12 +132,12 @@ max-complexity = 10
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "D"]
 # FastAPI routes use the idiomatic `= File(...)` / `= Form(...)` default style.
-"asr_diar_server/api/v1/transcriptions.py" = ["FAST002", "B008"]
-"asr_diar_server/audio.py" = ["C901"]
+"coro/api/v1/transcriptions.py" = ["FAST002", "B008"]
+"coro/audio.py" = ["C901"]
 # Bench/CLI tools use subprocess calls with partial paths (system tools).
 # PTH123/PTH108 — /proc reads use builtins; SIM105 — benchmark exception swallowing is intentional.
 # C901 — _run_rep is naturally complex due to benchmark sampling orchestration.
-"asr_diar_server/bench/run.py" = [
+"coro/bench/run.py" = [
     "S603",
     "S607",
     "S110",
@@ -159,10 +146,10 @@ max-complexity = 10
     "SIM105",
     "C901",
 ]
-"asr_diar_server/bench/cli.py" = ["S108", "DTZ005"]
-"asr_diar_server/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
-"asr_diar_server/bench/transport.py" = ["S310"]
-"asr_diar_server/bench/orchestrate.py" = [
+"coro/bench/cli.py" = ["S108", "DTZ005"]
+"coro/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
+"coro/bench/transport.py" = ["S310"]
+"coro/bench/orchestrate.py" = [
     "S310",
     "S607",
     "S110",
@@ -170,8 +157,8 @@ max-complexity = 10
     "UP017",
 ]
 # Settings and CLI use 0.0.0.0 intentionally.
-"asr_diar_server/settings.py" = ["S104"]
-"asr_diar_server/cli.py" = ["S104"]
+"coro/settings.py" = ["S104"]
+"coro/cli.py" = ["S104"]
 
 
 # MARK: Pyrefly
@@ -182,16 +169,7 @@ project-excludes = [
     "**/venv/**/*",
     "**/.venv/**/*",
     "**/.uv_cache/**/*",
-    # Prototype scripts — excluded from active verification per PRD.
-    "custom_server.py",
-    "custom_server_chunked.py",
-    "run_transcription.py",
-    "custom_client.py",
-    "tools/**",
     ".worktrees/**",
-    ".scratch/**",
-    "test_batch_diarization.py",
-    "test_no_overlap.py",
 ]
 use-ignore-files = false
 disable-project-excludes-heuristics = true

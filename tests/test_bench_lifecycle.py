@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from asr_diar_server.bench.cli import parse_args
+from coro.bench.cli import parse_args
 
 
 class TestCliMutualExclusivity:
@@ -128,19 +128,19 @@ class TestCliAudioFlags:
 
 class TestBenchAttachedServer:
     def test_returns_given_url(self):
-        from asr_diar_server.bench.server_lifecycle import BenchAttachedServer
+        from coro.bench.server_lifecycle import BenchAttachedServer
 
         handle = BenchAttachedServer("http://localhost:9999", pid=12345)
         assert handle.base_url == "http://localhost:9999"
 
     def test_returns_given_pid(self):
-        from asr_diar_server.bench.server_lifecycle import BenchAttachedServer
+        from coro.bench.server_lifecycle import BenchAttachedServer
 
         handle = BenchAttachedServer("http://localhost:9999", pid=12345)
         assert handle.server_pid == 12345
 
     def test_context_manager_noop(self):
-        from asr_diar_server.bench.server_lifecycle import BenchAttachedServer
+        from coro.bench.server_lifecycle import BenchAttachedServer
 
         handle = BenchAttachedServer("http://localhost:9999", pid=12345)
         with handle as h:
@@ -149,7 +149,7 @@ class TestBenchAttachedServer:
 
 class TestBenchManagedServer:
     def test_spawns_subprocess_and_polls_health(self):
-        from asr_diar_server.bench.server_lifecycle import BenchManagedServer
+        from coro.bench.server_lifecycle import BenchManagedServer
 
         managed = BenchManagedServer(
             asr_backend="faster-whisper",
@@ -162,8 +162,8 @@ class TestBenchManagedServer:
         mock_proc = MagicMock()
         mock_proc.pid = 55555
         mock_proc.poll.return_value = None
-        popen = "asr_diar_server.bench.server_lifecycle.subprocess.Popen"
-        health = "asr_diar_server.bench.server_lifecycle.poll_health"
+        popen = "coro.bench.server_lifecycle.subprocess.Popen"
+        health = "coro.bench.server_lifecycle.poll_health"
         with patch(popen, return_value=mock_proc), \
              patch(health):
             with managed as handle:
@@ -173,7 +173,7 @@ class TestBenchManagedServer:
             mock_proc.wait.assert_called()
 
     def test_terminates_on_exception(self):
-        from asr_diar_server.bench.server_lifecycle import BenchManagedServer
+        from coro.bench.server_lifecycle import BenchManagedServer
 
         managed = BenchManagedServer(
             asr_backend="faster-whisper",
@@ -186,8 +186,8 @@ class TestBenchManagedServer:
         mock_proc = MagicMock()
         mock_proc.pid = 55555
         mock_proc.poll.return_value = None
-        popen = "asr_diar_server.bench.server_lifecycle.subprocess.Popen"
-        health = "asr_diar_server.bench.server_lifecycle.poll_health"
+        popen = "coro.bench.server_lifecycle.subprocess.Popen"
+        health = "coro.bench.server_lifecycle.poll_health"
         with patch(popen, return_value=mock_proc), \
              patch(health), \
              pytest.raises(RuntimeError), \
@@ -197,7 +197,7 @@ class TestBenchManagedServer:
         mock_proc.wait.assert_called()
 
     def test_env_vars_set(self):
-        from asr_diar_server.bench.server_lifecycle import BenchManagedServer
+        from coro.bench.server_lifecycle import BenchManagedServer
 
         managed = BenchManagedServer(
             asr_backend="faster-whisper",
@@ -208,18 +208,18 @@ class TestBenchManagedServer:
             port=19999,
         )
         env = managed._build_env()
-        assert env["ASR_DIAR_BACKEND_ASR"] == "faster-whisper"
-        assert env["ASR_DIAR_MODEL_ASR"] == "openai/whisper-medium"
-        assert env["ASR_DIAR_BACKEND_DIARIZATION"] == "nemo"
-        assert env["ASR_DIAR_MODEL_DIARIZATION"] == "nvidia/some-model"
-        assert env["ASR_DIAR_PIPELINE"] == "streaming"
-        assert env["ASR_DIAR_PORT"] == "19999"
-        assert env["ASR_DIAR_WARMUP"] == "enabled"
+        assert env["CORO_BACKEND_ASR"] == "faster-whisper"
+        assert env["CORO_MODEL_ASR"] == "openai/whisper-medium"
+        assert env["CORO_BACKEND_DIARIZATION"] == "nemo"
+        assert env["CORO_MODEL_DIARIZATION"] == "nvidia/some-model"
+        assert env["CORO_PIPELINE"] == "streaming"
+        assert env["CORO_PORT"] == "19999"
+        assert env["CORO_WARMUP"] == "enabled"
 
 
 class TestPollHealth:
     def test_polls_until_ready(self):
-        from asr_diar_server.bench.server_lifecycle import poll_health
+        from coro.bench.server_lifecycle import poll_health
 
         call_count = 0
 
@@ -230,18 +230,18 @@ class TestPollHealth:
                 return {"ready": False, "warmup_ready": False}
             return {"ready": True, "warmup_ready": True}
 
-        getter = "asr_diar_server.bench.server_lifecycle._get_health_json"
+        getter = "coro.bench.server_lifecycle._get_health_json"
         with patch(getter, side_effect=fake_get_json):
             poll_health("http://localhost:8000", timeout=5, interval=0.01)
         assert call_count == 3
 
     def test_raises_on_timeout(self):
-        from asr_diar_server.bench.server_lifecycle import poll_health
+        from coro.bench.server_lifecycle import poll_health
 
         def fake_get_json(url):
             return {"ready": False, "warmup_ready": False}
 
-        getter = "asr_diar_server.bench.server_lifecycle._get_health_json"
+        getter = "coro.bench.server_lifecycle._get_health_json"
         with patch(getter, side_effect=fake_get_json), \
              pytest.raises(TimeoutError, match="warmup"):
             poll_health("http://localhost:8000", timeout=0.05, interval=0.01)
@@ -249,7 +249,7 @@ class TestPollHealth:
 
 class TestFindFreePort:
     def test_returns_int(self):
-        from asr_diar_server.bench.server_lifecycle import find_free_port
+        from coro.bench.server_lifecycle import find_free_port
 
         port = find_free_port()
         assert isinstance(port, int)

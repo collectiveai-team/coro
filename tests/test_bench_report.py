@@ -1,4 +1,4 @@
-"""Tests for asr_diar_server.bench.report module."""
+"""Tests for coro.bench.report module."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from asr_diar_server.bench.report import (
+from coro.bench.report import (
     BenchReport,
     PerformanceRow,
     QualityRow,
@@ -63,7 +63,7 @@ def _quality_report(**kwargs) -> BenchReport:
         ),
         quality_footnotes=[],
         performance_rows=[],
-        versions={"asr_diar_server": "0.1.0"},
+        versions={"coro": "0.1.0"},
         cli_args=["quality", "--ami-meetings", "IB4001", "IB4002"],
     )
     defaults.update(kwargs)
@@ -107,7 +107,7 @@ def _performance_report(**kwargs) -> BenchReport:
                 ttft=None,
             ),
         ],
-        versions={"asr_diar_server": "0.1.0"},
+        versions={"coro": "0.1.0"},
         cli_args=["performance", "--ami-meetings", "IB4001"],
     )
     defaults.update(kwargs)
@@ -218,7 +218,7 @@ def test_build_report_reads_manifest_and_summaries(tmp_path):
                 "pipeline": "full-memory",
             },
         },
-        "versions": {"asr_diar_server": "0.1.0"},
+        "versions": {"coro": "0.1.0"},
         "cli_args": ["quality", "--ami-meetings", "IB4001"],
         "hostname": "testhost",
     }

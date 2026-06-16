@@ -13,10 +13,10 @@ import wave
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from asr_diar_server.api.v1.transcriptions import ResponseFormat
-from asr_diar_server.app import create_app
-from asr_diar_server.runtime import RuntimeState
-from asr_diar_server.settings import ServerSettings
+from coro.api.v1.transcriptions import ResponseFormat
+from coro.app import create_app
+from coro.runtime import RuntimeState
+from coro.settings import ServerSettings
 
 
 def test_response_format_enum_has_json_members():
@@ -38,7 +38,7 @@ def test_response_format_enum_has_unsupported_members():
 
 def test_response_format_enum_json_like_is_iterable():
     """JSON-like formats can be determined from the Enum without a hard-coded set."""
-    from asr_diar_server.api.v1.transcriptions import _JSON_LIKE_FORMATS
+    from coro.api.v1.transcriptions import _JSON_LIKE_FORMATS
     assert ResponseFormat.JSON in _JSON_LIKE_FORMATS
     assert ResponseFormat.VERBOSE_JSON in _JSON_LIKE_FORMATS
     assert ResponseFormat.JSON_VERBOSE in _JSON_LIKE_FORMATS

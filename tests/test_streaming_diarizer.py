@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 
-from asr_diar_server.core.types import SpeakerSegment
+from coro.core.types import SpeakerSegment
 
 SAMPLE_RATE = 16000
 BYTES_PER_SAMPLE = 2
@@ -122,7 +122,7 @@ def mock_post_processor():
 
 @pytest.fixture()
 def diarizer(mock_model, mock_preprocessor, mock_post_processor):
-    from asr_diar_server.backends.nemo_streaming import StreamingDiarizer
+    from coro.backends.nemo_streaming import StreamingDiarizer
 
     return StreamingDiarizer(
         mock_model,
@@ -142,7 +142,7 @@ def diarizer(mock_model, mock_preprocessor, mock_post_processor):
 def test_constructor_initializes_streaming_state(
     mock_model, mock_preprocessor, mock_post_processor,
 ):
-    from asr_diar_server.backends.nemo_streaming import StreamingDiarizer
+    from coro.backends.nemo_streaming import StreamingDiarizer
 
     StreamingDiarizer(
         mock_model,
@@ -342,7 +342,7 @@ def test_finalize_empty_buffer_returns_empty(diarizer, mock_model, mock_post_pro
 
 
 def test_two_instances_independent(mock_model, mock_preprocessor, mock_post_processor):
-    from asr_diar_server.backends.nemo_streaming import StreamingDiarizer
+    from coro.backends.nemo_streaming import StreamingDiarizer
 
     mock_model2 = _make_mock_model()
 
@@ -392,7 +392,7 @@ def test_preprocessor_called_with_kwargs_only(diarizer, mock_model, mock_preproc
 def test_total_preds_never_none_on_construction(mock_model, mock_preprocessor, mock_post_processor):
     """total_preds must be a (1, 0, n_spk) zero tensor at construction time,
     not None — torch.cat rejects None elements."""
-    from asr_diar_server.backends.nemo_streaming import StreamingDiarizer
+    from coro.backends.nemo_streaming import StreamingDiarizer
 
     d = StreamingDiarizer(
         mock_model,
@@ -412,7 +412,7 @@ def test_total_preds_never_none_on_construction(mock_model, mock_preprocessor, m
 def test_length_tensor_on_same_device_as_audio(mock_model, mock_preprocessor, mock_post_processor):
     """The length tensor passed to the preprocessor must be on the model's device
     to avoid cross-device matmul errors."""
-    from asr_diar_server.backends.nemo_streaming import StreamingDiarizer
+    from coro.backends.nemo_streaming import StreamingDiarizer
 
     device = torch.device("cpu")
     mock_model.device = device
@@ -434,7 +434,7 @@ def test_length_tensor_on_same_device_as_audio(mock_model, mock_preprocessor, mo
 def test_default_post_process_returns_speaker_segments(mock_model):
     """_default_post_process must return SpeakerSegments without relying on the
     post_processor override — exercises ts_vad_post_processing integration."""
-    from asr_diar_server.backends.nemo_streaming import StreamingDiarizer
+    from coro.backends.nemo_streaming import StreamingDiarizer
 
     mock_preprocessor = _make_mock_preprocessor()
     # No post_processor — forces _default_post_process path

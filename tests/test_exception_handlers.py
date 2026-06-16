@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from asr_diar_server.api.exceptions import TranscriptionValidationError
-from asr_diar_server.app import create_app
-from asr_diar_server.settings import ServerSettings
+from coro.api.exceptions import TranscriptionValidationError
+from coro.app import create_app
+from coro.settings import ServerSettings
 
 
 @pytest.mark.asyncio

@@ -8,9 +8,9 @@ import logging
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from asr_diar_server.app import create_app
-from asr_diar_server.runtime import RuntimeState
-from asr_diar_server.settings import ServerSettings
+from coro.app import create_app
+from coro.runtime import RuntimeState
+from coro.settings import ServerSettings
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def app(test_settings):
     """Create a test app with a fake RuntimeState injected (no real model)."""
     from fastapi import FastAPI
 
-    from asr_diar_server.app import create_app
+    from coro.app import create_app
 
     application: FastAPI = create_app(test_settings)
     # Inject RuntimeState directly — bypasses lifespan and avoids real model init.
@@ -66,17 +66,17 @@ async def test_health_not_ready_when_no_asr_adapter(app):
 
 @pytest.mark.asyncio
 async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
-    """ASR_DIAR_WARMUP=disabled skips Server Warmup and reports ready."""
+    """CORO_WARMUP=disabled skips Server Warmup and reports ready."""
     from unittest.mock import patch
 
     from starlette.testclient import TestClient
 
-    with patch("asr_diar_server.backends.faster_whisper.build_asr_adapter") as mock_build:
+    with patch("coro.backends.faster_whisper.build_asr_adapter") as mock_build:
         mock_build.return_value = object()
         settings = ServerSettings(warmup="disabled")
         application = create_app(settings)
 
-        with caplog.at_level(logging.WARNING, logger="asr_diar_server.app"), \
+        with caplog.at_level(logging.WARNING, logger="coro.app"), \
              TestClient(application) as client:
             response = client.get("/health")
 
@@ -92,13 +92,13 @@ def test_warmup_failure_fails_server_startup():
 
     from starlette.testclient import TestClient
 
-    with patch("asr_diar_server.backends.faster_whisper.build_asr_adapter") as mock_build:
+    with patch("coro.backends.faster_whisper.build_asr_adapter") as mock_build:
         mock_build.return_value = object()
         settings = ServerSettings(warmup="enabled")
         application = create_app(settings)
 
         with patch(
-            "asr_diar_server.pipelines.full_memory.FullMemoryPipeline.transcribe",
+            "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
             new_callable=AsyncMock,
             side_effect=RuntimeError("warmup failed"),
         ), pytest.raises(RuntimeError, match="warmup failed"), TestClient(application):

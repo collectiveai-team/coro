@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from asr_diar_server.core.response import _build_words_for_segment, build_transcription_response
-from asr_diar_server.core.types import (
+from coro.core.response import _build_words_for_segment, build_transcription_response
+from coro.core.types import (
     SpeakerSegment,
     TranscriptSegment,
     TranscriptToken,

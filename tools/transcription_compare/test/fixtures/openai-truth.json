@@ -1,9 +1,0 @@
-{
-  "text": "Crónica de Murcia. Radio Nacional de España. Luisa Núñez Andrea Brancina.",
-  "segments": [
-    { "type": "transcript.text.segment", "text": " Crónica de Murcia.", "speaker": "A", "start": 0.0, "end": 1.05, "id": "seg_0" },
-    { "type": "transcript.text.segment", "text": " Radio Nacional de España.", "speaker": "A", "start": 1.4, "end": 2.7, "id": "seg_1" },
-    { "type": "transcript.text.segment", "text": " Luisa Núñez Andrea Brancina.", "speaker": "B", "start": 12.15, "end": 18.7, "id": "seg_2" },
-    { "type": "transcript.text.segment", "text": " Es una experiencia única.", "speaker": "B", "start": 18.75, "end": 19.7, "id": "seg_3" }
-  ]
-}

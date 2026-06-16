@@ -1,4 +1,4 @@
-"""Tests for asr_diar_server.bench.stm and vendored warmup audio.
+"""Tests for coro.bench.stm and vendored warmup audio.
 
 Issue 01: Vendor JFK warmup audio and extract STM library module.
 """
@@ -15,12 +15,12 @@ class TestWarmupAudioAsset:
     """Vendored JFK WAV is loadable as 16 kHz mono."""
 
     def test_jfk_wav_exists(self):
-        from asr_diar_server.bench.data import WARMUP_AUDIO_PATH
+        from coro.bench.data import WARMUP_AUDIO_PATH
 
         assert WARMUP_AUDIO_PATH.exists(), f"Warmup audio not found at {WARMUP_AUDIO_PATH}"
 
     def test_jfk_wav_is_valid_16khz_mono(self):
-        from asr_diar_server.bench.data import WARMUP_AUDIO_PATH
+        from coro.bench.data import WARMUP_AUDIO_PATH
 
         with wave.open(str(WARMUP_AUDIO_PATH), "rb") as wf:
             assert wf.getnchannels() == 1, "Expected mono WAV"
@@ -29,7 +29,7 @@ class TestWarmupAudioAsset:
             assert wf.getnframes() > 0, "Expected non-zero duration"
 
     def test_jfk_wav_duration_positive(self):
-        from asr_diar_server.bench.data import WARMUP_AUDIO_PATH
+        from coro.bench.data import WARMUP_AUDIO_PATH
 
         with wave.open(str(WARMUP_AUDIO_PATH), "rb") as wf:
             duration = wf.getnframes() / wf.getframerate()
@@ -40,7 +40,7 @@ class TestHypSegmentsToStm:
     """hyp_segments_to_stm converts diarized_json segments to STM text."""
 
     def test_basic_segments_produce_stm_lines(self):
-        from asr_diar_server.bench.stm import hyp_segments_to_stm
+        from coro.bench.stm import hyp_segments_to_stm
 
         segments = [
             {"start": 0.0, "end": 1.5, "text": "hello world", "speaker": "A"},
@@ -53,7 +53,7 @@ class TestHypSegmentsToStm:
         assert lines[1] == "meeting001 1 B 1.500 3.000 goodbye"
 
     def test_speaker_labels_passed_through_unchanged(self):
-        from asr_diar_server.bench.stm import hyp_segments_to_stm
+        from coro.bench.stm import hyp_segments_to_stm
 
         segments = [
             {"start": 0.0, "end": 1.0, "text": "hi", "speaker": "Speaker_0"},
@@ -63,7 +63,7 @@ class TestHypSegmentsToStm:
         assert "SPEAKER_Speaker_0" not in result
 
     def test_empty_text_segments_skipped(self):
-        from asr_diar_server.bench.stm import hyp_segments_to_stm
+        from coro.bench.stm import hyp_segments_to_stm
 
         segments = [
             {"start": 0.0, "end": 1.0, "text": "", "speaker": "A"},
@@ -74,7 +74,7 @@ class TestHypSegmentsToStm:
         assert len(lines) == 1
 
     def test_zero_duration_segments_skipped(self):
-        from asr_diar_server.bench.stm import hyp_segments_to_stm
+        from coro.bench.stm import hyp_segments_to_stm
 
         segments = [
             {"start": 1.0, "end": 1.0, "text": "same time", "speaker": "A"},
@@ -87,7 +87,7 @@ class TestHypSegmentsToStm:
         assert "valid" in lines[0]
 
     def test_segments_sorted_by_start_time_then_speaker(self):
-        from asr_diar_server.bench.stm import hyp_segments_to_stm
+        from coro.bench.stm import hyp_segments_to_stm
 
         segments = [
             {"start": 1.0, "end": 2.0, "text": "second a", "speaker": "B"},
@@ -102,7 +102,7 @@ class TestHypSegmentsToStm:
         assert "second a" in lines[2]
 
     def test_missing_start_or_end_skipped(self):
-        from asr_diar_server.bench.stm import hyp_segments_to_stm
+        from coro.bench.stm import hyp_segments_to_stm
 
         segments = [
             {"end": 1.0, "text": "no start", "speaker": "A"},
@@ -114,7 +114,7 @@ class TestHypSegmentsToStm:
         assert len(lines) == 1
 
     def test_whitespace_cleaned(self):
-        from asr_diar_server.bench.stm import hyp_segments_to_stm
+        from coro.bench.stm import hyp_segments_to_stm
 
         segments = [
             {"start": 0.0, "end": 1.0, "text": "  hello   world  ", "speaker": "A"},
@@ -173,14 +173,14 @@ class TestAmiMeetingToStm:
         return root
 
     def test_produces_stm_with_correct_speakers(self, ami_fixture: Path):
-        from asr_diar_server.bench.stm import ami_meeting_to_stm
+        from coro.bench.stm import ami_meeting_to_stm
 
         result = ami_meeting_to_stm(ami_fixture, "TS3003a")
         assert "A" in result
         assert "B" in result
 
     def test_stm_lines_have_correct_format(self, ami_fixture: Path):
-        from asr_diar_server.bench.stm import ami_meeting_to_stm
+        from coro.bench.stm import ami_meeting_to_stm
 
         result = ami_meeting_to_stm(ami_fixture, "TS3003a")
         lines = result.strip().split("\n")
@@ -191,7 +191,7 @@ class TestAmiMeetingToStm:
             assert parts[2] in ("A", "B"), f"Speaker mismatch: {parts[2]}"
 
     def test_stm_lines_sorted_by_time(self, ami_fixture: Path):
-        from asr_diar_server.bench.stm import ami_meeting_to_stm
+        from coro.bench.stm import ami_meeting_to_stm
 
         result = ami_meeting_to_stm(ami_fixture, "TS3003a")
         lines = result.strip().split("\n")

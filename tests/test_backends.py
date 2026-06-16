@@ -16,9 +16,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from asr_diar_server.backends.faster_whisper import convert_asr_segments
-from asr_diar_server.backends.nemo import convert_diarization_segments
-from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
+from coro.backends.faster_whisper import convert_asr_segments
+from coro.backends.nemo import convert_diarization_segments
+from coro.core.types import SpeakerSegment, TranscriptToken
 
 
 def _fake_word(word: str, start: float, end: float, probability: float = 0.9):

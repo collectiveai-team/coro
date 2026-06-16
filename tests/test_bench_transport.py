@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from asr_diar_server.bench.transport import transcribe_audio, transcribe_audio_sse
+from coro.bench.transport import transcribe_audio, transcribe_audio_sse
 
 CANNED_RESPONSE = {
     "task": "transcribe",

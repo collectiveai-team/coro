@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
-from asr_diar_server.settings import ServerSettings
+from coro.settings import ServerSettings
 
 
 class TestLatencyTierSettings:
@@ -27,7 +27,7 @@ class TestLatencyTierSettings:
 
 class TestLatencyTierMapping:
     def test_very_high_params(self):
-        from asr_diar_server.backends.nemo_streaming import get_latency_tier_params
+        from coro.backends.nemo_streaming import get_latency_tier_params
 
         params = get_latency_tier_params("very-high")
         assert params["chunk_len"] == 340
@@ -37,27 +37,27 @@ class TestLatencyTierMapping:
         assert params["spkcache_len"] == 188
 
     def test_high_params(self):
-        from asr_diar_server.backends.nemo_streaming import get_latency_tier_params
+        from coro.backends.nemo_streaming import get_latency_tier_params
 
         params = get_latency_tier_params("high")
         assert params["chunk_len"] == 124
         assert params["chunk_right_context"] == 1
 
     def test_low_params(self):
-        from asr_diar_server.backends.nemo_streaming import get_latency_tier_params
+        from coro.backends.nemo_streaming import get_latency_tier_params
 
         params = get_latency_tier_params("low")
         assert params["chunk_len"] == 6
         assert params["chunk_right_context"] == 7
 
     def test_ultra_low_params(self):
-        from asr_diar_server.backends.nemo_streaming import get_latency_tier_params
+        from coro.backends.nemo_streaming import get_latency_tier_params
 
         params = get_latency_tier_params("ultra-low")
         assert params["chunk_len"] == 3
 
     def test_all_tiers_have_required_keys(self):
-        from asr_diar_server.backends.nemo_streaming import get_latency_tier_params
+        from coro.backends.nemo_streaming import get_latency_tier_params
 
         required = {
             "chunk_len", "chunk_right_context", "fifo_len",
@@ -67,7 +67,7 @@ class TestLatencyTierMapping:
             assert required.issubset(get_latency_tier_params(tier).keys())
 
     def test_params_returns_copy(self):
-        from asr_diar_server.backends.nemo_streaming import (
+        from coro.backends.nemo_streaming import (
             LATENCY_TIER_PARAMS,
             get_latency_tier_params,
         )
@@ -98,7 +98,7 @@ class TestStreamingDiarizerFactory:
         return model
 
     def test_factory_applies_tier_params_to_model(self):
-        from asr_diar_server.backends.nemo_streaming import StreamingDiarizerFactory
+        from coro.backends.nemo_streaming import StreamingDiarizerFactory
 
         model = self._make_mock_model()
         StreamingDiarizerFactory(model, tier="very-high")
@@ -110,7 +110,7 @@ class TestStreamingDiarizerFactory:
         model.sortformer_modules._check_streaming_parameters.assert_called_once()
 
     def test_factory_produces_distinct_instances(self):
-        from asr_diar_server.backends.nemo_streaming import StreamingDiarizerFactory
+        from coro.backends.nemo_streaming import StreamingDiarizerFactory
 
         model = self._make_mock_model()
         factory = StreamingDiarizerFactory(model, tier="low")
@@ -121,7 +121,7 @@ class TestStreamingDiarizerFactory:
         assert d2._pcm_buffer == b""
 
     def test_factory_default_tier_is_very_high(self):
-        from asr_diar_server.backends.nemo_streaming import StreamingDiarizerFactory
+        from coro.backends.nemo_streaming import StreamingDiarizerFactory
 
         model = self._make_mock_model()
         factory = StreamingDiarizerFactory(model)
@@ -130,14 +130,14 @@ class TestStreamingDiarizerFactory:
 
 class TestRuntimeWiring:
     def test_runtime_has_streaming_factory_fields(self):
-        from asr_diar_server.runtime import RuntimeState
+        from coro.runtime import RuntimeState
 
         state = RuntimeState()
         assert state.streaming_diarizer_factory is None
         assert state.diarization_latency is None
 
     def test_health_reports_latency_when_set(self):
-        from asr_diar_server.runtime import RuntimeState
+        from coro.runtime import RuntimeState
 
         state = RuntimeState(diarization_latency="very-high")
         assert state.diarization_latency == "very-high"

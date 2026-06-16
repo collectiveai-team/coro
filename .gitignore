@@ -5,14 +5,10 @@ __pycache__
 backup
 benchmark
 notebooks
-docs/superpowers
 .scratch
 
 resources
 amicorpus
 benchmark-results/
-
-# ralph
-.agent/*
 
 .worktrees/

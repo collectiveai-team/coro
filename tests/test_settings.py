@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from asr_diar_server.settings import ServerSettings
+from coro.settings import ServerSettings
 
 
 def test_settings_default_to_full_memory_asr_only_configuration():
@@ -32,7 +32,7 @@ def test_nemo_diarization_gets_default_model():
 
 def test_transcript_spill_dir_defaults_none_and_reads_env(monkeypatch):
     assert ServerSettings(_env_file=None).transcript_spill_dir is None
-    monkeypatch.setenv("ASR_DIAR_TRANSCRIPT_SPILL_DIR", "/var/lib/asr-spill")
+    monkeypatch.setenv("CORO_TRANSCRIPT_SPILL_DIR", "/var/lib/asr-spill")
     assert ServerSettings(_env_file=None).transcript_spill_dir == "/var/lib/asr-spill"
 
 

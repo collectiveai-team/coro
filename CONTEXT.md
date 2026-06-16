@@ -61,7 +61,7 @@ The vendored short audio (whisper.cpp JFK sample) shared by Server Warmup and Be
 _Avoid_: Downloaded-on-demand warmup, synthetic silence
 
 **Bench-Managed Server**:
-A server subprocess started by the benchmark client, configured via bench CLI flags translated to ASR_DIAR_ environment variables, with /health polled until Warmup Readiness before the workload set runs and torn down on bench completion or failure.
+A server subprocess started by the benchmark client, configured via bench CLI flags translated to CORO_ environment variables, with /health polled until Warmup Readiness before the workload set runs and torn down on bench completion or failure.
 _Avoid_: In-process TestClient bench, manually-started server assumption
 
 **Bench-Attached Server**:
@@ -337,7 +337,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Benchmark Warmup Item** is optional, opt-in via the benchmark CLI, runs once before the first measured workload item, and reuses the **Warmup Audio Asset**.
 - The **Warmup Audio Asset** is vendored inside the package so neither **Server Warmup** nor **Benchmark Warmup Item** requires network access.
 - A **Benchmark Run** uses a **Bench-Managed Server** by default and a **Bench-Attached Server** when `--server-url` is passed; the two modes are mutually exclusive.
-- A **Bench-Managed Server** is configured by translating bench CLI flags into the same `ASR_DIAR_` environment variables used for **Server Startup Selection**.
+- A **Bench-Managed Server** is configured by translating bench CLI flags into the same `CORO_` environment variables used for **Server Startup Selection**.
 - A **Bench-Managed Server** is considered ready only once `/health` reports both **Capability Readiness** and **Warmup Readiness**.
 - Diarization is enabled by default for both quality and performance subcommands so the **Quality Benchmark** can report cpWER, ORC-WER, DI-cpWER, and DER, and the **Performance Benchmark** measures the production-shaped pipeline.
 - The **Supported Endpoint Set** contains `/health` and the `/v1/audio/transcriptions` **Transcription Endpoint** only.
@@ -346,7 +346,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Pipeline Dependency** returns the **Configured Transcription Pipeline** from the **Singleton Runtime**.
 - The default **Configured Transcription Pipeline** is the **Full-Memory Pipeline**.
 - The **Streaming Pipeline** is selected with the startup value `streaming`; the **Full-Memory Pipeline** is selected with `full-memory`. There is no `chunked-file` selector — it was removed, and **Strict Startup Validation** rejects it.
-- **Server Startup Selection** uses the `ASR_DIAR_` environment prefix for pipeline, backend provider, and model selection settings.
+- **Server Startup Selection** uses the `CORO_` environment prefix for pipeline, backend provider, and model selection settings.
 - **Server Startup Selection** uses **Strict Startup Validation** for selector values.
 - The default ASR **Backend Provider** is `faster-whisper`.
 - The default diarization **Backend Provider** is `none`.
@@ -512,7 +512,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Dev:** "Should `verbose_json` and `diarized_json` produce different response schemas?"
 > **Domain expert:** "No — they are **JSON Response Format Alias** values for the same strict transcription response."
 
-> **Dev:** "If a request sends `model=small`, should it override `ASR_DIAR_MODEL_ASR`?"
+> **Dev:** "If a request sends `model=small`, should it override `CORO_MODEL_ASR`?"
 > **Domain expert:** "No — `model` is a **Compatibility Model Field** and **Server Startup Selection** remains authoritative."
 
 > **Dev:** "Can transcription endpoints use FastAPI's default `detail` error object?"
@@ -579,7 +579,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "audio file" was used to imply both in-memory bytes and filesystem paths — resolved: pipelines receive **Audio Input** and choose the access mode they require.
 - "temp file cleanup" was used to imply endpoint or pipeline ownership — resolved: **Audio Input Cleanup** owns temporary file lifecycle.
 - "full-memory" was used to imply whole-file ASR — resolved: both pipeline implementations use **ASR Windowing**.
-- "environment variable" was used without namespacing — resolved: **Server Startup Selection** uses `ASR_DIAR_PIPELINE`, `ASR_DIAR_BACKEND_ASR`, `ASR_DIAR_MODEL_ASR`, `ASR_DIAR_BACKEND_DIARIZATION`, and `ASR_DIAR_MODEL_DIARIZATION`.
+- "environment variable" was used without namespacing — resolved: **Server Startup Selection** uses `CORO_PIPELINE`, `CORO_BACKEND_ASR`, `CORO_MODEL_ASR`, `CORO_BACKEND_DIARIZATION`, and `CORO_MODEL_DIARIZATION`.
 - "default pipeline" was used to imply fallback behavior — resolved: defaults apply only when unset; invalid values fail **Strict Startup Validation**.
 - "backend provider default" was unspecified — resolved: ASR defaults to `faster-whisper` and diarization defaults to `none`.
 - "ASR model default" was unspecified — resolved: the default **ASR Model Selection** is `openai/whisper-medium`.

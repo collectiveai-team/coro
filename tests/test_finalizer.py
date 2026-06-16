@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from asr_diar_server.core.response import build_transcription_response
-from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
-from asr_diar_server.pipelines.finalizer import (
+from coro.core.response import build_transcription_response
+from coro.core.types import SpeakerSegment, TranscriptToken
+from coro.pipelines.finalizer import (
     StreamingTranscriptFinalizer,
     build_streaming_response,
 )
-from asr_diar_server.pipelines.transcript_store import TranscriptSpillStore
+from coro.pipelines.transcript_store import TranscriptSpillStore
 
 
 def _tok(start, end, text, prob=1.0):

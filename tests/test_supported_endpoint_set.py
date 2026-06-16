@@ -9,8 +9,8 @@ import wave
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from asr_diar_server.app import create_app
-from asr_diar_server.settings import ServerSettings
+from coro.app import create_app
+from coro.settings import ServerSettings
 
 def _minimal_wav_bytes() -> bytes:
     buf = io.BytesIO()

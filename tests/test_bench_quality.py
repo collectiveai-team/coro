@@ -79,7 +79,7 @@ class TestPyprojectBenchExtra:
 class TestRequireMeeteval:
     def test_require_meeteval_exits_with_helpful_message(self):
         with patch.dict(sys.modules, {"meeteval": None}):
-            from asr_diar_server.bench.quality import _require_meeteval
+            from coro.bench.quality import _require_meeteval
 
             with pytest.raises(SystemExit) as exc_info:
                 _require_meeteval()
@@ -88,7 +88,7 @@ class TestRequireMeeteval:
     def test_require_meeteval_returns_module_when_available(self):
         mock_meeteval = MagicMock()
         with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import _require_meeteval
+            from coro.bench.quality import _require_meeteval
 
             result = _require_meeteval()
             assert result is mock_meeteval
@@ -125,14 +125,14 @@ def _make_mock_meeteval():
 
 class TestScoreItem:
     def test_normalize_transcript_text_removes_punctuation_and_extra_spaces(self):
-        from asr_diar_server.bench.quality import _normalize_transcript_text
+        from coro.bench.quality import _normalize_transcript_text
 
         assert _normalize_transcript_text("Hello,   world!!") == "Hello world"
 
     def test_write_normalized_stm_preserves_metadata_and_normalizes_text(
         self, tmp_path: Path,
     ):
-        from asr_diar_server.bench.quality import _write_normalized_stm
+        from coro.bench.quality import _write_normalized_stm
 
         src = tmp_path / "in.stm"
         dst = tmp_path / "out.stm"
@@ -150,7 +150,7 @@ class TestScoreItem:
 
         mock_meeteval = _make_mock_meeteval()
         with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import score_item
+            from coro.bench.quality import score_item
 
             result = score_item(ref_stm, hyp_stm)
 
@@ -175,7 +175,7 @@ class TestScoreItem:
 
         mock_meeteval = _make_mock_meeteval()
         with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import score_item
+            from coro.bench.quality import score_item
 
             result = score_item(ref_stm, hyp_stm)
 
@@ -191,7 +191,7 @@ class TestScoreItem:
 
         mock_meeteval = _make_mock_meeteval()
         with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import score_item
+            from coro.bench.quality import score_item
 
             result = score_item(ref_stm, hyp_stm)
 
@@ -208,7 +208,7 @@ class TestScoreItem:
         mock_meeteval = MagicMock()
         mock_meeteval.wer.siwer.side_effect = RuntimeError("scoring failed")
         with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import score_item
+            from coro.bench.quality import score_item
 
             result = score_item(ref_stm, hyp_stm)
 
@@ -238,7 +238,7 @@ class TestCombineItems:
         ]
 
         with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import combine_items
+            from coro.bench.quality import combine_items
 
             summary = combine_items(item_results)
 
@@ -261,7 +261,7 @@ class TestCombineItems:
         ]
 
         with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import combine_items
+            from coro.bench.quality import combine_items
 
             summary = combine_items(item_results)
 
@@ -273,31 +273,31 @@ class TestCombineItems:
 
 class TestCLIFlags:
     def test_der_collar_flag_accepted(self):
-        from asr_diar_server.bench.cli import parse_args
+        from coro.bench.cli import parse_args
 
         args = parse_args(["quality", "--der-collar", "0.25"])
         assert args.der_collar == 0.25
 
     def test_der_regions_flag_accepted(self):
-        from asr_diar_server.bench.cli import parse_args
+        from coro.bench.cli import parse_args
 
         args = parse_args(["quality", "--der-regions", "nooverlap"])
         assert args.der_regions == "nooverlap"
 
     def test_der_collar_default_is_zero(self):
-        from asr_diar_server.bench.cli import parse_args
+        from coro.bench.cli import parse_args
 
         args = parse_args(["quality"])
         assert args.der_collar == 0.0
 
     def test_der_regions_default_is_all(self):
-        from asr_diar_server.bench.cli import parse_args
+        from coro.bench.cli import parse_args
 
         args = parse_args(["quality"])
         assert args.der_regions == "all"
 
     def test_der_regions_invalid_rejected(self):
-        from asr_diar_server.bench.cli import parse_args
+        from coro.bench.cli import parse_args
 
         with pytest.raises(SystemExit):
             parse_args(["quality", "--der-regions", "invalid"])
@@ -305,7 +305,7 @@ class TestCLIFlags:
 
 class TestQualityRun:
     def test_quality_run_produces_artifacts(self, e2e_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_workload
+        from coro.bench.orchestrate import run_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -361,7 +361,7 @@ class TestQualityRun:
         assert summary["per_item"][0]["session_id"] == "meeting1"
 
     def test_quality_run_isolates_failures(self, e2e_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_workload
+        from coro.bench.orchestrate import run_workload
 
         audio1 = tmp_path / "meeting1.wav"
         audio1.write_bytes(b"RIFF" + b"\x00" * 200)

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from asr_diar_server.api.dependencies import get_pipeline, get_settings
-from asr_diar_server.api.exceptions import TranscriptionReadinessError
-from asr_diar_server.runtime import RuntimeState
-from asr_diar_server.settings import ServerSettings
+from coro.api.dependencies import get_pipeline, get_settings
+from coro.api.exceptions import TranscriptionReadinessError
+from coro.runtime import RuntimeState
+from coro.settings import ServerSettings
 
 
 def test_get_settings_returns_app_settings():

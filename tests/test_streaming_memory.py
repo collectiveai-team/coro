@@ -16,11 +16,11 @@ from unittest.mock import patch
 
 import pytest
 
-from asr_diar_server.audio import SAMPLE_RATE, AudioInput
-from asr_diar_server.core.types import TranscriptToken
-from asr_diar_server.pipelines.done_frame import StreamingDoneFrame
-from asr_diar_server.pipelines.streaming import StreamingPipeline
-from asr_diar_server.pipelines.windowing import ASRWindowing
+from coro.audio import SAMPLE_RATE, AudioInput
+from coro.core.types import TranscriptToken
+from coro.pipelines.done_frame import StreamingDoneFrame
+from coro.pipelines.streaming import StreamingPipeline
+from coro.pipelines.windowing import ASRWindowing
 
 _ONE_SECOND_PCM = struct.pack(f"<{SAMPLE_RATE}h", *([0] * SAMPLE_RATE))
 
@@ -41,7 +41,7 @@ def _mock_chunks(num_chunks: int):
         for _ in range(num_chunks):
             yield _ONE_SECOND_PCM
 
-    return patch("asr_diar_server.pipelines.streaming.stream_pcm_from_file", new=_gen)
+    return patch("coro.pipelines.streaming.stream_pcm_from_file", new=_gen)
 
 
 async def _drain(pipeline: StreamingPipeline) -> None:

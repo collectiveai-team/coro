@@ -19,9 +19,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from asr_diar_server.audio import AudioInput
-from asr_diar_server.core.types import SpeakerSegment, TranscriptToken
-from asr_diar_server.pipelines.full_memory import FullMemoryPipeline
+from coro.audio import AudioInput
+from coro.core.types import SpeakerSegment, TranscriptToken
+from coro.pipelines.full_memory import FullMemoryPipeline
 
 RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
 
@@ -31,7 +31,7 @@ _FAKE_PCM = struct.pack("<1600h", *([0] * 1600))
 def _mock_convert(return_value: bytes):
     """Return a context manager that patches convert_to_pcm_bytes."""
     return patch(
-        "asr_diar_server.pipelines.full_memory.convert_to_pcm_bytes",
+        "coro.pipelines.full_memory.convert_to_pcm_bytes",
         new=AsyncMock(return_value=return_value),
     )
 

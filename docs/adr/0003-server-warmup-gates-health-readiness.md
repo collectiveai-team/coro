@@ -10,9 +10,9 @@ There was no signal to distinguish "ready to load models" from "ready to serve r
 
 ## Decision
 
-**Server Warmup** runs the **Configured Transcription Pipeline** against the vendored **Warmup Audio Asset** (`asr_diar_server/bench/data/jfk.wav`, the whisper.cpp JFK sample) during FastAPI lifespan startup, after the **Backend Adapter Factory** finishes building adapters. The result is discarded.
+**Server Warmup** runs the **Configured Transcription Pipeline** against the vendored **Warmup Audio Asset** (`coro/bench/data/jfk.wav`, the whisper.cpp JFK sample) during FastAPI lifespan startup, after the **Backend Adapter Factory** finishes building adapters. The result is discarded.
 
-Server Warmup is **enabled by default** (`ASR_DIAR_WARMUP=enabled`). `ASR_DIAR_WARMUP=disabled` skips warmup, logs a warning, and still reports `warmup_ready=true` (no gating requested).
+Server Warmup is **enabled by default** (`CORO_WARMUP=enabled`). `CORO_WARMUP=disabled` skips warmup, logs a warning, and still reports `warmup_ready=true` (no gating requested).
 
 `/health` gains a `warmup_ready: bool` flag. Overall readiness requires both **Capability Readiness** AND **Warmup Readiness**:
 
@@ -26,7 +26,7 @@ Server Warmup is **enabled by default** (`ASR_DIAR_WARMUP=enabled`). `ASR_DIAR_W
 
 Warmup failures **fail server startup loudly** — the exception propagates out of the lifespan context manager so FastAPI never completes startup and the server never accepts traffic.
 
-The **Warmup Audio Asset** is vendored inside the package at `asr_diar_server/bench/data/jfk.wav` so warmup never requires network access and works in air-gapped environments.
+The **Warmup Audio Asset** is vendored inside the package at `coro/bench/data/jfk.wav` so warmup never requires network access and works in air-gapped environments.
 
 ## Consequences
 
@@ -34,7 +34,7 @@ The **Warmup Audio Asset** is vendored inside the package at `asr_diar_server/be
 - `/health` becomes a true readiness probe — load balancers and orchestrators can wait for `ready=true` before routing real traffic, confident that the pipeline has been exercised.
 - A warmup failure indicates a real pipeline bug. Failing startup loudly is preferable to serving broken responses to real clients from a partially-loaded server.
 - The **Warmup Audio Asset** is shared by **Server Warmup** and the opt-in **Benchmark Warmup Item** (`--warmup` CLI flag), so both use the same short clip without network access.
-- `ASR_DIAR_WARMUP=disabled` is an escape hatch for test environments or situations where startup speed is more important than first-request latency.
+- `CORO_WARMUP=disabled` is an escape hatch for test environments or situations where startup speed is more important than first-request latency.
 
 ## Alternatives Considered
 

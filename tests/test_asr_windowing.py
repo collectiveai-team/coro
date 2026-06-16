@@ -6,9 +6,9 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from asr_diar_server.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
-from asr_diar_server.core.types import TranscriptDeltaEvent, TranscriptToken, TokenBatchEvent
-from asr_diar_server.pipelines.windowing import ASRWindowing
+from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
+from coro.core.types import TranscriptDeltaEvent, TranscriptToken, TokenBatchEvent
+from coro.pipelines.windowing import ASRWindowing
 
 
 class _FakeASR:

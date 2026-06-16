@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from asr_diar_server.audio import AudioInput
-from asr_diar_server.core.types import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptToken
-from asr_diar_server.pipelines.full_memory import FullMemoryPipeline
+from coro.audio import AudioInput
+from coro.core.types import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptToken
+from coro.pipelines.full_memory import FullMemoryPipeline
 
 
 class _FakeASR:
@@ -23,7 +23,7 @@ async def test_full_memory_pipeline_uses_audio_input_bytes_and_windowing():
     audio = AudioInput(b"encoded")
 
     with patch(
-        "asr_diar_server.pipelines.full_memory.convert_to_pcm_bytes",
+        "coro.pipelines.full_memory.convert_to_pcm_bytes",
         new=AsyncMock(return_value=b"\x00\x00" * 16000),
     ) as convert:
         result = await pipeline.transcribe(audio, prompt="hint")
@@ -38,7 +38,7 @@ async def test_pipeline_stream_emits_delta_and_done():
     audio = AudioInput(b"encoded")
 
     with patch(
-        "asr_diar_server.pipelines.full_memory.convert_to_pcm_bytes",
+        "coro.pipelines.full_memory.convert_to_pcm_bytes",
         new=AsyncMock(return_value=b"\x00\x00" * 16000),
     ):
         events = [event async for event in pipeline.stream(audio)]

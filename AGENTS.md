@@ -2,8 +2,6 @@
 
 Always apply these standards to all code you write.
 
-For Ralph's Docker Sandboxes naming conventions (per-agent + per-project, used at startup and during cleanup), see @RALPH.md.
-
 ## Reuse Before Creating
 
 Before writing new code, analyze existing utilities, components, hooks, helpers and tests:
@@ -26,10 +24,6 @@ Signs a file needs splitting:
 - Scrolling to find what you need
 - "Utils" file becoming a junk drawer
 - Component doing data fetching + transformation + rendering
-
-## Task Execution
-
-- **One task per invocation.** When working from `.agent/tasks.json`, complete exactly one task, commit, and stop. Never batch multiple tasks.
 
 ## Code Style
 

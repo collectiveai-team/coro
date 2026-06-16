@@ -20,15 +20,15 @@ from unittest.mock import patch
 
 import pytest
 
-from asr_diar_server.audio import AudioInput
-from asr_diar_server.core.types import (
+from coro.audio import AudioInput
+from coro.core.types import (
     SpeakerSegment,
     TranscriptDeltaEvent,
     TranscriptToken,
 )
-from asr_diar_server.pipelines.done_frame import StreamingDoneFrame
-from asr_diar_server.pipelines.streaming import StreamingPipeline
-from asr_diar_server.pipelines.windowing import ASRWindowing
+from coro.pipelines.done_frame import StreamingDoneFrame
+from coro.pipelines.streaming import StreamingPipeline
+from coro.pipelines.windowing import ASRWindowing
 
 RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
 
@@ -106,7 +106,7 @@ async def _multi_chunk_stream(path: str, chunk_seconds: float = 1.0):
 
 def _mock_stream():
     return patch(
-        "asr_diar_server.pipelines.streaming.stream_pcm_from_file",
+        "coro.pipelines.streaming.stream_pcm_from_file",
         new=_multi_chunk_stream,
     )
 
@@ -305,7 +305,7 @@ async def test_no_full_pcm_accumulation_during_transcribe():
 
     pipeline = StreamingPipeline(asr=_FakeASRAdapter())
     with patch(
-        "asr_diar_server.pipelines.streaming.stream_pcm_from_file",
+        "coro.pipelines.streaming.stream_pcm_from_file",
         new=_instrumented_stream,
     ):
         await pipeline.transcribe(AudioInput(b"audio"))

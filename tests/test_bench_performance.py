@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from asr_diar_server.bench.schema import RESOURCE_FIELDNAMES
+from coro.bench.schema import RESOURCE_FIELDNAMES
 
 
 CANNED_RESPONSE = {
@@ -93,10 +93,10 @@ def _mock_sample_fn(pid: int) -> dict[str, Any]:
 
 class TestSampler:
     def test_collects_samples_when_started(self):
-        from asr_diar_server.bench.sampling import Sampler
+        from coro.bench.sampling import Sampler
 
         sampler = Sampler(pid=123, interval=0.05, sample_fn=_mock_sample_fn)
-        with patch("asr_diar_server.bench.sampling.sample_gpu", return_value={}):
+        with patch("coro.bench.sampling.sample_gpu", return_value={}):
             sampler.start()
             time.sleep(0.2)
             sampler.stop()
@@ -106,7 +106,7 @@ class TestSampler:
         assert sampler.samples[0]["pss_kb"] == 100123
 
     def test_write_csv_writes_valid_resource_csv(self, tmp_path: Path):
-        from asr_diar_server.bench.sampling import Sampler
+        from coro.bench.sampling import Sampler
 
         sampler = Sampler(pid=123, interval=0.05, sample_fn=_mock_sample_fn)
         sampler.start()
@@ -127,7 +127,7 @@ class TestSampler:
             assert "time_to_first_delta_s" in headers
 
     def test_backfill_sets_fields_on_all_rows(self):
-        from asr_diar_server.bench.sampling import Sampler
+        from coro.bench.sampling import Sampler
 
         sampler = Sampler(pid=1, interval=0.05, sample_fn=_mock_sample_fn)
         sampler.start()
@@ -185,7 +185,7 @@ def _make_csv_rows(
 
 class TestComputePerRepSummary:
     def test_extracts_peaks_from_csv(self, tmp_path: Path):
-        from asr_diar_server.bench.performance import compute_per_rep_summary
+        from coro.bench.performance import compute_per_rep_summary
 
         rows = _make_csv_rows(pss_kb=150000, cpu_pct=75.5, wall_seconds=2.0, audio_seconds=10.0)
         csv_path = tmp_path / "resource_item1_rep1.csv"
@@ -200,7 +200,7 @@ class TestComputePerRepSummary:
         assert summary["audio_seconds"] == 10.0
 
     def test_handles_multiple_rows_with_varying_peaks(self, tmp_path: Path):
-        from asr_diar_server.bench.performance import compute_per_rep_summary
+        from coro.bench.performance import compute_per_rep_summary
 
         r1 = _make_csv_rows(pss_kb=100000, cpu_pct=30.0)
         r2 = _make_csv_rows(pss_kb=200000, cpu_pct=80.0)
@@ -214,7 +214,7 @@ class TestComputePerRepSummary:
         assert summary["peak_cpu_pct"] == 80.0
 
     def test_extracts_gpu_and_baseline_adjusted_memory(self, tmp_path: Path):
-        from asr_diar_server.bench.performance import compute_per_rep_summary
+        from coro.bench.performance import compute_per_rep_summary
 
         rows = _make_csv_rows(
             pss_kb=180000,
@@ -238,7 +238,7 @@ class TestComputePerRepSummary:
 
 class TestAggregateAcrossReps:
     def test_computes_median_min_max_mean_stddev(self):
-        from asr_diar_server.bench.performance import aggregate_across_reps
+        from coro.bench.performance import aggregate_across_reps
 
         summaries = [
             {"peak_pss_kb": 100, "peak_cpu_pct": 30, "transcription_throughput": 5.0},
@@ -255,7 +255,7 @@ class TestAggregateAcrossReps:
         assert agg["transcription_throughput"]["median"] == 10.0
 
     def test_single_rep(self):
-        from asr_diar_server.bench.performance import aggregate_across_reps
+        from coro.bench.performance import aggregate_across_reps
 
         summaries = [
             {"peak_pss_kb": 100, "peak_cpu_pct": 30, "transcription_throughput": 5.0},
@@ -267,7 +267,7 @@ class TestAggregateAcrossReps:
 
 class TestFullPerformanceRun:
     def test_produces_artifacts_per_item_rep(self, stub_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_performance_workload
+        from coro.bench.orchestrate import run_performance_workload
 
         audio1 = tmp_path / "meeting1.wav"
         audio1.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -300,7 +300,7 @@ class TestFullPerformanceRun:
         assert (perf_dir / "summary.json").exists()
 
     def test_summary_has_correct_structure(self, stub_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_performance_workload
+        from coro.bench.orchestrate import run_performance_workload
 
         audio1 = tmp_path / "meeting1.wav"
         audio1.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -354,7 +354,7 @@ class TestFullPerformanceRun:
         assert summary["run_totals"]["total_wall_seconds"] > 0
 
     def test_csv_has_no_legacy_columns(self, stub_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_performance_workload
+        from coro.bench.orchestrate import run_performance_workload
 
         audio1 = tmp_path / "meeting1.wav"
         audio1.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -384,7 +384,7 @@ class TestFullPerformanceRun:
             assert "time_to_first_delta_s" in headers
 
     def test_reps_grouped_by_item_order(self, stub_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_performance_workload
+        from coro.bench.orchestrate import run_performance_workload
 
         audio1 = tmp_path / "a1.wav"
         audio1.write_bytes(b"RIFF" + b"\x00" * 100)
@@ -486,7 +486,7 @@ def sse_stub_server():
 
 class TestStreamingPerformanceRun:
     def test_ttft_column_non_empty_in_streaming_run(self, sse_stub_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_performance_workload
+        from coro.bench.orchestrate import run_performance_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -515,7 +515,7 @@ class TestStreamingPerformanceRun:
         assert all(v != "" for v in ttft_values), f"Expected non-empty TTFT, got: {ttft_values}"
 
     def test_ttft_column_empty_in_non_streaming_run(self, stub_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_performance_workload
+        from coro.bench.orchestrate import run_performance_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -544,7 +544,7 @@ class TestStreamingPerformanceRun:
         assert all(v == "" for v in ttft_values), f"Expected empty TTFT, got: {ttft_values}"
 
     def test_summary_includes_ttft_aggregates_when_streaming(self, sse_stub_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_performance_workload
+        from coro.bench.orchestrate import run_performance_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -571,7 +571,7 @@ class TestStreamingPerformanceRun:
             assert key in ttft_agg, f"Missing {key} in TTFT aggregates"
 
     def test_summary_excludes_ttft_when_not_streaming(self, stub_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_performance_workload
+        from coro.bench.orchestrate import run_performance_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -595,7 +595,7 @@ class TestStreamingPerformanceRun:
         assert "time_to_first_delta_s" not in m1_agg
 
     def test_manifest_records_stream_true(self, sse_stub_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_performance_workload
+        from coro.bench.orchestrate import run_performance_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -618,7 +618,7 @@ class TestStreamingPerformanceRun:
         assert manifest["stream"] is True
 
     def test_manifest_records_stream_false(self, stub_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_performance_workload
+        from coro.bench.orchestrate import run_performance_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)

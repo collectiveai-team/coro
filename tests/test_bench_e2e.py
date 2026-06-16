@@ -96,7 +96,7 @@ def e2e_server():
 
 class TestE2EAdhocAudio:
     def test_single_audio_produces_artifacts(self, e2e_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_workload
+        from coro.bench.orchestrate import run_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -143,7 +143,7 @@ class TestE2EAdhocAudio:
         assert "hello world" in ref_text
 
     def test_manifest_contains_expected_fields(self, e2e_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_workload
+        from coro.bench.orchestrate import run_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -180,7 +180,7 @@ class TestE2EAdhocAudio:
         assert manifest["server_health"]["ready"] is True
 
     def test_multiple_reps_only_one_hyp_ref(self, e2e_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_workload
+        from coro.bench.orchestrate import run_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -215,7 +215,7 @@ class TestE2EAdhocAudio:
         assert not (out_dir / "hyp" / "meeting1_rep2.hyp.stm").exists()
 
     def test_audio_without_ref_allowed_for_performance(self, e2e_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_workload
+        from coro.bench.orchestrate import run_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -244,7 +244,7 @@ class TestE2EAdhocAudio:
         assert not (out_dir / "hyp" / "meeting1.hyp.stm").exists()
 
     def test_cli_audio_with_reference_stm(self, e2e_server, tmp_path: Path):
-        from asr_diar_server.bench.cli import parse_args
+        from coro.bench.cli import parse_args
 
         audio = tmp_path / "test.wav"
         audio.touch()
@@ -262,7 +262,7 @@ class TestE2EAdhocAudio:
         assert args.server_url == e2e_server
 
     def test_cli_audio_without_ref_quality_rejected(self, tmp_path: Path):
-        from asr_diar_server.bench.cli import parse_args
+        from coro.bench.cli import parse_args
 
         audio = tmp_path / "test.wav"
         audio.touch()
@@ -271,7 +271,7 @@ class TestE2EAdhocAudio:
             parse_args(["quality", "--audio", str(audio)])
 
     def test_cli_audio_without_ref_performance_allowed(self, tmp_path: Path):
-        from asr_diar_server.bench.cli import parse_args
+        from coro.bench.cli import parse_args
 
         audio = tmp_path / "test.wav"
         audio.touch()
@@ -281,7 +281,7 @@ class TestE2EAdhocAudio:
         assert args.reference_stm is None
 
     def test_cli_audio_without_ref_all_allowed(self, tmp_path: Path):
-        from asr_diar_server.bench.cli import parse_args
+        from coro.bench.cli import parse_args
 
         audio = tmp_path / "test.wav"
         audio.touch()
@@ -295,7 +295,7 @@ class TestE2EAllSubcommand:
     def test_all_produces_perf_and_quality_artifacts(self, e2e_server, tmp_path: Path):
         from unittest.mock import patch
 
-        from asr_diar_server.bench.orchestrate import run_all_workload
+        from coro.bench.orchestrate import run_all_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -319,8 +319,8 @@ class TestE2EAllSubcommand:
             "_raw": object(),
         }
 
-        with patch("asr_diar_server.bench.quality.score_item", return_value=mock_score), \
-             patch("asr_diar_server.bench.quality.combine_items", return_value={
+        with patch("coro.bench.quality.score_item", return_value=mock_score), \
+             patch("coro.bench.quality.combine_items", return_value={
                  "workload_set": ["meeting1"],
                  "n_succeeded": 1,
                  "n_failed": 0,
@@ -345,7 +345,7 @@ class TestE2EAllSubcommand:
     def test_warmup_sends_request_before_items(self, e2e_server, tmp_path: Path):
         from unittest.mock import MagicMock, patch
 
-        from asr_diar_server.bench.orchestrate import run_all_workload
+        from coro.bench.orchestrate import run_all_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -366,7 +366,7 @@ class TestE2EAllSubcommand:
 
         call_order = []
         original_transcribe = __import__(
-            "asr_diar_server.bench.transport", fromlist=["transcribe_audio"]
+            "coro.bench.transport", fromlist=["transcribe_audio"]
         ).transcribe_audio
 
         def tracking_transcribe(base_url, audio_path, **kw):
@@ -374,7 +374,7 @@ class TestE2EAllSubcommand:
             return original_transcribe(base_url, audio_path, **kw)
 
         with patch(
-            "asr_diar_server.bench.orchestrate.transcribe_audio",
+            "coro.bench.orchestrate.transcribe_audio",
             side_effect=tracking_transcribe,
         ):
             run_all_workload(
@@ -398,7 +398,7 @@ class TestE2EAllSubcommand:
     def test_quality_scored_from_rep1_only(self, e2e_server, tmp_path: Path):
         from unittest.mock import patch
 
-        from asr_diar_server.bench.orchestrate import run_all_workload
+        from coro.bench.orchestrate import run_all_workload
 
         audio = tmp_path / "meeting1.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -422,8 +422,8 @@ class TestE2EAllSubcommand:
             "_raw": object(),
         }
 
-        with patch("asr_diar_server.bench.quality.score_item", return_value=mock_score), \
-             patch("asr_diar_server.bench.quality.combine_items", return_value={
+        with patch("coro.bench.quality.score_item", return_value=mock_score), \
+             patch("coro.bench.quality.combine_items", return_value={
                  "workload_set": ["meeting1"],
                  "n_succeeded": 1,
                  "n_failed": 0,
@@ -448,7 +448,7 @@ class TestE2EAllSubcommand:
         assert not (out_dir / "hyp" / "meeting1_rep2.hyp.stm").exists()
 
     def test_adhoc_audio_without_ref_skips_quality(self, e2e_server, tmp_path: Path):
-        from asr_diar_server.bench.orchestrate import run_all_workload
+        from coro.bench.orchestrate import run_all_workload
 
         audio = tmp_path / "my.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -487,7 +487,7 @@ class TestE2EAllSubcommand:
     def test_mixed_items_with_skip_and_quality(self, e2e_server, tmp_path: Path):
         from unittest.mock import patch
 
-        from asr_diar_server.bench.orchestrate import run_all_workload
+        from coro.bench.orchestrate import run_all_workload
 
         audio1 = tmp_path / "IB4001.wav"
         audio1.write_bytes(b"RIFF" + b"\x00" * 200)
@@ -516,8 +516,8 @@ class TestE2EAllSubcommand:
             "_raw": object(),
         }
 
-        with patch("asr_diar_server.bench.quality.score_item", return_value=mock_score), \
-             patch("asr_diar_server.bench.quality.combine_items", return_value={
+        with patch("coro.bench.quality.score_item", return_value=mock_score), \
+             patch("coro.bench.quality.combine_items", return_value={
                  "workload_set": ["IB4001", "IN1001"],
                  "n_succeeded": 2,
                  "n_failed": 0,

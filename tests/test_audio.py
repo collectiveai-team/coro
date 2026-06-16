@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from asr_diar_server.audio import AudioInput, SAMPLE_RATE, iter_aligned_pcm_chunks
+from coro.audio import AudioInput, SAMPLE_RATE, iter_aligned_pcm_chunks
 
 
 # ---------------------------------------------------------------------------

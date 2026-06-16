@@ -20,10 +20,10 @@ import wave
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from asr_diar_server.app import create_app
-from asr_diar_server.core.types import TranscriptDeltaEvent, TranscriptDoneEvent
-from asr_diar_server.runtime import RuntimeState
-from asr_diar_server.settings import ServerSettings
+from coro.app import create_app
+from coro.core.types import TranscriptDeltaEvent, TranscriptDoneEvent
+from coro.runtime import RuntimeState
+from coro.settings import ServerSettings
 
 _WHISPERX_EMPTY = {
     "segments": [],

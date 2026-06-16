@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from asr_diar_server.bench import gpu
-from asr_diar_server.bench.gpu import _aggregate, sample_gpu
+from coro.bench import gpu
+from coro.bench.gpu import _aggregate, sample_gpu
 
 MIB = 1024**2
 

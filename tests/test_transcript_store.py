@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from asr_diar_server.pipelines.transcript_store import TranscriptSpillStore
+from coro.pipelines.transcript_store import TranscriptSpillStore
 
 
 def _segment(start, end, text, speaker, words=None):

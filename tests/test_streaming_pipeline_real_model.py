@@ -1,11 +1,11 @@
 """Real-model integration smoke test for StreamingPipeline.
 
 This test is **opt-in** and will be skipped unless the environment variable
-``ASR_DIAR_RUN_REAL_MODEL_TESTS=1`` is set.
+``CORO_RUN_REAL_MODEL_TESTS=1`` is set.
 
 To run:
 
-    ASR_DIAR_RUN_REAL_MODEL_TESTS=1 .venv/bin/pytest tests/test_streaming_pipeline_real_model.py -v
+    CORO_RUN_REAL_MODEL_TESTS=1 .venv/bin/pytest tests/test_streaming_pipeline_real_model.py -v
 
 Requirements:
 - A machine with the model ``nvidia/diar_streaming_sortformer_4spk-v2`` cached
@@ -25,12 +25,12 @@ from unittest.mock import patch
 
 import pytest
 
-REAL_MODEL_TESTS = os.environ.get("ASR_DIAR_RUN_REAL_MODEL_TESTS", "0") == "1"
+REAL_MODEL_TESTS = os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") == "1"
 skip_unless_real = pytest.mark.skipif(
     not REAL_MODEL_TESTS,
     reason=(
         "Skipping real-model test. "
-        "Set ASR_DIAR_RUN_REAL_MODEL_TESTS=1 to run with real model checkpoints."
+        "Set CORO_RUN_REAL_MODEL_TESTS=1 to run with real model checkpoints."
     ),
 )
 
@@ -45,11 +45,11 @@ async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
     """End-to-end smoke test: real ASR + real NeMo diarizer + warmup audio."""
     from nemo.collections.asr.models import SortformerEncLabelModel
 
-    from asr_diar_server.audio import AudioInput
-    from asr_diar_server.backends.faster_whisper import build_asr_adapter
-    from asr_diar_server.backends.nemo_streaming import StreamingDiarizerFactory
-    from asr_diar_server.pipelines.streaming import StreamingPipeline
-    from asr_diar_server.bench.data import WARMUP_AUDIO_PATH
+    from coro.audio import AudioInput
+    from coro.backends.faster_whisper import build_asr_adapter
+    from coro.backends.nemo_streaming import StreamingDiarizerFactory
+    from coro.pipelines.streaming import StreamingPipeline
+    from coro.bench.data import WARMUP_AUDIO_PATH
 
     # Load real models
     asr = build_asr_adapter("openai/whisper-small", device="cpu")
@@ -90,7 +90,7 @@ def test_streaming_diarizer_frame_count_matches_audio_duration():
     import numpy as np
     from nemo.collections.asr.models import SortformerEncLabelModel
 
-    from asr_diar_server.backends.nemo_streaming import StreamingDiarizerFactory
+    from coro.backends.nemo_streaming import StreamingDiarizerFactory
 
     SAMPLE_RATE = 16000
     SUBSAMPLING = 8
@@ -145,14 +145,14 @@ async def _fake_stream(path: str, chunk_seconds: float = 1.0):
 @pytest.mark.asyncio
 async def test_streaming_pipeline_warmup_mocked():
     """StreamingPipeline.transcribe() can be used as warmup without errors."""
-    from asr_diar_server.audio import AudioInput
-    from asr_diar_server.pipelines.streaming import StreamingPipeline
+    from coro.audio import AudioInput
+    from coro.pipelines.streaming import StreamingPipeline
 
     pipeline = StreamingPipeline(asr=_FakeASRAdapter())
     audio = AudioInput(_FAKE_PCM)
 
     with patch(
-        "asr_diar_server.pipelines.streaming.stream_pcm_from_file",
+        "coro.pipelines.streaming.stream_pcm_from_file",
         new=_fake_stream,
     ):
         result = await pipeline.transcribe(audio)

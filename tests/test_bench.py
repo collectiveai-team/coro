@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from asr_diar_server.bench import RESOURCE_FIELDNAMES
-from asr_diar_server.bench.cli import parse_args
+from coro.bench import RESOURCE_FIELDNAMES
+from coro.bench.cli import parse_args
 
 
 _LEGACY_QUALITY_FIELDS = {
@@ -99,34 +99,34 @@ def test_parse_args_audio_defaults_none():
 
 
 def test_main_quality_calls_run_quality(capsys):
-    from asr_diar_server.bench.cli import main
+    from coro.bench.cli import main
 
-    with patch.object(sys, "argv", ["asr-diar-bench", "quality"]), \
-         patch("asr_diar_server.bench.cli.ensure_audio_and_annotations"), \
-         patch("asr_diar_server.bench.cli.materialize_reference_stms"), \
-         patch("asr_diar_server.bench.cli._run_quality") as mock_quality:
+    with patch.object(sys, "argv", ["coro-bench", "quality"]), \
+         patch("coro.bench.cli.ensure_audio_and_annotations"), \
+         patch("coro.bench.cli.materialize_reference_stms"), \
+         patch("coro.bench.cli._run_quality") as mock_quality:
         main()
     mock_quality.assert_called_once()
 
 
 def test_main_performance_runs_and_outputs_summary(capsys):
-    from asr_diar_server.bench.cli import main
+    from coro.bench.cli import main
 
-    with patch.object(sys, "argv", ["asr-diar-bench", "performance"]), \
-         patch("asr_diar_server.bench.cli.ensure_audio_and_annotations"), \
-         patch("asr_diar_server.bench.cli.materialize_reference_stms"), \
-         patch("asr_diar_server.bench.cli._run_performance") as mock_perf:
+    with patch.object(sys, "argv", ["coro-bench", "performance"]), \
+         patch("coro.bench.cli.ensure_audio_and_annotations"), \
+         patch("coro.bench.cli.materialize_reference_stms"), \
+         patch("coro.bench.cli._run_performance") as mock_perf:
         main()
     mock_perf.assert_called_once()
 
 
 def test_main_all_calls_run_all(capsys):
-    from asr_diar_server.bench.cli import main
+    from coro.bench.cli import main
 
-    with patch.object(sys, "argv", ["asr-diar-bench", "all"]), \
-         patch("asr_diar_server.bench.cli.ensure_audio_and_annotations"), \
-         patch("asr_diar_server.bench.cli.materialize_reference_stms"), \
-         patch("asr_diar_server.bench.cli._run_all") as mock_all:
+    with patch.object(sys, "argv", ["coro-bench", "all"]), \
+         patch("coro.bench.cli.ensure_audio_and_annotations"), \
+         patch("coro.bench.cli.materialize_reference_stms"), \
+         patch("coro.bench.cli._run_all") as mock_all:
         main()
     mock_all.assert_called_once()
 

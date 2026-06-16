@@ -18,12 +18,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from asr_diar_server.backends.onnx_asr import (
+from coro.backends.onnx_asr import (
     OnnxAsrASRAdapter,
     _LAST_WORD_PAD,
     convert_onnx_asr_result,
 )
-from asr_diar_server.core.types import TranscriptToken
+from coro.core.types import TranscriptToken
 
 _SP = "\u2581"
 

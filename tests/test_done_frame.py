@@ -5,13 +5,13 @@ from __future__ import annotations
 import dataclasses
 import json
 
-from asr_diar_server.core.types import SpeakerSegment, TranscriptDoneEvent, TranscriptToken
-from asr_diar_server.pipelines.done_frame import StreamingDoneFrame
-from asr_diar_server.pipelines.finalizer import (
+from coro.core.types import SpeakerSegment, TranscriptDoneEvent, TranscriptToken
+from coro.pipelines.done_frame import StreamingDoneFrame
+from coro.pipelines.finalizer import (
     StreamingTranscriptFinalizer,
     build_streaming_response,
 )
-from asr_diar_server.pipelines.transcript_store import TranscriptSpillStore
+from coro.pipelines.transcript_store import TranscriptSpillStore
 
 
 def _tok(start, end, text, prob=1.0):

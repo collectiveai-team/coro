@@ -12,13 +12,13 @@ from unittest.mock import patch
 
 import pytest
 
-from asr_diar_server.audio import AudioInput
-from asr_diar_server.core.types import (
+from coro.audio import AudioInput
+from coro.core.types import (
     TranscriptDeltaEvent,
     TranscriptToken,
 )
-from asr_diar_server.pipelines.done_frame import StreamingDoneFrame
-from asr_diar_server.pipelines.streaming import StreamingPipeline
+from coro.pipelines.done_frame import StreamingDoneFrame
+from coro.pipelines.streaming import StreamingPipeline
 
 
 def _render_done_frame(frame: StreamingDoneFrame) -> dict:
@@ -53,7 +53,7 @@ async def _multi_chunk_stream(path: str, chunk_seconds: float = 1.0):
 
 def _mock_stream():
     return patch(
-        "asr_diar_server.pipelines.streaming.stream_pcm_from_file",
+        "coro.pipelines.streaming.stream_pcm_from_file",
         new=_multi_chunk_stream,
     )
 

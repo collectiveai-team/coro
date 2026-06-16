@@ -19,9 +19,9 @@ from openai.types.audio import (
     TranscriptionVerbose,
 )
 
-from asr_diar_server.app import create_app
-from asr_diar_server.runtime import RuntimeState
-from asr_diar_server.settings import ServerSettings
+from coro.app import create_app
+from coro.runtime import RuntimeState
+from coro.settings import ServerSettings
 
 
 def _minimal_wav() -> bytes:

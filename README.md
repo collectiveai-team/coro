@@ -1,8 +1,11 @@
-# aymurai-asr
+# Coro
 
-OpenAI-compatible ASR + diarization HTTP server (`asr_diar_server`), with three
-pluggable ASR backends (Faster-Whisper, onnx-asr Parakeet, onnx-genai Nemotron)
-and NVIDIA NeMo Sortformer diarization.
+Coro is an OpenAI-compatible ASR + diarization HTTP server (package
+`coro`), with three pluggable ASR backends (Faster-Whisper, onnx-asr
+Parakeet, onnx-genai Nemotron) and NVIDIA NeMo Sortformer diarization.
+
+The name nods to *coro* (Spanish for "chorus") — many voices, transcribed and
+attributed to who spoke them.
 
 It exposes the OpenAI transcription contract, so **clients integrate using the
 official `openai` SDK types — no custom schema package is needed.**
@@ -22,11 +25,11 @@ official `openai` SDK types — no custom schema package is needed.**
 
 ```bash
 uv sync
-uv run asr-diar-server            # or: uv run uvicorn asr_diar_server.app:app
+uv run coro                       # or: uv run uvicorn coro.app:app
 ```
 
-Configuration is via `ASR_DIAR_`-prefixed environment variables (host, port,
-backends, devices, etc.); see `asr_diar_server/settings.py`.
+Configuration is via `CORO_`-prefixed environment variables (host, port,
+backends, devices, etc.); see `coro/settings.py`.
 
 Install the runtime that matches your hardware (the `cpu` / `cuda` extras are
 mutually exclusive and carry the matching `onnxruntime` / `onnxruntime-genai`
@@ -40,13 +43,13 @@ uv sync --extra cuda    # NVIDIA GPU deployment
 ## ASR backends
 
 The ASR backend is pluggable behind a single adapter contract. Select it with
-`ASR_DIAR_BACKEND_ASR` + `ASR_DIAR_MODEL_ASR`; pick the device with
-`ASR_DIAR_ASR_DEVICE` (`auto` | `cpu` | `cuda`).
+`CORO_BACKEND_ASR` + `CORO_MODEL_ASR`; pick the device with
+`CORO_ASR_DEVICE` (`auto` | `cpu` | `cuda`).
 
-| Backend (`ASR_DIAR_BACKEND_ASR`) | Runtime | Typical model (`ASR_DIAR_MODEL_ASR`) | Notes |
+| Backend (`CORO_BACKEND_ASR`) | Runtime | Typical model (`CORO_MODEL_ASR`) | Notes |
 |---|---|---|---|
-| `faster-whisper` | CTranslate2 | `openai/whisper-medium` | Default. Best accuracy; multilingual. `ASR_DIAR_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
-| `onnx-asr` | onnxruntime | `nemo-parakeet-tdt-0.6b-v3` | NeMo Parakeet/Canary; multilingual. Offline (batched) → very high GPU throughput. `ASR_DIAR_ASR_QUANTIZATION` = `int8` (CPU) or unset = fp32 (GPU). |
+| `faster-whisper` | CTranslate2 | `openai/whisper-medium` | Default. Best accuracy; multilingual. `CORO_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
+| `onnx-asr` | onnxruntime | `nemo-parakeet-tdt-0.6b-v3` | NeMo Parakeet/Canary; multilingual. Offline (batched) → very high GPU throughput. `CORO_ASR_QUANTIZATION` = `int8` (CPU) or unset = fp32 (GPU). |
 | `onnx-genai` | onnxruntime-genai | `onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4` | NVIDIA Nemotron **cache-aware streaming**; 40 locales. Built for low-latency real-time, not batch throughput. Timestamps are 560 ms-resolution. GPU strongly recommended. |
 
 ### Benchmarks
@@ -75,7 +78,7 @@ Memory footprint — **baseline** (peak, model + runtime, short clip):
 **Memory is not just the model on long audio.** The default **full-memory**
 pipeline decodes and holds the entire PCM plus the accumulated
 tokens/segments/words, so **host RAM grows ~linearly with recording length**.
-The **streaming** pipeline (`ASR_DIAR_PIPELINE=streaming`) streams 1 s PCM chunks
+The **streaming** pipeline (`CORO_PIPELINE=streaming`) streams 1 s PCM chunks
 from disk instead of buffering the whole recording, and spills the growing
 transcript to a per-request on-disk SQLite (WAL) store instead of Python lists.
 
@@ -94,7 +97,7 @@ segment/word at a time (never materialised). The wire format is unchanged.
 
 Notes:
 - The on-disk store **must live on real disk** for the flat-RSS property. Set
-  `ASR_DIAR_TRANSCRIPT_SPILL_DIR` to a persistent path; the default temp dir is
+  `CORO_TRANSCRIPT_SPILL_DIR` to a persistent path; the default temp dir is
   tmpfs (RAM-backed) on many systems, which would keep the transcript in memory.
 - The **non-streaming** `transcribe()` response inherently returns the whole
   transcript as one object, so its peak is O(length) at assembly time — use SSE
@@ -121,9 +124,9 @@ Takeaways:
 
 **GPU (`--extra cuda`):**
 ```bash
-ASR_DIAR_BACKEND_ASR=onnx-asr
-ASR_DIAR_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
-ASR_DIAR_ASR_DEVICE=cuda           # fp32 (leave ASR_DIAR_ASR_QUANTIZATION unset)
+CORO_BACKEND_ASR=onnx-asr
+CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
+CORO_ASR_DEVICE=cuda           # fp32 (leave CORO_ASR_QUANTIZATION unset)
 ```
 Fastest by a wide margin with near-best accuracy. Use `faster-whisper` +
 `float16` if you want the top accuracy point; use `onnx-genai` only for
@@ -131,16 +134,16 @@ real-time low-latency streaming.
 
 **CPU (`--extra cpu`):**
 ```bash
-ASR_DIAR_BACKEND_ASR=onnx-asr
-ASR_DIAR_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
-ASR_DIAR_ASR_DEVICE=cpu
-ASR_DIAR_ASR_QUANTIZATION=int8     # ~4× faster than whisper-medium
+CORO_BACKEND_ASR=onnx-asr
+CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
+CORO_ASR_DEVICE=cpu
+CORO_ASR_QUANTIZATION=int8     # ~4× faster than whisper-medium
 ```
 For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
-`ASR_DIAR_ASR_COMPUTE_TYPE=int8`. `onnx-genai` is not recommended on CPU.
+`CORO_ASR_COMPUTE_TYPE=int8`. `onnx-genai` is not recommended on CPU.
 
-**Streaming on long audio:** set `ASR_DIAR_PIPELINE=streaming` and point
-`ASR_DIAR_TRANSCRIPT_SPILL_DIR` at a persistent (non-tmpfs) directory so the
+**Streaming on long audio:** set `CORO_PIPELINE=streaming` and point
+`CORO_TRANSCRIPT_SPILL_DIR` at a persistent (non-tmpfs) directory so the
 per-request transcript spills to disk and host RSS stays flat regardless of
 recording length. Consume the result over SSE (`stream=true`).
 
