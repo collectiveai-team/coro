@@ -10,6 +10,8 @@ resident.
 
 from __future__ import annotations
 
+import gc
+import logging
 import struct
 import tracemalloc
 from unittest.mock import patch
@@ -58,10 +60,18 @@ async def _peak_heap_bytes(num_chunks: int, spill_dir: str) -> int:
         spill_dir=spill_dir,
     )
     with _mock_chunks(num_chunks):
+        # Per-window logging allocates transient strings that scale with audio
+        # length and pollute the trace; silence it so the measurement reflects
+        # only the pipeline's resident data structures (the flat-memory property).
+        logging.disable(logging.CRITICAL)
+        gc.collect()
         tracemalloc.start()
-        await _drain(pipeline)
-        _, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
+        try:
+            await _drain(pipeline)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+            logging.disable(logging.NOTSET)
     return peak
 
 
