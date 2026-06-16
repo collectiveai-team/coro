@@ -40,6 +40,26 @@ uv sync --extra cpu     # CPU-only deployment
 uv sync --extra cuda    # NVIDIA GPU deployment
 ```
 
+> **GPU on a bare host (not the devcontainer).** Two gotchas:
+>
+> 1. **`uv run` re-syncs to the *default* environment and uninstalls the `cuda`
+>    extra.** Run the server with the extra explicitly so the GPU wheels stay
+>    installed: `uv run --extra cuda coro` (or re-run `uv sync --extra cuda`
+>    after any plain `uv sync` / `uv run`).
+> 2. **faster-whisper (CTranslate2) needs `libcublas.so.12` + cuDNN 9**, which
+>    ship in the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` wheels (pulled by the
+>    `cuda` extra) but are **not** on the loader path by default. If you see
+>    `RuntimeError: Library libcublas.so.12 is not found`, prepend the wheel lib
+>    dirs to `LD_LIBRARY_PATH`:
+>    ```bash
+>    export LD_LIBRARY_PATH="$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cublas/lib:\
+>    $VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
+>    ```
+>    The devcontainer avoids both: its `nvidia/cuda:12.x` base image provides
+>    `libcublas.so.12` system-wide via `LD_LIBRARY_PATH=/usr/local/cuda/lib64`.
+>    The `onnx-asr` / `onnx-genai` backends use onnxruntime-gpu and are
+>    unaffected by gotcha 2.
+
 ## ASR backends
 
 The ASR backend is pluggable behind a single adapter contract. Select it with
@@ -181,6 +201,67 @@ For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
 `CORO_TRANSCRIPT_SPILL_DIR` at a persistent (non-tmpfs) directory so the
 per-request transcript spills to disk and host RSS stays flat regardless of
 recording length. Consume the result over SSE (`stream=true`).
+
+## Running benchmarks
+
+`coro-bench` scores a **running** server — it attaches over HTTP and does *not*
+start one for you. Install the bench tooling (MeetEval + samplers) and start the
+server you want to measure first:
+
+```bash
+uv sync --group bench                       # meeteval, nvidia-ml-py, rich
+uv run --group bench coro --port 8123 &     # server under test (add --extra cuda for GPU)
+```
+
+> Pass `--group bench` (and your hardware `--extra`) on **every** `uv run`
+> below: a bare `uv run` re-syncs to the default environment and would
+> uninstall the bench tooling again (same gotcha as the `cuda` extra above).
+
+Three subcommands share the same flags:
+
+| Subcommand | Measures |
+|---|---|
+| `quality` | transcription/diarization scores (cpWER, ORC-WER, DI-cpWER, DER) against a reference STM, via MeetEval |
+| `performance` | resource + timing of the server process tree (PSS/USS, VRAM, CPU/GPU %, throughput) |
+| `all` | both in a single run |
+
+### Smoke test on one small audio
+
+A reference STM has one line per segment —
+`<recording_id> <channel> <speaker> <start> <end> <text>` — where `recording_id`
+is the audio filename stem. The package vendors an 11 s `jfk.wav`:
+
+```bash
+echo "jfk 1 JFK 0.000 11.000 and so my fellow americans ask not what your country can do for you ask what you can do for your country" > jfk.ref.stm
+
+uv run --group bench coro-bench all \
+  --server-url http://127.0.0.1:8123 \
+  --audio coro/bench/data/jfk.wav \
+  --reference-stm jfk.ref.stm \
+  --out-dir ./bench-out
+```
+
+`quality` requires `--reference-stm` (and `all` needs it to score the quality
+half); `performance` does not. The run prints a report and writes `REPORT.md`
+plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
+
+### Larger workloads
+
+- `--clips-dir DIR` — a directory of `(<stem>.wav, <stem>.ref.stm)` pairs, e.g.
+  produced by the dataset materializers (`utils.make_ami_clip`,
+  `utils.make_common_voice_clips`, `utils.make_rttm_clip`).
+- `--ami-preset sample|eval|full` (or `--ami-groups` / `--ami-meetings`) — pull
+  AMI meetings into `--ami-root` (default `./amicorpus/`); add `--no-download` to
+  use only what is already present.
+
+### Useful flags
+
+| Flag | Purpose |
+|---|---|
+| `--reps N` | repetitions per workload item (default 1) |
+| `--stream` | drive the server over SSE; `performance`/`all` only (rejected for `quality`) |
+| `--server-pid PID` / `--server-match STR` | which process tree to sample for `performance` (default match: `coro`) |
+| `--der-collar SECONDS` / `--der-regions all\|nooverlap\|single` | DER scoring options |
 
 ## Client integration (the important part)
 
