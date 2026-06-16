@@ -74,11 +74,13 @@ def build_report(out_dir: Path) -> BenchReport:
 
     server_health = manifest.get("server_health", {})
     startup = server_health.get("startup_selection", {})
+    # /health reports provider/model under *_provider keys; accept the older
+    # *_backend names too so the report records the run config either way.
     server_config = {
-        "asr_backend": startup.get("asr_backend", ""),
+        "asr_backend": startup.get("asr_backend") or startup.get("asr_provider", ""),
         "asr_model": startup.get("asr_model", ""),
-        "diar_backend": startup.get("diar_backend", ""),
-        "diar_model": startup.get("diar_model", ""),
+        "diar_backend": startup.get("diar_backend") or startup.get("diarization_provider", ""),
+        "diar_model": startup.get("diar_model") or startup.get("diarization_model", ""),
         "pipeline": startup.get("pipeline", ""),
         "warmup": manifest.get("warmup", False),
     }
@@ -139,7 +141,19 @@ def _load_quality(
         duration = float(item.get("audio_seconds", 0.0))
         error_str = item.get("error")
 
-        if error_str or item.get("cpwer") is None:
+        diar = item.get("diarization") or {}
+        if diar.get("degenerate"):
+            footnotes.append(
+                f"WARNING for {session_id}: degenerate diarization "
+                f"({diar.get('hyp_speakers')} hyp speaker(s) vs "
+                f"{diar.get('ref_speakers')} ref) — speaker-blind WER (ORC-WER) "
+                f"will look good regardless; check DER/cpWER."
+            )
+
+        # Diarization-only items (e.g. VoxConverse) carry a valid DER but no WER;
+        # a missing cpwer is expected for them and must not be flagged as an error.
+        diarization_only = bool(item.get("diarization_only"))
+        if not diarization_only and (error_str or item.get("cpwer") is None):
             err_msg = str(error_str) if error_str else "unknown error"
             footnotes.append(f"ERROR for {session_id}: {err_msg}")
             rows.append(QualityRow(

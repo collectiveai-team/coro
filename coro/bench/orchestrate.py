@@ -242,6 +242,8 @@ def _run_quality_scoring_with_skip(
             "audio_seconds": item.get("audio_seconds", 0.0),
             "metrics": scored["metrics"],
         }
+        if scored.get("diarization") is not None:
+            artifact["diarization"] = scored["diarization"]
         if scored.get("error"):
             artifact["error"] = scored["error"]
 
@@ -257,6 +259,7 @@ def _run_quality_scoring_with_skip(
             "workload_set": [],
             "n_succeeded": 0,
             "n_failed": 0,
+            "n_degenerate_diarization": 0,
             "combined": {},
             "per_item": [],
         }

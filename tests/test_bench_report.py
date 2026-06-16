@@ -147,6 +147,37 @@ def test_render_markdown_failed_item_renders_error_row_and_footnote():
     assert "RuntimeError" in md
 
 
+def test_build_report_diarization_only_item_shows_der_not_error(tmp_path: Path):
+    """A diarization-only item (no WER) renders DER without an ERROR footnote."""
+    der = {
+        "der": 0.0943, "false_alarm": 0.1, "missed_detection": 0.1,
+        "speaker_error": 0.0, "total_speech": 5.3,
+    }
+    summary = {
+        "workload_set": ["voxc_clip"],
+        "n_succeeded": 1, "n_failed": 0, "n_degenerate_diarization": 0,
+        "combined": {
+            "cpwer": None, "orcwer": None, "dicpwer": None,
+            "normalized": {"cpwer": None, "orcwer": None, "dicpwer": None},
+            "der": der,
+        },
+        "per_item": [{
+            "session_id": "voxc_clip", "audio_seconds": 6.0,
+            "diarization_only": True, "der": 0.0943,
+            "diarization": {"ref_speakers": 2, "hyp_speakers": 2, "degenerate": False},
+        }],
+    }
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    (quality_dir / "summary.json").write_text(json.dumps(summary))
+
+    md = render_markdown(build_report(tmp_path))
+
+    assert "ERROR for voxc_clip" not in md
+    assert "0.0943" in md
+    assert "| voxc_clip | 6.0 | - | - | - | 0.0943 |" in md
+
+
 def test_render_markdown_stream_false_omits_ttft_column():
     report = _performance_report(stream=False)
     md = render_markdown(report)
@@ -312,6 +343,76 @@ def test_build_report_reads_normalized_quality_summaries(tmp_path):
     assert "## Quality Results" in md
     assert "## Normalized Quality Results" in md
     assert "| IB4001 | 10.0 | 0.2100 | 0.1600 | 0.1100 |" in md
+
+
+def test_build_report_surfaces_degenerate_diarization_warning(tmp_path):
+    manifest = {
+        "timestamp": "2026-05-04T10:00:00+00:00",
+        "git_sha": "deadbeef",
+        "subcommand": "quality",
+        "workload_set": [{"item_id": "IB4001", "audio_path": "/data/IB4001.wav"}],
+        "server_health": {"startup_selection": {}},
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    quality_summary = {
+        "n_succeeded": 1,
+        "n_failed": 0,
+        "n_degenerate_diarization": 1,
+        "combined": {
+            "cpwer": {"wer": 0.30},
+            "orcwer": {"wer": 0.05},
+            "dicpwer": {"wer": 0.20},
+            "der": {"der": 0.55},
+        },
+        "per_item": [
+            {
+                "session_id": "IB4001",
+                "audio_seconds": 1837.4,
+                "cpwer": 0.30,
+                "orcwer": 0.05,
+                "dicpwer": 0.20,
+                "der": 0.55,
+                "diarization": {"ref_speakers": 4, "hyp_speakers": 1, "degenerate": True},
+            },
+        ],
+    }
+    (quality_dir / "summary.json").write_text(json.dumps(quality_summary))
+
+    report = build_report(tmp_path)
+    md = render_markdown(report)
+
+    assert any("degenerate diarization" in note for note in report.quality_footnotes)
+    assert "degenerate diarization" in md
+    assert "IB4001" in md
+
+
+def test_build_report_reads_provider_keys_from_health(tmp_path):
+    """/health uses *_provider keys; the report must still record the config."""
+    manifest = {
+        "subcommand": "quality",
+        "server_health": {
+            "startup_selection": {
+                "pipeline": "full-memory",
+                "asr_provider": "faster-whisper",
+                "asr_model": "openai/whisper-medium",
+                "diarization_provider": "nemo",
+                "diarization_model": "nvidia/diar_streaming_sortformer_4spk-v2",
+            },
+        },
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+    report = build_report(tmp_path)
+
+    assert report.server_config["asr_backend"] == "faster-whisper"
+    assert report.server_config["diar_backend"] == "nemo"
+    assert report.server_config["diar_model"] == "nvidia/diar_streaming_sortformer_4spk-v2"
+    md = render_markdown(report)
+    assert "faster-whisper" in md
+    assert "nemo" in md
 
 
 def test_both_renderers_produce_consistent_session_ids():

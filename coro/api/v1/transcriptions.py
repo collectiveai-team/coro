@@ -44,17 +44,36 @@ logger = logging.getLogger(__name__)
 
 # MARK: Response
 class ResponseFormat(StrEnum):
-    """All OpenAI response_format values this server recognises."""
+    """All OpenAI response_format values this server recognises.
+
+    JSON-like formats are implemented; ``json_verbose``/``dirized_json`` are
+    typo-tolerant aliases of ``verbose_json``/``diarized_json``. The text output
+    formats are recognised so they fail with an OpenAI-style 400 (param
+    ``response_format``) rather than a generic validation error.
+    """
 
     JSON = "json"
     VERBOSE_JSON = "verbose_json"
+    JSON_VERBOSE = "json_verbose"
     DIARIZED_JSON = "diarized_json"
+    DIRIZED_JSON = "dirized_json"
 
-    # Unsupported OpenAI formats (recognised but not implemented)
-    # TEXT = "text"
-    # SRT = "srt"
-    # VTT = "vtt"
-    # TSV = "tsv"
+    # Unsupported OpenAI formats (recognised but not implemented → 400)
+    TEXT = "text"
+    SRT = "srt"
+    VTT = "vtt"
+    TSV = "tsv"
+
+
+# JSON-like formats this server actually renders (vs. the recognised-but-
+# unsupported text outputs above).
+_JSON_LIKE_FORMATS = frozenset({
+    ResponseFormat.JSON,
+    ResponseFormat.VERBOSE_JSON,
+    ResponseFormat.JSON_VERBOSE,
+    ResponseFormat.DIARIZED_JSON,
+    ResponseFormat.DIRIZED_JSON,
+})
 
 
 def _text_from_result(result: TranscriptionResponse) -> str:
@@ -179,9 +198,9 @@ def _response_for_format(
     match response_format:
         case ResponseFormat.JSON:
             return _json_response(result)
-        case ResponseFormat.VERBOSE_JSON:
+        case ResponseFormat.VERBOSE_JSON | ResponseFormat.JSON_VERBOSE:
             return _verbose_json_response(result, language=language)
-        case ResponseFormat.DIARIZED_JSON:
+        case ResponseFormat.DIARIZED_JSON | ResponseFormat.DIRIZED_JSON:
             return _diarized_json_response(result)
 
     raise TranscriptionValidationError(

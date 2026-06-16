@@ -19,6 +19,23 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     assert settings.backend_diarization == "none"
     assert settings.model_diarization is None
     assert settings.diarization_device == "auto"
+    assert settings.asr_onnx_vad == "disabled"
+    assert settings.asr_onnx_vad_threshold is None
+
+
+def test_onnx_vad_settings_read_from_env(monkeypatch):
+    monkeypatch.setenv("CORO_ASR_ONNX_VAD", "enabled")
+    monkeypatch.setenv("CORO_ASR_ONNX_VAD_THRESHOLD", "0.4")
+    settings = ServerSettings(_env_file=None)
+
+    assert settings.asr_onnx_vad == "enabled"
+    assert settings.asr_onnx_vad_threshold == 0.4
+
+
+@pytest.mark.parametrize("value", ["on", "true", "yes", ""])
+def test_onnx_vad_selector_is_strict(value: str):
+    with pytest.raises(ValidationError):
+        ServerSettings(asr_onnx_vad=value, _env_file=None)
 
 
 def test_nemo_diarization_gets_default_model():

@@ -16,6 +16,14 @@ from typing import Any
 
 _ID_RE = re.compile(r"id\(([^)]+)\)")
 
+DIARIZATION_ONLY_TEXT = "<sd>"
+"""Placeholder text for references that carry speaker turns but no transcript.
+
+Diarization-only corpora (e.g. VoxConverse RTTM) have no words, but STM lines
+require a text field. Lines whose text is exactly this sentinel mark the item as
+diarization-only so scoring reports DER and omits the (meaningless) WER.
+"""
+
 
 def _clean_text(text: str) -> str:
     text = text.replace("\n", " ").strip()
@@ -56,6 +64,88 @@ def hyp_segments_to_stm(
             f"{start_f:.3f} {end_f:.3f} {text}"
         )
 
+    lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def slice_stm_window(
+    stm_text: str,
+    start: float,
+    end: float,
+    *,
+    rebase: bool = True,
+    recording_id: str | None = None,
+) -> str:
+    """Slice an STM to the ``[start, end)`` time window for short-clip benchmarks.
+
+    Lines overlapping the window are kept and their times clamped to it; lines
+    fully outside are dropped. When ``rebase`` is True (the default for cut audio
+    that starts at 0), kept times are shifted so the window start becomes 0.0.
+    When ``recording_id`` is given, the STM session id (column 1) is rewritten to
+    it so the clip's reference matches a hypothesis keyed by the clip stem.
+    Output is sorted by (start_time, speaker), matching the other STM builders.
+    """
+    if end <= start:
+        return ""
+    shift = start if rebase else 0.0
+    lines: list[str] = []
+    for raw in stm_text.splitlines():
+        parts = raw.strip().split(maxsplit=5)
+        if len(parts) < 6:
+            continue
+        try:
+            seg_start = float(parts[3])
+            seg_end = float(parts[4])
+        except ValueError:
+            continue
+        if seg_end <= start or seg_start >= end:
+            continue
+        clamped_start = max(seg_start, start) - shift
+        clamped_end = min(seg_end, end) - shift
+        if clamped_end <= clamped_start:
+            continue
+        session = recording_id if recording_id is not None else parts[0]
+        lines.append(
+            f"{session} {parts[1]} {parts[2]} "
+            f"{clamped_start:.3f} {clamped_end:.3f} {parts[5]}"
+        )
+    lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def rttm_to_stm(
+    rttm_text: str,
+    recording_id: str,
+    *,
+    channel: str = "1",
+    text: str = DIARIZATION_ONLY_TEXT,
+) -> str:
+    """Convert RTTM ``SPEAKER`` turns to a diarization-only reference STM.
+
+    RTTM has no transcript, so every emitted STM line carries ``text`` (the
+    diarization-only sentinel by default) — enough for DER scoring, which uses
+    only speaker labels and timings. ``SPEAKER`` lines provide onset/duration in
+    columns 4/5 and the speaker label in column 8; turns with non-positive
+    duration are dropped. Output is sorted by (start_time, speaker).
+    """
+    lines: list[str] = []
+    for raw in rttm_text.splitlines():
+        parts = raw.split()
+        if len(parts) < 8 or parts[0] != "SPEAKER":
+            continue
+        try:
+            start_f = float(parts[3])
+            dur_f = float(parts[4])
+        except ValueError:
+            continue
+        end_f = start_f + dur_f
+        if dur_f <= 0:
+            continue
+        speaker = parts[7]
+        lines.append(
+            f"{recording_id} {channel} {speaker} "
+            f"{start_f:.3f} {end_f:.3f} {text}"
+        )
     lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
     return "\n".join(lines) + "\n" if lines else ""
 

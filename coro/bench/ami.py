@@ -5,7 +5,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from coro.bench.stm import ami_meeting_to_stm
+from coro.bench.stm import ami_meeting_to_stm, slice_stm_window
 from coro.bench.utils.ami_audios_download import (
     download_annotations,
     download_meeting_audio,
@@ -143,6 +143,27 @@ def ensure_audio_and_annotations(
                 f"Missing annotations (and --no-download was set): "
                 f"{', '.join(missing_annotations)}"
             )
+
+
+def clip_reference_stm(
+    ami_root: Path,
+    meeting_id: str,
+    start: float,
+    duration: float,
+    *,
+    recording_id: str | None = None,
+) -> str:
+    """Build a rebased reference STM for a short ``[start, start+duration)`` clip.
+
+    Reuses the full-meeting AMI annotation conversion, then windows it so the
+    references stay reliable on short, manually verifiable audio. Times are
+    rebased to 0.0 to match a cut audio clip. ``recording_id`` overrides the STM
+    session id (column 1) so it matches a hypothesis keyed by the clip stem.
+    """
+    full = ami_meeting_to_stm(ami_root, meeting_id)
+    return slice_stm_window(
+        full, start, start + duration, rebase=True, recording_id=recording_id,
+    )
 
 
 def materialize_reference_stms(

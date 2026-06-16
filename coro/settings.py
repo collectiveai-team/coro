@@ -18,6 +18,7 @@ PipelineSelector = Literal["full-memory", "streaming"]
 ASRBackendProvider = Literal["faster-whisper", "onnx-asr", "onnx-genai"]
 DiarizationBackendProvider = Literal["none", "nemo"]
 ASRDevice = Literal["auto", "cuda", "cpu"]
+OnnxVadSelector = Literal["enabled", "disabled"]
 DiarizationDevice = Literal["auto", "cuda", "cpu"]
 DiarizationLatencyTier = Literal["very-high", "high", "low", "ultra-low"]
 
@@ -54,6 +55,17 @@ class ServerSettings(BaseSettings):
         default=None,
         description="onnx-asr model quantization selector (e.g. 'int8'); ignored by "
         "the faster-whisper backend.",
+    )
+    asr_onnx_vad: OnnxVadSelector = Field(
+        default="disabled",
+        description="Enable Silero VAD speech segmentation for the onnx-asr backend "
+        "(via onnx_asr.load_vad('silero')). Ignored by the faster-whisper and "
+        "onnx-genai backends.",
+    )
+    asr_onnx_vad_threshold: float | None = Field(
+        default=None,
+        description="Optional Silero VAD speech probability threshold for the onnx-asr "
+        "backend; only used when asr_onnx_vad is 'enabled'. None uses onnx-asr's default.",
     )
     backend_diarization: DiarizationBackendProvider = Field(
         default="none",
