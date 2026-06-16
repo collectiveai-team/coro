@@ -12,3 +12,4 @@ amicorpus
 benchmark-results/
 
 .worktrees/
+.axon
