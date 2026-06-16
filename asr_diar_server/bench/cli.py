@@ -76,6 +76,13 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--warmup-audio", type=Path, default=None)
     parser.add_argument("--audio", type=Path, default=None)
     parser.add_argument("--reference-stm", type=Path, default=None)
+    parser.add_argument(
+        "--clips-dir",
+        type=Path,
+        default=None,
+        help="Directory of (<stem>.wav, <stem>.ref.stm) pairs to benchmark as a "
+        "short-clip / curated workload (e.g. make_ami_clip output).",
+    )
     parser.add_argument("--der-collar", type=float, default=0.0)
     parser.add_argument(
         "--der-regions", choices=["all", "nooverlap", "single"], default="all"
@@ -173,6 +180,11 @@ def _run_performance(args: argparse.Namespace, meetings: list[str]) -> None:
             "ref_stm_path": None,
         })
 
+    if args.clips_dir is not None:
+        from asr_diar_server.bench.clips import resolve_clip_items
+
+        items.extend(resolve_clip_items(args.clips_dir))
+
     base_url = args.server_url or f"http://127.0.0.1:{args.server_port}"
 
     warmup_audio = args.warmup_audio or WARMUP_AUDIO_PATH
@@ -223,6 +235,11 @@ def _run_quality(args: argparse.Namespace, meetings: list[str]) -> None:
             "audio_seconds": 0.0,
         })
 
+    if args.clips_dir is not None:
+        from asr_diar_server.bench.clips import resolve_clip_items
+
+        items.extend(resolve_clip_items(args.clips_dir))
+
     base_url = args.server_url or f"http://127.0.0.1:{args.server_port}"
 
     run_workload(
@@ -271,6 +288,11 @@ def _run_all(args: argparse.Namespace, meetings: list[str]) -> None:
             "audio_seconds": 0.0,
         })
 
+    if args.clips_dir is not None:
+        from asr_diar_server.bench.clips import resolve_clip_items
+
+        items.extend(resolve_clip_items(args.clips_dir))
+
     base_url = args.server_url or f"http://127.0.0.1:{args.server_port}"
 
     warmup_audio = args.warmup_audio or WARMUP_AUDIO_PATH
@@ -295,15 +317,25 @@ def _run_all(args: argparse.Namespace, meetings: list[str]) -> None:
 
 def main() -> None:
     args = parse_args()
-    meetings = resolve_workload_set(
-        ami_meetings=args.ami_meetings,
-        ami_groups=args.ami_groups,
-        ami_preset=args.ami_preset,
-    )
-    ensure_audio_and_annotations(
-        meetings, args.ami_root, no_download=args.no_download,
-    )
-    materialize_reference_stms(meetings, args.ami_root)
+
+    # A custom workload (--clips-dir / --audio) suppresses the implicit AMI
+    # "sample" default so curated/short-clip runs don't pull AMI meetings.
+    has_explicit_ami = bool(args.ami_meetings or args.ami_groups or args.ami_preset)
+    has_custom_workload = args.clips_dir is not None or args.audio is not None
+    if has_explicit_ami or not has_custom_workload:
+        meetings = resolve_workload_set(
+            ami_meetings=args.ami_meetings,
+            ami_groups=args.ami_groups,
+            ami_preset=args.ami_preset,
+        )
+    else:
+        meetings = []
+
+    if meetings:
+        ensure_audio_and_annotations(
+            meetings, args.ami_root, no_download=args.no_download,
+        )
+        materialize_reference_stms(meetings, args.ami_root)
 
     try:
         if args.subcommand == "performance":

@@ -3,10 +3,9 @@
 Start custom_server.py, wait for it to be healthy, run custom_client.py, then shut down.
 
 Usage:
-    uv run --no-sync python run_transcription.py [AUDIO] [extra server args...]
+    uv run --no-sync python run_transcription.py AUDIO [extra server args...]
 
 Defaults:
-    AUDIO  = ./audios/RNE14-agosto-13.mp3
     MODEL  = medium  (set via --model, passed as extra server arg)
 
 Extra args after AUDIO are forwarded to the server command.
@@ -20,7 +19,6 @@ import time
 import urllib.error
 import urllib.request
 
-DEFAULT_AUDIO = "./audios/RNE14-agosto-13.mp3"
 DEFAULT_MODEL = "medium"
 SERVER_URL = "http://localhost:8000"
 HEALTH_ENDPOINT = f"{SERVER_URL}/health"
@@ -80,9 +78,7 @@ def main() -> int:
     )
     parser.add_argument(
         "audio",
-        nargs="?",
-        default=DEFAULT_AUDIO,
-        help=f"Path to audio file (default: {DEFAULT_AUDIO})",
+        help="Path to audio file to transcribe.",
     )
     parser.add_argument(
         "--sse",

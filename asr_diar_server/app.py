@@ -75,6 +75,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 settings.model_asr,
                 device=settings.asr_device,
                 quantization=settings.asr_quantization,
+                vad_enabled=settings.asr_onnx_vad == "enabled",
+                vad_threshold=settings.asr_onnx_vad_threshold,
             )
         elif settings.backend_asr == "onnx-genai":
             from asr_diar_server.backends.onnx_genai import build_onnx_genai_adapter

@@ -123,6 +123,40 @@ class TestHypSegmentsToStm:
         assert "hello world" in result
 
 
+class TestRttmToStm:
+    """rttm_to_stm converts RTTM SPEAKER turns to a diarization-only STM."""
+
+    _RTTM = (
+        "SPEAKER rec 1 2.50 1.50 <NA> <NA> spkB <NA> <NA>\n"
+        "SPEAKER rec 1 0.00 2.00 <NA> <NA> spkA <NA> <NA>\n"
+    )
+
+    def test_speaker_turns_become_sorted_stm_with_sentinel_text(self):
+        from asr_diar_server.bench.stm import DIARIZATION_ONLY_TEXT, rttm_to_stm
+
+        lines = rttm_to_stm(self._RTTM, "rec").strip().split("\n")
+        # Sorted by start time; end = onset + duration; sentinel text.
+        assert lines[0] == f"rec 1 spkA 0.000 2.000 {DIARIZATION_ONLY_TEXT}"
+        assert lines[1] == f"rec 1 spkB 2.500 4.000 {DIARIZATION_ONLY_TEXT}"
+
+    def test_non_speaker_and_nonpositive_duration_rows_dropped(self):
+        from asr_diar_server.bench.stm import rttm_to_stm
+
+        rttm = (
+            "SPKR-INFO rec 1 <NA> <NA> <NA> unknown spkA <NA> <NA>\n"
+            "SPEAKER rec 1 1.00 0.00 <NA> <NA> spkA <NA> <NA>\n"
+            "SPEAKER rec 1 1.00 0.50 <NA> <NA> spkA <NA> <NA>\n"
+        )
+        assert rttm_to_stm(rttm, "rec").strip().split("\n") == [
+            "rec 1 spkA 1.000 1.500 <sd>"
+        ]
+
+    def test_empty_rttm_yields_empty_string(self):
+        from asr_diar_server.bench.stm import rttm_to_stm
+
+        assert rttm_to_stm("\n# comment\n", "rec") == ""
+
+
 class TestAmiMeetingToStm:
     """ami_meeting_to_stm produces Reference STM from AMI annotation tree."""
 
@@ -196,4 +230,85 @@ class TestAmiMeetingToStm:
         result = ami_meeting_to_stm(ami_fixture, "TS3003a")
         lines = result.strip().split("\n")
         times = [float(line.split()[3]) for line in lines]
+        assert times == sorted(times)
+
+    def test_clip_reference_stm_windows_and_rebases(self, ami_fixture: Path):
+        from asr_diar_server.bench.ami import clip_reference_stm
+
+        # Full meeting: A 0.0-1.0 "Hello world", B 1.0-2.0 "Good morning".
+        clip = clip_reference_stm(ami_fixture, "TS3003a", start=0.5, duration=1.0)
+        lines = [line.split(maxsplit=5) for line in clip.splitlines()]
+
+        assert lines[0][2] == "A"
+        assert lines[0][3:5] == ["0.000", "0.500"]
+        assert lines[0][5] == "Hello world"
+        assert lines[1][2] == "B"
+        assert lines[1][3:5] == ["0.500", "1.000"]
+        assert lines[1][5] == "Good morning"
+
+
+class TestSliceStmWindow:
+    """slice_stm_window keeps overlapping lines, clamps, and rebases times."""
+
+    SAMPLE = (
+        "m 1 A 0.000 2.000 hello world\n"
+        "m 1 B 2.000 4.000 foo bar\n"
+        "m 1 A 4.000 6.000 baz qux\n"
+        "m 1 B 6.000 8.000 out of window\n"
+    )
+
+    def test_keeps_only_overlapping_lines(self):
+        from asr_diar_server.bench.stm import slice_stm_window
+
+        out = slice_stm_window(self.SAMPLE, 2.0, 6.0)
+        texts = [line.split(maxsplit=5)[5] for line in out.splitlines()]
+        assert texts == ["foo bar", "baz qux"]
+
+    def test_rebases_times_to_window_start(self):
+        from asr_diar_server.bench.stm import slice_stm_window
+
+        out = slice_stm_window(self.SAMPLE, 2.0, 6.0)
+        first = out.splitlines()[0].split()
+        # "foo bar" was 2.0-4.0; rebased to 0.0-2.0.
+        assert first[3] == "0.000"
+        assert first[4] == "2.000"
+
+    def test_rebase_false_preserves_absolute_times(self):
+        from asr_diar_server.bench.stm import slice_stm_window
+
+        out = slice_stm_window(self.SAMPLE, 2.0, 6.0, rebase=False)
+        first = out.splitlines()[0].split()
+        assert first[3] == "2.000"
+
+    def test_clamps_partial_overlap_at_boundaries(self):
+        from asr_diar_server.bench.stm import slice_stm_window
+
+        # Window 1.0-5.0 partially overlaps the first and third lines.
+        out = slice_stm_window(self.SAMPLE, 1.0, 5.0, rebase=False)
+        lines = {line.split(maxsplit=5)[5]: line.split() for line in out.splitlines()}
+        assert lines["hello world"][3:5] == ["1.000", "2.000"]
+        assert lines["baz qux"][3:5] == ["4.000", "5.000"]
+
+    def test_empty_for_window_outside_all_lines(self):
+        from asr_diar_server.bench.stm import slice_stm_window
+
+        assert slice_stm_window(self.SAMPLE, 100.0, 200.0) == ""
+
+    def test_empty_for_nonpositive_window(self):
+        from asr_diar_server.bench.stm import slice_stm_window
+
+        assert slice_stm_window(self.SAMPLE, 5.0, 5.0) == ""
+
+    def test_recording_id_override_rewrites_session_column(self):
+        from asr_diar_server.bench.stm import slice_stm_window
+
+        out = slice_stm_window(self.SAMPLE, 0.0, 8.0, recording_id="clip_0_8")
+        sessions = {line.split()[0] for line in out.splitlines()}
+        assert sessions == {"clip_0_8"}
+
+    def test_output_sorted_by_time_then_speaker(self):
+        from asr_diar_server.bench.stm import slice_stm_window
+
+        out = slice_stm_window(self.SAMPLE, 0.0, 8.0)
+        times = [float(line.split()[3]) for line in out.splitlines()]
         assert times == sorted(times)

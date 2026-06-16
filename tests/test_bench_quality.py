@@ -72,7 +72,8 @@ class TestPyprojectBenchExtra:
         toml_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
         text = toml_path.read_text()
         assert "[project.optional-dependencies]" in text
-        assert 'bench = ["meeteval"' in text or "bench = ['meeteval'" in text
+        assert "bench = [" in text
+        assert "meeteval" in text
         assert "rich" in text
 
 
@@ -94,33 +95,13 @@ class TestRequireMeeteval:
             assert result is mock_meeteval
 
 
-def _make_mock_meeteval():
-    mock_meeteval = MagicMock()
-
-    def _wer_result(wer_val=0.1, errors=5, length=50, ins=2, dele=1, sub=2):
-        r = MagicMock()
-        r.wer = wer_val
-        r.errors = errors
-        r.length = length
-        r.insertions = ins
-        r.deletions = dele
-        r.substitutions = sub
-        return r
-
-    mock_meeteval.wer.siwer.return_value = _wer_result(0.12, 6, 50, 2, 2, 2)
-    mock_meeteval.wer.cpwer.return_value = _wer_result(0.15, 8, 53, 3, 3, 2)
-    mock_meeteval.wer.greedy_orcwer.return_value = _wer_result(0.13, 7, 54, 2, 3, 2)
-    mock_meeteval.wer.greedy_dicpwer.return_value = _wer_result(0.14, 7, 50, 2, 3, 2)
-
-    der_result = MagicMock()
-    der_result.der = 0.08
-    der_result.false_alarm = 1.0
-    der_result.missed_detection = 2.0
-    der_result.speaker_error = 3.0
-    der_result.total_speech = 50.0
-    mock_meeteval.der.md_eval_22.return_value = der_result
-
-    return mock_meeteval
+def _write_stm_pair(tmp_path: Path, name: str, ref: str, hyp: str) -> tuple[Path, Path]:
+    """Write a (ref, hyp) STM pair and return their paths."""
+    ref_stm = tmp_path / f"{name}.ref.stm"
+    hyp_stm = tmp_path / f"{name}.hyp.stm"
+    ref_stm.write_text(ref)
+    hyp_stm.write_text(hyp)
+    return ref_stm, hyp_stm
 
 
 class TestScoreItem:
@@ -142,71 +123,62 @@ class TestScoreItem:
 
         assert dst.read_text() == "meeting 1 A 0.000 1.500 Hello world\n"
 
-    def test_score_item_returns_metrics_with_all_five(self, tmp_path: Path):
-        ref_stm = tmp_path / "meeting1.ref.stm"
-        ref_stm.write_text("meeting1 1 A 0.000 1.500 hello world\n")
-        hyp_stm = tmp_path / "meeting1.hyp.stm"
-        hyp_stm.write_text("meeting1 1 A 0.000 1.500 hello world\n")
+    def test_score_item_returns_all_wer_and_der_metrics(self, tmp_path: Path):
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "meeting1",
+            "meeting1 1 A 0.000 1.500 hello world\n",
+            "meeting1 1 A 0.000 1.500 hello world\n",
+        )
 
-        mock_meeteval = _make_mock_meeteval()
-        with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import score_item
+        from asr_diar_server.bench.quality import score_item
 
-            result = score_item(ref_stm, hyp_stm)
+        result = score_item(ref_stm, hyp_stm)
 
         assert result["metrics"] is not None
         metrics = result["metrics"]
-        assert "siwer" in metrics
         assert "cpwer" in metrics
         assert "orcwer" in metrics
         assert "dicpwer" in metrics
         assert "der" in metrics
-        assert metrics["siwer"]["wer"] == 0.12
-        assert metrics["cpwer"]["wer"] == 0.15
-        assert metrics["orcwer"]["wer"] == 0.13
-        assert metrics["dicpwer"]["wer"] == 0.14
-        assert metrics["der"]["der"] == 0.08
+        # Perfect match -> zero WER on every speaker-attributed metric.
+        assert metrics["cpwer"]["wer"] == 0.0
+        assert metrics["orcwer"]["wer"] == 0.0
+        assert metrics["dicpwer"]["wer"] == 0.0
 
     def test_score_item_wer_metrics_have_full_breakdown(self, tmp_path: Path):
-        ref_stm = tmp_path / "m.ref.stm"
-        ref_stm.write_text("m 1 A 0.0 1.0 test\n")
-        hyp_stm = tmp_path / "m.hyp.stm"
-        hyp_stm.write_text("m 1 A 0.0 1.0 test\n")
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path, "m", "m 1 A 0.0 1.0 test\n", "m 1 A 0.0 1.0 test\n",
+        )
 
-        mock_meeteval = _make_mock_meeteval()
-        with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import score_item
+        from asr_diar_server.bench.quality import score_item
 
-            result = score_item(ref_stm, hyp_stm)
+        result = score_item(ref_stm, hyp_stm)
 
-        siwer = result["metrics"]["siwer"]
+        cpwer = result["metrics"]["cpwer"]
         for key in ("wer", "errors", "length", "insertions", "deletions", "substitutions"):
-            assert key in siwer
+            assert key in cpwer
 
     def test_score_item_der_has_full_breakdown(self, tmp_path: Path):
-        ref_stm = tmp_path / "m.ref.stm"
-        ref_stm.write_text("m 1 A 0.0 1.0 test\n")
-        hyp_stm = tmp_path / "m.hyp.stm"
-        hyp_stm.write_text("m 1 A 0.0 1.0 test\n")
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path, "m", "m 1 A 0.0 1.0 test\n", "m 1 A 0.0 1.0 test\n",
+        )
 
-        mock_meeteval = _make_mock_meeteval()
-        with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import score_item
+        from asr_diar_server.bench.quality import score_item
 
-            result = score_item(ref_stm, hyp_stm)
+        result = score_item(ref_stm, hyp_stm)
 
         der = result["metrics"]["der"]
         for key in ("der", "false_alarm", "missed_detection", "speaker_error", "total_speech"):
             assert key in der
 
     def test_score_item_returns_error_when_meeteval_raises(self, tmp_path: Path):
-        ref_stm = tmp_path / "m.ref.stm"
-        ref_stm.write_text("m 1 A 0.0 1.0 test\n")
-        hyp_stm = tmp_path / "m.hyp.stm"
-        hyp_stm.write_text("m 1 A 0.0 1.0 test\n")
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path, "m", "m 1 A 0.0 1.0 test\n", "m 1 A 0.0 1.0 test\n",
+        )
 
         mock_meeteval = MagicMock()
-        mock_meeteval.wer.siwer.side_effect = RuntimeError("scoring failed")
+        mock_meeteval.wer.cpwer.side_effect = RuntimeError("scoring failed")
         with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
             from asr_diar_server.bench.quality import score_item
 
@@ -217,58 +189,136 @@ class TestScoreItem:
         assert result["error"]["type"] == "RuntimeError"
         assert "scoring failed" in result["error"]["message"]
 
+    def test_score_item_reports_diarization_sanity(self, tmp_path: Path):
+        # Single hyp speaker against a two-speaker reference is degenerate.
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "m",
+            "m 1 A 0.0 2.0 hello world\nm 1 B 2.0 4.0 foo bar\n",
+            "m 1 1 0.0 4.0 hello world foo bar\n",
+        )
+
+        from asr_diar_server.bench.quality import score_item
+
+        result = score_item(ref_stm, hyp_stm)
+
+        diar = result["diarization"]
+        assert diar["ref_speakers"] == 2
+        assert diar["hyp_speakers"] == 1
+        assert diar["degenerate"] is True
+
+
+def _scored(tmp_path: Path, name: str, ref: str, hyp: str, seconds: float) -> dict:
+    """Score a tiny STM pair with real meeteval and tag it like the orchestrator."""
+    ref_stm, hyp_stm = _write_stm_pair(tmp_path, name, ref, hyp)
+    from asr_diar_server.bench.quality import score_item
+
+    result = score_item(ref_stm, hyp_stm)
+    result["session_id"] = name
+    result["audio_seconds"] = seconds
+    return result
+
 
 class TestCombineItems:
-    def test_combine_items_produces_combined_metrics(self):
-        mock_meeteval = _make_mock_meeteval()
+    def test_combine_items_produces_combined_metrics(self, tmp_path: Path):
+        from asr_diar_server.bench.quality import combine_items
 
-        combined_er = MagicMock()
-        combined_er.wer = 0.125
-        combined_er.errors = 12
-        combined_er.length = 96
-        combined_er.insertions = 4
-        combined_er.deletions = 4
-        combined_er.substitutions = 4
-        mock_meeteval.wer.combine_error_rates.return_value = combined_er
-
-        raw_mock = MagicMock()
         item_results = [
-            {"session_id": "A", "metrics": {"siwer": {"wer": 0.1}, "cpwer": {"wer": 0.1}, "orcwer": {"wer": 0.1}, "dicpwer": {"wer": 0.1}, "der": {"der": 0.1}}, "_raw": {"siwer": raw_mock, "cpwer": raw_mock, "orcwer": raw_mock, "dicpwer": raw_mock, "der": raw_mock}},
-            {"session_id": "B", "metrics": {"siwer": {"wer": 0.15}, "cpwer": {"wer": 0.15}, "orcwer": {"wer": 0.15}, "dicpwer": {"wer": 0.15}, "der": {"der": 0.15}}, "_raw": {"siwer": raw_mock, "cpwer": raw_mock, "orcwer": raw_mock, "dicpwer": raw_mock, "der": raw_mock}},
+            _scored(tmp_path, "A", "A 1 X 0.0 2.0 hello world\n", "A 1 X 0.0 2.0 hello world\n", 2.0),
+            _scored(tmp_path, "B", "B 1 X 0.0 2.0 foo bar\n", "B 1 X 0.0 2.0 foo bar\n", 2.0),
         ]
 
-        with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import combine_items
-
-            summary = combine_items(item_results)
+        summary = combine_items(item_results)
 
         assert summary["n_succeeded"] == 2
         assert summary["n_failed"] == 0
         assert "combined" in summary
+        assert summary["combined"]["cpwer"] is not None
+        assert summary["combined"]["der"] is not None
         assert summary["per_item"][0]["session_id"] == "A"
         assert summary["per_item"][1]["session_id"] == "B"
 
-    def test_combine_items_counts_failures(self):
-        mock_meeteval = _make_mock_meeteval()
-        mock_meeteval.wer.combine_error_rates.return_value = MagicMock(
-            wer=0.1, errors=5, length=50, insertions=2, deletions=1, substitutions=2
-        )
+    def test_combine_items_aggregates_der_across_all_items(self, tmp_path: Path):
+        """Regression: combined DER must reflect every item, not just the first.
 
-        raw_mock = MagicMock()
+        Item A is a perfect single-speaker match (DER 0.0); item B collapses two
+        reference speakers onto one hypothesis speaker (DER > 0). The old code
+        reported only item A's DER (0.0); the aggregate must be > 0.
+        """
+        from asr_diar_server.bench.quality import combine_items
+
         item_results = [
-            {"session_id": "A", "metrics": {"siwer": {"wer": 0.1}, "cpwer": {"wer": 0.1}, "orcwer": {"wer": 0.1}, "dicpwer": {"wer": 0.1}, "der": {"der": 0.1}}, "_raw": {"siwer": raw_mock, "cpwer": raw_mock, "orcwer": raw_mock, "dicpwer": raw_mock, "der": raw_mock}},
+            _scored(tmp_path, "A", "A 1 X 0.0 2.0 hello world\n", "A 1 X 0.0 2.0 hello world\n", 2.0),
+            _scored(
+                tmp_path,
+                "B",
+                "B 1 P 0.0 2.0 foo bar\nB 1 Q 2.0 4.0 baz qux\n",
+                "B 1 1 0.0 4.0 foo bar baz qux\n",
+                4.0,
+            ),
+        ]
+
+        summary = combine_items(item_results)
+
+        first_item_der = item_results[0]["metrics"]["der"]["der"]
+        assert first_item_der == 0.0
+        assert summary["combined"]["der"]["der"] > 0.0
+        assert summary["n_degenerate_diarization"] == 1
+
+    def test_combine_items_counts_failures(self, tmp_path: Path):
+        from asr_diar_server.bench.quality import combine_items
+
+        good = _scored(tmp_path, "A", "A 1 X 0.0 2.0 hello\n", "A 1 X 0.0 2.0 hello\n", 2.0)
+        item_results = [
+            good,
             {"session_id": "B", "metrics": None, "error": {"type": "RuntimeError", "message": "fail"}},
         ]
 
-        with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from asr_diar_server.bench.quality import combine_items
-
-            summary = combine_items(item_results)
+        summary = combine_items(item_results)
 
         assert summary["n_succeeded"] == 1
         assert summary["n_failed"] == 1
         assert len(summary["per_item"]) == 2
         assert summary["per_item"][1]["session_id"] == "B"
+
+
+class TestDiarizationOnly:
+    """Diarization-only references (VoxConverse-style) score DER but omit WER."""
+
+    _REF = "rec 1 spkA 0.000 2.000 <sd>\nrec 1 spkB 2.500 4.000 <sd>\n"
+    _HYP = "rec 1 0 0.100 2.100 hola mundo\nrec 1 1 2.600 3.900 que tal\n"
+
+    def test_is_diarization_only_stm_detects_sentinel(self, tmp_path: Path):
+        from asr_diar_server.bench.quality import is_diarization_only_stm
+
+        ref, hyp = _write_stm_pair(tmp_path, "rec", self._REF, self._HYP)
+        assert is_diarization_only_stm(ref) is True
+        assert is_diarization_only_stm(hyp) is False
+
+    def test_score_item_skips_wer_keeps_der(self, tmp_path: Path):
+        from asr_diar_server.bench.quality import score_item
+
+        ref, hyp = _write_stm_pair(tmp_path, "rec", self._REF, self._HYP)
+        result = score_item(ref, hyp)
+
+        assert result["diarization_only"] is True
+        assert set(result["metrics"].keys()) == {"der"}
+        assert result["metrics"]["der"]["der"] >= 0.0
+
+    def test_combine_items_aggregates_der_without_wer(self, tmp_path: Path):
+        from asr_diar_server.bench.quality import combine_items
+
+        result = _scored(tmp_path, "rec", self._REF, self._HYP, 4.0)
+        summary = combine_items([result])
+
+        assert summary["n_succeeded"] == 1
+        assert summary["n_failed"] == 0
+        assert summary["combined"]["cpwer"] is None
+        assert summary["combined"]["der"] is not None
+        entry = summary["per_item"][0]
+        assert entry["diarization_only"] is True
+        assert "cpwer" not in entry
+        assert "der" in entry
 
 
 class TestCLIFlags:
@@ -325,22 +375,15 @@ class TestQualityRun:
             }
         ]
 
-        mock_meeteval = _make_mock_meeteval()
-        combined_er = MagicMock(
-            wer=0.12, errors=6, length=50, insertions=2, deletions=2, substitutions=2
+        run_workload(
+            items=items,
+            base_url=e2e_server,
+            out_dir=out_dir,
+            reps=1,
+            subcommand="quality",
+            der_collar=0.0,
+            der_regions="all",
         )
-        mock_meeteval.wer.combine_error_rates.return_value = combined_er
-
-        with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            run_workload(
-                items=items,
-                base_url=e2e_server,
-                out_dir=out_dir,
-                reps=1,
-                subcommand="quality",
-                der_collar=0.0,
-                der_regions="all",
-            )
 
         quality_dir = out_dir / "quality"
         assert (quality_dir / "meeting1.json").exists()
@@ -350,7 +393,7 @@ class TestQualityRun:
         assert item_data["session_id"] == "meeting1"
         assert item_data["audio_seconds"] == 3.5
         assert item_data["metrics"] is not None
-        assert "siwer" in item_data["metrics"]
+        assert "cpwer" in item_data["metrics"]
         assert "der" in item_data["metrics"]
 
         summary = json.loads((quality_dir / "summary.json").read_text())
@@ -381,23 +424,23 @@ class TestQualityRun:
             {"item_id": "meeting2", "audio_path": audio2, "ref_stm_path": ref2, "audio_seconds": 1.0},
         ]
 
-        mock_meeteval = _make_mock_meeteval()
-        call_count = [0]
-        original_siwer = mock_meeteval.wer.siwer
+        # Force the second item's scoring to fail while the first succeeds,
+        # mimicking score_item's own error-result contract.
+        from asr_diar_server.bench import quality as quality_mod
 
-        def fail_on_second(ref, hyp):
+        real_score_item = quality_mod.score_item
+        call_count = [0]
+
+        def fail_on_second(ref_path, hyp_path, **kwargs):
             call_count[0] += 1
             if call_count[0] > 1:
-                raise RuntimeError("scoring failed for meeting2")
-            return original_siwer.return_value
+                return {
+                    "metrics": None,
+                    "error": {"type": "RuntimeError", "message": "scoring failed for meeting2"},
+                }
+            return real_score_item(ref_path, hyp_path, **kwargs)
 
-        mock_meeteval.wer.siwer.side_effect = fail_on_second
-        combined_er = MagicMock(
-            wer=0.12, errors=6, length=50, insertions=2, deletions=2, substitutions=2
-        )
-        mock_meeteval.wer.combine_error_rates.return_value = combined_er
-
-        with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
+        with patch.object(quality_mod, "score_item", side_effect=fail_on_second):
             run_workload(
                 items=items,
                 base_url=e2e_server,

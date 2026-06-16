@@ -51,6 +51,16 @@ The ASR backend is pluggable behind a single adapter contract. Select it with
 
 ### Benchmarks
 
+> **Picking a backend?** See the full **[leaderboard →
+> docs/benchmark.md](docs/benchmark.md)** (WER, DER, RTFx, VRAM and RAM across
+> backends, with reproduction commands). TL;DR: **faster-whisper
+> `large-v3-turbo`** is the best GPU default — best WER *and* DER, multilingual,
+> ~3 GB VRAM; **faster-whisper `small`** for max GPU throughput; **onnx-asr
+> `parakeet`** for CPU; **nemotron** for real-time streaming. Don't run Whisper
+> through the onnx-asr backend (slower and less accurate than faster-whisper).
+
+The table below is a separate, ASR-only view (diarization off).
+
 Long-form English meetings from AMI (`Mix-Headset`, far-field, overlapping
 speech), diarization off, on an RTX 3070 Laptop (8 GB) and a loaded laptop CPU.
 **RTFx** = audio ÷ processing time (higher is faster). **Quality** =
@@ -116,6 +126,31 @@ Takeaways:
   (~0.4×). Its value is low-latency real-time transcription, not batch speed.
 - **Memory**: all backends fit comfortably on an 8 GB GPU; nemotron (int4) is
   the lightest, and parakeet int8 is the smallest CPU footprint (~1.2 GB).
+
+#### Benchmark datasets
+
+Quality runs score against trustworthy, human-or-openly-labelled references
+only. Each is materialized into a `--clips-dir` of `(<stem>.wav,
+<stem>.ref.stm)` pairs; the bench scores WER and/or DER per the reference:
+
+| Dataset | License | Metrics | Materialize with |
+|---|---|---|---|
+| **AMI** (English meetings) | CC-BY | WER + DER | `utils.make_ami_clip` |
+| **VoxConverse** (multi-speaker, in-the-wild) | CC-BY-4.0 | DER only (no transcript) | `utils.make_rttm_clip` |
+| **Common Voice** (single-speaker read speech, any language incl. `es`) | CC0 | WER only (single speaker) | `utils.make_common_voice_clips` |
+
+Diarization-only references (e.g. VoxConverse) carry speaker turns but no
+words; the report shows their DER and leaves WER blank rather than emitting a
+meaningless score.
+
+> **TODO — apply for Albayzín-RTVE2020.** It is the strongest Spanish target
+> (real peninsular broadcast, *fully human-revised* transcripts **and** speaker
+> labels → trustworthy WER **and** DER), but it is gated: an accredited
+> researcher/company must request access via the RTVE archive
+> (<http://catedrartve.unizar.es/rtvedatabase.html>) and it cannot be
+> redistributed/vendored. Once obtained locally, its RTTM diarization refs feed
+> straight into `utils.make_rttm_clip`. (Avoid the RTVE2018 subtitle-only
+> partitions — those captions are not verbatim.)
 
 ### Recommended configuration
 
