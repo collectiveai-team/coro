@@ -51,6 +51,16 @@ The ASR backend is pluggable behind a single adapter contract. Select it with
 
 ### Benchmarks
 
+> **Picking a backend?** See the full **[leaderboard →
+> docs/benchmark.md](docs/benchmark.md)** (WER, DER, RTFx, VRAM and RAM across
+> backends, with reproduction commands). TL;DR: **faster-whisper
+> `large-v3-turbo`** is the best GPU default — best WER *and* DER, multilingual,
+> ~3 GB VRAM; **faster-whisper `small`** for max GPU throughput; **onnx-asr
+> `parakeet`** for CPU; **nemotron** for real-time streaming. Don't run Whisper
+> through the onnx-asr backend (slower and less accurate than faster-whisper).
+
+The table below is a separate, ASR-only view (diarization off).
+
 Long-form English meetings from AMI (`Mix-Headset`, far-field, overlapping
 speech), diarization off, on an RTX 3070 Laptop (8 GB) and a loaded laptop CPU.
 **RTFx** = audio ÷ processing time (higher is faster). **Quality** =
