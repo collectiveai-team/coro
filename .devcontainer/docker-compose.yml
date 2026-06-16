@@ -17,10 +17,10 @@ x-template: &template
   command: /bin/sh -c "while true; do :; done"
 
 services:
-  aymurai-asr-devcontainer-gpu:
+  coro-devcontainer-gpu:
     <<: *template
-    image: aymurai-asr-devcontainer-gpu
-    container_name: aymurai-asr-devcontainer-gpu
+    image: coro-devcontainer-gpu
+    container_name: coro-devcontainer-gpu
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
@@ -34,10 +34,10 @@ services:
               count: all
               capabilities: [ gpu ]
 
-  aymurai-asr-devcontainer:
+  coro-devcontainer:
     <<: *template
-    image: aymurai-asr-devcontainer
-    container_name: aymurai-asr-devcontainer-cpu
+    image: coro-devcontainer
+    container_name: coro-devcontainer-cpu
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
