@@ -28,6 +28,27 @@ uv sync
 uv run coro                       # or: uv run uvicorn coro.app:app
 ```
 
+### Standalone install (`uv tool install`)
+
+To install `coro` as a standalone CLI tool — isolated from any project
+environment and available on your `PATH` — use `uv tool install`. Pick the
+hardware extra that matches your machine (`cpu` / `cuda` are mutually
+exclusive, exactly as with `uv sync`):
+
+```bash
+uv tool install "coro[cpu]"  @ git+https://github.com/jedzill4/coro   # CPU-only
+uv tool install "coro[cuda]" @ git+https://github.com/jedzill4/coro   # NVIDIA GPU
+
+# or from a local checkout:
+uv tool install ".[cpu]"          # CPU-only
+uv tool install ".[cuda]"         # NVIDIA GPU
+```
+
+This exposes the `coro` and `coro-bench` commands globally; run the server
+with `coro` (no `uv run` needed). The `cuda` GPU gotchas above
+(`LD_LIBRARY_PATH` for `libcublas.so.12`) still apply. Upgrade with
+`uv tool upgrade coro`; uninstall with `uv tool uninstall coro`.
+
 Configuration is via `CORO_`-prefixed environment variables (host, port,
 backends, devices, etc.); see `coro/settings.py`.
 

@@ -9,6 +9,8 @@ allow-direct-references = true
 name = "coro"
 version = "0.1.0"
 description = "Coro: OpenAI-compatible ASR + speaker-diarization server with pluggable backends."
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12, <3.13"
 classifiers = [
     "Operating System :: MacOS",
