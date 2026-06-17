@@ -1,16 +1,117 @@
-# Coro
+<p align="center">
+  <img src="assets/coro-logo.png" alt="Coro — OpenAI-compatible ASR + speaker diarization" style="width:600px; max-width:100%; height:auto;" />
+</p>
 
-Coro is an OpenAI-compatible ASR + diarization HTTP server (package
-`coro`), with three pluggable ASR backends (Faster-Whisper, onnx-asr
-Parakeet, onnx-genai Nemotron) and NVIDIA NeMo Sortformer diarization.
+<p align="center">
+  <em>Self-hosted, OpenAI-compatible speech-to-text that knows who said what.</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/jedzill4/coro/releases"><img alt="Release" src="https://img.shields.io/github/v/release/jedzill4/coro?logo=github" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white" alt="Python 3.12"></a>
+  <a href="https://platform.openai.com/docs/api-reference/audio"><img src="https://img.shields.io/badge/API-OpenAI--compatible-412991?logo=openai&logoColor=white" alt="OpenAI-compatible API"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
+
+---
+
+**Source Code**: [https://github.com/jedzill4/coro](https://github.com/jedzill4/coro)
+
+---
+
+Coro is an embedded ASR + speaker-diarization server that speaks the OpenAI
+transcription contract — point the official `openai` SDK at it and get back
+typed transcripts that know *who* said *what*, no custom schema package needed.
 
 The name nods to *coro* (Spanish for "chorus") — many voices, transcribed and
 attributed to who spoke them.
 
-It exposes the OpenAI transcription contract, so **clients integrate using the
-official `openai` SDK types — no custom schema package is needed.**
+The key features are:
+- **OpenAI-compatible API** — drop-in `/v1/audio/transcriptions`; clients reuse the official `openai` SDK types (`Transcription` / `TranscriptionVerbose` / `TranscriptionDiarized`) with no custom schema
+- **Speaker diarization** — NVIDIA NeMo Sortformer attributes every segment to a speaker (`diarized_json`), so you get *who spoke, when, and what*
+- **Pluggable ASR backends** — pick per deployment: Faster-Whisper (best accuracy, multilingual), onnx-asr Parakeet (highest GPU throughput), or onnx-genai Nemotron (real-time streaming)
+- **Streaming over SSE** — OpenAI-exact `transcript.text.delta` / `transcript.text.done` / `[DONE]` events with `stream=true`
+- **Flat-memory long audio** — the streaming pipeline spills the transcript to disk so host RSS stays flat from 11 s to multi-hour recordings
+- **CPU & GPU** — mutually-exclusive `cpu` / `cuda` extras carry the matching `onnxruntime` wheels; multilingual on either
+- **Run it your way** — ephemeral `uvx`, a standalone `uv tool install` command, or a full `uv sync` dev checkout
 
-## Endpoints
+## Quickstart
+
+Run the server without installing it into a project, straight from the repo,
+using `uvx` (the alias for `uv tool run`). Pick the hardware extra that matches
+your machine:
+
+```bash
+# CPU-only
+uvx --from "coro[cpu]  @ git+https://github.com/jedzill4/coro" coro --port 8000
+
+# NVIDIA GPU
+uvx --from "coro[cuda] @ git+https://github.com/jedzill4/coro" coro --port 8000
+```
+
+`uvx` builds a throwaway isolated environment and launches the `coro` command —
+no `uv sync`/`uv run` and nothing added to your current project. The server now
+speaks the OpenAI transcription contract at `http://127.0.0.1:8000/v1`.
+
+Then write a tiny client with the official `openai` SDK, pointing `base_url` at
+your Coro server (`api_key` is required by the SDK but ignored by Coro):
+
+```bash
+pip install "openai>=2.0.0"     # or: uv pip install "openai>=2.0.0"
+```
+
+```python
+from openai import OpenAI
+
+# Point the OpenAI client at your Coro server instead of api.openai.com.
+client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="not-needed")
+
+with open("audio.wav", "rb") as f:
+    result = client.audio.transcriptions.create(
+        file=f,
+        model="whisper-1",                # accepted but ignored; server uses its backend
+        response_format="diarized_json",  # json | verbose_json | diarized_json
+    )
+
+print(result.text)
+for segment in result.segments:          # who spoke, when, and what
+    print(f"[{segment.start:.2f}-{segment.end:.2f}] {segment.speaker}: {segment.text}")
+```
+
+That's the whole integration — because Coro returns standard OpenAI shapes, the
+SDK parses the response into typed objects with no custom schema. See
+[Client integration](#client-integration) for streaming (SSE) and the full
+format ↔ type mapping.
+
+## Standalone install
+
+To run Coro as a server (not hack on it), install it as an isolated CLI tool
+with `uv tool install`. This puts `coro` and `coro-bench` on your `PATH` —
+no clone, no project environment. Pick the hardware extra that matches your
+machine (`cpu` / `cuda` are mutually exclusive):
+
+```bash
+uv tool install "coro[cpu]"  @ git+https://github.com/jedzill4/coro   # CPU-only
+uv tool install "coro[cuda]" @ git+https://github.com/jedzill4/coro   # NVIDIA GPU
+```
+
+Then run the server directly (no `uv run`):
+
+```bash
+coro --port 8000
+```
+
+Upgrade with `uv tool upgrade coro`; uninstall with `uv tool uninstall coro`.
+For a throwaway run without installing at all, use `uvx` (see
+[Quickstart](#quickstart)). On a GPU host the `coro[cuda]` build still needs the
+`libcublas.so.12` loader-path fix — see [GPU on a bare host](#gpu-on-a-bare-host).
+
+## Configuration
+
+Configuration is via `CORO_`-prefixed environment variables (host, port,
+backends, devices, etc.); see `coro/settings.py`.
+
+### Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -20,66 +121,6 @@ official `openai` SDK types — no custom schema package is needed.**
 `response_format` accepts `json`, `verbose_json`, and `diarized_json`. With
 `stream=true` the endpoint emits OpenAI-exact SSE
 (`transcript.text.delta` / `transcript.text.done` / `[DONE]`).
-
-## Running the server
-
-```bash
-uv sync
-uv run coro                       # or: uv run uvicorn coro.app:app
-```
-
-### Standalone install (`uv tool install`)
-
-To install `coro` as a standalone CLI tool — isolated from any project
-environment and available on your `PATH` — use `uv tool install`. Pick the
-hardware extra that matches your machine (`cpu` / `cuda` are mutually
-exclusive, exactly as with `uv sync`):
-
-```bash
-uv tool install "coro[cpu]"  @ git+https://github.com/jedzill4/coro   # CPU-only
-uv tool install "coro[cuda]" @ git+https://github.com/jedzill4/coro   # NVIDIA GPU
-
-# or from a local checkout:
-uv tool install ".[cpu]"          # CPU-only
-uv tool install ".[cuda]"         # NVIDIA GPU
-```
-
-This exposes the `coro` and `coro-bench` commands globally; run the server
-with `coro` (no `uv run` needed). The `cuda` GPU gotchas above
-(`LD_LIBRARY_PATH` for `libcublas.so.12`) still apply. Upgrade with
-`uv tool upgrade coro`; uninstall with `uv tool uninstall coro`.
-
-Configuration is via `CORO_`-prefixed environment variables (host, port,
-backends, devices, etc.); see `coro/settings.py`.
-
-Install the runtime that matches your hardware (the `cpu` / `cuda` extras are
-mutually exclusive and carry the matching `onnxruntime` / `onnxruntime-genai`
-wheels):
-
-```bash
-uv sync --extra cpu     # CPU-only deployment
-uv sync --extra cuda    # NVIDIA GPU deployment
-```
-
-> **GPU on a bare host (not the devcontainer).** Two gotchas:
->
-> 1. **`uv run` re-syncs to the *default* environment and uninstalls the `cuda`
->    extra.** Run the server with the extra explicitly so the GPU wheels stay
->    installed: `uv run --extra cuda coro` (or re-run `uv sync --extra cuda`
->    after any plain `uv sync` / `uv run`).
-> 2. **faster-whisper (CTranslate2) needs `libcublas.so.12` + cuDNN 9**, which
->    ship in the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` wheels (pulled by the
->    `cuda` extra) but are **not** on the loader path by default. If you see
->    `RuntimeError: Library libcublas.so.12 is not found`, prepend the wheel lib
->    dirs to `LD_LIBRARY_PATH`:
->    ```bash
->    export LD_LIBRARY_PATH="$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cublas/lib:\
->    $VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
->    ```
->    The devcontainer avoids both: its `nvidia/cuda:12.x` base image provides
->    `libcublas.so.12` system-wide via `LD_LIBRARY_PATH=/usr/local/cuda/lib64`.
->    The `onnx-asr` / `onnx-genai` backends use onnxruntime-gpu and are
->    unaffected by gotcha 2.
 
 ## ASR backends
 
@@ -93,7 +134,34 @@ The ASR backend is pluggable behind a single adapter contract. Select it with
 | `onnx-asr` | onnxruntime | `nemo-parakeet-tdt-0.6b-v3` | NeMo Parakeet/Canary; multilingual. Offline (batched) → very high GPU throughput. `CORO_ASR_QUANTIZATION` = `int8` (CPU) or unset = fp32 (GPU). |
 | `onnx-genai` | onnxruntime-genai | `onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4` | NVIDIA Nemotron **cache-aware streaming**; 40 locales. Built for low-latency real-time, not batch throughput. Timestamps are 560 ms-resolution. GPU strongly recommended. |
 
-### Benchmarks
+### Recommended configuration
+
+**GPU (`--extra cuda`):**
+```bash
+CORO_BACKEND_ASR=onnx-asr
+CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
+CORO_ASR_DEVICE=cuda           # fp32 (leave CORO_ASR_QUANTIZATION unset)
+```
+Fastest by a wide margin with near-best accuracy. Use `faster-whisper` +
+`float16` if you want the top accuracy point; use `onnx-genai` only for
+real-time low-latency streaming.
+
+**CPU (`--extra cpu`):**
+```bash
+CORO_BACKEND_ASR=onnx-asr
+CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
+CORO_ASR_DEVICE=cpu
+CORO_ASR_QUANTIZATION=int8     # ~4× faster than whisper-medium
+```
+For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
+`CORO_ASR_COMPUTE_TYPE=int8`. `onnx-genai` is not recommended on CPU.
+
+**Streaming on long audio:** set `CORO_PIPELINE=streaming` and point
+`CORO_TRANSCRIPT_SPILL_DIR` at a persistent (non-tmpfs) directory so the
+per-request transcript spills to disk and host RSS stays flat regardless of
+recording length. Consume the result over SSE (`stream=true`).
+
+## Benchmarks
 
 > **Picking a backend?** See the full **[leaderboard →
 > docs/benchmark.md](docs/benchmark.md)** (WER, DER, RTFx, VRAM and RAM across
@@ -171,7 +239,7 @@ Takeaways:
 - **Memory**: all backends fit comfortably on an 8 GB GPU; nemotron (int4) is
   the lightest, and parakeet int8 is the smallest CPU footprint (~1.2 GB).
 
-#### Benchmark datasets
+### Benchmark datasets
 
 Quality runs score against trustworthy, human-or-openly-labelled references
 only. Each is materialized into a `--clips-dir` of `(<stem>.wav,
@@ -196,34 +264,7 @@ meaningless score.
 > straight into `utils.make_rttm_clip`. (Avoid the RTVE2018 subtitle-only
 > partitions — those captions are not verbatim.)
 
-### Recommended configuration
-
-**GPU (`--extra cuda`):**
-```bash
-CORO_BACKEND_ASR=onnx-asr
-CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
-CORO_ASR_DEVICE=cuda           # fp32 (leave CORO_ASR_QUANTIZATION unset)
-```
-Fastest by a wide margin with near-best accuracy. Use `faster-whisper` +
-`float16` if you want the top accuracy point; use `onnx-genai` only for
-real-time low-latency streaming.
-
-**CPU (`--extra cpu`):**
-```bash
-CORO_BACKEND_ASR=onnx-asr
-CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
-CORO_ASR_DEVICE=cpu
-CORO_ASR_QUANTIZATION=int8     # ~4× faster than whisper-medium
-```
-For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
-`CORO_ASR_COMPUTE_TYPE=int8`. `onnx-genai` is not recommended on CPU.
-
-**Streaming on long audio:** set `CORO_PIPELINE=streaming` and point
-`CORO_TRANSCRIPT_SPILL_DIR` at a persistent (non-tmpfs) directory so the
-per-request transcript spills to disk and host RSS stays flat regardless of
-recording length. Consume the result over SSE (`stream=true`).
-
-## Running benchmarks
+### Running benchmarks
 
 `coro-bench` scores a **running** server — it attaches over HTTP and does *not*
 start one for you. Install the bench tooling (MeetEval + samplers) and start the
@@ -236,7 +277,8 @@ uv run --group bench coro --port 8123 &     # server under test (add --extra cud
 
 > Pass `--group bench` (and your hardware `--extra`) on **every** `uv run`
 > below: a bare `uv run` re-syncs to the default environment and would
-> uninstall the bench tooling again (same gotcha as the `cuda` extra above).
+> uninstall the bench tooling again (the same re-sync gotcha as the `cuda`
+> extra — see [GPU on a bare host](#gpu-on-a-bare-host)).
 
 Three subcommands share the same flags:
 
@@ -246,7 +288,7 @@ Three subcommands share the same flags:
 | `performance` | resource + timing of the server process tree (PSS/USS, VRAM, CPU/GPU %, throughput) |
 | `all` | both in a single run |
 
-### Smoke test on one small audio
+#### Smoke test on one small audio
 
 A reference STM has one line per segment —
 `<recording_id> <channel> <speaker> <start> <end> <text>` — where `recording_id`
@@ -266,7 +308,7 @@ uv run --group bench coro-bench all \
 half); `performance` does not. The run prints a report and writes `REPORT.md`
 plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
 
-### Larger workloads
+#### Larger workloads
 
 - `--clips-dir DIR` — a directory of `(<stem>.wav, <stem>.ref.stm)` pairs, e.g.
   produced by the dataset materializers (`utils.make_ami_clip`,
@@ -275,7 +317,7 @@ plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
   AMI meetings into `--ami-root` (default `./amicorpus/`); add `--no-download` to
   use only what is already present.
 
-### Useful flags
+#### Useful flags
 
 | Flag | Purpose |
 |---|---|
@@ -284,7 +326,7 @@ plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
 | `--server-pid PID` / `--server-match STR` | which process tree to sample for `performance` (default match: `coro`) |
 | `--der-collar SECONDS` / `--der-regions all\|nooverlap\|single` | DER scoring options |
 
-## Client integration (the important part)
+## Client integration
 
 This server returns standard OpenAI shapes. A consuming project does **not** need
 to redefine any schemas — install the `openai` SDK and reuse its types.
@@ -343,7 +385,48 @@ every server response against the SDK types.
 
 ## Development
 
+To hack on Coro, clone the repo and install into a project environment with
+`uv sync`. Pick the runtime that matches your hardware — the `cpu` / `cuda`
+extras are mutually exclusive and carry the matching `onnxruntime` /
+`onnxruntime-genai` wheels:
+
 ```bash
-uv run pytest          # tests
-uv run ruff check .    # lint
+git clone https://github.com/jedzill4/coro && cd coro
+uv sync --extra cpu     # CPU-only
+uv sync --extra cuda    # NVIDIA GPU
 ```
+
+Run the server and the checks from the project environment with `uv run`:
+
+```bash
+uv run coro             # or: uv run uvicorn coro.app:app
+uv run pytest           # tests
+uv run ruff check .     # lint
+```
+
+### GPU on a bare host
+
+Running the GPU build outside the devcontainer has two gotchas:
+
+1. **`uv run` re-syncs to the *default* environment and uninstalls the `cuda`
+   extra.** Run the server with the extra explicitly so the GPU wheels stay
+   installed: `uv run --extra cuda coro` (or re-run `uv sync --extra cuda`
+   after any plain `uv sync` / `uv run`). (`uv tool install "coro[cuda]"` is
+   not affected — its environment is not re-synced.)
+2. **faster-whisper (CTranslate2) needs `libcublas.so.12` + cuDNN 9**, which
+   ship in the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` wheels (pulled by the
+   `cuda` extra) but are **not** on the loader path by default. If you see
+   `RuntimeError: Library libcublas.so.12 is not found`, prepend the wheel lib
+   dirs to `LD_LIBRARY_PATH`:
+   ```bash
+   export LD_LIBRARY_PATH="$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cublas/lib:\
+   $VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
+   ```
+   The devcontainer avoids both: its `nvidia/cuda:12.x` base image provides
+   `libcublas.so.12` system-wide via `LD_LIBRARY_PATH=/usr/local/cuda/lib64`.
+   The `onnx-asr` / `onnx-genai` backends use onnxruntime-gpu and are
+   unaffected by gotcha 2.
+
+## License
+
+[MIT](LICENSE) © jedzill4
