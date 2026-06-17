@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jedzill4/coro/releases"><img alt="Release" src="https://img.shields.io/github/v/release/jedzill4/coro?logo=github" /></a>
+  <a href="https://github.com/collectiveai-team/coro/releases"><img alt="Release" src="https://img.shields.io/github/v/release/collectiveai-team/coro?logo=github" /></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white" alt="Python 3.12"></a>
   <a href="https://platform.openai.com/docs/api-reference/audio"><img src="https://img.shields.io/badge/API-OpenAI--compatible-412991?logo=openai&logoColor=white" alt="OpenAI-compatible API"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
@@ -15,7 +15,7 @@
 
 ---
 
-**Source Code**: [https://github.com/jedzill4/coro](https://github.com/jedzill4/coro)
+**Source Code**: [https://github.com/collectiveai-team/coro](https://github.com/collectiveai-team/coro)
 
 ---
 
@@ -43,10 +43,10 @@ your machine:
 
 ```bash
 # CPU-only
-uvx --from "coro[cpu]  @ git+https://github.com/jedzill4/coro" coro --port 8000
+uvx --from "coro[cpu]  @ git+https://github.com/collectiveai-team/coro" coro --port 8000
 
 # NVIDIA GPU
-uvx --from "coro[cuda] @ git+https://github.com/jedzill4/coro" coro --port 8000
+uvx --from "coro[cuda] @ git+https://github.com/collectiveai-team/coro" coro --port 8000
 ```
 
 `uvx` builds a throwaway isolated environment and launches the `coro` command —
@@ -91,8 +91,8 @@ no clone, no project environment. Pick the hardware extra that matches your
 machine (`cpu` / `cuda` are mutually exclusive):
 
 ```bash
-uv tool install "coro[cpu]"  @ git+https://github.com/jedzill4/coro   # CPU-only
-uv tool install "coro[cuda]" @ git+https://github.com/jedzill4/coro   # NVIDIA GPU
+uv tool install "coro[cpu]"  @ git+https://github.com/collectiveai-team/coro   # CPU-only
+uv tool install "coro[cuda]" @ git+https://github.com/collectiveai-team/coro   # NVIDIA GPU
 ```
 
 Then run the server directly (no `uv run`):
@@ -391,7 +391,7 @@ extras are mutually exclusive and carry the matching `onnxruntime` /
 `onnxruntime-genai` wheels:
 
 ```bash
-git clone https://github.com/jedzill4/coro && cd coro
+git clone https://github.com/collectiveai-team/coro && cd coro
 uv sync --extra cpu     # CPU-only
 uv sync --extra cuda    # NVIDIA GPU
 ```
@@ -429,4 +429,4 @@ Running the GPU build outside the devcontainer has two gotchas:
 
 ## License
 
-[MIT](LICENSE) © jedzill4
+[MIT](LICENSE) © collective.ai, jedzill4
