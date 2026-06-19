@@ -261,8 +261,12 @@ The package boundary containing API-agnostic datamodels, interfaces, and pure tr
 _Avoid_: Shared FastAPI utilities, route helpers
 
 **Project-Owned Transcript Model**:
-A core token, segment, speaker timeline, or response model defined by this package rather than by an ASR backend library.
-_Avoid_: Whisperlivekit token, backend segment
+A core token, segment, speaker timeline, or response model defined by this package rather than by an ASR backend library. These models live in the concern-grouped `coro/core/models/` tree (transcript, response, events) rather than inline next to behavior. See ADR 0006.
+_Avoid_: Whisperlivekit token, backend segment, in-file model definition
+
+**Model Module Tree**:
+The policy that shared/boundary data models move into dedicated model modules (`core/models/` for domain types, `bench/models/` for benchmark tooling), while truly module-private one-offs may stay in-file.
+_Avoid_: Monolithic `types.py`, bench models under `core/`, relocating private parsing structs
 
 **Audio Module**:
 The package area for audio decoding, PCM streaming, upload spooling, and audio constants.
@@ -369,6 +373,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - Streaming transcription uses **OpenAI-Exact SSE** rather than package-specific progress events.
 - The **Core Boundary** excludes FastAPI request parsing, response classes, route dependencies, and HTTP errors.
 - A **Project-Owned Transcript Model** crosses package boundaries; backend-native types are converted at adapter edges.
+- A **Model Module Tree** keeps boundary models in `core/models/` and bench tooling models in `bench/models/`; module-private one-offs (e.g. `LatencyTierParams`, the `/proc` parsing structs, `GpuDevice`) may stay in-file.
 - The **Audio Module** owns ffmpeg and PCM IO concerns outside the **Core Boundary**.
 - An **ASR Adapter** and a **Diarization Adapter** are separate capabilities that orchestration combines into an API response.
 - An **ASR Adapter** owns its **Adapter Concurrency Policy**.
