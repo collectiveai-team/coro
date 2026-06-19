@@ -1,0 +1,9 @@
+id: no-dict-literal-return
+language: python
+severity: error
+message: "Boundary function returns a dict literal. Prefer a @dataclass for internal boundaries, or a pydantic BaseModel where validation is needed (e.g. FastAPI endpoints)."
+rule:
+  all:
+    - kind: dictionary
+    - inside:
+        kind: return_statement

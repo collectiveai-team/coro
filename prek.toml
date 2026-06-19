@@ -76,3 +76,13 @@ language = "system"
 types = ["python"]
 pass_filenames = false
 priority = 2
+
+# MARK: ast-grep
+[[repos.hooks]]
+id = "ast-grep"
+name = "ast-grep"
+entry = "uvx --from ast-grep-cli ast-grep scan"
+language = "system"
+types = ["python"]
+pass_filenames = false
+priority = 2

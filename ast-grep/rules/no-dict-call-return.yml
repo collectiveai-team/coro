@@ -1,0 +1,7 @@
+id: no-dict-call-return
+language: python
+severity: error
+message: "Boundary function returns dict(...). Prefer a @dataclass for internal boundaries, or a pydantic BaseModel where validation is needed (e.g. FastAPI endpoints)."
+rule:
+  any:
+    - pattern: return dict($$$ARGS)

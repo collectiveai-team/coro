@@ -1,0 +1,18 @@
+id: no-dict-return-annotation
+language: python
+severity: error
+message: "Boundary function returns a raw dict. Prefer a @dataclass for internal boundaries, or a pydantic BaseModel where validation is needed (e.g. FastAPI endpoints)."
+rule:
+  any:
+    - pattern: |
+        def $FUNC($$$ARGS) -> dict:
+            $$$BODY
+    - pattern: |
+        def $FUNC($$$ARGS) -> dict[$$$TYPES]:
+            $$$BODY
+    - pattern: |
+        async def $FUNC($$$ARGS) -> dict:
+            $$$BODY
+    - pattern: |
+        async def $FUNC($$$ARGS) -> dict[$$$TYPES]:
+            $$$BODY
