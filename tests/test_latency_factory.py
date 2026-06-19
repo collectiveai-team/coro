@@ -34,33 +34,35 @@ class TestLatencyTierMapping:
         from coro.backends.nemo_streaming import get_latency_tier_params
 
         params = get_latency_tier_params("very-high")
-        assert params["chunk_len"] == 340
-        assert params["chunk_right_context"] == 40
-        assert params["fifo_len"] == 40
-        assert params["spkcache_update_period"] == 300
-        assert params["spkcache_len"] == 188
+        assert params.chunk_len == 340
+        assert params.chunk_right_context == 40
+        assert params.fifo_len == 40
+        assert params.spkcache_update_period == 300
+        assert params.spkcache_len == 188
 
     def test_high_params(self):
         from coro.backends.nemo_streaming import get_latency_tier_params
 
         params = get_latency_tier_params("high")
-        assert params["chunk_len"] == 124
-        assert params["chunk_right_context"] == 1
+        assert params.chunk_len == 124
+        assert params.chunk_right_context == 1
 
     def test_low_params(self):
         from coro.backends.nemo_streaming import get_latency_tier_params
 
         params = get_latency_tier_params("low")
-        assert params["chunk_len"] == 6
-        assert params["chunk_right_context"] == 7
+        assert params.chunk_len == 6
+        assert params.chunk_right_context == 7
 
     def test_ultra_low_params(self):
         from coro.backends.nemo_streaming import get_latency_tier_params
 
         params = get_latency_tier_params("ultra-low")
-        assert params["chunk_len"] == 3
+        assert params.chunk_len == 3
 
-    def test_all_tiers_have_required_keys(self):
+    def test_all_tiers_have_required_fields(self):
+        import dataclasses
+
         from coro.backends.nemo_streaming import get_latency_tier_params
 
         required = {
@@ -71,17 +73,21 @@ class TestLatencyTierMapping:
             "spkcache_len",
         }
         for tier in ("very-high", "high", "low", "ultra-low"):
-            assert required.issubset(get_latency_tier_params(tier).keys())
+            params = get_latency_tier_params(tier)
+            assert required == {f.name for f in dataclasses.fields(params)}
 
-    def test_params_returns_copy(self):
+    def test_params_are_immutable(self):
+        import dataclasses
+
         from coro.backends.nemo_streaming import (
             LATENCY_TIER_PARAMS,
             get_latency_tier_params,
         )
 
         p1 = get_latency_tier_params("very-high")
-        p1["chunk_len"] = 999
-        assert LATENCY_TIER_PARAMS["very-high"]["chunk_len"] == 340
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            p1.chunk_len = 999  # type: ignore[misc]
+        assert LATENCY_TIER_PARAMS["very-high"].chunk_len == 340
 
 
 class TestStreamingDiarizerFactory:

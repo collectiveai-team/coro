@@ -21,7 +21,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from coro.app import create_app
-from coro.core.types import TranscriptDeltaEvent, TranscriptDoneEvent
+from coro.core.types import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptionResult
 from coro.runtime import RuntimeState
 from coro.settings import ServerSettings
 
@@ -46,7 +46,7 @@ def _minimal_wav() -> bytes:
 
 class _FakeV1StreamingPipeline:
     async def transcribe(self, audio, *, language=None, prompt=None):
-        return dict(_WHISPERX_EMPTY)
+        return TranscriptionResult()
 
     async def stream(self, audio, *, language=None, prompt=None):
         """Yield one delta then done."""

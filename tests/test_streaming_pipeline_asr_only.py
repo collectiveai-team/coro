@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import struct
 from dataclasses import asdict
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -22,7 +23,7 @@ from coro.pipelines.done_frame import StreamingDoneFrame
 from coro.pipelines.streaming import StreamingPipeline
 
 
-def _render_done_frame(frame: StreamingDoneFrame) -> dict:
+def _render_done_frame(frame: StreamingDoneFrame) -> Any:
     """Render the done frame's SSE bytes (and close its store), returning the dict."""
     sse = "".join(frame.iter_sse())
     outer = json.loads(sse[len("data: ") :].rstrip("\n"))

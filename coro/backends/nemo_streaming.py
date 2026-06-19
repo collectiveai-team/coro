@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 import logging
 import time
 
@@ -15,40 +16,52 @@ from coro.core.types import SpeakerSegment
 
 logger = logging.getLogger(__name__)
 
-LATENCY_TIER_PARAMS: dict[str, dict[str, int]] = {
-    "very-high": {
-        "chunk_len": 340,
-        "chunk_right_context": 40,
-        "fifo_len": 40,
-        "spkcache_update_period": 300,
-        "spkcache_len": 188,
-    },
-    "high": {
-        "chunk_len": 124,
-        "chunk_right_context": 1,
-        "fifo_len": 124,
-        "spkcache_update_period": 124,
-        "spkcache_len": 188,
-    },
-    "low": {
-        "chunk_len": 6,
-        "chunk_right_context": 7,
-        "fifo_len": 188,
-        "spkcache_update_period": 144,
-        "spkcache_len": 188,
-    },
-    "ultra-low": {
-        "chunk_len": 3,
-        "chunk_right_context": 1,
-        "fifo_len": 188,
-        "spkcache_update_period": 144,
-        "spkcache_len": 188,
-    },
+@dataclass(frozen=True)
+class LatencyTierParams:
+    """Immutable Sortformer streaming parameters for one latency tier."""
+
+    chunk_len: int
+    chunk_right_context: int
+    fifo_len: int
+    spkcache_update_period: int
+    spkcache_len: int
+
+
+LATENCY_TIER_PARAMS: dict[str, LatencyTierParams] = {
+    "very-high": LatencyTierParams(
+        chunk_len=340,
+        chunk_right_context=40,
+        fifo_len=40,
+        spkcache_update_period=300,
+        spkcache_len=188,
+    ),
+    "high": LatencyTierParams(
+        chunk_len=124,
+        chunk_right_context=1,
+        fifo_len=124,
+        spkcache_update_period=124,
+        spkcache_len=188,
+    ),
+    "low": LatencyTierParams(
+        chunk_len=6,
+        chunk_right_context=7,
+        fifo_len=188,
+        spkcache_update_period=144,
+        spkcache_len=188,
+    ),
+    "ultra-low": LatencyTierParams(
+        chunk_len=3,
+        chunk_right_context=1,
+        fifo_len=188,
+        spkcache_update_period=144,
+        spkcache_len=188,
+    ),
 }
 
 
-def get_latency_tier_params(tier: str) -> dict[str, int]:
-    return dict(LATENCY_TIER_PARAMS[tier])
+def get_latency_tier_params(tier: str) -> LatencyTierParams:
+    """Return the immutable streaming parameters for a latency tier."""
+    return LATENCY_TIER_PARAMS[tier]
 
 
 class StreamingDiarizerFactory:
@@ -60,13 +73,13 @@ class StreamingDiarizerFactory:
         self._tier_params = get_latency_tier_params(tier)
         subsampling_factor = getattr(model.sortformer_modules, "subsampling_factor", 8)
         n_spk = getattr(model.sortformer_modules, "n_spk", 4)
-        model.sortformer_modules.chunk_len = self._tier_params["chunk_len"]
-        model.sortformer_modules.chunk_right_context = self._tier_params["chunk_right_context"]
-        model.sortformer_modules.fifo_len = self._tier_params["fifo_len"]
-        model.sortformer_modules.spkcache_update_period = self._tier_params[
-            "spkcache_update_period"
-        ]
-        model.sortformer_modules.spkcache_len = self._tier_params["spkcache_len"]
+        model.sortformer_modules.chunk_len = self._tier_params.chunk_len
+        model.sortformer_modules.chunk_right_context = self._tier_params.chunk_right_context
+        model.sortformer_modules.fifo_len = self._tier_params.fifo_len
+        model.sortformer_modules.spkcache_update_period = (
+            self._tier_params.spkcache_update_period
+        )
+        model.sortformer_modules.spkcache_len = self._tier_params.spkcache_len
         model.sortformer_modules._check_streaming_parameters()
         self._subsampling_factor = subsampling_factor
         self._n_spk = n_spk
@@ -74,8 +87,8 @@ class StreamingDiarizerFactory:
     def __call__(self) -> StreamingDiarizer:
         return StreamingDiarizer(
             self._model,
-            chunk_len=self._tier_params["chunk_len"],
-            chunk_right_context=self._tier_params["chunk_right_context"],
+            chunk_len=self._tier_params.chunk_len,
+            chunk_right_context=self._tier_params.chunk_right_context,
             subsampling_factor=self._subsampling_factor,
             n_spk=self._n_spk,
         )

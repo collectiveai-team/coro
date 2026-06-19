@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import struct
 from dataclasses import asdict
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -34,7 +35,7 @@ from coro.pipelines.windowing import ASRWindowing
 RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
 
 
-def _render_done_frame(frame: StreamingDoneFrame) -> dict:
+def _render_done_frame(frame: StreamingDoneFrame) -> Any:
     """Render a StreamingDoneFrame to its SSE bytes and parse the response dict.
 
     Rendering also closes the frame's spill store.
