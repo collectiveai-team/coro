@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 
-from coro.core.types import SpeakerSegment
+from coro.core.models import SpeakerSegment
 
 SAMPLE_RATE = 16000
 BYTES_PER_SAMPLE = 2

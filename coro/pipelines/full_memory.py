@@ -8,7 +8,7 @@ from dataclasses import asdict
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, convert_to_pcm_bytes
 from coro.core.response import build_transcription_response
 from coro.core.protocols import ASRAdapter, DiarizationAdapter
-from coro.core.types import TokenBatchEvent, TranscriptDoneEvent, TranscriptionResult
+from coro.core.models import TokenBatchEvent, TranscriptDoneEvent, TranscriptionResult
 from coro.pipelines.windowing import ASRWindowing
 
 

@@ -19,7 +19,7 @@ from unittest.mock import patch
 import pytest
 
 from coro.audio import SAMPLE_RATE, AudioInput
-from coro.core.types import TranscriptToken
+from coro.core.models import TranscriptToken
 from coro.pipelines.done_frame import StreamingDoneFrame
 from coro.pipelines.streaming import StreamingPipeline
 from coro.pipelines.windowing import ASRWindowing

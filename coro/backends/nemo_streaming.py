@@ -12,7 +12,7 @@ import torch
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.backends.nemo import convert_diarization_segments
-from coro.core.types import SpeakerSegment
+from coro.core.models import SpeakerSegment
 
 logger = logging.getLogger(__name__)
 

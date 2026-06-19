@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from coro.core.response import _build_words_for_segment, build_transcription_response
-from coro.core.types import (
+from coro.core.models import (
     DiarizationItem,
     SpeakerSegment,
     TranscriptItem,

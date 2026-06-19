@@ -21,7 +21,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from coro.app import create_app
-from coro.core.types import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptionResult
+from coro.core.models import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptionResult
 from coro.runtime import RuntimeState
 from coro.settings import ServerSettings
 

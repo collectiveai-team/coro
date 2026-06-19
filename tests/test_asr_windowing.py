@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 import pytest
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
-from coro.core.types import TranscriptDeltaEvent, TranscriptToken, TokenBatchEvent
+from coro.core.models import TranscriptDeltaEvent, TranscriptToken, TokenBatchEvent
 from coro.pipelines.windowing import ASRWindowing
 
 

@@ -13,7 +13,7 @@ Key behaviours:
 
 from __future__ import annotations
 
-from coro.core.types import (
+from coro.core.models import (
     DiarizationItem,
     RawWord,
     ResponseSegment,

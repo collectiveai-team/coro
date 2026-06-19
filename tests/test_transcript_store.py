@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from coro.core.types import RawWord, ResponseSegment, TranscriptWord
+from coro.core.models import RawWord, ResponseSegment, TranscriptWord
 from coro.pipelines.transcript_store import TranscriptSpillStore
 
 

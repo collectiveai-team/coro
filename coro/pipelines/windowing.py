@@ -10,7 +10,7 @@ import time
 from typing import Any
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
-from coro.core.types import (
+from coro.core.models import (
     StreamEvent,
     TokenBatchEvent,
     TranscriptDeltaEvent,

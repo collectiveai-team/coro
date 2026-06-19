@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from typing import Protocol
 
 from coro.audio import AudioInput
-from coro.core.types import (
+from coro.core.models import (
     PipelineStreamEvent,
     SpeakerSegment,
     TranscriptionResult,

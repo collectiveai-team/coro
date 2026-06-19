@@ -26,7 +26,7 @@ from unittest.mock import patch
 
 import pytest
 
-from coro.core.types import TranscriptToken
+from coro.core.models import TranscriptToken
 
 REAL_MODEL_TESTS = os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") == "1"
 skip_unless_real = pytest.mark.skipif(

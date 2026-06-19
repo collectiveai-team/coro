@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from coro.audio import AudioInput
-from coro.core.types import SpeakerSegment, TranscriptToken
+from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.pipelines.full_memory import FullMemoryPipeline
 
 RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}

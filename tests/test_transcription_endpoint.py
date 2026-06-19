@@ -14,7 +14,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from coro.app import create_app
-from coro.core.types import (
+from coro.core.models import (
     DiarizationItem,
     ResponseSegment,
     TranscriptionResult,

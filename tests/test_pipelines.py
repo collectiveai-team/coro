@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from coro.audio import AudioInput
-from coro.core.types import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptToken
+from coro.core.models import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptToken
 from coro.pipelines.full_memory import FullMemoryPipeline
 
 

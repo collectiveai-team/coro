@@ -22,7 +22,7 @@ import threading
 
 import numpy as np
 
-from coro.core.types import TranscriptToken
+from coro.core.models import TranscriptToken
 
 logger = logging.getLogger(__name__)
 

@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 
 from fastapi.responses import StreamingResponse
 
-from coro.core.types import PipelineStreamEvent
+from coro.core.models import PipelineStreamEvent
 from coro.pipelines.done_frame import StreamingDoneFrame
 
 _SSE_HEADERS = {

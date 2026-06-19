@@ -23,7 +23,7 @@ from unittest.mock import patch
 import pytest
 
 from coro.audio import AudioInput
-from coro.core.types import (
+from coro.core.models import (
     SpeakerSegment,
     TranscriptDeltaEvent,
     TranscriptToken,

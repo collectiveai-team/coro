@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 
-from coro.core.types import SpeakerSegment, TranscriptDoneEvent, TranscriptToken
+from coro.core.models import SpeakerSegment, TranscriptDoneEvent, TranscriptToken
 from coro.pipelines.done_frame import StreamingDoneFrame
 from coro.pipelines.finalizer import (
     StreamingTranscriptFinalizer,

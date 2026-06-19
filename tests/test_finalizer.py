@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from coro.core.response import build_transcription_response
-from coro.core.types import SpeakerSegment, TranscriptToken
+from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.pipelines.finalizer import (
     StreamingTranscriptFinalizer,
     build_streaming_response,

@@ -25,7 +25,7 @@ from coro.core.response import (
     segment_span_from_tokens,
     speaker_for_span,
 )
-from coro.core.types import (
+from coro.core.models import (
     DiarizationItem,
     RawWord,
     ResponseSegment,

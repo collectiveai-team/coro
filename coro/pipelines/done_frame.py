@@ -18,7 +18,7 @@ import json
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 
-from coro.core.types import SpeakerSegment
+from coro.core.models import SpeakerSegment
 from coro.pipelines.finalizer import iter_response_segments
 from coro.pipelines.transcript_store import TranscriptSpillStore
 

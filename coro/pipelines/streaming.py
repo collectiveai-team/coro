@@ -13,7 +13,7 @@ import time
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, stream_pcm_from_file
 from coro.core.protocols import ASRAdapter
-from coro.core.types import SpeakerSegment, TokenBatchEvent, TranscriptionResult
+from coro.core.models import SpeakerSegment, TokenBatchEvent, TranscriptionResult
 from coro.pipelines.done_frame import StreamingDoneFrame
 from coro.pipelines.finalizer import (
     StreamingTranscriptFinalizer,

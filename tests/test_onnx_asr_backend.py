@@ -24,7 +24,7 @@ from coro.backends.onnx_asr import (
     convert_onnx_asr_result,
     convert_onnx_asr_segments,
 )
-from coro.core.types import TranscriptToken
+from coro.core.models import TranscriptToken
 
 _SP = "\u2581"
 

@@ -24,7 +24,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from coro.backends.onnx_asr import convert_onnx_asr_result
-from coro.core.types import TranscriptToken
+from coro.core.models import TranscriptToken
 
 logger = logging.getLogger(__name__)
 

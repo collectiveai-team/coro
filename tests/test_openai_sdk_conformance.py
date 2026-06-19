@@ -21,7 +21,7 @@ from openai.types.audio import (
 )
 
 from coro.app import create_app
-from coro.core.types import (
+from coro.core.models import (
     ResponseSegment,
     TranscriptionResult,
     TranscriptItem,

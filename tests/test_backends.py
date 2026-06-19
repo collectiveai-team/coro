@@ -18,7 +18,7 @@ import pytest
 
 from coro.backends.faster_whisper import convert_asr_segments
 from coro.backends.nemo import convert_diarization_segments
-from coro.core.types import SpeakerSegment, TranscriptToken
+from coro.core.models import SpeakerSegment, TranscriptToken
 
 
 def _fake_word(word: str, start: float, end: float, probability: float = 0.9):

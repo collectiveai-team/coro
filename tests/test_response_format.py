@@ -15,7 +15,7 @@ from httpx import ASGITransport, AsyncClient
 
 from coro.api.v1.transcriptions import ResponseFormat
 from coro.app import create_app
-from coro.core.types import (
+from coro.core.models import (
     ResponseSegment,
     TranscriptionResult,
     TranscriptItem,

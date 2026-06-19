@@ -32,7 +32,7 @@ from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
 
-from coro.core.types import RawWord, ResponseSegment, TranscriptWord
+from coro.core.models import RawWord, ResponseSegment, TranscriptWord
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS segments (
