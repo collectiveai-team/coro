@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from coro.bench.quality import QualitySummary, ScoreMetrics, ScoreResult
+from coro.bench.models.quality import QualitySummary, ScoreMetrics, ScoreResult
 
 CANNED_DIARIZED_JSON = {
     "task": "transcribe",

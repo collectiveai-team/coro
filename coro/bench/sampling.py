@@ -7,22 +7,14 @@ import threading
 import time
 from pathlib import Path
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from typing import Any
 
 from coro.bench.gpu import sample_gpu
-from coro.bench.run import ProcessTreeSample
+from coro.bench.models.resource import ProcessTreeSample, ResourceBaseline
 from coro.bench.schema import RESOURCE_FIELDNAMES
 
 SampleFn = Callable[[int], ProcessTreeSample]
-
-
-@dataclass
-class ResourceBaseline:
-    """Post-warmup memory baseline used for prediction-memory deltas."""
-
-    baseline_pss_kb: int | str = ""
-    baseline_vram_mib: float | str = ""
 
 
 def _default_sample_fn(root_pid: int) -> ProcessTreeSample:

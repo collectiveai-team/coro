@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import os
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+from coro.bench.models.resource import ProcessTreeSample
 
 
 CLOCK_TICKS = os.sysconf(os.sysconf_names["SC_CLK_TCK"])
@@ -49,24 +51,6 @@ class ProcStatus:
 
     vmrss: int = 0
     vmsize: int = 0
-
-
-@dataclass
-class ProcessTreeSample:
-    """Aggregated resource metrics for a full Server Process Tree."""
-
-    pids: set[int] = field(default_factory=set)
-    pss_kb: int = 0
-    uss_kb: int = 0
-    rss_kb: int = 0
-    vsz_kb: int = 0
-    cpu_user_s: float = 0.0
-    cpu_system_s: float = 0.0
-    rchar: int = 0
-    wchar: int = 0
-    read_bytes: int = 0
-    write_bytes: int = 0
-    thread_count: int = 0
 
 
 def _get_process_tree_pids(root_pid: int) -> set[int]:

@@ -12,12 +12,13 @@ from pathlib import Path
 from typing import Any
 
 from coro.bench.errors import ServerUnreachableError
+from coro.bench.models.performance import PerRepSummary
+from coro.bench.models.resource import ResourceBaseline
 from coro.bench.performance import (
-    PerRepSummary,
     compute_per_rep_summary,
     write_performance_summary,
 )
-from coro.bench.sampling import ResourceBaseline, Sampler, sample_resource_baseline
+from coro.bench.sampling import Sampler, sample_resource_baseline
 from coro.bench.stm import hyp_segments_to_stm
 from coro.bench.transport import (
     _is_connection_refused,
@@ -231,7 +232,8 @@ def _run_quality_scoring_with_skip(
     der_collar: float,
     der_regions: str,
 ) -> None:
-    from coro.bench.quality import QualitySummary, ScoreResult, combine_items, score_item
+    from coro.bench.models.quality import QualitySummary, ScoreResult
+    from coro.bench.quality import combine_items, score_item
 
     quality_dir = out_dir / "quality"
     quality_dir.mkdir(parents=True, exist_ok=True)
@@ -289,7 +291,8 @@ def _run_quality_scoring(
     der_collar: float,
     der_regions: str,
 ) -> None:
-    from coro.bench.quality import ScoreResult, combine_items, score_item
+    from coro.bench.models.quality import ScoreResult
+    from coro.bench.quality import combine_items, score_item
 
     quality_dir = out_dir / "quality"
     quality_dir.mkdir(parents=True, exist_ok=True)

@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from coro.bench.quality import ScoreError, ScoreResult
+from coro.bench.models.quality import ScoreError, ScoreResult
 
 
 CANNED_DIARIZED_JSON = {

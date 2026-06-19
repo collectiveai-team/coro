@@ -6,10 +6,8 @@ import json
 from pathlib import Path
 
 
+from coro.bench.models.report import BenchReport, PerformanceRow, QualityRow
 from coro.bench.report import (
-    BenchReport,
-    PerformanceRow,
-    QualityRow,
     build_report,
     render_markdown,
     render_stdout,

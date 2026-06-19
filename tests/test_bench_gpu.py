@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from coro.bench import gpu
-from coro.bench.gpu import GpuDevice, GpuSample, _aggregate, sample_gpu
+from coro.bench.gpu import GpuDevice, _aggregate, sample_gpu
+from coro.bench.models.gpu import GpuSample
 
 MIB = 1024**2
 

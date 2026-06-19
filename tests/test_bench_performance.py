@@ -13,9 +13,9 @@ from unittest.mock import patch
 
 import pytest
 
-from coro.bench.gpu import GpuSample
-from coro.bench.performance import PerRepSummary
-from coro.bench.run import ProcessTreeSample
+from coro.bench.models.gpu import GpuSample
+from coro.bench.models.performance import PerRepSummary
+from coro.bench.models.resource import ProcessTreeSample
 from coro.bench.schema import RESOURCE_FIELDNAMES
 
 
