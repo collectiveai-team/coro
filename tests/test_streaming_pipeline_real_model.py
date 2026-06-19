@@ -39,6 +39,7 @@ skip_unless_real = pytest.mark.skipif(
 # Opt-in real-model test
 # ---------------------------------------------------------------------------
 
+
 @skip_unless_real
 @pytest.mark.asyncio
 async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
@@ -53,9 +54,7 @@ async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
 
     # Load real models
     asr = build_asr_adapter("openai/whisper-small", device="cpu")
-    diar_model = SortformerEncLabelModel.from_pretrained(
-        "nvidia/diar_streaming_sortformer_4spk-v2"
-    )
+    diar_model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
     diar_model.eval()
     factory = StreamingDiarizerFactory(diar_model, tier="very-high")
 
@@ -99,17 +98,13 @@ def test_streaming_diarizer_frame_count_matches_audio_duration():
     # very-high tier chunk is ~27.2s, so 95s exercises 3 full chunks + remainder.
     DURATION_S = 95
 
-    model = SortformerEncLabelModel.from_pretrained(
-        "nvidia/diar_streaming_sortformer_4spk-v2"
-    )
+    model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
     model.eval()
     factory = StreamingDiarizerFactory(model, tier="very-high")
     diar = factory()
 
     rng = np.random.default_rng(0)
-    pcm = (rng.standard_normal(SAMPLE_RATE * DURATION_S) * 0.1 * 32768).astype(
-        np.int16
-    ).tobytes()
+    pcm = (rng.standard_normal(SAMPLE_RATE * DURATION_S) * 0.1 * 32768).astype(np.int16).tobytes()
 
     # Feed 1-second PCM chunks like the streaming pipeline does.
     one_second = SAMPLE_RATE * 2
@@ -129,6 +124,7 @@ def test_streaming_diarizer_frame_count_matches_audio_duration():
 # ---------------------------------------------------------------------------
 # Warmup path with mocked-model (always runs)
 # ---------------------------------------------------------------------------
+
 
 class _FakeASRAdapter:
     async def transcribe_pcm(self, pcm_bytes, *, language=None, prompt=None):

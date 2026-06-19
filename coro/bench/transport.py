@@ -28,7 +28,7 @@ def _is_connection_refused(exc: BaseException) -> bool:
             return True
         if isinstance(reason, OSError) and reason.errno in (
             111,  # ECONNREFUSED on Linux
-            61,   # ECONNREFUSED on macOS
+            61,  # ECONNREFUSED on macOS
         ):
             return True
     return False
@@ -46,16 +46,12 @@ def transcribe_audio(
     boundary = uuid.uuid4().hex
     parts = []
 
-    parts.append(
-        _form_field(boundary, "response_format", "diarized_json")
-    )
+    parts.append(_form_field(boundary, "response_format", "diarized_json"))
 
     mime_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
     filename = audio_path.name
     audio_bytes = audio_path.read_bytes()
-    parts.append(
-        _form_file(boundary, "file", filename, mime_type, audio_bytes)
-    )
+    parts.append(_form_file(boundary, "file", filename, mime_type, audio_bytes))
 
     body = b"".join(parts) + f"--{boundary}--\r\n".encode()
     content_type = f"multipart/form-data; boundary={boundary}"
@@ -96,9 +92,7 @@ def transcribe_audio_sse(
     mime_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
     filename = audio_path.name
     audio_bytes = audio_path.read_bytes()
-    parts.append(
-        _form_file(boundary, "file", filename, mime_type, audio_bytes)
-    )
+    parts.append(_form_file(boundary, "file", filename, mime_type, audio_bytes))
 
     body = b"".join(parts) + f"--{boundary}--\r\n".encode()
     content_type = f"multipart/form-data; boundary={boundary}"
@@ -144,10 +138,7 @@ def transcribe_audio_sse(
 
 def _form_field(boundary: str, name: str, value: str) -> bytes:
     return (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="{name}"\r\n'
-        f"\r\n"
-        f"{value}\r\n"
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'
     ).encode()
 
 
@@ -159,8 +150,12 @@ def _form_file(
     data: bytes,
 ) -> bytes:
     return (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
-        f"Content-Type: {mime_type}\r\n"
-        f"\r\n"
-    ).encode() + data + b"\r\n"
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
+            f"Content-Type: {mime_type}\r\n"
+            f"\r\n"
+        ).encode()
+        + data
+        + b"\r\n"
+    )

@@ -59,9 +59,7 @@ class StreamingDoneFrame:
         yield '], "diarization": ['
         for i, seg in enumerate(iter_response_segments(self.store, self.timeline)):
             yield ", " if i else ""
-            yield json.dumps(
-                {"start": seg["start"], "end": seg["end"], "speaker": seg["speaker"]}
-            )
+            yield json.dumps({"start": seg["start"], "end": seg["end"], "speaker": seg["speaker"]})
         yield '], "raw_words": ['
         for i, word in enumerate(self.store.iter_raw_words()):
             yield ", " if i else ""

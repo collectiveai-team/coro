@@ -39,13 +39,18 @@ def test_main_writes_single_speaker_stm_per_clip(tmp_path: Path):
 
     argv = [
         "make_common_voice_clips",
-        "--cv-dir", str(cv_dir),
-        "--split", "test",
-        "--out-dir", str(out_dir),
+        "--cv-dir",
+        str(cv_dir),
+        "--split",
+        "test",
+        "--out-dir",
+        str(out_dir),
     ]
-    with patch.object(sys, "argv", argv), \
-        patch.object(mod, "transcode_to_wav") as transcode, \
-        patch.object(mod, "wav_duration_seconds", return_value=3.5):
+    with (
+        patch.object(sys, "argv", argv),
+        patch.object(mod, "transcode_to_wav") as transcode,
+        patch.object(mod, "wav_duration_seconds", return_value=3.5),
+    ):
         # Ensure the STM write does not fail on a missing out-dir.
         transcode.side_effect = lambda src, dst: dst.parent.mkdir(parents=True, exist_ok=True)
         mod.main()

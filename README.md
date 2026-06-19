@@ -108,8 +108,27 @@ For a throwaway run without installing at all, use `uvx` (see
 
 ## Configuration
 
-Configuration is via `CORO_`-prefixed environment variables (host, port,
-backends, devices, etc.); see `coro/settings.py`.
+Coro can be configured two equivalent ways — use whichever fits your
+deployment, or mix both:
+
+- **Environment variables** — `CORO_`-prefixed (host, port, backends, devices,
+  etc.).
+- **CLI flags** — every setting is also a `--kebab-case` flag, auto-derived
+  from `ServerSettings` via pydantic-settings. Run `coro --help` to list them.
+
+Each `ServerSettings` field maps to both forms, e.g. `backend_asr` →
+`CORO_BACKEND_ASR` (env) or `--backend-asr` (CLI). Precedence is **CLI flags >
+environment variables > defaults**. See `coro/settings.py` for the full list.
+
+```bash
+# Env vars
+CORO_BACKEND_ASR=onnx-asr CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3 \
+  CORO_ASR_DEVICE=cuda coro --port 8000
+
+# Equivalent CLI flags
+coro --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
+  --asr-device cuda --port 8000
+```
 
 ### Endpoints
 
@@ -136,11 +155,19 @@ The ASR backend is pluggable behind a single adapter contract. Select it with
 
 ### Recommended configuration
 
+Each setting below is shown as an env var; the equivalent CLI flag is the
+`--kebab-case` form (e.g. `--backend-asr onnx-asr`).
+
 **GPU (`--extra cuda`):**
 ```bash
 CORO_BACKEND_ASR=onnx-asr
 CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
 CORO_ASR_DEVICE=cuda           # fp32 (leave CORO_ASR_QUANTIZATION unset)
+```
+Or as CLI flags:
+```bash
+coro --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
+  --asr-device cuda --port 8000
 ```
 Fastest by a wide margin with near-best accuracy. Use `faster-whisper` +
 `float16` if you want the top accuracy point; use `onnx-genai` only for
@@ -160,6 +187,34 @@ For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
 `CORO_TRANSCRIPT_SPILL_DIR` at a persistent (non-tmpfs) directory so the
 per-request transcript spills to disk and host RSS stays flat regardless of
 recording length. Consume the result over SSE (`stream=true`).
+
+### Settings reference
+
+Every setting below is available as both an environment variable and a CLI
+flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
+
+| Env var | CLI flag | Default | Description |
+|---|---|---|---|
+| `CORO_HOST` | `--host` | `0.0.0.0` | Bind host. |
+| `CORO_PORT` | `--port` | `8000` | Bind port. |
+| `CORO_CORS_ORIGINS` | `--cors-origins` | `["*"]` | Allowed CORS origins. |
+| `CORO_PIPELINE` | `--pipeline` | `full-memory` | Transcription pipeline selector (`full-memory` \| `streaming`). |
+| `CORO_BACKEND_ASR` | `--backend-asr` | `faster-whisper` | ASR backend provider (`faster-whisper` \| `onnx-asr` \| `onnx-genai`). |
+| `CORO_MODEL_ASR` | `--model-asr` | `openai/whisper-medium` | ASR model selection. |
+| `CORO_ASR_DEVICE` | `--asr-device` | `auto` | ASR device (`auto` \| `cuda` \| `cpu`). |
+| `CORO_ASR_COMPUTE_TYPE` | `--asr-compute-type` | `default` | Faster-Whisper compute type (ignored by `onnx-asr`). |
+| `CORO_ASR_QUANTIZATION` | `--asr-quantization` | _(unset)_ | onnx-asr quantization (e.g. `int8`); ignored by `faster-whisper`. |
+| `CORO_ASR_ONNX_VAD` | `--asr-onnx-vad` | `disabled` | Silero VAD segmentation for `onnx-asr` (`enabled` \| `disabled`). |
+| `CORO_ASR_ONNX_VAD_THRESHOLD` | `--asr-onnx-vad-threshold` | _(unset)_ | Silero VAD speech-probability threshold; only when VAD enabled. |
+| `CORO_BACKEND_DIARIZATION` | `--backend-diarization` | `none` | Diarization backend provider (`none` \| `nemo`). |
+| `CORO_MODEL_DIARIZATION` | `--model-diarization` | _(unset)_ | Diarization model; defaults to `nvidia/diar_streaming_sortformer_4spk-v2` when backend is `nemo`. |
+| `CORO_DIARIZATION_DEVICE` | `--diarization-device` | `auto` | NeMo diarization device (`auto` \| `cuda` \| `cpu`). |
+| `CORO_DIARIZATION_LATENCY` | `--diarization-latency` | `very-high` | Streaming Sortformer latency tier (`very-high` \| `high` \| `low` \| `ultra-low`). |
+| `CORO_TRANSCRIPT_SPILL_DIR` | `--transcript-spill-dir` | _(system temp)_ | Streaming transcript spill dir; must be real disk (non-tmpfs) for flat RAM. |
+| `CORO_WARMUP` | `--warmup` | `enabled` | Run warmup against the warmup audio asset at startup (`enabled` \| `disabled`). |
+| `CORO_LOG_LEVEL` | `--log-level` | `info` | Log level (CLI use only). |
+| `CORO_SSL_CERTFILE` | `--ssl-certfile` | _(unset)_ | TLS certificate file path. |
+| `CORO_SSL_KEYFILE` | `--ssl-keyfile` | _(unset)_ | TLS private key file path. |
 
 ## Benchmarks
 

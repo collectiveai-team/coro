@@ -4,17 +4,13 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 
 BASE_URL = "https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus"
-ANNOTATIONS_URL = (
-    "https://groups.inf.ed.ac.uk/ami/AMICorpusAnnotations/"
-    "ami_public_manual_1.6.2.zip"
-)
+ANNOTATIONS_URL = "https://groups.inf.ed.ac.uk/ami/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
 
 
 def audio_filename(meeting_id: str, mic: str) -> str:
@@ -45,9 +41,8 @@ def download_file(url: str, output_path: Path, *, force: bool = False) -> None:
     print(f"     to: {output_path}")
 
     try:
-        with urllib.request.urlopen(url) as response:
-            with tmp_path.open("wb") as f:
-                shutil.copyfileobj(response, f)
+        with urllib.request.urlopen(url) as response, tmp_path.open("wb") as f:
+            shutil.copyfileobj(response, f)
     except urllib.error.HTTPError as e:
         if tmp_path.exists():
             tmp_path.unlink()

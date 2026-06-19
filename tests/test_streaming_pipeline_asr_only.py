@@ -27,6 +27,7 @@ def _render_done_frame(frame: StreamingDoneFrame) -> dict:
     outer = json.loads(sse[len("data: ") :].rstrip("\n"))
     return json.loads(outer["text"])
 
+
 RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
 
 _CHUNK_BYTES = struct.pack("<1600h", *([0] * 1600))
@@ -61,6 +62,7 @@ def _mock_stream():
 # ---------------------------------------------------------------------------
 # ASR-Only transcribe()
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_asr_only_transcribe_succeeds():
@@ -102,6 +104,7 @@ async def test_asr_only_transcribe_cleanup_on_asr_failure():
 # ---------------------------------------------------------------------------
 # ASR-Only stream()
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_asr_only_stream_emits_delta_events():
@@ -152,6 +155,7 @@ async def test_asr_only_stream_cleanup_on_asr_failure():
 # ---------------------------------------------------------------------------
 # No factory constructed in ASR-only config
 # ---------------------------------------------------------------------------
+
 
 def test_no_factory_when_diarization_none():
     """When no streaming_diarizer_factory provided, pipeline has None factory."""

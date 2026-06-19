@@ -101,10 +101,12 @@ def test_parse_args_audio_defaults_none():
 def test_main_quality_calls_run_quality(capsys):
     from coro.bench.cli import main
 
-    with patch.object(sys, "argv", ["coro-bench", "quality"]), \
-         patch("coro.bench.cli.ensure_audio_and_annotations"), \
-         patch("coro.bench.cli.materialize_reference_stms"), \
-         patch("coro.bench.cli._run_quality") as mock_quality:
+    with (
+        patch.object(sys, "argv", ["coro-bench", "quality"]),
+        patch("coro.bench.cli.ensure_audio_and_annotations"),
+        patch("coro.bench.cli.materialize_reference_stms"),
+        patch("coro.bench.cli._run_quality") as mock_quality,
+    ):
         main()
     mock_quality.assert_called_once()
 
@@ -112,10 +114,12 @@ def test_main_quality_calls_run_quality(capsys):
 def test_main_performance_runs_and_outputs_summary(capsys):
     from coro.bench.cli import main
 
-    with patch.object(sys, "argv", ["coro-bench", "performance"]), \
-         patch("coro.bench.cli.ensure_audio_and_annotations"), \
-         patch("coro.bench.cli.materialize_reference_stms"), \
-         patch("coro.bench.cli._run_performance") as mock_perf:
+    with (
+        patch.object(sys, "argv", ["coro-bench", "performance"]),
+        patch("coro.bench.cli.ensure_audio_and_annotations"),
+        patch("coro.bench.cli.materialize_reference_stms"),
+        patch("coro.bench.cli._run_performance") as mock_perf,
+    ):
         main()
     mock_perf.assert_called_once()
 
@@ -123,10 +127,12 @@ def test_main_performance_runs_and_outputs_summary(capsys):
 def test_main_all_calls_run_all(capsys):
     from coro.bench.cli import main
 
-    with patch.object(sys, "argv", ["coro-bench", "all"]), \
-         patch("coro.bench.cli.ensure_audio_and_annotations"), \
-         patch("coro.bench.cli.materialize_reference_stms"), \
-         patch("coro.bench.cli._run_all") as mock_all:
+    with (
+        patch.object(sys, "argv", ["coro-bench", "all"]),
+        patch("coro.bench.cli.ensure_audio_and_annotations"),
+        patch("coro.bench.cli.materialize_reference_stms"),
+        patch("coro.bench.cli._run_all") as mock_all,
+    ):
         main()
     mock_all.assert_called_once()
 

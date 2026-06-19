@@ -41,12 +41,8 @@ class ServerSettings(BaseSettings):
     backend_asr: ASRBackendProvider = Field(
         default="faster-whisper", description="ASR Backend Provider selector."
     )
-    model_asr: str = Field(
-        default="openai/whisper-medium", description="ASR Model Selection."
-    )
-    asr_device: ASRDevice = Field(
-        default="auto", description="Faster Whisper device selection."
-    )
+    model_asr: str = Field(default="openai/whisper-medium", description="ASR Model Selection.")
+    asr_device: ASRDevice = Field(default="auto", description="Faster Whisper device selection.")
     asr_compute_type: str = Field(
         default="default",
         description="Faster Whisper compute type selection (ignored by the onnx-asr backend).",
@@ -71,9 +67,7 @@ class ServerSettings(BaseSettings):
         default="none",
         description="Diarization Backend Provider selector.",
     )
-    model_diarization: str | None = Field(
-        default=None, description="Diarization Model Selection."
-    )
+    model_diarization: str | None = Field(default=None, description="Diarization Model Selection.")
     diarization_device: DiarizationDevice = Field(
         default="auto", description="NeMo diarization device selection."
     )

@@ -59,10 +59,7 @@ def hyp_segments_to_stm(
         if end_f <= start_f:
             continue
 
-        lines.append(
-            f"{recording_id} {channel} {speaker} "
-            f"{start_f:.3f} {end_f:.3f} {text}"
-        )
+        lines.append(f"{recording_id} {channel} {speaker} {start_f:.3f} {end_f:.3f} {text}")
 
     lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
     return "\n".join(lines) + "\n" if lines else ""
@@ -106,8 +103,7 @@ def slice_stm_window(
             continue
         session = recording_id if recording_id is not None else parts[0]
         lines.append(
-            f"{session} {parts[1]} {parts[2]} "
-            f"{clamped_start:.3f} {clamped_end:.3f} {parts[5]}"
+            f"{session} {parts[1]} {parts[2]} {clamped_start:.3f} {clamped_end:.3f} {parts[5]}"
         )
     lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
     return "\n".join(lines) + "\n" if lines else ""
@@ -142,10 +138,7 @@ def rttm_to_stm(
         if dur_f <= 0:
             continue
         speaker = parts[7]
-        lines.append(
-            f"{recording_id} {channel} {speaker} "
-            f"{start_f:.3f} {end_f:.3f} {text}"
-        )
+        lines.append(f"{recording_id} {channel} {speaker} {start_f:.3f} {end_f:.3f} {text}")
     lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
     return "\n".join(lines) + "\n" if lines else ""
 
@@ -316,10 +309,7 @@ def ami_meeting_to_stm(ami_root: Path, meeting_id: str) -> str:
             text = seg["text"].replace("\n", " ").strip()
             if not text:
                 continue
-            lines.append(
-                f"{meeting_id} 1 {speaker} "
-                f"{seg['start']:.3f} {seg['end']:.3f} {text}"
-            )
+            lines.append(f"{meeting_id} 1 {speaker} {seg['start']:.3f} {seg['end']:.3f} {text}")
 
     lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
     return "\n".join(lines) + "\n" if lines else ""

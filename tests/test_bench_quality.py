@@ -17,8 +17,22 @@ CANNED_DIARIZED_JSON = {
     "duration": 3.5,
     "text": "hello world from test",
     "segments": [
-        {"type": "transcript.text.segment", "id": "seg_001", "start": 0.0, "end": 1.5, "text": "hello world", "speaker": "SPEAKER_00"},
-        {"type": "transcript.text.segment", "id": "seg_002", "start": 1.5, "end": 3.5, "text": "from test", "speaker": "SPEAKER_01"},
+        {
+            "type": "transcript.text.segment",
+            "id": "seg_001",
+            "start": 0.0,
+            "end": 1.5,
+            "text": "hello world",
+            "speaker": "SPEAKER_00",
+        },
+        {
+            "type": "transcript.text.segment",
+            "id": "seg_002",
+            "start": 1.5,
+            "end": 3.5,
+            "text": "from test",
+            "speaker": "SPEAKER_01",
+        },
     ],
     "usage": {"type": "duration", "seconds": 4},
 }
@@ -111,7 +125,8 @@ class TestScoreItem:
         assert _normalize_transcript_text("Hello,   world!!") == "Hello world"
 
     def test_write_normalized_stm_preserves_metadata_and_normalizes_text(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ):
         from coro.bench.quality import _write_normalized_stm
 
@@ -148,7 +163,10 @@ class TestScoreItem:
 
     def test_score_item_wer_metrics_have_full_breakdown(self, tmp_path: Path):
         ref_stm, hyp_stm = _write_stm_pair(
-            tmp_path, "m", "m 1 A 0.0 1.0 test\n", "m 1 A 0.0 1.0 test\n",
+            tmp_path,
+            "m",
+            "m 1 A 0.0 1.0 test\n",
+            "m 1 A 0.0 1.0 test\n",
         )
 
         from coro.bench.quality import score_item
@@ -161,7 +179,10 @@ class TestScoreItem:
 
     def test_score_item_der_has_full_breakdown(self, tmp_path: Path):
         ref_stm, hyp_stm = _write_stm_pair(
-            tmp_path, "m", "m 1 A 0.0 1.0 test\n", "m 1 A 0.0 1.0 test\n",
+            tmp_path,
+            "m",
+            "m 1 A 0.0 1.0 test\n",
+            "m 1 A 0.0 1.0 test\n",
         )
 
         from coro.bench.quality import score_item
@@ -174,7 +195,10 @@ class TestScoreItem:
 
     def test_score_item_returns_error_when_meeteval_raises(self, tmp_path: Path):
         ref_stm, hyp_stm = _write_stm_pair(
-            tmp_path, "m", "m 1 A 0.0 1.0 test\n", "m 1 A 0.0 1.0 test\n",
+            tmp_path,
+            "m",
+            "m 1 A 0.0 1.0 test\n",
+            "m 1 A 0.0 1.0 test\n",
         )
 
         mock_meeteval = MagicMock()
@@ -224,7 +248,9 @@ class TestCombineItems:
         from coro.bench.quality import combine_items
 
         item_results = [
-            _scored(tmp_path, "A", "A 1 X 0.0 2.0 hello world\n", "A 1 X 0.0 2.0 hello world\n", 2.0),
+            _scored(
+                tmp_path, "A", "A 1 X 0.0 2.0 hello world\n", "A 1 X 0.0 2.0 hello world\n", 2.0
+            ),
             _scored(tmp_path, "B", "B 1 X 0.0 2.0 foo bar\n", "B 1 X 0.0 2.0 foo bar\n", 2.0),
         ]
 
@@ -248,7 +274,9 @@ class TestCombineItems:
         from coro.bench.quality import combine_items
 
         item_results = [
-            _scored(tmp_path, "A", "A 1 X 0.0 2.0 hello world\n", "A 1 X 0.0 2.0 hello world\n", 2.0),
+            _scored(
+                tmp_path, "A", "A 1 X 0.0 2.0 hello world\n", "A 1 X 0.0 2.0 hello world\n", 2.0
+            ),
             _scored(
                 tmp_path,
                 "B",
@@ -271,7 +299,11 @@ class TestCombineItems:
         good = _scored(tmp_path, "A", "A 1 X 0.0 2.0 hello\n", "A 1 X 0.0 2.0 hello\n", 2.0)
         item_results = [
             good,
-            {"session_id": "B", "metrics": None, "error": {"type": "RuntimeError", "message": "fail"}},
+            {
+                "session_id": "B",
+                "metrics": None,
+                "error": {"type": "RuntimeError", "message": "fail"},
+            },
         ]
 
         summary = combine_items(item_results)
@@ -420,8 +452,18 @@ class TestQualityRun:
         out_dir.mkdir()
 
         items = [
-            {"item_id": "meeting1", "audio_path": audio1, "ref_stm_path": ref1, "audio_seconds": 1.0},
-            {"item_id": "meeting2", "audio_path": audio2, "ref_stm_path": ref2, "audio_seconds": 1.0},
+            {
+                "item_id": "meeting1",
+                "audio_path": audio1,
+                "ref_stm_path": ref1,
+                "audio_seconds": 1.0,
+            },
+            {
+                "item_id": "meeting2",
+                "audio_path": audio2,
+                "ref_stm_path": ref2,
+                "audio_seconds": 1.0,
+            },
         ]
 
         # Force the second item's scoring to fail while the first succeeds,

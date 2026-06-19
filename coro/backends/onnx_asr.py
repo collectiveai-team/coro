@@ -74,9 +74,7 @@ def _group_subwords(
     return groups
 
 
-def _words_from_text(
-    text: str, start: float, span_end: float | None
-) -> list[TranscriptToken]:
+def _words_from_text(text: str, start: float, span_end: float | None) -> list[TranscriptToken]:
     """Synthesise word-level tokens from a text-only result (no token timestamps).
 
     onnx-asr's Whisper exposes ``text`` but leaves ``tokens``/``timestamps`` None, so
@@ -143,9 +141,7 @@ def convert_onnx_asr_result(
 
                 word_logprobs = group["logprobs"]
                 probability = (
-                    math.exp(sum(word_logprobs) / len(word_logprobs))
-                    if word_logprobs
-                    else None
+                    math.exp(sum(word_logprobs) / len(word_logprobs)) if word_logprobs else None
                 )
 
                 out.append(
@@ -175,9 +171,7 @@ def convert_onnx_asr_segments(segments) -> list[TranscriptToken]:
         offset = float(getattr(seg, "start", 0.0) or 0.0)
         seg_end = getattr(seg, "end", None)
         span_end = float(seg_end) if seg_end is not None else None
-        tokens.extend(
-            convert_onnx_asr_result(seg, offset_seconds=offset, span_end=span_end)
-        )
+        tokens.extend(convert_onnx_asr_result(seg, offset_seconds=offset, span_end=span_end))
     return tokens
 
 

@@ -74,9 +74,7 @@ def test_finalizer_marks_segments_beyond_timeline_unknown(tmp_path):
         streamed = build_streaming_response(store, timeline)
 
     batch = build_transcription_response(_TOKENS, timeline, duration=2.4)
-    assert [s["speaker"] for s in streamed["segments"]] == [
-        s["speaker"] for s in batch["segments"]
-    ]
+    assert [s["speaker"] for s in streamed["segments"]] == [s["speaker"] for s in batch["segments"]]
     assert "-1" in [s["speaker"] for s in streamed["segments"]]
 
 

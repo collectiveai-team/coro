@@ -60,8 +60,11 @@ class TestLatencyTierMapping:
         from coro.backends.nemo_streaming import get_latency_tier_params
 
         required = {
-            "chunk_len", "chunk_right_context", "fifo_len",
-            "spkcache_update_period", "spkcache_len",
+            "chunk_len",
+            "chunk_right_context",
+            "fifo_len",
+            "spkcache_update_period",
+            "spkcache_len",
         }
         for tier in ("very-high", "high", "low", "ultra-low"):
             assert required.issubset(get_latency_tier_params(tier).keys())

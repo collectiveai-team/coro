@@ -52,10 +52,15 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--ami-meetings", nargs="+", default=[])
     parser.add_argument(
-        "--ami-groups", nargs="+", default=[], choices=["IB", "IN", "ES", "IS", "TS", "EN"],
+        "--ami-groups",
+        nargs="+",
+        default=[],
+        choices=["IB", "IN", "ES", "IS", "TS", "EN"],
     )
     parser.add_argument(
-        "--ami-preset", choices=["sample", "eval", "full"], default=None,
+        "--ami-preset",
+        choices=["sample", "eval", "full"],
+        default=None,
     )
     parser.add_argument("--ami-root", type=Path, default=Path("./amicorpus/"))
     parser.add_argument("--no-download", action="store_true")
@@ -84,9 +89,7 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         "short-clip / curated workload (e.g. make_ami_clip output).",
     )
     parser.add_argument("--der-collar", type=float, default=0.0)
-    parser.add_argument(
-        "--der-regions", choices=["all", "nooverlap", "single"], default="all"
-    )
+    parser.add_argument("--der-regions", choices=["all", "nooverlap", "single"], default="all")
     parser.add_argument("--stream", action="store_true", default=False)
 
 
@@ -110,9 +113,7 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         parser.error("--stream is not allowed for the 'quality' subcommand.")
 
     has_attached = args.server_url is not None
-    has_managed_explicit = any(
-        getattr(args, flag) is not None for flag in _MANAGED_FLAGS
-    )
+    has_managed_explicit = any(getattr(args, flag) is not None for flag in _MANAGED_FLAGS)
 
     if has_attached and has_managed_explicit:
         parser.error(
@@ -133,9 +134,7 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         parser.error("--reference-stm requires --audio.")
 
     if args.audio is not None and args.reference_stm is None and args.subcommand == "quality":
-        parser.error(
-            "--audio without --reference-stm is not allowed for the 'quality' subcommand."
-        )
+        parser.error("--audio without --reference-stm is not allowed for the 'quality' subcommand.")
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -167,18 +166,22 @@ def _run_performance(args: argparse.Namespace, meetings: list[str]) -> None:
     for meeting_id in meetings:
         audio_path = get_audio_path(args.ami_root, meeting_id)
         if audio_path.exists():
-            items.append({
-                "item_id": meeting_id,
-                "audio_path": audio_path,
-                "ref_stm_path": None,
-            })
+            items.append(
+                {
+                    "item_id": meeting_id,
+                    "audio_path": audio_path,
+                    "ref_stm_path": None,
+                }
+            )
 
     if args.audio is not None:
-        items.append({
-            "item_id": args.audio.stem,
-            "audio_path": args.audio,
-            "ref_stm_path": None,
-        })
+        items.append(
+            {
+                "item_id": args.audio.stem,
+                "audio_path": args.audio,
+                "ref_stm_path": None,
+            }
+        )
 
     if args.clips_dir is not None:
         from coro.bench.clips import resolve_clip_items
@@ -220,20 +223,24 @@ def _run_quality(args: argparse.Namespace, meetings: list[str]) -> None:
         stm_path = ami_root / "stm" / f"{meeting_id}.ref.stm"
         ref_stm = stm_path if stm_path.exists() else None
         if audio_path.exists():
-            items.append({
-                "item_id": meeting_id,
-                "audio_path": audio_path,
-                "ref_stm_path": ref_stm,
-                "audio_seconds": 0.0,
-            })
+            items.append(
+                {
+                    "item_id": meeting_id,
+                    "audio_path": audio_path,
+                    "ref_stm_path": ref_stm,
+                    "audio_seconds": 0.0,
+                }
+            )
 
     if args.audio is not None:
-        items.append({
-            "item_id": args.audio.stem,
-            "audio_path": args.audio,
-            "ref_stm_path": args.reference_stm,
-            "audio_seconds": 0.0,
-        })
+        items.append(
+            {
+                "item_id": args.audio.stem,
+                "audio_path": args.audio,
+                "ref_stm_path": args.reference_stm,
+                "audio_seconds": 0.0,
+            }
+        )
 
     if args.clips_dir is not None:
         from coro.bench.clips import resolve_clip_items
@@ -273,20 +280,24 @@ def _run_all(args: argparse.Namespace, meetings: list[str]) -> None:
         stm_path = ami_root / "stm" / f"{meeting_id}.ref.stm"
         ref_stm = stm_path if stm_path.exists() else None
         if audio_path.exists():
-            items.append({
-                "item_id": meeting_id,
-                "audio_path": audio_path,
-                "ref_stm_path": ref_stm,
-                "audio_seconds": 0.0,
-            })
+            items.append(
+                {
+                    "item_id": meeting_id,
+                    "audio_path": audio_path,
+                    "ref_stm_path": ref_stm,
+                    "audio_seconds": 0.0,
+                }
+            )
 
     if args.audio is not None:
-        items.append({
-            "item_id": args.audio.stem,
-            "audio_path": args.audio,
-            "ref_stm_path": args.reference_stm,
-            "audio_seconds": 0.0,
-        })
+        items.append(
+            {
+                "item_id": args.audio.stem,
+                "audio_path": args.audio,
+                "ref_stm_path": args.reference_stm,
+                "audio_seconds": 0.0,
+            }
+        )
 
     if args.clips_dir is not None:
         from coro.bench.clips import resolve_clip_items
@@ -333,7 +344,9 @@ def main() -> None:
 
     if meetings:
         ensure_audio_and_annotations(
-            meetings, args.ami_root, no_download=args.no_download,
+            meetings,
+            args.ami_root,
+            no_download=args.no_download,
         )
         materialize_reference_stms(meetings, args.ami_root)
 

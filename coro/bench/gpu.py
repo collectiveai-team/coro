@@ -75,12 +75,14 @@ def _read_devices() -> list[dict[str, Any]] | None:
                 except Exception:
                     continue
 
-            devices.append({
-                "mem_total": int(mem.total),
-                "mem_used": int(mem.used),
-                "util": util,
-                "procs": procs,
-            })
+            devices.append(
+                {
+                    "mem_total": int(mem.total),
+                    "mem_used": int(mem.used),
+                    "util": util,
+                    "procs": procs,
+                }
+            )
         return devices
     except Exception:
         return None
@@ -108,10 +110,7 @@ def _aggregate(devices: list[dict[str, Any]], pids: Collection[int] | None) -> d
     else:
         pidset = set(pids)
         server_vram_bytes = sum(
-            used
-            for d in devices
-            for pid, used in d["procs"]
-            if used is not None and pid in pidset
+            used for d in devices for pid, used in d["procs"] if used is not None and pid in pidset
         )
 
     return {

@@ -65,7 +65,9 @@ class TestCombineSessionStms:
 class TestMeetevalVizArgv:
     def test_argv_includes_all_alignments_and_paths(self, tmp_path: Path):
         argv = viz.meeteval_viz_argv(
-            tmp_path / "r.stm", tmp_path / "h.stm", tmp_path / "viz",
+            tmp_path / "r.stm",
+            tmp_path / "h.stm",
+            tmp_path / "viz",
             alignments=["tcp", "cp"],
         )
         assert "html" in argv

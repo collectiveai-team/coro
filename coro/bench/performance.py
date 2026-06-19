@@ -8,8 +8,6 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-from coro.bench.schema import RESOURCE_FIELDNAMES
-
 
 def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
     pss_values: list[float] = []
@@ -117,9 +115,14 @@ def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
 
 def aggregate_across_reps(per_rep_summaries: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
     metrics = [
-        "transcription_throughput", "peak_pss_kb", "peak_pss_delta_kb",
-        "peak_cpu_pct", "peak_vram_mib", "peak_vram_delta_mib",
-        "peak_gpu_util_pct", "time_to_first_delta_s",
+        "transcription_throughput",
+        "peak_pss_kb",
+        "peak_pss_delta_kb",
+        "peak_cpu_pct",
+        "peak_vram_mib",
+        "peak_vram_delta_mib",
+        "peak_gpu_util_pct",
+        "time_to_first_delta_s",
     ]
     result: dict[str, dict[str, float]] = {}
 

@@ -27,9 +27,7 @@ from pathlib import Path
 from coro.bench.stm import hyp_segments_to_stm
 
 
-def read_cv_rows(
-    tsv_path: Path, *, limit: int | None = None
-) -> list[tuple[str, str]]:
+def read_cv_rows(tsv_path: Path, *, limit: int | None = None) -> list[tuple[str, str]]:
     """Return ``(path, sentence)`` pairs from a Common Voice split TSV.
 
     Rows with an empty ``path`` or ``sentence`` are skipped. ``limit`` caps the

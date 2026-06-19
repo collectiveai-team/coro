@@ -140,7 +140,9 @@ def diarizer(mock_model, mock_preprocessor, mock_post_processor):
 
 
 def test_constructor_initializes_streaming_state(
-    mock_model, mock_preprocessor, mock_post_processor,
+    mock_model,
+    mock_preprocessor,
+    mock_post_processor,
 ):
     from coro.backends.nemo_streaming import StreamingDiarizer
 
@@ -154,7 +156,9 @@ def test_constructor_initializes_streaming_state(
     )
 
     mock_model.sortformer_modules.init_streaming_state.assert_called_once_with(
-        batch_size=1, async_streaming=False, device=mock_model.device,
+        batch_size=1,
+        async_streaming=False,
+        device=mock_model.device,
     )
 
 
@@ -406,7 +410,6 @@ def test_total_preds_never_none_on_construction(mock_model, mock_preprocessor, m
     assert d._total_preds is not None
     assert isinstance(d._total_preds, torch.Tensor)
     assert d._total_preds.shape == (1, 0, 4)
-
 
 
 def test_length_tensor_on_same_device_as_audio(mock_model, mock_preprocessor, mock_post_processor):

@@ -137,7 +137,9 @@ def run_all_workload(
 
             sampler.stop()
 
-            throughput = audio_seconds / wall_seconds if wall_seconds > 0 and audio_seconds > 0 else None
+            throughput = (
+                audio_seconds / wall_seconds if wall_seconds > 0 and audio_seconds > 0 else None
+            )
             hw_profile = _infer_hw_profile(sampler.samples)
 
             sampler.backfill(
@@ -168,7 +170,9 @@ def run_all_workload(
             )
             rep_summary.setdefault("observed_hardware_profile", hw_profile)
             rep_summary.setdefault("baseline_pss_kb", memory_baseline.get("baseline_pss_kb", ""))
-            rep_summary.setdefault("baseline_vram_mib", memory_baseline.get("baseline_vram_mib", ""))
+            rep_summary.setdefault(
+                "baseline_vram_mib", memory_baseline.get("baseline_vram_mib", "")
+            )
             if ttft is not None:
                 rep_summary["time_to_first_delta_s"] = round(ttft, 6)
             rep_summaries.append(rep_summary)
@@ -478,7 +482,9 @@ def run_performance_workload(
 
             sampler.stop()
 
-            throughput = audio_seconds / wall_seconds if wall_seconds > 0 and audio_seconds > 0 else None
+            throughput = (
+                audio_seconds / wall_seconds if wall_seconds > 0 and audio_seconds > 0 else None
+            )
             hw_profile = _infer_hw_profile(sampler.samples)
 
             sampler.backfill(
@@ -505,7 +511,9 @@ def run_performance_workload(
             )
             rep_summary.setdefault("observed_hardware_profile", hw_profile)
             rep_summary.setdefault("baseline_pss_kb", memory_baseline.get("baseline_pss_kb", ""))
-            rep_summary.setdefault("baseline_vram_mib", memory_baseline.get("baseline_vram_mib", ""))
+            rep_summary.setdefault(
+                "baseline_vram_mib", memory_baseline.get("baseline_vram_mib", "")
+            )
             if ttft is not None:
                 rep_summary["time_to_first_delta_s"] = round(ttft, 6)
             rep_summaries.append(rep_summary)
@@ -532,9 +540,13 @@ def _audio_duration(audio_path: Path) -> float:
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 str(audio_path),
             ],
             capture_output=True,

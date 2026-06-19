@@ -61,9 +61,7 @@ class TranscriptSpillStore:
                 Defaults to the system temp dir (acceptable for tests only).
 
         """
-        fd, path = tempfile.mkstemp(
-            prefix="asr-transcript-", suffix=".sqlite3", dir=directory
-        )
+        fd, path = tempfile.mkstemp(prefix="asr-transcript-", suffix=".sqlite3", dir=directory)
         # Close the descriptor; sqlite3 reopens the path by name.
         os.close(fd)
         self._path = path
@@ -158,9 +156,7 @@ class TranscriptSpillStore:
 
     def iter_raw_words(self) -> Iterator[dict]:
         """Yield raw words in insertion order via a streaming cursor."""
-        cursor = self._conn.execute(
-            "SELECT word, start, end, score FROM raw_words ORDER BY idx"
-        )
+        cursor = self._conn.execute("SELECT word, start, end, score FROM raw_words ORDER BY idx")
         for word, start, end, score in cursor:
             yield {"word": word, "start": start, "end": end, "score": score}
 

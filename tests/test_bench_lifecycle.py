@@ -13,51 +13,75 @@ from coro.bench.cli import parse_args
 class TestCliMutualExclusivity:
     def test_server_url_with_server_asr_backend_rejected(self):
         with pytest.raises(SystemExit):
-            parse_args([
-                "quality",
-                "--server-url", "http://localhost:8000",
-                "--server-asr-backend", "faster-whisper",
-            ])
+            parse_args(
+                [
+                    "quality",
+                    "--server-url",
+                    "http://localhost:8000",
+                    "--server-asr-backend",
+                    "faster-whisper",
+                ]
+            )
 
     def test_server_url_with_server_asr_model_rejected(self):
         with pytest.raises(SystemExit):
-            parse_args([
-                "quality",
-                "--server-url", "http://localhost:8000",
-                "--server-asr-model", "openai/whisper-medium",
-            ])
+            parse_args(
+                [
+                    "quality",
+                    "--server-url",
+                    "http://localhost:8000",
+                    "--server-asr-model",
+                    "openai/whisper-medium",
+                ]
+            )
 
     def test_server_url_with_server_diar_backend_rejected(self):
         with pytest.raises(SystemExit):
-            parse_args([
-                "quality",
-                "--server-url", "http://localhost:8000",
-                "--server-diar-backend", "nemo",
-            ])
+            parse_args(
+                [
+                    "quality",
+                    "--server-url",
+                    "http://localhost:8000",
+                    "--server-diar-backend",
+                    "nemo",
+                ]
+            )
 
     def test_server_url_with_server_diar_model_rejected(self):
         with pytest.raises(SystemExit):
-            parse_args([
-                "quality",
-                "--server-url", "http://localhost:8000",
-                "--server-diar-model", "nvidia/diar_sortformer_4spk-v1",
-            ])
+            parse_args(
+                [
+                    "quality",
+                    "--server-url",
+                    "http://localhost:8000",
+                    "--server-diar-model",
+                    "nvidia/diar_sortformer_4spk-v1",
+                ]
+            )
 
     def test_server_url_with_server_pipeline_rejected(self):
         with pytest.raises(SystemExit):
-            parse_args([
-                "quality",
-                "--server-url", "http://localhost:8000",
-                "--server-pipeline", "full-memory",
-            ])
+            parse_args(
+                [
+                    "quality",
+                    "--server-url",
+                    "http://localhost:8000",
+                    "--server-pipeline",
+                    "full-memory",
+                ]
+            )
 
     def test_server_url_with_server_port_rejected(self):
         with pytest.raises(SystemExit):
-            parse_args([
-                "quality",
-                "--server-url", "http://localhost:8000",
-                "--server-port", "8001",
-            ])
+            parse_args(
+                [
+                    "quality",
+                    "--server-url",
+                    "http://localhost:8000",
+                    "--server-port",
+                    "8001",
+                ]
+            )
 
     def test_server_url_alone_accepted(self):
         args = parse_args(["quality", "--server-url", "http://localhost:8000"])
@@ -164,8 +188,7 @@ class TestBenchManagedServer:
         mock_proc.poll.return_value = None
         popen = "coro.bench.server_lifecycle.subprocess.Popen"
         health = "coro.bench.server_lifecycle.poll_health"
-        with patch(popen, return_value=mock_proc), \
-             patch(health):
+        with patch(popen, return_value=mock_proc), patch(health):
             with managed as handle:
                 assert handle.base_url == "http://127.0.0.1:18888"
                 assert handle.server_pid == 55555
@@ -188,10 +211,12 @@ class TestBenchManagedServer:
         mock_proc.poll.return_value = None
         popen = "coro.bench.server_lifecycle.subprocess.Popen"
         health = "coro.bench.server_lifecycle.poll_health"
-        with patch(popen, return_value=mock_proc), \
-             patch(health), \
-             pytest.raises(RuntimeError), \
-             managed:
+        with (
+            patch(popen, return_value=mock_proc),
+            patch(health),
+            pytest.raises(RuntimeError),
+            managed,
+        ):
             raise RuntimeError("boom")
         mock_proc.terminate.assert_called()
         mock_proc.wait.assert_called()
@@ -242,8 +267,7 @@ class TestPollHealth:
             return {"ready": False, "warmup_ready": False}
 
         getter = "coro.bench.server_lifecycle._get_health_json"
-        with patch(getter, side_effect=fake_get_json), \
-             pytest.raises(TimeoutError, match="warmup"):
+        with patch(getter, side_effect=fake_get_json), pytest.raises(TimeoutError, match="warmup"):
             poll_health("http://localhost:8000", timeout=0.05, interval=0.01)
 
 

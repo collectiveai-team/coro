@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-import pytest
 
 from coro.bench.report import (
     BenchReport,
@@ -150,22 +148,33 @@ def test_render_markdown_failed_item_renders_error_row_and_footnote():
 def test_build_report_diarization_only_item_shows_der_not_error(tmp_path: Path):
     """A diarization-only item (no WER) renders DER without an ERROR footnote."""
     der = {
-        "der": 0.0943, "false_alarm": 0.1, "missed_detection": 0.1,
-        "speaker_error": 0.0, "total_speech": 5.3,
+        "der": 0.0943,
+        "false_alarm": 0.1,
+        "missed_detection": 0.1,
+        "speaker_error": 0.0,
+        "total_speech": 5.3,
     }
     summary = {
         "workload_set": ["voxc_clip"],
-        "n_succeeded": 1, "n_failed": 0, "n_degenerate_diarization": 0,
+        "n_succeeded": 1,
+        "n_failed": 0,
+        "n_degenerate_diarization": 0,
         "combined": {
-            "cpwer": None, "orcwer": None, "dicpwer": None,
+            "cpwer": None,
+            "orcwer": None,
+            "dicpwer": None,
             "normalized": {"cpwer": None, "orcwer": None, "dicpwer": None},
             "der": der,
         },
-        "per_item": [{
-            "session_id": "voxc_clip", "audio_seconds": 6.0,
-            "diarization_only": True, "der": 0.0943,
-            "diarization": {"ref_speakers": 2, "hyp_speakers": 2, "degenerate": False},
-        }],
+        "per_item": [
+            {
+                "session_id": "voxc_clip",
+                "audio_seconds": 6.0,
+                "diarization_only": True,
+                "der": 0.0943,
+                "diarization": {"ref_speakers": 2, "hyp_speakers": 2, "degenerate": False},
+            }
+        ],
     }
     quality_dir = tmp_path / "quality"
     quality_dir.mkdir()
@@ -266,7 +275,13 @@ def test_build_report_reads_manifest_and_summaries(tmp_path):
             "cpwer": {"wer": 0.15, "errors": 12, "length": 80},
             "orcwer": {"wer": 0.13, "errors": 11, "length": 84},
             "dicpwer": {"wer": 0.14, "errors": 11, "length": 78},
-            "der": {"der": 0.08, "false_alarm": 0.01, "missed_detection": 0.03, "speaker_error": 0.04, "total_speech": 100.0},
+            "der": {
+                "der": 0.08,
+                "false_alarm": 0.01,
+                "missed_detection": 0.03,
+                "speaker_error": 0.04,
+                "total_speech": 100.0,
+            },
         },
         "per_item": [
             {
@@ -462,7 +477,10 @@ def test_render_markdown_performance_uses_dash_for_missing_gpu():
         ]
     )
     md = render_markdown(report)
-    assert "| IB4001 | 1 | 1837.4 | 120.50 | 15.24x | 500 MB | 62 MB | - | - | - | 85.3% | cpu-only |" in md
+    assert (
+        "| IB4001 | 1 | 1837.4 | 120.50 | 15.24x | 500 MB | 62 MB | - | - | - | 85.3% | cpu-only |"
+        in md
+    )
 
 
 def test_render_markdown_all_subcommand_shows_rep_note():

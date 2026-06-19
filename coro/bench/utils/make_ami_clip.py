@@ -25,10 +25,20 @@ def cut_audio_clip(src: Path, dst: Path, start: float, duration: float) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
-            "ffmpeg", "-v", "error", "-y",
-            "-ss", str(start), "-t", str(duration),
-            "-i", str(src),
-            "-ac", "1", "-ar", "16000",
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-ss",
+            str(start),
+            "-t",
+            str(duration),
+            "-i",
+            str(src),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
             str(dst),
         ],
         check=True,
@@ -57,7 +67,11 @@ def main() -> None:
     # The clip stem is the benchmark item_id, so the reference session id must
     # match it (the hypothesis STM is keyed by item_id).
     stm_text = clip_reference_stm(
-        args.ami_root, args.meeting_id, args.start, args.duration, recording_id=stem,
+        args.ami_root,
+        args.meeting_id,
+        args.start,
+        args.duration,
+        recording_id=stem,
     )
     stm_dst.write_text(stm_text, encoding="utf-8")
 

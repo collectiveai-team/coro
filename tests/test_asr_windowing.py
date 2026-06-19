@@ -102,10 +102,7 @@ async def test_stream_chunks_event_equivalence_with_stream_pcm():
     chunks = [pcm[i : i + chunk_size] for i in range(0, len(pcm), chunk_size)]
 
     events_pcm = [
-        e
-        async for e in windowing.stream_pcm(
-            pcm, asr=asr_pcm, language="es", prompt="hint"
-        )
+        e async for e in windowing.stream_pcm(pcm, asr=asr_pcm, language="es", prompt="hint")
     ]
     events_chunks = [
         e
@@ -115,15 +112,11 @@ async def test_stream_chunks_event_equivalence_with_stream_pcm():
     ]
 
     deltas_pcm = [e.delta for e in events_pcm if isinstance(e, TranscriptDeltaEvent)]
-    deltas_chunks = [
-        e.delta for e in events_chunks if isinstance(e, TranscriptDeltaEvent)
-    ]
+    deltas_chunks = [e.delta for e in events_chunks if isinstance(e, TranscriptDeltaEvent)]
     assert deltas_chunks == deltas_pcm
 
     batches_pcm = [e.tokens for e in events_pcm if isinstance(e, TokenBatchEvent)]
-    batches_chunks = [
-        e.tokens for e in events_chunks if isinstance(e, TokenBatchEvent)
-    ]
+    batches_chunks = [e.tokens for e in events_chunks if isinstance(e, TokenBatchEvent)]
     assert len(batches_chunks) == len(batches_pcm)
     for pcm_toks, chunk_toks in zip(batches_pcm, batches_chunks, strict=True):
         assert [(t.start, t.end, t.text) for t in chunk_toks] == [
@@ -210,12 +203,7 @@ async def test_stream_chunks_prompt_carry_over_matches_stream_pcm():
     chunk_size = int(SAMPLE_RATE * BYTES_PER_SAMPLE * 0.4)
     chunks = [pcm[i : i + chunk_size] for i in range(0, len(pcm), chunk_size)]
 
-    [
-        e
-        async for e in windowing.stream_pcm(
-            pcm, asr=asr_pcm, language="es", prompt="initial"
-        )
-    ]
+    [e async for e in windowing.stream_pcm(pcm, asr=asr_pcm, language="es", prompt="initial")]
     [
         e
         async for e in windowing.stream_chunks(

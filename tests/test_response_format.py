@@ -39,6 +39,7 @@ def test_response_format_enum_has_unsupported_members():
 def test_response_format_enum_json_like_is_iterable():
     """JSON-like formats can be determined from the Enum without a hard-coded set."""
     from coro.api.v1.transcriptions import _JSON_LIKE_FORMATS
+
     assert ResponseFormat.JSON in _JSON_LIKE_FORMATS
     assert ResponseFormat.VERBOSE_JSON in _JSON_LIKE_FORMATS
     assert ResponseFormat.JSON_VERBOSE in _JSON_LIKE_FORMATS
@@ -75,6 +76,7 @@ class _FakePipeline:
             "diarization": [],
             "raw_words": [],
         }
+
 
 def _app():
     from fastapi import FastAPI

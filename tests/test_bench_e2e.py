@@ -251,12 +251,17 @@ class TestE2EAdhocAudio:
         ref_stm = tmp_path / "test.stm"
         ref_stm.touch()
 
-        args = parse_args([
-            "all",
-            "--audio", str(audio),
-            "--reference-stm", str(ref_stm),
-            "--server-url", e2e_server,
-        ])
+        args = parse_args(
+            [
+                "all",
+                "--audio",
+                str(audio),
+                "--reference-stm",
+                str(ref_stm),
+                "--server-url",
+                e2e_server,
+            ]
+        )
         assert args.audio == audio
         assert args.reference_stm == ref_stm
         assert args.server_url == e2e_server
@@ -319,14 +324,19 @@ class TestE2EAllSubcommand:
             "_raw": object(),
         }
 
-        with patch("coro.bench.quality.score_item", return_value=mock_score), \
-             patch("coro.bench.quality.combine_items", return_value={
-                 "workload_set": ["meeting1"],
-                 "n_succeeded": 1,
-                 "n_failed": 0,
-                 "combined": {},
-                 "per_item": [],
-             }):
+        with (
+            patch("coro.bench.quality.score_item", return_value=mock_score),
+            patch(
+                "coro.bench.quality.combine_items",
+                return_value={
+                    "workload_set": ["meeting1"],
+                    "n_succeeded": 1,
+                    "n_failed": 0,
+                    "combined": {},
+                    "per_item": [],
+                },
+            ),
+        ):
             run_all_workload(
                 items=items,
                 base_url=e2e_server,
@@ -343,7 +353,7 @@ class TestE2EAllSubcommand:
         assert (out_dir / "manifest.json").exists()
 
     def test_warmup_sends_request_before_items(self, e2e_server, tmp_path: Path):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from coro.bench.orchestrate import run_all_workload
 
@@ -390,10 +400,7 @@ class TestE2EAllSubcommand:
         assert str(warmup_path) == call_order[0]
         assert str(audio) == call_order[1]
 
-        assert not any(
-            "warmup" in p.name
-            for p in (out_dir / "responses").iterdir()
-        )
+        assert not any("warmup" in p.name for p in (out_dir / "responses").iterdir())
 
     def test_quality_scored_from_rep1_only(self, e2e_server, tmp_path: Path):
         from unittest.mock import patch
@@ -422,14 +429,19 @@ class TestE2EAllSubcommand:
             "_raw": object(),
         }
 
-        with patch("coro.bench.quality.score_item", return_value=mock_score), \
-             patch("coro.bench.quality.combine_items", return_value={
-                 "workload_set": ["meeting1"],
-                 "n_succeeded": 1,
-                 "n_failed": 0,
-                 "combined": {},
-                 "per_item": [],
-             }):
+        with (
+            patch("coro.bench.quality.score_item", return_value=mock_score),
+            patch(
+                "coro.bench.quality.combine_items",
+                return_value={
+                    "workload_set": ["meeting1"],
+                    "n_succeeded": 1,
+                    "n_failed": 0,
+                    "combined": {},
+                    "per_item": [],
+                },
+            ),
+        ):
             run_all_workload(
                 items=items,
                 base_url=e2e_server,
@@ -478,9 +490,7 @@ class TestE2EAllSubcommand:
         assert not (out_dir / "hyp" / "my.hyp.stm").exists()
         assert not (out_dir / "quality" / "my.json").exists()
 
-        quality_summary = json.loads(
-            (out_dir / "quality" / "summary.json").read_text()
-        )
+        quality_summary = json.loads((out_dir / "quality" / "summary.json").read_text())
         assert quality_summary["n_skipped"] == 1
         assert quality_summary["n_succeeded"] == 0
 
@@ -516,14 +526,19 @@ class TestE2EAllSubcommand:
             "_raw": object(),
         }
 
-        with patch("coro.bench.quality.score_item", return_value=mock_score), \
-             patch("coro.bench.quality.combine_items", return_value={
-                 "workload_set": ["IB4001", "IN1001"],
-                 "n_succeeded": 2,
-                 "n_failed": 0,
-                 "combined": {},
-                 "per_item": [],
-             }):
+        with (
+            patch("coro.bench.quality.score_item", return_value=mock_score),
+            patch(
+                "coro.bench.quality.combine_items",
+                return_value={
+                    "workload_set": ["IB4001", "IN1001"],
+                    "n_succeeded": 2,
+                    "n_failed": 0,
+                    "combined": {},
+                    "per_item": [],
+                },
+            ),
+        ):
             run_all_workload(
                 items=items,
                 base_url=e2e_server,
@@ -550,8 +565,6 @@ class TestE2EAllSubcommand:
         assert (out_dir / "quality" / "IN1001.json").exists()
         assert not (out_dir / "quality" / "adhoc.json").exists()
 
-        quality_summary = json.loads(
-            (out_dir / "quality" / "summary.json").read_text()
-        )
+        quality_summary = json.loads((out_dir / "quality" / "summary.json").read_text())
         assert quality_summary["n_skipped"] == 1
         assert quality_summary["n_succeeded"] == 2

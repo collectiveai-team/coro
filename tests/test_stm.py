@@ -147,9 +147,7 @@ class TestRttmToStm:
             "SPEAKER rec 1 1.00 0.00 <NA> <NA> spkA <NA> <NA>\n"
             "SPEAKER rec 1 1.00 0.50 <NA> <NA> spkA <NA> <NA>\n"
         )
-        assert rttm_to_stm(rttm, "rec").strip().split("\n") == [
-            "rec 1 spkA 1.000 1.500 <sd>"
-        ]
+        assert rttm_to_stm(rttm, "rec").strip().split("\n") == ["rec 1 spkA 1.000 1.500 <sd>"]
 
     def test_empty_rttm_yields_empty_string(self):
         from coro.bench.stm import rttm_to_stm
@@ -179,9 +177,7 @@ class TestAmiMeetingToStm:
             "</nite:root>\n"
         )
         (words_dir / "TS3003a.A.words.xml").write_text(words_xml)
-        (words_dir / "TS3003a.B.words.xml").write_text(
-            words_xml.replace("TS3003a.A", "TS3003a.B")
-        )
+        (words_dir / "TS3003a.B.words.xml").write_text(words_xml.replace("TS3003a.A", "TS3003a.B"))
 
         seg_a_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -189,7 +185,7 @@ class TestAmiMeetingToStm:
             '  <segment nite:id="s0">\n'
             '    <child href="TS3003a.A.words.xml#id(TS3003a.A.words0)"/>\n'
             '    <child href="TS3003a.A.words.xml#id(TS3003a.A.words1)"/>\n'
-            '  </segment>\n'
+            "  </segment>\n"
             "</nite:root>\n"
         )
         (segments_dir / "TS3003a.A.segments.xml").write_text(seg_a_xml)
@@ -200,7 +196,7 @@ class TestAmiMeetingToStm:
             '  <segment nite:id="s0">\n'
             '    <child href="TS3003a.B.words.xml#id(TS3003a.B.words0)"/>\n'
             '    <child href="TS3003a.B.words.xml#id(TS3003a.B.words1)"/>\n'
-            '  </segment>\n'
+            "  </segment>\n"
             "</nite:root>\n"
         )
         (segments_dir / "TS3003a.B.segments.xml").write_text(seg_b_xml)

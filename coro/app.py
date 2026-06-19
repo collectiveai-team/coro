@@ -109,7 +109,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 from coro.backends.nemo_streaming import StreamingDiarizerFactory
 
                 streaming_factory = StreamingDiarizerFactory(
-                    diarization_adapter._model, tier=settings.diarization_latency,
+                    diarization_adapter._model,
+                    tier=settings.diarization_latency,
                 )
                 runtime.streaming_diarizer_factory = streaming_factory
                 runtime.diarization_latency = settings.diarization_latency

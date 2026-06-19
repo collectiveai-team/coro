@@ -7,6 +7,7 @@ to the configured pipeline.
 
 from __future__ import annotations
 
+import re
 import math
 import logging
 import time
@@ -41,6 +42,40 @@ from coro.audio import AudioInput
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger(__name__)
 
+# Permissive BCP-47 shape: 2-3 letter primary subtag plus optional subtags.
+# Guards against junk like Swagger's placeholder "string" reaching the backend.
+_BCP47_LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
+
+
+def _normalize_optional(value: str | None) -> str | None:
+    """Collapse empty or whitespace-only form values to None.
+
+    Swagger's "Try it out" submits empty strings for blanked optional fields;
+    treating them as unset keeps the contract forgiving.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _validate_language(language: str | None) -> str | None:
+    """Normalize and validate the optional BCP-47 language hint.
+
+    Returns None when unset; raises a 400-mapped validation error for values
+    that are not plausible language tags instead of letting the ASR backend
+    fail with an opaque 500.
+    """
+    normalized = _normalize_optional(language)
+    if normalized is None:
+        return None
+    if not _BCP47_LANGUAGE_RE.match(normalized):
+        raise TranscriptionValidationError(
+            f"Invalid language tag {normalized!r}. Expected a BCP-47 code like 'en' or 'es'.",
+            param="language",
+        )
+    return normalized
+
 
 # MARK: Response
 class ResponseFormat(StrEnum):
@@ -67,13 +102,15 @@ class ResponseFormat(StrEnum):
 
 # JSON-like formats this server actually renders (vs. the recognised-but-
 # unsupported text outputs above).
-_JSON_LIKE_FORMATS = frozenset({
-    ResponseFormat.JSON,
-    ResponseFormat.VERBOSE_JSON,
-    ResponseFormat.JSON_VERBOSE,
-    ResponseFormat.DIARIZED_JSON,
-    ResponseFormat.DIRIZED_JSON,
-})
+_JSON_LIKE_FORMATS = frozenset(
+    {
+        ResponseFormat.JSON,
+        ResponseFormat.VERBOSE_JSON,
+        ResponseFormat.JSON_VERBOSE,
+        ResponseFormat.DIARIZED_JSON,
+        ResponseFormat.DIRIZED_JSON,
+    }
+)
 
 
 def _text_from_result(result: TranscriptionResponse) -> str:
@@ -108,7 +145,9 @@ def _json_response(result: TranscriptionResponse) -> JsonResponse:
     return JsonResponse(text=_text_from_result(result), usage=_usage(duration))
 
 
-def _verbose_json_response(result: TranscriptionResponse, *, language: str | None) -> VerboseJsonResponse:
+def _verbose_json_response(
+    result: TranscriptionResponse, *, language: str | None
+) -> VerboseJsonResponse:
     duration = _duration_from_result(result)
     return VerboseJsonResponse(
         duration=duration,
@@ -218,7 +257,9 @@ async def create_transcription(
     ),
     language: str | None = Form(default=None, description="Optional BCP-47 language hint."),
     prompt: str = Form(default="", description="Optional initial prompt for transcription."),
-    response_format: ResponseFormat = Form(default=ResponseFormat.JSON, description="Response format."),
+    response_format: ResponseFormat = Form(
+        default=ResponseFormat.JSON, description="Response format."
+    ),
     temperature: float | None = Form(default=None, description="Accepted but ignored."),
     timestamp_granularities: list[str] | None = Form(
         default=None,
@@ -237,7 +278,9 @@ async def create_transcription(
         alias="known_speaker_names[]",
         description="Accepted but ignored.",
     ),
-    known_speaker_references: list[UploadFile] | None = File(
+    # Typed as UploadFile|str so Swagger's empty-string placeholder is accepted
+    # (and ignored) instead of failing UploadFile parsing with a 422.
+    known_speaker_references: list[UploadFile | str] | None = File(
         default=None,
         alias="known_speaker_references[]",
         description="Accepted but ignored.",
@@ -262,6 +305,8 @@ async def create_transcription(
         response_format,
         language,
     )
+    language = _validate_language(language)
+    prompt = _normalize_optional(prompt)
     audio = await AudioInput.from_upload(file)
     audio_bytes = await audio.read_bytes()
     logger.info("transcription[%s] upload read bytes=%d", request_id, len(audio_bytes))
@@ -282,7 +327,11 @@ async def create_transcription(
     except TranscriptionValidationError:
         raise
     except Exception as exc:
-        logger.exception("transcription[%s] pipeline failed after %.3fs", request_id, time.perf_counter() - started)
+        logger.exception(
+            "transcription[%s] pipeline failed after %.3fs",
+            request_id,
+            time.perf_counter() - started,
+        )
         raise TranscriptionProcessingError("Transcription processing failed.") from exc
     validated = TranscriptionResponse.model_validate(result)
     logger.info(

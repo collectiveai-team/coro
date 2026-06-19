@@ -6,7 +6,7 @@ import os
 import sys
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -15,44 +15,32 @@ from coro.bench.ami import resolve_workload_set
 
 class TestResolveWorkloadSetDefaults:
     def test_no_selectors_defaults_to_sample_preset(self):
-        meetings = resolve_workload_set(
-            ami_meetings=[], ami_groups=[], ami_preset=None
-        )
+        meetings = resolve_workload_set(ami_meetings=[], ami_groups=[], ami_preset=None)
         assert meetings == ["IB4001", "IN1001"]
 
     def test_explicit_sample_preset(self):
-        meetings = resolve_workload_set(
-            ami_meetings=[], ami_groups=[], ami_preset="sample"
-        )
+        meetings = resolve_workload_set(ami_meetings=[], ami_groups=[], ami_preset="sample")
         assert meetings == ["IB4001", "IN1001"]
 
     def test_union_dedupes_meetings_and_preset(self):
-        meetings = resolve_workload_set(
-            ami_meetings=["IB4001"], ami_groups=[], ami_preset="sample"
-        )
+        meetings = resolve_workload_set(ami_meetings=["IB4001"], ami_groups=[], ami_preset="sample")
         assert meetings == ["IB4001", "IN1001"]
 
     def test_groups_ib_expands(self):
         from coro.bench.ami import AMI_GROUPS
 
-        meetings = resolve_workload_set(
-            ami_meetings=[], ami_groups=["IB"], ami_preset=None
-        )
+        meetings = resolve_workload_set(ami_meetings=[], ami_groups=["IB"], ami_preset=None)
         assert meetings == AMI_GROUPS["IB"]
 
     def test_preset_full_returns_all(self):
         from coro.bench.ami import AMI_GROUPS
 
-        meetings = resolve_workload_set(
-            ami_meetings=[], ami_groups=[], ami_preset="full"
-        )
+        meetings = resolve_workload_set(ami_meetings=[], ami_groups=[], ami_preset="full")
         expected = [m for g in AMI_GROUPS for m in AMI_GROUPS[g]]
         assert meetings == expected
 
     def test_multiple_groups_union(self):
-        meetings = resolve_workload_set(
-            ami_meetings=[], ami_groups=["IB", "IN"], ami_preset=None
-        )
+        meetings = resolve_workload_set(ami_meetings=[], ami_groups=["IB", "IN"], ami_preset=None)
         assert meetings[:5] == ["IB4001", "IB4002", "IB4003", "IB4004", "IB4005"]
         assert meetings[5] == "IN1001"
 
@@ -61,14 +49,21 @@ class TestCliAmiFlags:
     def test_quality_accepts_ami_flags(self):
         from coro.bench.cli import parse_args
 
-        args = parse_args([
-            "quality",
-            "--ami-meetings", "IB4001", "IN1001",
-            "--ami-groups", "IB",
-            "--ami-preset", "sample",
-            "--ami-root", "/tmp/ami",
-            "--no-download",
-        ])
+        args = parse_args(
+            [
+                "quality",
+                "--ami-meetings",
+                "IB4001",
+                "IN1001",
+                "--ami-groups",
+                "IB",
+                "--ami-preset",
+                "sample",
+                "--ami-root",
+                "/tmp/ami",
+                "--no-download",
+            ]
+        )
         assert args.ami_meetings == ["IB4001", "IN1001"]
         assert args.ami_groups == ["IB"]
         assert args.ami_preset == "sample"
@@ -126,8 +121,10 @@ class TestEnsureAudioAndAnnotations:
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("dummy.txt", "test")
 
-        with patch("coro.bench.ami.download_meeting_audio") as mock_dl, \
-             patch("coro.bench.ami.download_annotations", return_value=zip_path):
+        with (
+            patch("coro.bench.ami.download_meeting_audio") as mock_dl,
+            patch("coro.bench.ami.download_annotations", return_value=zip_path),
+        ):
             ensure_audio_and_annotations(["IB4001"], tmp_path)
             mock_dl.assert_called_once_with("IB4001", tmp_path)
             assert (tmp_path / ".ami_annotations_extracted").exists()
@@ -153,7 +150,9 @@ class TestEnsureAudioAndAnnotations:
 
         with pytest.raises(RuntimeError, match="Missing audio.*IB4001"):
             ensure_audio_and_annotations(
-                ["IB4001", "IN1001"], tmp_path, no_download=True,
+                ["IB4001", "IN1001"],
+                tmp_path,
+                no_download=True,
             )
 
     def test_no_download_raises_on_missing_annotations(self, tmp_path: Path):
@@ -166,7 +165,9 @@ class TestEnsureAudioAndAnnotations:
 
         with pytest.raises(RuntimeError, match="Missing annotations"):
             ensure_audio_and_annotations(
-                ["IB4001"], tmp_path, no_download=True,
+                ["IB4001"],
+                tmp_path,
+                no_download=True,
             )
 
     def test_unzips_annotations_once(self, tmp_path: Path):
@@ -177,8 +178,10 @@ class TestEnsureAudioAndAnnotations:
             zf.writestr("words/dummy.txt", "test")
         zip_path.touch()
 
-        with patch("coro.bench.ami.download_meeting_audio"), \
-             patch("coro.bench.ami.download_annotations", return_value=zip_path):
+        with (
+            patch("coro.bench.ami.download_meeting_audio"),
+            patch("coro.bench.ami.download_annotations", return_value=zip_path),
+        ):
             ensure_audio_and_annotations(["IB4001"], tmp_path)
             assert (tmp_path / ".ami_annotations_extracted").exists()
 
@@ -233,15 +236,24 @@ class TestMainIntegration:
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("dummy.txt", "test")
 
-        with patch.object(sys, "argv", [
-            "coro-bench", "quality",
-            "--ami-meetings", "IB4001",
-            "--ami-root", str(tmp_path),
-        ]), patch("coro.bench.ami.download_meeting_audio"), \
-           patch("coro.bench.ami.download_annotations",
-                 return_value=zip_path), \
-           patch("coro.bench.ami.ami_meeting_to_stm", return_value="STM"), \
-           patch("coro.bench.cli._run_quality") as mock_quality:
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "coro-bench",
+                    "quality",
+                    "--ami-meetings",
+                    "IB4001",
+                    "--ami-root",
+                    str(tmp_path),
+                ],
+            ),
+            patch("coro.bench.ami.download_meeting_audio"),
+            patch("coro.bench.ami.download_annotations", return_value=zip_path),
+            patch("coro.bench.ami.ami_meeting_to_stm", return_value="STM"),
+            patch("coro.bench.cli._run_quality") as mock_quality,
+        ):
             main()
             mock_quality.assert_called_once()
 
@@ -250,14 +262,23 @@ class TestMainIntegration:
     def test_main_no_download_error(self, tmp_path: Path):
         from coro.bench.cli import main
 
-        with patch.object(sys, "argv", [
-            "coro-bench", "quality",
-            "--ami-meetings", "IB4001",
-            "--ami-root", str(tmp_path),
-            "--no-download",
-        ]):
-            with pytest.raises(RuntimeError, match="Missing audio"):
-                main()
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "coro-bench",
+                    "quality",
+                    "--ami-meetings",
+                    "IB4001",
+                    "--ami-root",
+                    str(tmp_path),
+                    "--no-download",
+                ],
+            ),
+            pytest.raises(RuntimeError, match="Missing audio"),
+        ):
+            main()
 
 
 @pytest.mark.skipif(

@@ -63,9 +63,9 @@ class StreamingDiarizerFactory:
         model.sortformer_modules.chunk_len = self._tier_params["chunk_len"]
         model.sortformer_modules.chunk_right_context = self._tier_params["chunk_right_context"]
         model.sortformer_modules.fifo_len = self._tier_params["fifo_len"]
-        model.sortformer_modules.spkcache_update_period = (
-            self._tier_params["spkcache_update_period"]
-        )
+        model.sortformer_modules.spkcache_update_period = self._tier_params[
+            "spkcache_update_period"
+        ]
         model.sortformer_modules.spkcache_len = self._tier_params["spkcache_len"]
         model.sortformer_modules._check_streaming_parameters()
         self._subsampling_factor = subsampling_factor
@@ -124,9 +124,7 @@ class StreamingDiarizer:
         )
         # Initialize as empty accumulator matching what forward_streaming_step expects;
         # NeMo uses torch.zeros((batch, 0, n_spk)) as the seed before the first chunk.
-        self._total_preds: torch.Tensor = torch.zeros(
-            (1, 0, self._n_spk), device=self._device
-        )
+        self._total_preds: torch.Tensor = torch.zeros((1, 0, self._n_spk), device=self._device)
         self._pred_chunks: list[torch.Tensor] = []
         self._total_audio_bytes = 0
         self._processed_chunks = 0
@@ -203,8 +201,8 @@ class StreamingDiarizer:
         cfg_vad_params = load_postprocessing_from_yaml(None)
         # total_preds: (1, n_frames, n_spk) — process each speaker independently
         preds_cpu = (
-            total_preds if total_preds is not None else self._combined_preds()
-        ).squeeze(0).cpu()
+            (total_preds if total_preds is not None else self._combined_preds()).squeeze(0).cpu()
+        )
         subsampling_factor = self._subsampling_factor
 
         raw_segments: list[tuple[float, float, int]] = []
@@ -234,7 +232,11 @@ class StreamingDiarizer:
         from nemo.collections.asr.modules import AudioToMelSpectrogramPreprocessor
 
         self._preprocessor = AudioToMelSpectrogramPreprocessor(
-            window_size=0.025, normalize="NA", n_fft=512, features=128, pad_to=0,
+            window_size=0.025,
+            normalize="NA",
+            n_fft=512,
+            features=128,
+            pad_to=0,
         ).to(self._device)
         return self._preprocessor
 
@@ -271,13 +273,9 @@ class StreamingDiarizer:
             # factor so each chunk emits exactly chunk_len prediction frames.
             mel_frames = signal_t.shape[1]
             if right_offset > 0:
-                target_frames = (
-                    self._chunk_len * self._subsampling_factor + right_offset
-                )
+                target_frames = self._chunk_len * self._subsampling_factor + right_offset
             else:
-                target_frames = (
-                    mel_frames // self._subsampling_factor
-                ) * self._subsampling_factor
+                target_frames = (mel_frames // self._subsampling_factor) * self._subsampling_factor
             target_frames = min(target_frames, mel_frames)
             if target_frames < self._subsampling_factor:
                 # Too little audio to yield even one output frame; skip.

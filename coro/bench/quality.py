@@ -14,6 +14,7 @@ from typing import Any
 def _require_meeteval():
     try:
         import meeteval
+
         return meeteval
     except ImportError:
         print(
@@ -197,7 +198,8 @@ def score_item(
                 metrics["normalized"] = normalized_metrics
 
         der_results = meeteval.der.md_eval_22(
-            ref_stm_path, hyp_stm_path,
+            ref_stm_path,
+            hyp_stm_path,
             collar=der_collar,
             regions=der_regions,
         )
@@ -215,8 +217,7 @@ def score_item(
         # Print full traceback to stderr so the operator can see the real cause
         # without having to dig into the JSON artifact.
         print(
-            f"[bench/quality] scoring failed for {hyp_stm_path.name}:\n"
-            f"{traceback.format_exc()}",
+            f"[bench/quality] scoring failed for {hyp_stm_path.name}:\n{traceback.format_exc()}",
             file=sys.stderr,
         )
         return {
@@ -249,8 +250,7 @@ def _combined_metrics(meeteval, succeeded: list[dict]) -> dict[str, Any]:
         key: _combine_raw_key(meeteval, succeeded, key) for key in WER_METRIC_KEYS
     }
     combined["normalized"] = {
-        key: _combine_raw_key(meeteval, succeeded, f"normalized_{key}")
-        for key in WER_METRIC_KEYS
+        key: _combine_raw_key(meeteval, succeeded, f"normalized_{key}") for key in WER_METRIC_KEYS
     }
     combined["der"] = _combine_raw_key(meeteval, succeeded, "der")
     return combined
@@ -285,9 +285,7 @@ def combine_items(item_results: list[dict[str, Any]]) -> dict[str, Any]:
 
     succeeded = [r for r in item_results if r.get("metrics") is not None]
     failed = [r for r in item_results if r.get("metrics") is None]
-    n_degenerate = sum(
-        1 for r in item_results if (r.get("diarization") or {}).get("degenerate")
-    )
+    n_degenerate = sum(1 for r in item_results if (r.get("diarization") or {}).get("degenerate"))
 
     return {
         "workload_set": [r.get("session_id", "") for r in item_results],

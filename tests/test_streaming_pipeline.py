@@ -45,6 +45,7 @@ def _render_done_frame(frame: StreamingDoneFrame) -> dict:
     assert outer["type"] == "transcript.text.done"
     return json.loads(outer["text"])
 
+
 # Multi-chunk fixture: 3 chunks of 0.1s (1600 bytes each) so total < window_bytes
 _CHUNK_BYTES = struct.pack("<1600h", *([0] * 1600))
 _NUM_CHUNKS = 3
@@ -115,6 +116,7 @@ def _mock_stream():
 # Response shape & propagation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_streaming_pipeline_returns_response_shape():
     pipeline = StreamingPipeline(asr=_FakeASRAdapter())
@@ -166,6 +168,7 @@ async def test_streaming_pipeline_empty_tokens_no_crash():
 # ---------------------------------------------------------------------------
 # Streaming events
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_stream_emits_delta_events():
@@ -221,6 +224,7 @@ async def test_stream_emits_no_progress_events():
 # Audio cleanup
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_transcribe_cleans_up_temp_file_on_success():
     pipeline = StreamingPipeline(asr=_FakeASRAdapter())
@@ -265,6 +269,7 @@ async def test_stream_cleans_up_temp_file_on_error():
 # ---------------------------------------------------------------------------
 # Bounded-memory assertions
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_asr_never_called_with_more_than_window_bytes():

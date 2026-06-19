@@ -132,6 +132,65 @@ async def test_transcription_endpoint_empty_upload_returns_openai_style_error():
 
 
 @pytest.mark.asyncio
+async def test_transcription_endpoint_rejects_invalid_language_tag():
+    """A non-BCP-47 language hint returns a 400, not a generic 500."""
+    app = _app_with_fake_pipeline()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+            data={"model": "whisper-1", "language": "string"},
+        )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["type"] == "invalid_request_error"
+    assert body["error"]["param"] == "language"
+
+
+@pytest.mark.asyncio
+async def test_transcription_endpoint_treats_blank_language_as_unset():
+    """An empty / whitespace-only language hint is coerced to None and succeeds."""
+    app = _app_with_fake_pipeline()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for blank in ("", "   "):
+            response = await client.post(
+                "/v1/audio/transcriptions",
+                files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+                data={"model": "whisper-1", "language": blank},
+            )
+            assert response.status_code == 200, blank
+
+
+@pytest.mark.asyncio
+async def test_transcription_endpoint_tolerates_swagger_blank_fields():
+    """Swagger's 'Try it out' sends every optional field as an empty string.
+
+    The empty ``known_speaker_references[]`` value must not fail UploadFile
+    parsing with a 422; blanks are treated as unset.
+    """
+    app = _app_with_fake_pipeline()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+            data={
+                "stream": "",
+                "prompt": "",
+                "timestamp_granularities[]": "",
+                "known_speaker_references[]": "",
+                "model": "",
+                "include[]": "",
+                "known_speaker_names[]": "",
+                "temperature": "",
+                "response_format": "diarized_json",
+                "language": "",
+                "chunking_strategy": "",
+            },
+        )
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.asyncio
 async def test_transcription_endpoint_returns_diarized_json():
     """diarized_json returns speaker-annotated OpenAI segments."""
     app = _app_with_fake_pipeline()

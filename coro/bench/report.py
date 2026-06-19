@@ -156,33 +156,39 @@ def _load_quality(
         if not diarization_only and (error_str or item.get("cpwer") is None):
             err_msg = str(error_str) if error_str else "unknown error"
             footnotes.append(f"ERROR for {session_id}: {err_msg}")
-            rows.append(QualityRow(
-                session_id=session_id,
-                duration=duration,
-                cpwer=None,
-                orcwer=None,
-                dicpwer=None,
-                der=None,
-                error=err_msg,
-            ))
-        else:
-            rows.append(QualityRow(
-                session_id=session_id,
-                duration=duration,
-                cpwer=_wer_val(item.get("cpwer")),
-                orcwer=_wer_val(item.get("orcwer")),
-                dicpwer=_wer_val(item.get("dicpwer")),
-                der=_wer_val(item.get("der")),
-            ))
-            if item.get("normalized_cpwer") is not None:
-                normalized_rows.append(QualityRow(
+            rows.append(
+                QualityRow(
                     session_id=session_id,
                     duration=duration,
-                    cpwer=_wer_val(item.get("normalized_cpwer")),
-                    orcwer=_wer_val(item.get("normalized_orcwer")),
-                    dicpwer=_wer_val(item.get("normalized_dicpwer")),
+                    cpwer=None,
+                    orcwer=None,
+                    dicpwer=None,
                     der=None,
-                ))
+                    error=err_msg,
+                )
+            )
+        else:
+            rows.append(
+                QualityRow(
+                    session_id=session_id,
+                    duration=duration,
+                    cpwer=_wer_val(item.get("cpwer")),
+                    orcwer=_wer_val(item.get("orcwer")),
+                    dicpwer=_wer_val(item.get("dicpwer")),
+                    der=_wer_val(item.get("der")),
+                )
+            )
+            if item.get("normalized_cpwer") is not None:
+                normalized_rows.append(
+                    QualityRow(
+                        session_id=session_id,
+                        duration=duration,
+                        cpwer=_wer_val(item.get("normalized_cpwer")),
+                        orcwer=_wer_val(item.get("normalized_orcwer")),
+                        dicpwer=_wer_val(item.get("normalized_dicpwer")),
+                        der=None,
+                    )
+                )
 
     combined: QualityRow | None = None
     if combined_data:
@@ -261,21 +267,23 @@ def _load_performance(out_dir: Path, *, stream: bool) -> list[PerformanceRow]:
         observed_profile = rep_data.get("observed_hardware_profile", "cpu-only")
         ttft = _wer_val(rep_data.get("time_to_first_delta_s")) if stream else None
 
-        rows.append(PerformanceRow(
-            session_id=item_id,
-            rep=rep,
-            duration=duration,
-            wall_seconds=wall_seconds,
-            throughput=throughput,
-            peak_pss_kb=peak_pss_kb,
-            peak_pss_delta_kb=peak_pss_delta_kb,
-            peak_vram_mib=peak_vram_mib,
-            peak_vram_delta_mib=peak_vram_delta_mib,
-            peak_gpu_util_pct=peak_gpu_util_pct,
-            peak_cpu_pct=peak_cpu_pct,
-            observed_profile=observed_profile,
-            ttft=ttft,
-        ))
+        rows.append(
+            PerformanceRow(
+                session_id=item_id,
+                rep=rep,
+                duration=duration,
+                wall_seconds=wall_seconds,
+                throughput=throughput,
+                peak_pss_kb=peak_pss_kb,
+                peak_pss_delta_kb=peak_pss_delta_kb,
+                peak_vram_mib=peak_vram_mib,
+                peak_vram_delta_mib=peak_vram_delta_mib,
+                peak_gpu_util_pct=peak_gpu_util_pct,
+                peak_cpu_pct=peak_cpu_pct,
+                observed_profile=observed_profile,
+                ttft=ttft,
+            )
+        )
 
     return rows
 
@@ -536,21 +544,31 @@ def _rich_quality_table(console: object, report: BenchReport) -> None:
     for row in report.quality_rows:
         if row.error is not None:
             qt.add_row(
-                row.session_id, f"{row.duration:.1f}",
-                "ERROR", "ERROR", "ERROR", "ERROR",
+                row.session_id,
+                f"{row.duration:.1f}",
+                "ERROR",
+                "ERROR",
+                "ERROR",
+                "ERROR",
             )
         else:
             qt.add_row(
-                row.session_id, f"{row.duration:.1f}",
+                row.session_id,
+                f"{row.duration:.1f}",
                 _fmt(row.cpwer),
-                _fmt(row.orcwer), _fmt(row.dicpwer), _fmt(row.der),
+                _fmt(row.orcwer),
+                _fmt(row.dicpwer),
+                _fmt(row.der),
             )
     if report.quality_combined is not None:
         c = report.quality_combined
         qt.add_row(
-            f"[bold]{c.session_id}[/bold]", f"{c.duration:.1f}",
+            f"[bold]{c.session_id}[/bold]",
+            f"{c.duration:.1f}",
             _fmt(c.cpwer),
-            _fmt(c.orcwer), _fmt(c.dicpwer), _fmt(c.der),
+            _fmt(c.orcwer),
+            _fmt(c.dicpwer),
+            _fmt(c.der),
         )
     console.print(qt)  # type: ignore[attr-defined]
     for note in report.quality_footnotes:
@@ -593,8 +611,17 @@ def _rich_performance_table(console: object, report: BenchReport) -> None:
     has_ttft = report.stream
     pt = Table(title="Performance Results", show_lines=True)
     cols = [
-        "session", "rep", "duration", "wall (s)", "throughput",
-        "peak PSS", "pred PSS", "peak VRAM", "pred VRAM", "peak GPU", "peak CPU",
+        "session",
+        "rep",
+        "duration",
+        "wall (s)",
+        "throughput",
+        "peak PSS",
+        "pred PSS",
+        "peak VRAM",
+        "pred VRAM",
+        "peak GPU",
+        "peak CPU",
     ]
     if has_ttft:
         cols.append("TTFT (s)")
@@ -603,8 +630,11 @@ def _rich_performance_table(console: object, report: BenchReport) -> None:
         pt.add_column(col)
     for row in report.performance_rows:
         cells = [
-            row.session_id, str(row.rep), f"{row.duration:.1f}",
-            f"{row.wall_seconds:.2f}", f"{row.throughput:.2f}x",
+            row.session_id,
+            str(row.rep),
+            f"{row.duration:.1f}",
+            f"{row.wall_seconds:.2f}",
+            f"{row.throughput:.2f}x",
             _fmt_kb_as_mb(row.peak_pss_kb),
             _fmt_kb_as_mb(row.peak_pss_delta_kb),
             _fmt_mib(row.peak_vram_mib),

@@ -43,8 +43,7 @@ def poll_health(
             pass
         if time.monotonic() >= deadline:
             raise TimeoutError(
-                f"Server at {base_url} did not become "
-                f"warmup-ready within {timeout}s"
+                f"Server at {base_url} did not become warmup-ready within {timeout}s"
             )
         time.sleep(interval)
 

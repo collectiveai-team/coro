@@ -32,9 +32,7 @@ def main() -> None:
     parser.add_argument("--audio", type=Path, required=True, help="Source audio file.")
     parser.add_argument("--rttm", type=Path, required=True, help="RTTM speaker turns.")
     parser.add_argument("--start", type=float, default=0.0, help="Clip start (seconds).")
-    parser.add_argument(
-        "--duration", type=float, required=True, help="Clip length (seconds)."
-    )
+    parser.add_argument("--duration", type=float, required=True, help="Clip length (seconds).")
     parser.add_argument("--out-dir", type=Path, default=Path("rttm-clips"))
     parser.add_argument(
         "--recording-id",

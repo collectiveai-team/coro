@@ -162,7 +162,7 @@ def _make_csv_rows(
     audio_seconds: float = 10.0,
     observed_hardware_profile: str = "cpu-only",
 ) -> list[dict[str, Any]]:
-    base = {fn: "" for fn in RESOURCE_FIELDNAMES}
+    base = dict.fromkeys(RESOURCE_FIELDNAMES, "")
     base["pss_kb"] = pss_kb
     base["cpu_pct"] = cpu_pct
     base["server_vram_mib"] = server_vram_mib
@@ -565,7 +565,9 @@ class TestStreamingPerformanceRun:
 
         summary = json.loads((out_dir / "performance" / "summary.json").read_text())
         m1_agg = summary["per_item_aggregation"]["meeting1"]
-        assert "time_to_first_delta_s" in m1_agg, f"Expected TTFT aggregates, got: {list(m1_agg.keys())}"
+        assert "time_to_first_delta_s" in m1_agg, (
+            f"Expected TTFT aggregates, got: {list(m1_agg.keys())}"
+        )
         ttft_agg = m1_agg["time_to_first_delta_s"]
         for key in ("median", "min", "max", "mean", "stddev"):
             assert key in ttft_agg, f"Missing {key} in TTFT aggregates"

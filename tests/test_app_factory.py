@@ -76,8 +76,7 @@ async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
         settings = ServerSettings(warmup="disabled")
         application = create_app(settings)
 
-        with caplog.at_level(logging.WARNING, logger="coro.app"), \
-             TestClient(application) as client:
+        with caplog.at_level(logging.WARNING, logger="coro.app"), TestClient(application) as client:
             response = client.get("/health")
 
     body = response.json()
@@ -97,9 +96,13 @@ def test_warmup_failure_fails_server_startup():
         settings = ServerSettings(warmup="enabled")
         application = create_app(settings)
 
-        with patch(
-            "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("warmup failed"),
-        ), pytest.raises(RuntimeError, match="warmup failed"), TestClient(application):
+        with (
+            patch(
+                "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("warmup failed"),
+            ),
+            pytest.raises(RuntimeError, match="warmup failed"),
+            TestClient(application),
+        ):
             pass

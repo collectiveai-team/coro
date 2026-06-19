@@ -173,9 +173,7 @@ class ASRWindowing:
                 if accepted:
                     prompt_tokens.extend(accepted)
                     accepted_count += len(accepted)
-                    prompt_carry = "".join(
-                        token.text for token in prompt_tokens
-                    )[-200:]
+                    prompt_carry = "".join(token.text for token in prompt_tokens)[-200:]
                     yield TokenBatchEvent(tokens=accepted)
                     delta = "".join(token.text for token in accepted).strip()
                     if delta:
@@ -219,9 +217,7 @@ class ASRWindowing:
             if accepted:
                 prompt_tokens.extend(accepted)
                 accepted_count += len(accepted)
-                prompt_carry = "".join(
-                    token.text for token in prompt_tokens
-                )[-200:]
+                prompt_carry = "".join(token.text for token in prompt_tokens)[-200:]
                 yield TokenBatchEvent(tokens=accepted)
                 delta = "".join(token.text for token in accepted).strip()
                 if delta:

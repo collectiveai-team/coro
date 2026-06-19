@@ -12,6 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from coro.app import create_app
 from coro.settings import ServerSettings
 
+
 def _minimal_wav_bytes() -> bytes:
     buf = io.BytesIO()
     n_frames = 1600

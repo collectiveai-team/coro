@@ -28,17 +28,22 @@ def test_make_rttm_clip_writes_windowed_diarization_only_stm(tmp_path: Path):
     out_dir = tmp_path / "clips"
 
     # Patch the ffmpeg cut so no external binary / real audio is needed.
-    with patch(
-        "coro.bench.utils.make_rttm_clip.cut_audio_clip"
-    ) as cut:
-        _run([
-            "make_rttm_clip",
-            "--audio", str(audio),
-            "--rttm", str(rttm),
-            "--start", "0",
-            "--duration", "60",
-            "--out-dir", str(out_dir),
-        ])
+    with patch("coro.bench.utils.make_rttm_clip.cut_audio_clip") as cut:
+        _run(
+            [
+                "make_rttm_clip",
+                "--audio",
+                str(audio),
+                "--rttm",
+                str(rttm),
+                "--start",
+                "0",
+                "--duration",
+                "60",
+                "--out-dir",
+                str(out_dir),
+            ]
+        )
         cut.assert_called_once()
 
     stm = (out_dir / "abjxc_0_60.ref.stm").read_text().strip().splitlines()
@@ -58,14 +63,22 @@ def test_make_rttm_clip_uses_recording_id_override(tmp_path: Path):
     out_dir = tmp_path / "clips"
 
     with patch("coro.bench.utils.make_rttm_clip.cut_audio_clip"):
-        _run([
-            "make_rttm_clip",
-            "--audio", str(audio),
-            "--rttm", str(rttm),
-            "--start", "0",
-            "--duration", "10",
-            "--out-dir", str(out_dir),
-            "--recording-id", "vox01",
-        ])
+        _run(
+            [
+                "make_rttm_clip",
+                "--audio",
+                str(audio),
+                "--rttm",
+                str(rttm),
+                "--start",
+                "0",
+                "--duration",
+                "10",
+                "--out-dir",
+                str(out_dir),
+                "--recording-id",
+                "vox01",
+            ]
+        )
 
     assert (out_dir / "vox01_0_10.ref.stm").exists()

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import socket
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
