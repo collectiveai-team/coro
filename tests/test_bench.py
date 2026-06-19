@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -156,8 +156,8 @@ def test_parse_args_warmup_audio_implies_warmup(tmp_path):
 
 
 def test_legacy_tool_files_deleted():
-    assert not os.path.exists("tools/bench_asr.py")
-    assert not os.path.exists("tools/whisperx_to_rttm.py")
+    assert not Path("tools/bench_asr.py").exists()
+    assert not Path("tools/whisperx_to_rttm.py").exists()
 
 
 def test_parse_args_stream_rejected_on_quality():

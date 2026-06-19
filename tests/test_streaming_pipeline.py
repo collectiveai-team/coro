@@ -59,12 +59,14 @@ class _FakeASRAdapter:
         self.last_language = None
         self.max_pcm_size = 0
 
-    async def transcribe_pcm(self, pcm_bytes, *, language=None, prompt=None):
+    async def transcribe_pcm(
+        self, pcm: bytes, *, language: str | None = None, prompt: str | None = None
+    ) -> list[TranscriptToken]:
         self.call_count += 1
         self.last_prompt = prompt
         self.last_language = language
-        if len(pcm_bytes) > self.max_pcm_size:
-            self.max_pcm_size = len(pcm_bytes)
+        if len(pcm) > self.max_pcm_size:
+            self.max_pcm_size = len(pcm)
         return list(self._tokens)
 
 
@@ -96,7 +98,9 @@ class _FakeStreamingDiarizerFactory:
 
 
 class _FailingASRAdapter:
-    async def transcribe_pcm(self, pcm_bytes, *, language=None, prompt=None):
+    async def transcribe_pcm(
+        self, pcm: bytes, *, language: str | None = None, prompt: str | None = None
+    ) -> list[TranscriptToken]:
         raise RuntimeError("ASR failed")
 
 
@@ -206,7 +210,9 @@ async def test_stream_done_frame_comes_after_deltas():
     done_indices = [i for i, e in enumerate(events) if isinstance(e, StreamingDoneFrame)]
     assert done_indices[0] > delta_indices[0]
     # Close the store opened by the frame.
-    _render_done_frame(events[done_indices[0]])
+    done_frame = events[done_indices[0]]
+    assert isinstance(done_frame, StreamingDoneFrame)
+    _render_done_frame(done_frame)
 
 
 @pytest.mark.asyncio

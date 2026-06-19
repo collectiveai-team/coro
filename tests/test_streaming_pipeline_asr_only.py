@@ -38,12 +38,16 @@ class _FakeASRAdapter:
     def __init__(self, tokens=None):
         self._tokens = tokens or []
 
-    async def transcribe_pcm(self, pcm_bytes, *, language=None, prompt=None):
+    async def transcribe_pcm(
+        self, pcm: bytes, *, language: str | None = None, prompt: str | None = None
+    ) -> list[TranscriptToken]:
         return list(self._tokens)
 
 
 class _FailingASRAdapter:
-    async def transcribe_pcm(self, pcm_bytes, *, language=None, prompt=None):
+    async def transcribe_pcm(
+        self, pcm: bytes, *, language: str | None = None, prompt: str | None = None
+    ) -> list[TranscriptToken]:
         raise RuntimeError("ASR failure")
 
 

@@ -6,6 +6,7 @@ OpenAI-compatible clients can parse failures consistently.
 
 from __future__ import annotations
 
+from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from coro.api.exceptions import TranscriptionError
@@ -41,8 +42,13 @@ def openai_error(
     return JSONResponse(body.model_dump(), status_code=status_code)
 
 
-async def transcription_exception_handler(_request, exc: TranscriptionError) -> JSONResponse:
-    """Translate typed transcription failures to OpenAI-style errors."""
+async def transcription_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+    """Translate typed transcription failures to OpenAI-style errors.
+
+    Registered only for ``TranscriptionError``; the broad ``Exception`` type
+    matches Starlette's ``add_exception_handler`` handler signature.
+    """
+    assert isinstance(exc, TranscriptionError)  # noqa: S101
     return openai_error(
         exc.message,
         error_type=exc.error_type,

@@ -67,7 +67,8 @@ def test_server_settings_warmup_accepts_disabled():
 def test_server_settings_warmup_invalid_raises():
     """Strict Startup Validation rejects unknown warmup values."""
     with pytest.raises(ValidationError):
-        ServerSettings(warmup="invalid")
+        # Intentionally invalid value to assert strict validation.
+        ServerSettings(warmup="invalid")  # pyrefly: ignore[bad-argument-type]
 
 
 @pytest.mark.asyncio

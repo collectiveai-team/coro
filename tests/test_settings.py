@@ -35,7 +35,8 @@ def test_onnx_vad_settings_read_from_env(monkeypatch):
 @pytest.mark.parametrize("value", ["on", "true", "yes", ""])
 def test_onnx_vad_selector_is_strict(value: str):
     with pytest.raises(ValidationError):
-        ServerSettings(asr_onnx_vad=value, _env_file=None)
+        # Intentionally invalid value to assert strict validation.
+        ServerSettings(asr_onnx_vad=value, _env_file=None)  # pyrefly: ignore[bad-argument-type]
 
 
 def test_nemo_diarization_gets_default_model():
@@ -56,22 +57,29 @@ def test_transcript_spill_dir_defaults_none_and_reads_env(monkeypatch):
 @pytest.mark.parametrize("pipeline", ["unknown", "v1", "v2", ""])
 def test_pipeline_selector_is_strict(pipeline: str):
     with pytest.raises(ValidationError):
-        ServerSettings(pipeline=pipeline, _env_file=None)
+        # Intentionally invalid value to assert strict validation.
+        ServerSettings(pipeline=pipeline, _env_file=None)  # pyrefly: ignore[bad-argument-type]
 
 
 @pytest.mark.parametrize("field", ["backend_asr", "backend_diarization"])
 def test_backend_provider_selectors_are_strict(field: str):
     with pytest.raises(ValidationError):
-        ServerSettings(**{field: "bogus"}, _env_file=None)
+        # Intentionally invalid value to assert strict validation.
+        ServerSettings(**{field: "bogus"}, _env_file=None)  # pyrefly: ignore[bad-argument-type]
 
 
 @pytest.mark.parametrize("asr_device", ["unknown", "gpu", ""])
 def test_asr_device_selector_is_strict(asr_device: str):
     with pytest.raises(ValidationError):
-        ServerSettings(asr_device=asr_device, _env_file=None)
+        # Intentionally invalid value to assert strict validation.
+        ServerSettings(asr_device=asr_device, _env_file=None)  # pyrefly: ignore[bad-argument-type]
 
 
 @pytest.mark.parametrize("diarization_device", ["unknown", "gpu", ""])
 def test_diarization_device_selector_is_strict(diarization_device: str):
     with pytest.raises(ValidationError):
-        ServerSettings(diarization_device=diarization_device, _env_file=None)
+        # Intentionally invalid value to assert strict validation.
+        ServerSettings(
+            diarization_device=diarization_device,  # pyrefly: ignore[bad-argument-type]
+            _env_file=None,
+        )

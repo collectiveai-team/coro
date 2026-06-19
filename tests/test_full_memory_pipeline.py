@@ -44,7 +44,9 @@ class _FakeASRAdapter:
         self.last_prompt = None
         self.last_language = None
 
-    async def transcribe_pcm(self, pcm_bytes: bytes, *, language=None, prompt=None):
+    async def transcribe_pcm(
+        self, pcm: bytes, *, language: str | None = None, prompt: str | None = None
+    ) -> list[TranscriptToken]:
         self.last_prompt = prompt
         self.last_language = language
         return list(self._tokens)
@@ -54,7 +56,7 @@ class _FakeDiarizationAdapter:
     def __init__(self, timeline=None):
         self._timeline = timeline or []
 
-    async def diarize_pcm(self, pcm_bytes: bytes):
+    async def diarize_pcm(self, pcm: bytes) -> list[SpeakerSegment]:
         return list(self._timeline)
 
 

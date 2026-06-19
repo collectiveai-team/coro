@@ -173,10 +173,19 @@ convention = "google"
 max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "D"]
+# Tests assert/lack docstrings and use fixed /tmp paths for deterministic fixtures.
+"tests/**" = ["S101", "D", "S108"]
 # FastAPI routes use the idiomatic `= File(...)` / `= Form(...)` default style.
 "coro/api/v1/transcriptions.py" = ["FAST002", "B008"]
 "coro/audio.py" = ["C901"]
+# Best-effort NVML telemetry: failures are intentionally swallowed per-device.
+"coro/bench/gpu.py" = ["S112", "S110", "SIM105"]
+# Parses the AMI benchmark corpus XML/STM (trusted local fixtures).
+"coro/bench/stm.py" = ["S314"]
+# Markdown report tables: header/separator strings exceed the line limit by design.
+"coro/bench/report.py" = ["E501"]
+# Downloads the AMI corpus over http(s) from a fixed mirror.
+"coro/bench/utils/ami_audios_download.py" = ["S310"]
 # Bench/CLI tools use subprocess calls with partial paths (system tools).
 # PTH123/PTH108 — /proc reads use builtins; SIM105 — benchmark exception swallowing is intentional.
 # C901 — _run_rep is naturally complex due to benchmark sampling orchestration.
@@ -197,6 +206,7 @@ max-complexity = 10
 "coro/bench/transport.py" = ["S310"]
 "coro/bench/orchestrate.py" = [
     "S310",
+    "S603",
     "S607",
     "S110",
     "SIM105",
@@ -234,6 +244,9 @@ project-excludes = [
 use-ignore-files = false
 disable-project-excludes-heuristics = true
 python-interpreter-path = ".venv/bin/python"
+# onnxruntime_genai is a compiled extension shipping no type stubs; treat its
+# attributes as Any rather than reporting every og.* access as missing.
+replace-imports-with-any = ["onnxruntime_genai"]
 
 
 # MARK: Pytest

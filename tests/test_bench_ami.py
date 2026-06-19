@@ -148,7 +148,7 @@ class TestEnsureAudioAndAnnotations:
         marker = tmp_path / ".ami_annotations_extracted"
         marker.touch()
 
-        with pytest.raises(RuntimeError, match="Missing audio.*IB4001"):
+        with pytest.raises(RuntimeError, match=r"Missing audio.*IB4001"):
             ensure_audio_and_annotations(
                 ["IB4001", "IN1001"],
                 tmp_path,

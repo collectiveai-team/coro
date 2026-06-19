@@ -22,7 +22,11 @@ class TestLatencyTierSettings:
 
     def test_unknown_tier_rejected(self):
         with pytest.raises(ValidationError):
-            ServerSettings(diarization_latency="medium", _env_file=None)
+            # Intentionally invalid value to assert strict validation.
+            ServerSettings(
+                diarization_latency="medium",  # pyrefly: ignore[bad-argument-type]
+                _env_file=None,
+            )
 
 
 class TestLatencyTierMapping:

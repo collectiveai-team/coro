@@ -9,107 +9,103 @@ from pathlib import Path
 from typing import Any
 
 
-def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
-    pss_values: list[float] = []
-    cpu_values: list[float] = []
-    vram_values: list[float] = []
-    gpu_util_values: list[float] = []
-    wall_seconds: float | None = None
-    throughput: float | None = None
-    audio_seconds: float | None = None
-    ttft: float | None = None
-    baseline_pss_kb: float | None = None
-    baseline_vram_mib: float | None = None
-    profile: str = ""
+def _to_float(value: str | None) -> float | None:
+    """Parse ``value`` as a float, returning ``None`` for empty/invalid input."""
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _parse_resource_rows(csv_path: Path) -> dict[str, Any]:
+    """Read a Resource CSV into per-column value lists and run-scalar fields."""
+    series: dict[str, list[float]] = {
+        "pss_kb": [],
+        "cpu_pct": [],
+        "server_vram_mib": [],
+        "gpu_util_pct": [],
+    }
+    scalars: dict[str, Any] = {"observed_hardware_profile": ""}
+    scalar_keys = (
+        "wall_seconds",
+        "transcription_throughput",
+        "audio_seconds",
+        "time_to_first_delta_s",
+        "baseline_pss_kb",
+        "baseline_vram_mib",
+    )
+    have_scalars = False
 
     with csv_path.open() as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                pss_values.append(float(row.get("pss_kb", 0) or 0))
-            except ValueError:
-                pass
-            try:
-                cpu_values.append(float(row.get("cpu_pct", 0) or 0))
-            except ValueError:
-                pass
-            try:
-                value = row.get("server_vram_mib", "")
-                if value != "":
-                    vram_values.append(float(value))
-            except ValueError:
-                pass
-            try:
-                value = row.get("gpu_util_pct", "")
-                if value != "":
-                    gpu_util_values.append(float(value))
-            except ValueError:
-                pass
-            if wall_seconds is None:
-                ws = row.get("wall_seconds", "")
-                if ws != "":
-                    try:
-                        wall_seconds = float(ws)
-                    except ValueError:
-                        pass
-                tp = row.get("transcription_throughput", "")
-                if tp != "":
-                    try:
-                        throughput = float(tp)
-                    except ValueError:
-                        pass
-                aud = row.get("audio_seconds", "")
-                if aud != "":
-                    try:
-                        audio_seconds = float(aud)
-                    except ValueError:
-                        pass
-                t = row.get("time_to_first_delta_s", "")
-                if t != "":
-                    try:
-                        ttft = float(t)
-                    except ValueError:
-                        pass
-                base_pss = row.get("baseline_pss_kb", "")
-                if base_pss != "":
-                    try:
-                        baseline_pss_kb = float(base_pss)
-                    except ValueError:
-                        pass
-                base_vram = row.get("baseline_vram_mib", "")
-                if base_vram != "":
-                    try:
-                        baseline_vram_mib = float(base_vram)
-                    except ValueError:
-                        pass
-                profile = row.get("observed_hardware_profile", "")
+        for row in csv.DictReader(f):
+            for column, values in series.items():
+                parsed = _to_float(row.get(column))
+                if parsed is not None:
+                    values.append(parsed)
+            if not have_scalars:
+                have_scalars = True
+                for key in scalar_keys:
+                    scalars[key] = _to_float(row.get(key))
+                scalars["observed_hardware_profile"] = row.get("observed_hardware_profile", "")
+
+    return {"series": series, "scalars": scalars}
+
+
+def _peak_with_baseline(
+    result: dict[str, Any],
+    values: list[float],
+    baseline: float | None,
+    peak_key: str,
+    baseline_key: str,
+    delta_key: str,
+) -> None:
+    """Record the peak of ``values`` plus baseline-corrected delta when present."""
+    if not values:
+        return
+    peak = max(values)
+    result[peak_key] = peak
+    if baseline is not None:
+        result[baseline_key] = baseline
+        result[delta_key] = max(0.0, peak - baseline)
+
+
+def compute_per_rep_summary(csv_path: Path) -> dict[str, Any]:
+    parsed = _parse_resource_rows(csv_path)
+    series = parsed["series"]
+    scalars = parsed["scalars"]
 
     result: dict[str, Any] = {}
-    if pss_values:
-        peak_pss_kb = max(pss_values)
-        result["peak_pss_kb"] = peak_pss_kb
-        if baseline_pss_kb is not None:
-            result["baseline_pss_kb"] = baseline_pss_kb
-            result["peak_pss_delta_kb"] = max(0.0, peak_pss_kb - baseline_pss_kb)
-    if cpu_values:
-        result["peak_cpu_pct"] = max(cpu_values)
-    if vram_values:
-        peak_vram_mib = max(vram_values)
-        result["peak_vram_mib"] = peak_vram_mib
-        if baseline_vram_mib is not None:
-            result["baseline_vram_mib"] = baseline_vram_mib
-            result["peak_vram_delta_mib"] = max(0.0, peak_vram_mib - baseline_vram_mib)
-    if gpu_util_values:
-        result["peak_gpu_util_pct"] = max(gpu_util_values)
-    if wall_seconds is not None:
-        result["wall_seconds"] = wall_seconds
-    if throughput is not None:
-        result["transcription_throughput"] = throughput
-    if audio_seconds is not None:
-        result["audio_seconds"] = audio_seconds
-    if ttft is not None:
-        result["time_to_first_delta_s"] = ttft
-    result["observed_hardware_profile"] = profile or "cpu-only"
+    _peak_with_baseline(
+        result,
+        series["pss_kb"],
+        scalars.get("baseline_pss_kb"),
+        "peak_pss_kb",
+        "baseline_pss_kb",
+        "peak_pss_delta_kb",
+    )
+    _peak_with_baseline(
+        result,
+        series["server_vram_mib"],
+        scalars.get("baseline_vram_mib"),
+        "peak_vram_mib",
+        "baseline_vram_mib",
+        "peak_vram_delta_mib",
+    )
+    if series["cpu_pct"]:
+        result["peak_cpu_pct"] = max(series["cpu_pct"])
+    if series["gpu_util_pct"]:
+        result["peak_gpu_util_pct"] = max(series["gpu_util_pct"])
+    for key in (
+        "wall_seconds",
+        "transcription_throughput",
+        "audio_seconds",
+        "time_to_first_delta_s",
+    ):
+        if scalars.get(key) is not None:
+            result[key] = scalars[key]
+    result["observed_hardware_profile"] = scalars["observed_hardware_profile"] or "cpu-only"
     return result
 
 

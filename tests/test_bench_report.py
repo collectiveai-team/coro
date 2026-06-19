@@ -17,14 +17,14 @@ from coro.bench.report import (
 
 
 def _quality_report(**kwargs) -> BenchReport:
-    defaults = dict(
-        subcommand="quality",
-        timestamp="2026-05-04T10:00:00+00:00",
-        out_dir="/tmp/bench-out",
-        git_sha="abc1234",
-        total_wall_seconds=120.5,
-        stream=False,
-        server_config={
+    defaults = {
+        "subcommand": "quality",
+        "timestamp": "2026-05-04T10:00:00+00:00",
+        "out_dir": "/tmp/bench-out",
+        "git_sha": "abc1234",
+        "total_wall_seconds": 120.5,
+        "stream": False,
+        "server_config": {
             "asr_backend": "whisperlivekit",
             "asr_model": "openai/whisper-medium",
             "diar_backend": "whisperlivekit",
@@ -32,8 +32,8 @@ def _quality_report(**kwargs) -> BenchReport:
             "pipeline": "full-memory",
             "warmup": False,
         },
-        workload_set=["IB4001", "IB4002"],
-        quality_rows=[
+        "workload_set": ["IB4001", "IB4002"],
+        "quality_rows": [
             QualityRow(
                 session_id="IB4001",
                 duration=1837.4,
@@ -51,7 +51,7 @@ def _quality_report(**kwargs) -> BenchReport:
                 der=0.06,
             ),
         ],
-        quality_combined=QualityRow(
+        "quality_combined": QualityRow(
             session_id="COMBINED",
             duration=2737.4,
             cpwer=0.135,
@@ -59,24 +59,24 @@ def _quality_report(**kwargs) -> BenchReport:
             dicpwer=0.13,
             der=0.073,
         ),
-        quality_footnotes=[],
-        performance_rows=[],
-        versions={"coro": "0.1.0"},
-        cli_args=["quality", "--ami-meetings", "IB4001", "IB4002"],
-    )
+        "quality_footnotes": [],
+        "performance_rows": [],
+        "versions": {"coro": "0.1.0"},
+        "cli_args": ["quality", "--ami-meetings", "IB4001", "IB4002"],
+    }
     defaults.update(kwargs)
     return BenchReport(**defaults)
 
 
 def _performance_report(**kwargs) -> BenchReport:
-    defaults = dict(
-        subcommand="performance",
-        timestamp="2026-05-04T10:00:00+00:00",
-        out_dir="/tmp/bench-out",
-        git_sha="abc1234",
-        total_wall_seconds=250.0,
-        stream=False,
-        server_config={
+    defaults = {
+        "subcommand": "performance",
+        "timestamp": "2026-05-04T10:00:00+00:00",
+        "out_dir": "/tmp/bench-out",
+        "git_sha": "abc1234",
+        "total_wall_seconds": 250.0,
+        "stream": False,
+        "server_config": {
             "asr_backend": "whisperlivekit",
             "asr_model": "openai/whisper-medium",
             "diar_backend": "whisperlivekit",
@@ -84,11 +84,11 @@ def _performance_report(**kwargs) -> BenchReport:
             "pipeline": "full-memory",
             "warmup": False,
         },
-        workload_set=["IB4001"],
-        quality_rows=[],
-        quality_combined=None,
-        quality_footnotes=[],
-        performance_rows=[
+        "workload_set": ["IB4001"],
+        "quality_rows": [],
+        "quality_combined": None,
+        "quality_footnotes": [],
+        "performance_rows": [
             PerformanceRow(
                 session_id="IB4001",
                 rep=1,
@@ -105,9 +105,9 @@ def _performance_report(**kwargs) -> BenchReport:
                 ttft=None,
             ),
         ],
-        versions={"coro": "0.1.0"},
-        cli_args=["performance", "--ami-meetings", "IB4001"],
-    )
+        "versions": {"coro": "0.1.0"},
+        "cli_args": ["performance", "--ami-meetings", "IB4001"],
+    }
     defaults.update(kwargs)
     return BenchReport(**defaults)
 

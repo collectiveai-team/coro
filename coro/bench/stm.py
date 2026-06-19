@@ -27,8 +27,7 @@ diarization-only so scoring reports DER and omits the (meaningless) WER.
 
 def _clean_text(text: str) -> str:
     text = text.replace("\n", " ").strip()
-    text = re.sub(r"\s+", " ", text)
-    return text
+    return re.sub(r"\s+", " ", text)
 
 
 def hyp_segments_to_stm(
@@ -172,8 +171,7 @@ def _get_time(elem: ET.Element, name: str) -> float | None:
 def _normalize_token(text: str) -> str:
     text = html.unescape(text or "")
     text = text.strip()
-    text = re.sub(r"\s+", " ", text)
-    return text
+    return re.sub(r"\s+", " ", text)
 
 
 def _read_words(path: Path) -> tuple[list[dict], dict[str, int]]:

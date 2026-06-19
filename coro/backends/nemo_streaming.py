@@ -198,7 +198,8 @@ class StreamingDiarizer:
         from nemo.collections.asr.models.sortformer_diar_models import ts_vad_post_processing
         from nemo.collections.asr.parts.mixins.diarization import load_postprocessing_from_yaml
 
-        cfg_vad_params = load_postprocessing_from_yaml(None)
+        # NeMo accepts None to load default post-processing params; stub types str.
+        cfg_vad_params = load_postprocessing_from_yaml(None)  # pyrefly: ignore[bad-argument-type]
         # total_preds: (1, n_frames, n_spk) — process each speaker independently
         preds_cpu = (
             (total_preds if total_preds is not None else self._combined_preds()).squeeze(0).cpu()
@@ -210,7 +211,8 @@ class StreamingDiarizer:
             spk_preds = preds_cpu[:, spk_id]  # (n_frames,)
             ts_mat = ts_vad_post_processing(
                 spk_preds,
-                cfg_vad_params=cfg_vad_params,
+                # NeMo consumes the PostProcessingParams dataclass; stub types OmegaConf.
+                cfg_vad_params=cfg_vad_params,  # pyrefly: ignore[bad-argument-type]
                 unit_10ms_frame_count=subsampling_factor,
                 bypass_postprocessing=False,
             )

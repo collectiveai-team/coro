@@ -25,6 +25,8 @@ from unittest.mock import patch
 
 import pytest
 
+from coro.core.types import TranscriptToken
+
 REAL_MODEL_TESTS = os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") == "1"
 skip_unless_real = pytest.mark.skipif(
     not REAL_MODEL_TESTS,
@@ -55,7 +57,8 @@ async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
     # Load real models
     asr = build_asr_adapter("openai/whisper-small", device="cpu")
     diar_model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
-    diar_model.eval()
+    # NeMo stub types from_pretrained as str.
+    diar_model.eval()  # pyrefly: ignore[missing-attribute]
     factory = StreamingDiarizerFactory(diar_model, tier="very-high")
 
     pipeline = StreamingPipeline(
@@ -99,7 +102,8 @@ def test_streaming_diarizer_frame_count_matches_audio_duration():
     DURATION_S = 95
 
     model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
-    model.eval()
+    # NeMo stub types from_pretrained as str.
+    model.eval()  # pyrefly: ignore[missing-attribute]
     factory = StreamingDiarizerFactory(model, tier="very-high")
     diar = factory()
 
@@ -127,7 +131,9 @@ def test_streaming_diarizer_frame_count_matches_audio_duration():
 
 
 class _FakeASRAdapter:
-    async def transcribe_pcm(self, pcm_bytes, *, language=None, prompt=None):
+    async def transcribe_pcm(
+        self, pcm: bytes, *, language: str | None = None, prompt: str | None = None
+    ) -> list[TranscriptToken]:
         return []
 
 

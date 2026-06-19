@@ -228,6 +228,15 @@ def _response_for_format(
 ) -> DiarizadJsonResponse: ...
 
 
+@overload
+def _response_for_format(
+    response_format: ResponseFormat,
+    result: TranscriptionResponse,
+    *,
+    language: str | None,
+) -> JsonResponse | VerboseJsonResponse | DiarizadJsonResponse: ...
+
+
 def _response_for_format(
     response_format: ResponseFormat,
     result: TranscriptionResponse,
@@ -297,7 +306,8 @@ async def create_transcription(
     request_id = uuid4().hex[:8]
     started = time.perf_counter()
     logger.info(
-        "transcription[%s] request start filename=%s content_type=%s stream=%s response_format=%s language=%s",
+        "transcription[%s] request start filename=%s content_type=%s "
+        "stream=%s response_format=%s language=%s",
         request_id,
         file.filename,
         file.content_type,
@@ -306,7 +316,7 @@ async def create_transcription(
         language,
     )
     language = _validate_language(language)
-    prompt = _normalize_optional(prompt)
+    prompt_value = _normalize_optional(prompt)
     audio = await AudioInput.from_upload(file)
     audio_bytes = await audio.read_bytes()
     logger.info("transcription[%s] upload read bytes=%d", request_id, len(audio_bytes))
@@ -319,11 +329,11 @@ async def create_transcription(
         if stream_method is None:
             raise UnsupportedStreamingError("Configured pipeline does not support streaming.")
         logger.info("transcription[%s] handing off to streaming response", request_id)
-        return streaming_response(stream_method(audio, language=language, prompt=prompt or None))
+        return streaming_response(stream_method(audio, language=language, prompt=prompt_value))
 
     # JSON Response ---------------------------------------------------------
     try:
-        result = await pipeline.transcribe(audio, language=language, prompt=prompt or None)
+        result = await pipeline.transcribe(audio, language=language, prompt=prompt_value)
     except TranscriptionValidationError:
         raise
     except Exception as exc:

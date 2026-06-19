@@ -120,6 +120,7 @@ class TestSampler:
         with csv_path.open() as f:
             reader = csv.DictReader(f)
             headers = reader.fieldnames
+            assert headers is not None
             assert headers == RESOURCE_FIELDNAMES
             rows = list(reader)
             assert len(rows) == len(sampler.samples)
@@ -162,7 +163,7 @@ def _make_csv_rows(
     audio_seconds: float = 10.0,
     observed_hardware_profile: str = "cpu-only",
 ) -> list[dict[str, Any]]:
-    base = dict.fromkeys(RESOURCE_FIELDNAMES, "")
+    base: dict[str, Any] = dict.fromkeys(RESOURCE_FIELDNAMES, "")
     base["pss_kb"] = pss_kb
     base["cpu_pct"] = cpu_pct
     base["server_vram_mib"] = server_vram_mib
@@ -380,6 +381,7 @@ class TestFullPerformanceRun:
         with csv_path.open() as f:
             reader = csv.DictReader(f)
             headers = reader.fieldnames
+            assert headers is not None
             assert headers == RESOURCE_FIELDNAMES
             assert "time_to_first_delta_s" in headers
 
@@ -412,10 +414,7 @@ class TestFullPerformanceRun:
         perf_dir = out_dir / "performance"
         mtimes = []
         for item_id in ["a1", "a1", "a2", "a2"]:
-            if item_id == "a1":
-                rep = len([m for m in mtimes]) % 2 + 1
-            else:
-                rep = len([m for m in mtimes]) - 2 + 1
+            rep = len(mtimes) % 2 + 1 if item_id == "a1" else len(mtimes) - 2 + 1
             p = perf_dir / f"resource_{item_id}_rep{rep}.csv"
             mtimes.append(p.stat().st_mtime)
 
