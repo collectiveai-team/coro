@@ -86,3 +86,16 @@ language = "system"
 types = ["python"]
 pass_filenames = false
 priority = 2
+
+# MARK: docker-check
+# Lint the runtime Dockerfile with buildx's built-in checker (BuildKit rules).
+# Uses the default cpu/ubuntu:noble build args; --check only parses, it does
+# not build any layers. Runs only when the Dockerfile changes.
+[[repos.hooks]]
+id = "docker-check"
+name = "docker-check"
+entry = "docker buildx build --check ."
+language = "system"
+files = "^Dockerfile$"
+pass_filenames = false
+priority = 2
