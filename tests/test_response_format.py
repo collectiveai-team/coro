@@ -15,6 +15,12 @@ from httpx import ASGITransport, AsyncClient
 
 from coro.api.v1.transcriptions import ResponseFormat
 from coro.app import create_app
+from coro.core.types import (
+    ResponseSegment,
+    TranscriptionResult,
+    TranscriptItem,
+    TranscriptWord,
+)
 from coro.runtime import RuntimeState
 from coro.settings import ServerSettings
 
@@ -59,23 +65,17 @@ def _minimal_wav() -> bytes:
 
 class _FakePipeline:
     async def transcribe(self, audio, *, language=None, prompt=None):
-        return {
-            "segments": [
-                {
-                    "start": 0.0,
-                    "end": 1.0,
-                    "text": "hello",
-                    "speaker": "agent",
-                    "words": [],
-                }
+        return TranscriptionResult(
+            segments=[
+                ResponseSegment(start=0.0, end=1.0, text="hello", speaker="agent", words=[]),
             ],
-            "word_segments": [
-                {"word": "hello", "start": 0.0, "end": 1.0, "score": 1.0, "speaker": "agent"}
+            word_segments=[
+                TranscriptWord(word="hello", start=0.0, end=1.0, score=1.0, speaker="agent"),
             ],
-            "transcript": [{"start": 0.0, "end": 1.0, "text": "hello"}],
-            "diarization": [],
-            "raw_words": [],
-        }
+            transcript=[TranscriptItem(start=0.0, end=1.0, text="hello")],
+            diarization=[],
+            raw_words=[],
+        )
 
 
 def _app():

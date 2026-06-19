@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import struct
+from dataclasses import asdict
 from unittest.mock import patch
 
 import pytest
@@ -126,7 +127,7 @@ async def test_streaming_pipeline_returns_response_shape():
     pipeline = StreamingPipeline(asr=_FakeASRAdapter())
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    assert RESPONSE_KEYS.issubset(result.keys())
+    assert set(asdict(result)) == RESPONSE_KEYS
 
 
 @pytest.mark.asyncio
@@ -156,8 +157,8 @@ async def test_streaming_pipeline_uses_diarization_when_provided():
     pipeline = StreamingPipeline(asr=asr, streaming_diarizer_factory=factory)
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    seg = result["segments"][0]
-    assert seg["speaker"] == "2"
+    seg = result.segments[0]
+    assert seg.speaker == "2"
 
 
 @pytest.mark.asyncio
@@ -165,8 +166,8 @@ async def test_streaming_pipeline_empty_tokens_no_crash():
     pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=[]))
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    assert result["segments"] == []
-    assert result["raw_words"] == []
+    assert result.segments == []
+    assert result.raw_words == []
 
 
 # ---------------------------------------------------------------------------
@@ -349,5 +350,5 @@ async def test_streaming_diarizer_finalize_provides_timeline():
     )
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    seg = result["segments"][0]
-    assert seg["speaker"] == "1"
+    seg = result.segments[0]
+    assert seg.speaker == "1"

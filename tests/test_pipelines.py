@@ -29,7 +29,7 @@ async def test_full_memory_pipeline_uses_audio_input_bytes_and_windowing():
         result = await pipeline.transcribe(audio, prompt="hint")
 
     convert.assert_awaited_once_with(b"encoded")
-    assert result["segments"][0]["text"] == "hello."
+    assert result.segments[0].text == "hello."
 
 
 @pytest.mark.asyncio

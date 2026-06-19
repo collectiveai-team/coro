@@ -9,6 +9,7 @@ from coro.audio import AudioInput
 from coro.core.types import (
     PipelineStreamEvent,
     SpeakerSegment,
+    TranscriptionResult,
     TranscriptToken,
 )
 
@@ -49,7 +50,7 @@ class TranscriptionPipeline(Protocol):
         *,
         language: str | None = None,
         prompt: str | None = None,
-    ) -> dict: ...
+    ) -> TranscriptionResult: ...
 
     def stream(
         self,

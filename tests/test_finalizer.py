@@ -37,10 +37,10 @@ def test_finalizer_matches_batch_builder_without_diarization(tmp_path):
         streamed = build_streaming_response(store)
 
     batch = build_transcription_response(_TOKENS, [], duration=2.4)
-    assert streamed["segments"] == batch["segments"]
-    assert streamed["word_segments"] == batch["word_segments"]
-    assert streamed["transcript"] == batch["transcript"]
-    assert streamed["raw_words"] == batch["raw_words"]
+    assert streamed.segments == batch.segments
+    assert streamed.word_segments == batch.word_segments
+    assert streamed.transcript == batch.transcript
+    assert streamed.raw_words == batch.raw_words
 
 
 def test_finalizer_matches_batch_builder_with_diarization(tmp_path):
@@ -57,11 +57,11 @@ def test_finalizer_matches_batch_builder_with_diarization(tmp_path):
         streamed = build_streaming_response(store, timeline)
 
     batch = build_transcription_response(_TOKENS, timeline, duration=2.4)
-    assert streamed["segments"] == batch["segments"]
-    assert streamed["word_segments"] == batch["word_segments"]
-    assert streamed["transcript"] == batch["transcript"]
-    assert streamed["diarization"] == batch["diarization"]
-    assert streamed["raw_words"] == batch["raw_words"]
+    assert streamed.segments == batch.segments
+    assert streamed.word_segments == batch.word_segments
+    assert streamed.transcript == batch.transcript
+    assert streamed.diarization == batch.diarization
+    assert streamed.raw_words == batch.raw_words
 
 
 def test_finalizer_marks_segments_beyond_timeline_unknown(tmp_path):
@@ -74,8 +74,8 @@ def test_finalizer_marks_segments_beyond_timeline_unknown(tmp_path):
         streamed = build_streaming_response(store, timeline)
 
     batch = build_transcription_response(_TOKENS, timeline, duration=2.4)
-    assert [s["speaker"] for s in streamed["segments"]] == [s["speaker"] for s in batch["segments"]]
-    assert "-1" in [s["speaker"] for s in streamed["segments"]]
+    assert [s.speaker for s in streamed.segments] == [s.speaker for s in batch.segments]
+    assert "-1" in [s.speaker for s in streamed.segments]
 
 
 def test_finalizer_emits_three_segments(tmp_path):
@@ -97,10 +97,10 @@ def test_finalizer_defers_speaker_assignment_to_assembly(tmp_path):
         finalizer.add_tokens(_TOKENS)
         finalizer.finish()
         # Stored provisionally as speaker 1 before assembly.
-        assert [s["speaker"] for s in store.iter_segments()] == ["1", "1", "1"]
+        assert [s.speaker for s in store.iter_segments()] == ["1", "1", "1"]
         streamed = build_streaming_response(store, timeline)
 
-    assert [s["speaker"] for s in streamed["segments"]] == ["2", "3", "3"]
+    assert [s.speaker for s in streamed.segments] == ["2", "3", "3"]
 
 
 def test_finalizer_flushes_unterminated_tail(tmp_path):
@@ -113,7 +113,7 @@ def test_finalizer_flushes_unterminated_tail(tmp_path):
         segments = list(store.iter_segments())
 
     assert len(segments) == 1
-    assert segments[0]["text"] == "sin punto"
+    assert segments[0].text == "sin punto"
 
 
 def test_finalizer_open_buffer_stays_bounded(tmp_path):
@@ -144,4 +144,4 @@ def test_finalizer_clamps_overlapping_segments(tmp_path):
         finalizer.finish()
         streamed = build_streaming_response(store)
 
-    assert streamed["segments"][0]["end"] <= streamed["segments"][1]["start"]
+    assert streamed.segments[0].end <= streamed.segments[1].start

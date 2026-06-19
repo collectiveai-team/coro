@@ -13,7 +13,7 @@ import time
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, stream_pcm_from_file
 from coro.core.protocols import ASRAdapter
-from coro.core.types import SpeakerSegment, TokenBatchEvent
+from coro.core.types import SpeakerSegment, TokenBatchEvent, TranscriptionResult
 from coro.pipelines.done_frame import StreamingDoneFrame
 from coro.pipelines.finalizer import (
     StreamingTranscriptFinalizer,
@@ -54,7 +54,7 @@ class StreamingPipeline:
         *,
         language: str | None = None,
         prompt: str | None = None,
-    ) -> dict:
+    ) -> TranscriptionResult:
         started = time.perf_counter()
         chunk_count = 0
         diarizer_chunks = 0

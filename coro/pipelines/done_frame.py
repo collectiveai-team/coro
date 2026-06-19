@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from coro.core.types import SpeakerSegment
 from coro.pipelines.finalizer import iter_response_segments
@@ -44,26 +44,26 @@ class StreamingDoneFrame:
         yield '{"segments": ['
         for i, seg in enumerate(iter_response_segments(self.store, self.timeline)):
             yield ", " if i else ""
-            yield json.dumps(seg)
+            yield json.dumps(asdict(seg))
         yield '], "word_segments": ['
         first = True
         for seg in iter_response_segments(self.store, self.timeline):
-            for word in seg["words"]:
+            for word in seg.words:
                 yield "" if first else ", "
                 first = False
-                yield json.dumps(word)
+                yield json.dumps(asdict(word))
         yield '], "transcript": ['
         for i, seg in enumerate(iter_response_segments(self.store, self.timeline)):
             yield ", " if i else ""
-            yield json.dumps({"start": seg["start"], "end": seg["end"], "text": seg["text"]})
+            yield json.dumps({"start": seg.start, "end": seg.end, "text": seg.text})
         yield '], "diarization": ['
         for i, seg in enumerate(iter_response_segments(self.store, self.timeline)):
             yield ", " if i else ""
-            yield json.dumps({"start": seg["start"], "end": seg["end"], "speaker": seg["speaker"]})
+            yield json.dumps({"start": seg.start, "end": seg.end, "speaker": seg.speaker})
         yield '], "raw_words": ['
         for i, word in enumerate(self.store.iter_raw_words()):
             yield ", " if i else ""
-            yield json.dumps(word)
+            yield json.dumps(asdict(word))
         yield "]}"
 
     def iter_sse(self) -> Iterator[str]:

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import struct
+from dataclasses import asdict
 from unittest.mock import patch
 
 import pytest
@@ -70,9 +71,9 @@ async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
     result = await pipeline.transcribe(audio, language="es")
 
     EXPECTED_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
-    assert set(result.keys()) >= EXPECTED_KEYS
-    assert len(result["transcript"]) > 0, "Expected non-empty transcript"
-    assert len(result["segments"]) > 0, "Expected at least one segment"
+    assert set(asdict(result)) >= EXPECTED_KEYS
+    assert len(result.transcript) > 0, "Expected non-empty transcript"
+    assert len(result.segments) > 0, "Expected at least one segment"
 
 
 @skip_unless_real
@@ -160,5 +161,5 @@ async def test_streaming_pipeline_warmup_mocked():
         result = await pipeline.transcribe(audio)
 
     EXPECTED_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
-    assert set(result.keys()) >= EXPECTED_KEYS
-    assert result["segments"] == []
+    assert set(asdict(result)) >= EXPECTED_KEYS
+    assert result.segments == []

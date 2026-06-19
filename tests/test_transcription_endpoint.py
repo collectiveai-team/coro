@@ -14,6 +14,13 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from coro.app import create_app
+from coro.core.types import (
+    DiarizationItem,
+    ResponseSegment,
+    TranscriptionResult,
+    TranscriptItem,
+    TranscriptWord,
+)
 from coro.runtime import RuntimeState
 from coro.settings import ServerSettings
 
@@ -22,24 +29,18 @@ from coro.settings import ServerSettings
 # Helpers
 # ---------------------------------------------------------------------------
 
-_PIPELINE_RESULT = {
-    "segments": [
-        {
-            "start": 0.0,
-            "end": 1.0,
-            "text": "hello world",
-            "speaker": "agent",
-            "words": [],
-        }
+_PIPELINE_RESULT = TranscriptionResult(
+    segments=[
+        ResponseSegment(start=0.0, end=1.0, text="hello world", speaker="agent", words=[]),
     ],
-    "word_segments": [
-        {"word": "hello", "start": 0.0, "end": 0.4, "score": 1.0, "speaker": "agent"},
-        {"word": "world", "start": 0.5, "end": 1.0, "score": 1.0, "speaker": "agent"},
+    word_segments=[
+        TranscriptWord(word="hello", start=0.0, end=0.4, score=1.0, speaker="agent"),
+        TranscriptWord(word="world", start=0.5, end=1.0, score=1.0, speaker="agent"),
     ],
-    "transcript": [{"start": 0.0, "end": 1.0, "text": "hello world"}],
-    "diarization": [{"start": 0.0, "end": 1.0, "speaker": "agent"}],
-    "raw_words": [],
-}
+    transcript=[TranscriptItem(start=0.0, end=1.0, text="hello world")],
+    diarization=[DiarizationItem(start=0.0, end=1.0, speaker="agent")],
+    raw_words=[],
+)
 
 
 def _minimal_wav_bytes() -> bytes:
@@ -58,7 +59,7 @@ class _FakePipeline:
     """Fake configured pipeline that returns a fixed transcription response."""
 
     async def transcribe(self, audio, *, language=None, prompt=None):
-        return dict(_PIPELINE_RESULT)
+        return _PIPELINE_RESULT
 
 
 def _app_with_fake_pipeline():

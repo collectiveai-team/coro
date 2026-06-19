@@ -30,7 +30,7 @@ _TOKENS = [
 
 def _expected_frame(store, timeline) -> str:
     materialized = build_streaming_response(store, timeline)
-    event = TranscriptDoneEvent(text=json.dumps(materialized))
+    event = TranscriptDoneEvent(text=json.dumps(dataclasses.asdict(materialized)))
     return f"data: {json.dumps(dataclasses.asdict(event))}\n\n"
 
 
@@ -66,7 +66,7 @@ def test_streamed_frame_inner_json_parses_to_response(tmp_path):
     materialized = build_streaming_response(store, [])
     streamed = "".join(StreamingDoneFrame(store=store, timeline=[]).iter_sse())
     outer = json.loads(streamed[len("data: ") :].rstrip("\n"))
-    assert json.loads(outer["text"]) == materialized
+    assert json.loads(outer["text"]) == dataclasses.asdict(materialized)
 
 
 def test_streamed_frame_empty_store(tmp_path):

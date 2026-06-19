@@ -1,7 +1,7 @@
 """Core response builder.
 
 Accepts Project-Owned Transcript Model types and produces the enriched
-transcription response dict.  No FastAPI or backend-native types are used.
+:class:`TranscriptionResult`.  No FastAPI or backend-native types are used.
 
 Key behaviours:
 - Groups tokens into punctuation-boundary segments.
@@ -14,7 +14,12 @@ Key behaviours:
 from __future__ import annotations
 
 from coro.core.types import (
+    DiarizationItem,
+    RawWord,
+    ResponseSegment,
     SpeakerSegment,
+    TranscriptionResult,
+    TranscriptItem,
     TranscriptSegment,
     TranscriptToken,
     TranscriptWord,
@@ -158,25 +163,20 @@ def _clamp_overlaps(segments: list[TranscriptSegment]) -> list[TranscriptSegment
     return ordered
 
 
-def build_segment_dict(seg: TranscriptSegment) -> dict:
-    """Serialise one speaker-attributed segment into the response shape.
+def build_segment(seg: TranscriptSegment) -> ResponseSegment:
+    """Build one speaker-attributed :class:`ResponseSegment` from a segment.
 
-    Produces ``{start, end, text, speaker, words}`` with interpolated word
+    Produces ``start, end, text, speaker, words`` with interpolated word
     timings.  Shared by the batch builder and the streaming finalizer so both
-    paths emit byte-identical segment dicts.
+    paths emit byte-identical segments.
     """
-    words = _build_words_for_segment(seg)
-    word_dicts = [
-        {"word": w.word, "start": w.start, "end": w.end, "score": w.score, "speaker": w.speaker}
-        for w in words
-    ]
-    return {
-        "start": round(seg.start, 2),
-        "end": round(seg.end, 2),
-        "text": seg.text.strip(),
-        "speaker": str(seg.speaker),
-        "words": word_dicts,
-    }
+    return ResponseSegment(
+        start=round(seg.start, 2),
+        end=round(seg.end, 2),
+        text=seg.text.strip(),
+        speaker=str(seg.speaker),
+        words=_build_words_for_segment(seg),
+    )
 
 
 def _build_words_for_segment(seg: TranscriptSegment) -> list[TranscriptWord]:
@@ -209,8 +209,8 @@ def build_transcription_response(
     tokens: list[TranscriptToken],
     speaker_timeline: list[SpeakerSegment],
     duration: float,
-) -> dict:
-    """Build a transcription response dict from project-owned types.
+) -> TranscriptionResult:
+    """Build a :class:`TranscriptionResult` from project-owned types.
 
     Args:
         tokens: Ordered transcript tokens (Project-Owned Transcript Model).
@@ -218,29 +218,24 @@ def build_transcription_response(
         duration: Total audio duration in seconds.
 
     Returns:
-        Dict with keys: segments, word_segments, transcript, diarization, raw_words.
+        TranscriptionResult with segments, word_segments, transcript,
+        diarization, and raw_words.
 
     """
     if not tokens:
         diar = [
-            {"start": round(s.start, 3), "end": round(s.end, 3), "speaker": str(s.speaker)}
+            DiarizationItem(start=round(s.start, 3), end=round(s.end, 3), speaker=str(s.speaker))
             for s in sorted(speaker_timeline, key=lambda x: x.start)
         ]
-        return {
-            "segments": [],
-            "word_segments": [],
-            "transcript": [],
-            "diarization": diar,
-            "raw_words": [],
-        }
+        return TranscriptionResult(diarization=diar)
 
     raw_words = [
-        {
-            "word": t.text,
-            "start": round(t.start, 3),
-            "end": round(t.end, 3),
-            "score": float(t.probability) if t.probability is not None else 1.0,
-        }
+        RawWord(
+            word=t.text,
+            start=round(t.start, 3),
+            end=round(t.end, 3),
+            score=float(t.probability) if t.probability is not None else 1.0,
+        )
         for t in tokens
         if t.text and t.text.strip()
     ]
@@ -250,23 +245,21 @@ def build_transcription_response(
     _assign_speakers(seg_objects, speaker_timeline)
     seg_objects = _clamp_overlaps(seg_objects)
 
-    segments = []
-    word_segments = []
+    segments: list[ResponseSegment] = []
+    word_segments: list[TranscriptWord] = []
 
     for seg in seg_objects:
-        seg_dict = build_segment_dict(seg)
-        word_segments.extend(seg_dict["words"])
-        segments.append(seg_dict)
+        rseg = build_segment(seg)
+        word_segments.extend(rseg.words)
+        segments.append(rseg)
 
-    transcript = [{"start": s["start"], "end": s["end"], "text": s["text"]} for s in segments]
-    diarization = [
-        {"start": s["start"], "end": s["end"], "speaker": s["speaker"]} for s in segments
-    ]
+    transcript = [TranscriptItem(start=s.start, end=s.end, text=s.text) for s in segments]
+    diarization = [DiarizationItem(start=s.start, end=s.end, speaker=s.speaker) for s in segments]
 
-    return {
-        "segments": segments,
-        "word_segments": word_segments,
-        "transcript": transcript,
-        "diarization": diarization,
-        "raw_words": raw_words,
-    }
+    return TranscriptionResult(
+        segments=segments,
+        word_segments=word_segments,
+        transcript=transcript,
+        diarization=diarization,
+        raw_words=raw_words,
+    )

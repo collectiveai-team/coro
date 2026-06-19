@@ -11,6 +11,7 @@ import re
 import math
 import logging
 import time
+from dataclasses import asdict
 from uuid import uuid4
 from enum import StrEnum
 from typing import Literal, overload
@@ -343,7 +344,7 @@ async def create_transcription(
             time.perf_counter() - started,
         )
         raise TranscriptionProcessingError("Transcription processing failed.") from exc
-    validated = TranscriptionResponse.model_validate(result)
+    validated = TranscriptionResponse.model_validate(asdict(result))
     logger.info(
         "transcription[%s] request complete elapsed=%.3fs segments=%d words=%d diarization=%d",
         request_id,

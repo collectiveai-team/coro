@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, convert_to_pcm_bytes
 from coro.core.response import build_transcription_response
 from coro.core.protocols import ASRAdapter, DiarizationAdapter
-from coro.core.types import TokenBatchEvent, TranscriptDoneEvent
+from coro.core.types import TokenBatchEvent, TranscriptDoneEvent, TranscriptionResult
 from coro.pipelines.windowing import ASRWindowing
 
 
@@ -37,7 +38,7 @@ class FullMemoryPipeline:
         *,
         language: str | None = None,
         prompt: str | None = None,
-    ) -> dict:
+    ) -> TranscriptionResult:
         pcm = await self._pcm(audio)
         duration = len(pcm) / (SAMPLE_RATE * BYTES_PER_SAMPLE)
         result = await self._windowing.transcribe_pcm(
@@ -76,5 +77,5 @@ class FullMemoryPipeline:
         if self._diarization is not None:
             timeline = await self._diarization.diarize_pcm(pcm)
         yield TranscriptDoneEvent(
-            text=json.dumps(build_transcription_response(tokens, timeline, duration)),
+            text=json.dumps(asdict(build_transcription_response(tokens, timeline, duration))),
         )

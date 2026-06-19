@@ -29,7 +29,10 @@ import os
 import sqlite3
 import tempfile
 from collections.abc import Iterator
+from dataclasses import asdict
 from pathlib import Path
+
+from coro.core.types import RawWord, ResponseSegment, TranscriptWord
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS segments (
@@ -80,12 +83,12 @@ class TranscriptSpillStore:
         """Filesystem path of the backing database."""
         return self._path
 
-    def append_segment(self, segment: dict) -> None:
+    def append_segment(self, segment: ResponseSegment) -> None:
         """Persist one finalized, speaker-attributed segment.
 
         Args:
-            segment: Dict with ``start``, ``end``, ``text``, ``speaker`` and
-                a ``words`` list of word dicts.
+            segment: A :class:`ResponseSegment` with ``start``, ``end``,
+                ``text``, ``speaker`` and a ``words`` list.
 
         """
         self._conn.execute(
@@ -93,21 +96,22 @@ class TranscriptSpillStore:
             "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 self._segment_count,
-                float(segment["start"]),
-                float(segment["end"]),
-                str(segment["text"]),
-                str(segment["speaker"]),
-                json.dumps(segment.get("words", [])),
+                float(segment.start),
+                float(segment.end),
+                str(segment.text),
+                str(segment.speaker),
+                json.dumps([asdict(w) for w in segment.words]),
             ),
         )
         self._segment_count += 1
         self._conn.commit()
 
-    def append_raw_words(self, words: list[dict]) -> None:
-        """Persist a batch of raw ASR word dicts.
+    def append_raw_words(self, words: list[RawWord]) -> None:
+        """Persist a batch of raw ASR words.
 
         Args:
-            words: Dicts with ``word``, ``start``, ``end`` and ``score`` keys.
+            words: :class:`RawWord` items with ``word``, ``start``, ``end``
+                and ``score``.
 
         """
         if not words:
@@ -117,10 +121,10 @@ class TranscriptSpillStore:
             rows.append(
                 (
                     self._raw_word_count,
-                    str(w["word"]),
-                    float(w["start"]),
-                    float(w["end"]),
-                    float(w["score"]),
+                    str(w.word),
+                    float(w.start),
+                    float(w.end),
+                    float(w.score),
                 )
             )
             self._raw_word_count += 1
@@ -140,25 +144,25 @@ class TranscriptSpillStore:
         """Number of raw words persisted so far."""
         return self._raw_word_count
 
-    def iter_segments(self) -> Iterator[dict]:
+    def iter_segments(self) -> Iterator[ResponseSegment]:
         """Yield finalized segments in insertion order via a streaming cursor."""
         cursor = self._conn.execute(
             "SELECT start, end, text, speaker, words_json FROM segments ORDER BY idx"
         )
         for start, end, text, speaker, words_json in cursor:
-            yield {
-                "start": start,
-                "end": end,
-                "text": text,
-                "speaker": speaker,
-                "words": json.loads(words_json),
-            }
+            yield ResponseSegment(
+                start=start,
+                end=end,
+                text=text,
+                speaker=speaker,
+                words=[TranscriptWord(**w) for w in json.loads(words_json)],
+            )
 
-    def iter_raw_words(self) -> Iterator[dict]:
+    def iter_raw_words(self) -> Iterator[RawWord]:
         """Yield raw words in insertion order via a streaming cursor."""
         cursor = self._conn.execute("SELECT word, start, end, score FROM raw_words ORDER BY idx")
         for word, start, end, score in cursor:
-            yield {"word": word, "start": start, "end": end, "score": score}
+            yield RawWord(word=word, start=start, end=end, score=score)
 
     def close(self) -> None:
         """Close the connection and delete the database and its WAL sidecars."""

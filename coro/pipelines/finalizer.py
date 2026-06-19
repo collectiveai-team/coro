@@ -19,13 +19,23 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from coro.core.response import (
-    build_segment_dict,
+    build_segment,
     closes_segment,
     merge_speaker_timeline,
     segment_span_from_tokens,
     speaker_for_span,
 )
-from coro.core.types import SpeakerSegment, TranscriptSegment, TranscriptToken
+from coro.core.types import (
+    DiarizationItem,
+    RawWord,
+    ResponseSegment,
+    SpeakerSegment,
+    TranscriptionResult,
+    TranscriptItem,
+    TranscriptSegment,
+    TranscriptToken,
+    TranscriptWord,
+)
 from coro.pipelines.transcript_store import TranscriptSpillStore
 
 
@@ -40,12 +50,12 @@ class StreamingTranscriptFinalizer:
         """Ingest a batch of accepted tokens, finalizing completed segments."""
         self._store.append_raw_words(
             [
-                {
-                    "word": t.text,
-                    "start": round(t.start, 3),
-                    "end": round(t.end, 3),
-                    "score": float(t.probability) if t.probability is not None else 1.0,
-                }
+                RawWord(
+                    word=t.text,
+                    start=round(t.start, 3),
+                    end=round(t.end, 3),
+                    score=float(t.probability) if t.probability is not None else 1.0,
+                )
                 for t in tokens
                 if t.text and t.text.strip()
             ]
@@ -70,11 +80,11 @@ class StreamingTranscriptFinalizer:
         # Provisional speaker 1; real attribution happens at assembly once the
         # diarizer has produced its complete timeline.
         seg = TranscriptSegment(start=start, end=end, text=text, speaker=1)
-        self._store.append_segment(build_segment_dict(seg))
+        self._store.append_segment(build_segment(seg))
 
 
 def _assign_segment_speaker(
-    seg: dict,
+    seg: ResponseSegment,
     merged: list[SpeakerSegment],
     last_end: float,
     has_timeline: bool,
@@ -85,16 +95,16 @@ def _assign_segment_speaker(
     builder's order of assign-then-clamp.  With no timeline every segment
     defaults to speaker 1, mirroring ``_assign_speakers``.
     """
-    spk = speaker_for_span(seg["start"], seg["end"], merged, last_end) if has_timeline else 1
-    seg["speaker"] = str(spk)
-    for word in seg["words"]:
-        word["speaker"] = str(spk)
+    spk = speaker_for_span(seg.start, seg.end, merged, last_end) if has_timeline else 1
+    seg.speaker = str(spk)
+    for word in seg.words:
+        word.speaker = str(spk)
 
 
 def iter_response_segments(
     store: TranscriptSpillStore,
     speaker_timeline: list[SpeakerSegment] | None = None,
-) -> Iterator[dict]:
+) -> Iterator[ResponseSegment]:
     """Yield finalized segments, speaker-attributed and overlap-clamped.
 
     Speakers are assigned per segment from the (complete) diarization timeline,
@@ -106,12 +116,12 @@ def iter_response_segments(
     last_end = merged[-1].end if merged else 0.0
     has_timeline = bool(merged)
 
-    prev: dict | None = None
+    prev: ResponseSegment | None = None
     for seg in store.iter_segments():
         _assign_segment_speaker(seg, merged, last_end, has_timeline)
         if prev is not None:
-            if prev["end"] > seg["start"]:
-                prev["end"] = round(max(prev["start"], seg["start"]), 2)
+            if prev.end > seg.start:
+                prev.end = round(max(prev.start, seg.start), 2)
             yield prev
         prev = seg
     if prev is not None:
@@ -121,27 +131,25 @@ def iter_response_segments(
 def build_streaming_response(
     store: TranscriptSpillStore,
     speaker_timeline: list[SpeakerSegment] | None = None,
-) -> dict:
-    """Assemble the full response dict from a spill store.
+) -> TranscriptionResult:
+    """Assemble the full :class:`TranscriptionResult` from a spill store.
 
-    Mirrors the keys of the batch builder.  This materialises the lists once
-    (inherent for a single response object); steady-state streaming stays flat
-    because the data lived in the store, not Python lists.
+    Mirrors the batch builder.  This materialises the lists once (inherent for
+    a single response object); steady-state streaming stays flat because the
+    data lived in the store, not Python lists.
     """
-    segments: list[dict] = []
-    word_segments: list[dict] = []
+    segments: list[ResponseSegment] = []
+    word_segments: list[TranscriptWord] = []
     for seg in iter_response_segments(store, speaker_timeline):
         segments.append(seg)
-        word_segments.extend(seg["words"])
-    transcript = [{"start": s["start"], "end": s["end"], "text": s["text"]} for s in segments]
-    diarization = [
-        {"start": s["start"], "end": s["end"], "speaker": s["speaker"]} for s in segments
-    ]
+        word_segments.extend(seg.words)
+    transcript = [TranscriptItem(start=s.start, end=s.end, text=s.text) for s in segments]
+    diarization = [DiarizationItem(start=s.start, end=s.end, speaker=s.speaker) for s in segments]
     raw_words = list(store.iter_raw_words())
-    return {
-        "segments": segments,
-        "word_segments": word_segments,
-        "transcript": transcript,
-        "diarization": diarization,
-        "raw_words": raw_words,
-    }
+    return TranscriptionResult(
+        segments=segments,
+        word_segments=word_segments,
+        transcript=transcript,
+        diarization=diarization,
+        raw_words=raw_words,
+    )

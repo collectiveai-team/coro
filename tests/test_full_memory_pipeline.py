@@ -15,6 +15,7 @@ subprocess or a real audio container.
 from __future__ import annotations
 
 import struct
+from dataclasses import asdict
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -65,7 +66,7 @@ async def test_full_memory_pipeline_returns_response_shape():
     pipeline = FullMemoryPipeline(asr=_FakeASRAdapter(), diarization=None)
     with _mock_convert(_FAKE_PCM):
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    assert RESPONSE_KEYS.issubset(result.keys())
+    assert set(asdict(result)) == RESPONSE_KEYS
 
 
 @pytest.mark.asyncio
@@ -95,8 +96,8 @@ async def test_full_memory_pipeline_uses_diarization_when_provided():
     pipeline = FullMemoryPipeline(asr=asr, diarization=diar)
     with _mock_convert(_FAKE_PCM):
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    seg = result["segments"][0]
-    assert seg["speaker"] == "1"
+    seg = result.segments[0]
+    assert seg.speaker == "1"
 
 
 @pytest.mark.asyncio
@@ -104,5 +105,5 @@ async def test_full_memory_pipeline_empty_tokens_no_crash():
     pipeline = FullMemoryPipeline(asr=_FakeASRAdapter(tokens=[]), diarization=None)
     with _mock_convert(_FAKE_PCM):
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    assert result["segments"] == []
-    assert result["raw_words"] == []
+    assert result.segments == []
+    assert result.raw_words == []

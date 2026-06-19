@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import struct
+from dataclasses import asdict
 from unittest.mock import patch
 
 import pytest
@@ -74,8 +75,8 @@ async def test_asr_only_transcribe_succeeds():
     pipeline = StreamingPipeline(asr=_FakeASRAdapter())
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    assert RESPONSE_KEYS.issubset(result.keys())
-    assert result["diarization"] == []
+    assert set(asdict(result)) == RESPONSE_KEYS
+    assert result.diarization == []
 
 
 @pytest.mark.asyncio
@@ -84,7 +85,7 @@ async def test_asr_only_transcribe_empty_diarization_when_no_tokens():
     pipeline = StreamingPipeline(asr=_FakeASRAdapter(tokens=[]))
     with _mock_stream():
         result = await pipeline.transcribe(AudioInput(b"audio"))
-    assert result["diarization"] == []
+    assert result.diarization == []
 
 
 @pytest.mark.asyncio
