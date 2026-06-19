@@ -42,3 +42,34 @@ Verify written code by:
 - Checking for lint errors
 - Smoke testing and checking for runtime errors with Playwright
 - Taking screenshots and verifying the UI is as expected
+
+## Dev Workflow
+
+Dependencies are managed with **uv**; the `cpu` and `cuda` extras are mutually
+exclusive (pick one):
+
+```sh
+uv sync --extra cpu        # or: uv sync --extra cuda (GPU host)
+```
+
+Lint, format and type checks are centralized in `prek.toml` and run with
+**prek** (a faster pre-commit). CI runs the exact same config, so local == CI:
+
+```sh
+uvx prek install           # install the git pre-commit hook (once)
+uvx prek run --all-files   # ruff-format, ruff, pyrefly + hygiene hooks
+uv run pytest              # tests (not part of prek)
+```
+
+## Releasing
+
+Versioning is **tag-driven** via hatch-vcs — never edit a version string by
+hand. To cut a release:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+CI then builds the wheel (version derived from the tag), creates a GitHub
+Release, publishes to PyPI as `coro-asr` (import stays `coro`), and pushes
+`:0.2.0-cpu` / `:0.2.0-gpu` images to GHCR.

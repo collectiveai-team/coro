@@ -13,3 +13,11 @@ benchmark-results/
 
 .worktrees/
 .axon
+
+# hatch-vcs generated version file
+coro/_version.py
+
+# build artifacts
+/dist/
+/build/
+*.egg-info/

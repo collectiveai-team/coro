@@ -1,0 +1,78 @@
+# MARK: uv-lock
+[[repos]]
+repo = "https://github.com/astral-sh/uv-pre-commit"
+rev = "0.10.7"
+hooks = [{ id = "uv-lock", priority = 0 }]
+
+# MARK: pre-commit-hooks
+[[repos]]
+repo = "https://github.com/pre-commit/pre-commit-hooks"
+rev = "v6.0.0"
+
+# MARK: check-merge-conflict
+[[repos.hooks]]
+id = "check-merge-conflict"
+priority = 0
+
+# MARK: check-added-large-files
+[[repos.hooks]]
+id = "check-added-large-files"
+args = ["--maxkb=750"]
+exclude = "^uv\\.lock$"
+priority = 0
+
+# MARK: check-toml
+[[repos.hooks]]
+id = "check-toml"
+priority = 0
+
+# MARK: check-yaml
+[[repos.hooks]]
+id = "check-yaml"
+args = ["--unsafe"]
+priority = 0
+
+# MARK: end-of-file-fixer
+[[repos.hooks]]
+id = "end-of-file-fixer"
+priority = 0
+
+# MARK: validate-pyproject
+[[repos]]
+repo = "https://github.com/abravalheri/validate-pyproject"
+rev = "v0.25"
+hooks = [
+    { id = "validate-pyproject", files = "^pyproject\\.toml$", priority = 0 },
+]
+
+# MARK: ruff-format
+[[repos]]
+repo = "https://github.com/astral-sh/ruff-pre-commit"
+rev = "v0.15.4"
+
+[[repos.hooks]]
+id = "ruff-format"
+priority = 0
+
+# MARK: ruff-check
+[[repos.hooks]]
+id = "ruff"
+args = ["--fix", "--exit-non-zero-on-fix"]
+types_or = ["python", "pyi"]
+require_serial = true
+priority = 1
+
+# MARK: pyrefly
+# Run via `uv run` so the version pinned in the dev dependency-group (uv.lock)
+# is used, and the root pyproject [tool.pyrefly] config is auto-detected.
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "pyrefly"
+name = "pyrefly"
+entry = "uv run pyrefly check"
+language = "system"
+types = ["python"]
+pass_filenames = false
+priority = 2
