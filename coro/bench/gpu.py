@@ -23,25 +23,44 @@ absence of GPU data uniformly.
 from __future__ import annotations
 
 from collections.abc import Collection
-from typing import Any
+from dataclasses import dataclass, field
 
 _MIB = 1024**2
 
-_EMPTY: dict[str, Any] = {
-    "server_vram_mib": "",
-    "total_gpu_mem_mib": "",
-    "total_gpu_used_mib": "",
-    "gpu_util_pct": "",
-}
+
+@dataclass
+class GpuSample:
+    """Process-attributed GPU columns.
+
+    Fields hold ``""`` (empty string) when NVML is unavailable so callers can
+    treat the absence of GPU data uniformly, mirroring the CSV output.
+    """
+
+    server_vram_mib: float | str = ""
+    total_gpu_mem_mib: float | str = ""
+    total_gpu_used_mib: float | str = ""
+    gpu_util_pct: float | str = ""
 
 
-def _read_devices() -> list[dict[str, Any]] | None:
+@dataclass
+class GpuDevice:
+    """Raw per-device NVML sample.
+
+    ``mem_total``/``mem_used`` are bytes, ``util`` is percent, and ``procs`` is
+    a list of ``(pid, used_bytes_or_None)`` for compute and graphics processes.
+    """
+
+    mem_total: int
+    mem_used: int
+    util: float
+    procs: list[tuple[int, int | None]] = field(default_factory=list)
+
+
+def _read_devices() -> list[GpuDevice] | None:
     """Read raw per-device memory, utilisation, and per-process VRAM from NVML.
 
     Returns ``None`` when NVML is unavailable (no driver, no GPU, import error)
-    so callers can emit empty GPU columns. Each device dict has ``mem_total``
-    and ``mem_used`` (bytes), ``util`` (percent), and ``procs`` — a list of
-    ``(pid, used_bytes_or_None)`` for compute and graphics processes.
+    so callers can emit empty GPU columns.
     """
     try:
         import pynvml
@@ -54,7 +73,7 @@ def _read_devices() -> list[dict[str, Any]] | None:
         return None
 
     try:
-        devices: list[dict[str, Any]] = []
+        devices: list[GpuDevice] = []
         for i in range(pynvml.nvmlDeviceGetCount()):
             handle = pynvml.nvmlDeviceGetHandleByIndex(i)
             mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
@@ -76,12 +95,12 @@ def _read_devices() -> list[dict[str, Any]] | None:
                     continue
 
             devices.append(
-                {
-                    "mem_total": int(mem.total),
-                    "mem_used": int(mem.used),
-                    "util": util,
-                    "procs": procs,
-                }
+                GpuDevice(
+                    mem_total=int(mem.total),
+                    mem_used=int(mem.used),
+                    util=util,
+                    procs=procs,
+                )
             )
         return devices
     except Exception:
@@ -93,7 +112,7 @@ def _read_devices() -> list[dict[str, Any]] | None:
             pass
 
 
-def _aggregate(devices: list[dict[str, Any]], pids: Collection[int] | None) -> dict[str, Any]:
+def _aggregate(devices: list[GpuDevice], pids: Collection[int] | None) -> GpuSample:
     """Aggregate raw device samples into the GPU columns.
 
     When ``pids`` is given, ``server_vram_mib`` sums only the VRAM used by
@@ -101,27 +120,27 @@ def _aggregate(devices: list[dict[str, Any]], pids: Collection[int] | None) -> d
     server PID on the GPU) reports 0.0. When ``pids`` is ``None`` it falls back
     to whole-device used VRAM for baseline/legacy callers.
     """
-    total_mem = sum(d["mem_total"] for d in devices)
-    total_used = sum(d["mem_used"] for d in devices)
-    util = sum(d["util"] for d in devices) / len(devices)
+    total_mem = sum(d.mem_total for d in devices)
+    total_used = sum(d.mem_used for d in devices)
+    util = sum(d.util for d in devices) / len(devices)
 
     if pids is None:
         server_vram_bytes = total_used
     else:
         pidset = set(pids)
         server_vram_bytes = sum(
-            used for d in devices for pid, used in d["procs"] if used is not None and pid in pidset
+            used for d in devices for pid, used in d.procs if used is not None and pid in pidset
         )
 
-    return {
-        "server_vram_mib": round(server_vram_bytes / _MIB, 1),
-        "total_gpu_mem_mib": round(total_mem / _MIB, 1),
-        "total_gpu_used_mib": round(total_used / _MIB, 1),
-        "gpu_util_pct": round(util, 1),
-    }
+    return GpuSample(
+        server_vram_mib=round(server_vram_bytes / _MIB, 1),
+        total_gpu_mem_mib=round(total_mem / _MIB, 1),
+        total_gpu_used_mib=round(total_used / _MIB, 1),
+        gpu_util_pct=round(util, 1),
+    )
 
 
-def sample_gpu(pids: Collection[int] | None = None) -> dict[str, Any]:
+def sample_gpu(pids: Collection[int] | None = None) -> GpuSample:
     """Sample GPU memory and utilisation, attributing VRAM to ``pids``.
 
     ``pids`` is the Server Process Tree PID set. Pass it so the reported
@@ -130,5 +149,5 @@ def sample_gpu(pids: Collection[int] | None = None) -> dict[str, Any]:
     """
     devices = _read_devices()
     if not devices:
-        return dict(_EMPTY)
+        return GpuSample()
     return _aggregate(devices, pids)

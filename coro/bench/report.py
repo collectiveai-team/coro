@@ -299,11 +299,12 @@ def _compute_total_wall(
     return 0.0
 
 
-def _read_json(path: Path) -> dict:
+def _read_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text())
     except Exception:
-        return {}
+        empty: dict[str, Any] = {}
+        return empty
 
 
 def render_markdown(report: BenchReport) -> str:

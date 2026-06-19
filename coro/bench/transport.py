@@ -39,7 +39,7 @@ def transcribe_audio(
     audio_path: Path,
     *,
     timeout_seconds: float = 14400.0,
-) -> dict[str, Any]:
+) -> Any:
     import urllib.request
 
     url = f"{base_url.rstrip('/')}/v1/audio/transcriptions"
@@ -76,7 +76,7 @@ def transcribe_audio_sse(
     audio_path: Path,
     *,
     timeout_seconds: float = 14400.0,
-) -> tuple[dict[str, Any], float]:
+) -> tuple[Any, float]:
     """POST with stream=true, parse SSE events.
 
     Returns (diarized_json_from_done_event, time_to_first_delta_s).
@@ -106,7 +106,7 @@ def transcribe_audio_sse(
 
     start_time = time.monotonic()
     first_delta_time: float | None = None
-    done_payload: dict[str, Any] | None = None
+    done_payload: Any | None = None
     event_type: str = ""
 
     try:

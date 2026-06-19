@@ -7,15 +7,25 @@ import threading
 import time
 from pathlib import Path
 from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from coro.bench.gpu import sample_gpu
+from coro.bench.run import ProcessTreeSample
 from coro.bench.schema import RESOURCE_FIELDNAMES
 
-SampleFn = Callable[[int], dict[str, Any]]
+SampleFn = Callable[[int], ProcessTreeSample]
 
 
-def _default_sample_fn(root_pid: int) -> dict[str, Any]:
+@dataclass
+class ResourceBaseline:
+    """Post-warmup memory baseline used for prediction-memory deltas."""
+
+    baseline_pss_kb: int | str = ""
+    baseline_vram_mib: float | str = ""
+
+
+def _default_sample_fn(root_pid: int) -> ProcessTreeSample:
     from coro.bench.run import sample_process_tree
 
     return sample_process_tree(root_pid)
@@ -24,14 +34,14 @@ def _default_sample_fn(root_pid: int) -> dict[str, Any]:
 def sample_resource_baseline(
     pid: int,
     sample_fn: SampleFn | None = None,
-) -> dict[str, Any]:
+) -> ResourceBaseline:
     """Capture process/GPU memory after warmup for prediction-memory deltas."""
     raw = (sample_fn or _default_sample_fn)(pid)
-    gpu = sample_gpu(raw.get("pids"))
-    return {
-        "baseline_pss_kb": raw.get("pss_kb", ""),
-        "baseline_vram_mib": gpu.get("server_vram_mib", ""),
-    }
+    gpu = sample_gpu(raw.pids)
+    return ResourceBaseline(
+        baseline_pss_kb=raw.pss_kb,
+        baseline_vram_mib=gpu.server_vram_mib,
+    )
 
 
 class Sampler:
@@ -83,24 +93,24 @@ class Sampler:
             elapsed = time.monotonic() - self._start_time
             raw = self._sample_fn(self.pid)
 
-            new_pids = raw["pids"] - self._prev_pids
-            gone_pids = self._prev_pids - raw["pids"]
-            self._prev_pids.update(raw["pids"])
+            new_pids = raw.pids - self._prev_pids
+            gone_pids = self._prev_pids - raw.pids
+            self._prev_pids.update(raw.pids)
 
             cpu_pct = 0.0
             sample_dt = self.interval
             if self._prev_sample is not None:
                 dt = elapsed - float(self._prev_sample.get("elapsed_s", elapsed))
                 if dt > 0:
-                    du = raw["cpu_user_s"] - self._prev_sample.get("cpu_user_s", 0.0)
-                    ds = raw["cpu_system_s"] - self._prev_sample.get("cpu_system_s", 0.0)
+                    du = raw.cpu_user_s - self._prev_sample.get("cpu_user_s", 0.0)
+                    ds = raw.cpu_system_s - self._prev_sample.get("cpu_system_s", 0.0)
                     cpu_pct = 100.0 * (du + ds) / dt
                     sample_dt = dt
                     if dt > self.interval * 2:
                         self._sampling_warning = True
 
-            gpu = sample_gpu(raw["pids"])
-            server_vram = gpu.get("server_vram_mib")
+            gpu = sample_gpu(raw.pids)
+            server_vram = gpu.server_vram_mib
             profile = (
                 "cpu+gpu"
                 if server_vram not in ("", None) and float(server_vram) > 0
@@ -112,27 +122,27 @@ class Sampler:
                 "elapsed_s": round(elapsed, 3),
                 "sample_dt_s": round(sample_dt, 3),
                 "root_pid": self.pid,
-                "process_count": len(raw["pids"]),
+                "process_count": len(raw.pids),
                 "new_pids": len(new_pids),
                 "gone_pids": len(gone_pids),
-                "rss_kb": raw["rss_kb"],
-                "pss_kb": raw["pss_kb"],
-                "uss_kb": raw["uss_kb"],
-                "vsz_kb": raw["vsz_kb"],
-                "cpu_user_s": round(raw["cpu_user_s"], 3),
-                "cpu_system_s": round(raw["cpu_system_s"], 3),
-                "cpu_total_s": round(raw["cpu_user_s"] + raw["cpu_system_s"], 3),
+                "rss_kb": raw.rss_kb,
+                "pss_kb": raw.pss_kb,
+                "uss_kb": raw.uss_kb,
+                "vsz_kb": raw.vsz_kb,
+                "cpu_user_s": round(raw.cpu_user_s, 3),
+                "cpu_system_s": round(raw.cpu_system_s, 3),
+                "cpu_total_s": round(raw.cpu_user_s + raw.cpu_system_s, 3),
                 "cpu_pct": round(cpu_pct, 2),
-                "thread_count": raw["thread_count"],
-                "io_rchar_bytes": raw["rchar"],
-                "io_wchar_bytes": raw["wchar"],
-                "io_read_bytes": raw["read_bytes"],
-                "io_write_bytes": raw["write_bytes"],
+                "thread_count": raw.thread_count,
+                "io_rchar_bytes": raw.rchar,
+                "io_wchar_bytes": raw.wchar,
+                "io_read_bytes": raw.read_bytes,
+                "io_write_bytes": raw.write_bytes,
                 "io_rchar_bps": 0.0,
                 "io_wchar_bps": 0.0,
                 "io_read_bps": 0.0,
                 "io_write_bps": 0.0,
-                **gpu,
+                **asdict(gpu),
                 "baseline_pss_kb": "",
                 "peak_pss_delta_kb": "",
                 "baseline_vram_mib": "",
@@ -149,26 +159,26 @@ class Sampler:
                 dt = float(row["sample_dt_s"])
                 if dt > 0:
                     row["io_rchar_bps"] = round(
-                        (raw["rchar"] - self._prev_sample.get("io_rchar_bytes", 0)) / dt, 1
+                        (raw.rchar - self._prev_sample.get("io_rchar_bytes", 0)) / dt, 1
                     )
                     row["io_wchar_bps"] = round(
-                        (raw["wchar"] - self._prev_sample.get("io_wchar_bytes", 0)) / dt, 1
+                        (raw.wchar - self._prev_sample.get("io_wchar_bytes", 0)) / dt, 1
                     )
                     row["io_read_bps"] = round(
-                        (raw["read_bytes"] - self._prev_sample.get("io_read_bytes", 0)) / dt, 1
+                        (raw.read_bytes - self._prev_sample.get("io_read_bytes", 0)) / dt, 1
                     )
                     row["io_write_bps"] = round(
-                        (raw["write_bytes"] - self._prev_sample.get("io_write_bytes", 0)) / dt, 1
+                        (raw.write_bytes - self._prev_sample.get("io_write_bytes", 0)) / dt, 1
                     )
 
             self._prev_sample = {
                 "elapsed_s": elapsed,
-                "cpu_user_s": raw["cpu_user_s"],
-                "cpu_system_s": raw["cpu_system_s"],
-                "io_rchar_bytes": raw["rchar"],
-                "io_wchar_bytes": raw["wchar"],
-                "io_read_bytes": raw["read_bytes"],
-                "io_write_bytes": raw["write_bytes"],
+                "cpu_user_s": raw.cpu_user_s,
+                "cpu_system_s": raw.cpu_system_s,
+                "io_rchar_bytes": raw.rchar,
+                "io_wchar_bytes": raw.wchar,
+                "io_read_bytes": raw.read_bytes,
+                "io_write_bytes": raw.write_bytes,
             }
             self.samples.append(row)
             self._stop_event.wait(self.interval)

@@ -6,6 +6,7 @@ import logging
 import socket
 import subprocess
 import time
+from collections.abc import Mapping
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _get_health_json(base_url: str) -> dict[str, Any]:
+def _get_health_json(base_url: str) -> Any:
     import urllib.request
 
     url = f"{base_url}/health"
@@ -32,7 +33,7 @@ def poll_health(
     *,
     timeout: float = 300.0,
     interval: float = 1.0,
-) -> dict[str, Any]:
+) -> Any:
     deadline = time.monotonic() + timeout
     while True:
         try:
@@ -82,7 +83,7 @@ class BenchManagedServer:
         self.server_pid: int | None = None
         self._proc: subprocess.Popen | None = None
 
-    def _build_env(self) -> dict[str, str]:
+    def _build_env(self) -> Mapping[str, str]:
         import os
 
         env = dict(os.environ)

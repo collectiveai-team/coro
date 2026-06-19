@@ -16,6 +16,7 @@ from coro.core.types import SpeakerSegment
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass(frozen=True)
 class LatencyTierParams:
     """Immutable Sortformer streaming parameters for one latency tier."""
@@ -76,9 +77,7 @@ class StreamingDiarizerFactory:
         model.sortformer_modules.chunk_len = self._tier_params.chunk_len
         model.sortformer_modules.chunk_right_context = self._tier_params.chunk_right_context
         model.sortformer_modules.fifo_len = self._tier_params.fifo_len
-        model.sortformer_modules.spkcache_update_period = (
-            self._tier_params.spkcache_update_period
-        )
+        model.sortformer_modules.spkcache_update_period = self._tier_params.spkcache_update_period
         model.sortformer_modules.spkcache_len = self._tier_params.spkcache_len
         model.sortformer_modules._check_streaming_parameters()
         self._subsampling_factor = subsampling_factor

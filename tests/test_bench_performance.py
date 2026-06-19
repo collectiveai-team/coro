@@ -13,6 +13,9 @@ from unittest.mock import patch
 
 import pytest
 
+from coro.bench.gpu import GpuSample
+from coro.bench.performance import PerRepSummary
+from coro.bench.run import ProcessTreeSample
 from coro.bench.schema import RESOURCE_FIELDNAMES
 
 
@@ -74,21 +77,21 @@ def stub_server():
     thread.join()
 
 
-def _mock_sample_fn(pid: int) -> dict[str, Any]:
-    return {
-        "pids": {pid, pid + 1},
-        "pss_kb": 100000 + pid,
-        "uss_kb": 50000,
-        "rss_kb": 120000,
-        "vsz_kb": 200000,
-        "cpu_user_s": 1.5,
-        "cpu_system_s": 0.3,
-        "rchar": 1000000,
-        "wchar": 500000,
-        "read_bytes": 300000,
-        "write_bytes": 200000,
-        "thread_count": 8,
-    }
+def _mock_sample_fn(pid: int) -> ProcessTreeSample:
+    return ProcessTreeSample(
+        pids={pid, pid + 1},
+        pss_kb=100000 + pid,
+        uss_kb=50000,
+        rss_kb=120000,
+        vsz_kb=200000,
+        cpu_user_s=1.5,
+        cpu_system_s=0.3,
+        rchar=1000000,
+        wchar=500000,
+        read_bytes=300000,
+        write_bytes=200000,
+        thread_count=8,
+    )
 
 
 class TestSampler:
@@ -96,7 +99,7 @@ class TestSampler:
         from coro.bench.sampling import Sampler
 
         sampler = Sampler(pid=123, interval=0.05, sample_fn=_mock_sample_fn)
-        with patch("coro.bench.sampling.sample_gpu", return_value={}):
+        with patch("coro.bench.sampling.sample_gpu", return_value=GpuSample()):
             sampler.start()
             time.sleep(0.2)
             sampler.stop()
@@ -193,12 +196,12 @@ class TestComputePerRepSummary:
         _write_resource_csv(csv_path, rows)
 
         summary = compute_per_rep_summary(csv_path)
-        assert summary["peak_pss_kb"] == 150000.0
-        assert summary["peak_cpu_pct"] == 75.5
-        assert summary["wall_seconds"] == 2.0
-        assert summary["transcription_throughput"] == 5.0
-        assert summary["observed_hardware_profile"] == "cpu-only"
-        assert summary["audio_seconds"] == 10.0
+        assert summary.peak_pss_kb == 150000.0
+        assert summary.peak_cpu_pct == 75.5
+        assert summary.wall_seconds == 2.0
+        assert summary.transcription_throughput == 5.0
+        assert summary.observed_hardware_profile == "cpu-only"
+        assert summary.audio_seconds == 10.0
 
     def test_handles_multiple_rows_with_varying_peaks(self, tmp_path: Path):
         from coro.bench.performance import compute_per_rep_summary
@@ -211,8 +214,8 @@ class TestComputePerRepSummary:
         _write_resource_csv(csv_path, all_rows)
 
         summary = compute_per_rep_summary(csv_path)
-        assert summary["peak_pss_kb"] == 200000.0
-        assert summary["peak_cpu_pct"] == 80.0
+        assert summary.peak_pss_kb == 200000.0
+        assert summary.peak_cpu_pct == 80.0
 
     def test_extracts_gpu_and_baseline_adjusted_memory(self, tmp_path: Path):
         from coro.bench.performance import compute_per_rep_summary
@@ -228,13 +231,13 @@ class TestComputePerRepSummary:
         _write_resource_csv(csv_path, rows)
 
         summary = compute_per_rep_summary(csv_path)
-        assert summary["peak_pss_kb"] == 180000.0
-        assert summary["baseline_pss_kb"] == 100000.0
-        assert summary["peak_pss_delta_kb"] == 80000.0
-        assert summary["peak_vram_mib"] == 2048.0
-        assert summary["baseline_vram_mib"] == 1536.0
-        assert summary["peak_vram_delta_mib"] == 512.0
-        assert summary["peak_gpu_util_pct"] == 91.0
+        assert summary.peak_pss_kb == 180000.0
+        assert summary.baseline_pss_kb == 100000.0
+        assert summary.peak_pss_delta_kb == 80000.0
+        assert summary.peak_vram_mib == 2048.0
+        assert summary.baseline_vram_mib == 1536.0
+        assert summary.peak_vram_delta_mib == 512.0
+        assert summary.peak_gpu_util_pct == 91.0
 
 
 class TestAggregateAcrossReps:
@@ -242,28 +245,32 @@ class TestAggregateAcrossReps:
         from coro.bench.performance import aggregate_across_reps
 
         summaries = [
-            {"peak_pss_kb": 100, "peak_cpu_pct": 30, "transcription_throughput": 5.0},
-            {"peak_pss_kb": 200, "peak_cpu_pct": 60, "transcription_throughput": 10.0},
-            {"peak_pss_kb": 300, "peak_cpu_pct": 90, "transcription_throughput": 15.0},
+            PerRepSummary(peak_pss_kb=100, peak_cpu_pct=30, transcription_throughput=5.0),
+            PerRepSummary(peak_pss_kb=200, peak_cpu_pct=60, transcription_throughput=10.0),
+            PerRepSummary(peak_pss_kb=300, peak_cpu_pct=90, transcription_throughput=15.0),
         ]
         agg = aggregate_across_reps(summaries)
-        assert agg["peak_pss_kb"]["median"] == 200
-        assert agg["peak_pss_kb"]["min"] == 100
-        assert agg["peak_pss_kb"]["max"] == 300
-        assert agg["peak_pss_kb"]["mean"] == 200
-        assert agg["peak_pss_kb"]["stddev"] > 0
-        assert agg["peak_cpu_pct"]["median"] == 60
-        assert agg["transcription_throughput"]["median"] == 10.0
+        assert agg.peak_pss_kb is not None
+        assert agg.peak_pss_kb.median == 200
+        assert agg.peak_pss_kb.min == 100
+        assert agg.peak_pss_kb.max == 300
+        assert agg.peak_pss_kb.mean == 200
+        assert agg.peak_pss_kb.stddev > 0
+        assert agg.peak_cpu_pct is not None and agg.peak_cpu_pct.median == 60
+        assert (
+            agg.transcription_throughput is not None and agg.transcription_throughput.median == 10.0
+        )
 
     def test_single_rep(self):
         from coro.bench.performance import aggregate_across_reps
 
         summaries = [
-            {"peak_pss_kb": 100, "peak_cpu_pct": 30, "transcription_throughput": 5.0},
+            PerRepSummary(peak_pss_kb=100, peak_cpu_pct=30, transcription_throughput=5.0),
         ]
         agg = aggregate_across_reps(summaries)
-        assert agg["peak_pss_kb"]["median"] == 100
-        assert agg["peak_pss_kb"]["stddev"] == 0
+        assert agg.peak_pss_kb is not None
+        assert agg.peak_pss_kb.median == 100
+        assert agg.peak_pss_kb.stddev == 0
 
 
 class TestFullPerformanceRun:
@@ -593,7 +600,7 @@ class TestStreamingPerformanceRun:
 
         summary = json.loads((out_dir / "performance" / "summary.json").read_text())
         m1_agg = summary["per_item_aggregation"]["meeting1"]
-        assert "time_to_first_delta_s" not in m1_agg
+        assert m1_agg["time_to_first_delta_s"] is None
 
     def test_manifest_records_stream_true(self, sse_stub_server, tmp_path: Path):
         from coro.bench.orchestrate import run_performance_workload

@@ -248,12 +248,13 @@ class TestPollHealth:
 
         call_count = 0
 
+        not_ready = {"ready": False, "warmup_ready": False}
+        ready = {"ready": True, "warmup_ready": True}
+
         def fake_get_json(url):
             nonlocal call_count
             call_count += 1
-            if call_count < 3:
-                return {"ready": False, "warmup_ready": False}
-            return {"ready": True, "warmup_ready": True}
+            return not_ready if call_count < 3 else ready
 
         getter = "coro.bench.server_lifecycle._get_health_json"
         with patch(getter, side_effect=fake_get_json):
@@ -263,8 +264,10 @@ class TestPollHealth:
     def test_raises_on_timeout(self):
         from coro.bench.server_lifecycle import poll_health
 
+        not_ready = {"ready": False, "warmup_ready": False}
+
         def fake_get_json(url):
-            return {"ready": False, "warmup_ready": False}
+            return not_ready
 
         getter = "coro.bench.server_lifecycle._get_health_json"
         with patch(getter, side_effect=fake_get_json), pytest.raises(TimeoutError, match="warmup"):

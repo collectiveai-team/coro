@@ -5,22 +5,50 @@ from __future__ import annotations
 import json
 import platform
 import shutil
+from collections.abc import Mapping
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from coro.bench.errors import ServerUnreachableError
 from coro.bench.performance import (
+    PerRepSummary,
     compute_per_rep_summary,
     write_performance_summary,
 )
-from coro.bench.sampling import Sampler, sample_resource_baseline
+from coro.bench.sampling import ResourceBaseline, Sampler, sample_resource_baseline
 from coro.bench.stm import hyp_segments_to_stm
 from coro.bench.transport import (
     _is_connection_refused,
     transcribe_audio,
     transcribe_audio_sse,
 )
+
+
+def _finalize_rep_summary(
+    rep_summary: PerRepSummary,
+    *,
+    wall_seconds: float,
+    audio_seconds: float,
+    throughput: float | None,
+    hw_profile: str,
+    memory_baseline: ResourceBaseline,
+    ttft: float | None,
+) -> None:
+    """Fill in run-scalar fields the CSV-derived summary did not already set."""
+    if rep_summary.wall_seconds is None:
+        rep_summary.wall_seconds = round(wall_seconds, 3)
+    if rep_summary.audio_seconds is None:
+        rep_summary.audio_seconds = round(audio_seconds, 3)
+    if rep_summary.transcription_throughput is None:
+        rep_summary.transcription_throughput = round(throughput, 6) if throughput else 0.0
+    if rep_summary.baseline_pss_kb is None:
+        rep_summary.baseline_pss_kb = memory_baseline.baseline_pss_kb
+    if rep_summary.baseline_vram_mib is None:
+        rep_summary.baseline_vram_mib = memory_baseline.baseline_vram_mib
+    if ttft is not None:
+        rep_summary.time_to_first_delta_s = round(ttft, 6)
 
 
 def run_workload(
@@ -109,7 +137,7 @@ def run_all_workload(
         transcribe_audio(base_url, warmup_audio)
     memory_baseline = sample_resource_baseline(server_pid, sample_fn=sample_fn)
 
-    per_item_reps: dict[str, list[dict[str, Any]]] = {}
+    per_item_reps: dict[str, list[PerRepSummary]] = {}
 
     for item in items:
         item_id = item["item_id"]
@@ -117,7 +145,7 @@ def run_all_workload(
         ref_stm_path = item.get("ref_stm_path")
         audio_seconds = _audio_duration(audio_path)
         item["audio_seconds"] = round(audio_seconds, 3)
-        rep_summaries: list[dict[str, Any]] = []
+        rep_summaries: list[PerRepSummary] = []
 
         for rep in range(1, reps + 1):
             sampler = Sampler(
@@ -148,7 +176,7 @@ def run_all_workload(
                 transcription_throughput=round(throughput, 6) if throughput else "",
                 time_to_first_delta_s=round(ttft, 6) if ttft is not None else "",
                 observed_hardware_profile=hw_profile,
-                **memory_baseline,
+                **asdict(memory_baseline),
             )
 
             csv_path = perf_dir / f"resource_{item_id}_rep{rep}.csv"
@@ -162,19 +190,15 @@ def run_all_workload(
                 _write_ref(ref_dir, item_id, ref_stm_path)
 
             rep_summary = compute_per_rep_summary(csv_path)
-            rep_summary.setdefault("wall_seconds", round(wall_seconds, 3))
-            rep_summary.setdefault("audio_seconds", round(audio_seconds, 3))
-            rep_summary.setdefault(
-                "transcription_throughput",
-                round(throughput, 6) if throughput else 0.0,
+            _finalize_rep_summary(
+                rep_summary,
+                wall_seconds=wall_seconds,
+                audio_seconds=audio_seconds,
+                throughput=throughput,
+                hw_profile=hw_profile,
+                memory_baseline=memory_baseline,
+                ttft=ttft,
             )
-            rep_summary.setdefault("observed_hardware_profile", hw_profile)
-            rep_summary.setdefault("baseline_pss_kb", memory_baseline.get("baseline_pss_kb", ""))
-            rep_summary.setdefault(
-                "baseline_vram_mib", memory_baseline.get("baseline_vram_mib", "")
-            )
-            if ttft is not None:
-                rep_summary["time_to_first_delta_s"] = round(ttft, 6)
             rep_summaries.append(rep_summary)
 
         per_item_reps[item_id] = rep_summaries
@@ -207,7 +231,7 @@ def _run_quality_scoring_with_skip(
     der_collar: float,
     der_regions: str,
 ) -> None:
-    from coro.bench.quality import combine_items, score_item
+    from coro.bench.quality import QualitySummary, ScoreResult, combine_items, score_item
 
     quality_dir = out_dir / "quality"
     quality_dir.mkdir(parents=True, exist_ok=True)
@@ -215,7 +239,7 @@ def _run_quality_scoring_with_skip(
     hyp_dir = out_dir / "hyp"
     ref_dir = out_dir / "ref"
 
-    item_results: list[dict[str, Any]] = []
+    item_results: list[ScoreResult] = []
     n_skipped = 0
 
     for item in items:
@@ -236,39 +260,26 @@ def _run_quality_scoring_with_skip(
             der_regions=der_regions,
         )
 
-        scored["session_id"] = item_id
-        scored["audio_seconds"] = item.get("audio_seconds", 0.0)
-
-        raw = scored.pop("_raw", None)
+        scored.session_id = item_id
+        scored.audio_seconds = item.get("audio_seconds", 0.0)
 
         artifact: dict[str, Any] = {
             "session_id": item_id,
             "audio_seconds": item.get("audio_seconds", 0.0),
-            "metrics": scored["metrics"],
+            "metrics": asdict(scored.metrics) if scored.metrics is not None else None,
         }
-        if scored.get("diarization") is not None:
-            artifact["diarization"] = scored["diarization"]
-        if scored.get("error"):
-            artifact["error"] = scored["error"]
+        if scored.diarization is not None:
+            artifact["diarization"] = asdict(scored.diarization)
+        if scored.error is not None:
+            artifact["error"] = asdict(scored.error)
 
         (quality_dir / f"{item_id}.json").write_text(json.dumps(artifact, indent=2))
 
-        scored["_raw"] = raw
         item_results.append(scored)
 
-    if item_results:
-        summary = combine_items(item_results)
-    else:
-        summary = {
-            "workload_set": [],
-            "n_succeeded": 0,
-            "n_failed": 0,
-            "n_degenerate_diarization": 0,
-            "combined": {},
-            "per_item": [],
-        }
-    summary["n_skipped"] = n_skipped
-    (quality_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    summary = combine_items(item_results) if item_results else QualitySummary()
+    summary.n_skipped = n_skipped
+    (quality_dir / "summary.json").write_text(json.dumps(asdict(summary), indent=2))
 
 
 def _run_quality_scoring(
@@ -278,7 +289,7 @@ def _run_quality_scoring(
     der_collar: float,
     der_regions: str,
 ) -> None:
-    from coro.bench.quality import combine_items, score_item
+    from coro.bench.quality import ScoreResult, combine_items, score_item
 
     quality_dir = out_dir / "quality"
     quality_dir.mkdir(parents=True, exist_ok=True)
@@ -286,7 +297,7 @@ def _run_quality_scoring(
     hyp_dir = out_dir / "hyp"
     ref_dir = out_dir / "ref"
 
-    item_results: list[dict[str, Any]] = []
+    item_results: list[ScoreResult] = []
 
     for item in items:
         item_id = item["item_id"]
@@ -300,37 +311,35 @@ def _run_quality_scoring(
             der_regions=der_regions,
         )
 
-        scored["session_id"] = item_id
-        scored["audio_seconds"] = item.get("audio_seconds", 0.0)
-
-        raw = scored.pop("_raw", None)
+        scored.session_id = item_id
+        scored.audio_seconds = item.get("audio_seconds", 0.0)
 
         artifact: dict[str, Any] = {
             "session_id": item_id,
             "audio_seconds": item.get("audio_seconds", 0.0),
-            "metrics": scored["metrics"],
+            "metrics": asdict(scored.metrics) if scored.metrics is not None else None,
         }
-        if scored.get("error"):
-            artifact["error"] = scored["error"]
+        if scored.error is not None:
+            artifact["error"] = asdict(scored.error)
 
         (quality_dir / f"{item_id}.json").write_text(json.dumps(artifact, indent=2))
 
-        scored["_raw"] = raw
         item_results.append(scored)
 
     summary = combine_items(item_results)
-    (quality_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    (quality_dir / "summary.json").write_text(json.dumps(asdict(summary), indent=2))
 
 
-def _fetch_health(base_url: str) -> dict[str, Any]:
-    """Fetch /health from the server.
+def _fetch_health(base_url: str) -> Any:
+    """Fetch and parse /health JSON from the server.
 
     Raises ServerUnreachableError if the TCP connection is refused, so the
     bench fails fast with a clear actionable message instead of crashing
     later inside transcribe_audio with a raw urllib stack trace.
 
-    Other failures (e.g. 404, JSON parse errors) are swallowed and return
-    {} to preserve the previous behavior of treating /health as optional.
+    Other failures (e.g. 404, JSON parse errors) are swallowed and return an
+    empty mapping to preserve the previous behavior of treating /health as
+    optional.
     """
     import urllib.request
 
@@ -340,7 +349,8 @@ def _fetch_health(base_url: str) -> dict[str, Any]:
     except Exception as exc:
         if _is_connection_refused(exc):
             raise ServerUnreachableError(base_url, cause=exc) from exc
-        return {}
+        empty: dict[str, Any] = {}
+        return empty
 
 
 def _write_hyp(hyp_dir: Path, item_id: str, result: dict[str, Any]) -> None:
@@ -406,7 +416,7 @@ def _git_sha() -> str:
         return "unknown"
 
 
-def _collect_versions() -> dict[str, str]:
+def _collect_versions() -> Mapping[str, str]:
     import importlib.metadata
     import subprocess
 
@@ -456,13 +466,13 @@ def run_performance_workload(
     if warmup_audio is not None:
         transcribe_audio(base_url, warmup_audio)
     memory_baseline = sample_resource_baseline(server_pid, sample_fn=sample_fn)
-    per_item_reps: dict[str, list[dict[str, Any]]] = {}
+    per_item_reps: dict[str, list[PerRepSummary]] = {}
 
     for item in items:
         item_id = item["item_id"]
         audio_path = item["audio_path"]
         audio_seconds = _audio_duration(audio_path)
-        rep_summaries: list[dict[str, Any]] = []
+        rep_summaries: list[PerRepSummary] = []
 
         for rep in range(1, reps + 1):
             sampler = Sampler(
@@ -493,7 +503,7 @@ def run_performance_workload(
                 transcription_throughput=round(throughput, 6) if throughput else "",
                 time_to_first_delta_s=round(ttft, 6) if ttft is not None else "",
                 observed_hardware_profile=hw_profile,
-                **memory_baseline,
+                **asdict(memory_baseline),
             )
 
             csv_path = perf_dir / f"resource_{item_id}_rep{rep}.csv"
@@ -503,19 +513,15 @@ def run_performance_workload(
             resp_path.write_text(json.dumps(result, indent=2))
 
             rep_summary = compute_per_rep_summary(csv_path)
-            rep_summary.setdefault("wall_seconds", round(wall_seconds, 3))
-            rep_summary.setdefault("audio_seconds", round(audio_seconds, 3))
-            rep_summary.setdefault(
-                "transcription_throughput",
-                round(throughput, 6) if throughput else 0.0,
+            _finalize_rep_summary(
+                rep_summary,
+                wall_seconds=wall_seconds,
+                audio_seconds=audio_seconds,
+                throughput=throughput,
+                hw_profile=hw_profile,
+                memory_baseline=memory_baseline,
+                ttft=ttft,
             )
-            rep_summary.setdefault("observed_hardware_profile", hw_profile)
-            rep_summary.setdefault("baseline_pss_kb", memory_baseline.get("baseline_pss_kb", ""))
-            rep_summary.setdefault(
-                "baseline_vram_mib", memory_baseline.get("baseline_vram_mib", "")
-            )
-            if ttft is not None:
-                rep_summary["time_to_first_delta_s"] = round(ttft, 6)
             rep_summaries.append(rep_summary)
 
         per_item_reps[item_id] = rep_summaries

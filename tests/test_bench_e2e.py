@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from coro.bench.quality import QualitySummary, ScoreMetrics, ScoreResult
+
 CANNED_DIARIZED_JSON = {
     "task": "transcribe",
     "duration": 3.5,
@@ -319,22 +321,13 @@ class TestE2EAllSubcommand:
             }
         ]
 
-        mock_score = {
-            "metrics": {"siwer": {"wer": 0.1}},
-            "_raw": object(),
-        }
+        mock_score = ScoreResult(metrics=ScoreMetrics(), raw={})
 
         with (
             patch("coro.bench.quality.score_item", return_value=mock_score),
             patch(
                 "coro.bench.quality.combine_items",
-                return_value={
-                    "workload_set": ["meeting1"],
-                    "n_succeeded": 1,
-                    "n_failed": 0,
-                    "combined": {},
-                    "per_item": [],
-                },
+                return_value=QualitySummary(workload_set=["meeting1"], n_succeeded=1, n_failed=0),
             ),
         ):
             run_all_workload(
@@ -424,22 +417,13 @@ class TestE2EAllSubcommand:
             }
         ]
 
-        mock_score = {
-            "metrics": {"siwer": {"wer": 0.1}},
-            "_raw": object(),
-        }
+        mock_score = ScoreResult(metrics=ScoreMetrics(), raw={})
 
         with (
             patch("coro.bench.quality.score_item", return_value=mock_score),
             patch(
                 "coro.bench.quality.combine_items",
-                return_value={
-                    "workload_set": ["meeting1"],
-                    "n_succeeded": 1,
-                    "n_failed": 0,
-                    "combined": {},
-                    "per_item": [],
-                },
+                return_value=QualitySummary(workload_set=["meeting1"], n_succeeded=1, n_failed=0),
             ),
         ):
             run_all_workload(
@@ -521,22 +505,15 @@ class TestE2EAllSubcommand:
             {"item_id": "adhoc", "audio_path": audio3, "ref_stm_path": None},
         ]
 
-        mock_score = {
-            "metrics": {"siwer": {"wer": 0.1}},
-            "_raw": object(),
-        }
+        mock_score = ScoreResult(metrics=ScoreMetrics(), raw={})
 
         with (
             patch("coro.bench.quality.score_item", return_value=mock_score),
             patch(
                 "coro.bench.quality.combine_items",
-                return_value={
-                    "workload_set": ["IB4001", "IN1001"],
-                    "n_succeeded": 2,
-                    "n_failed": 0,
-                    "combined": {},
-                    "per_item": [],
-                },
+                return_value=QualitySummary(
+                    workload_set=["IB4001", "IN1001"], n_succeeded=2, n_failed=0
+                ),
             ),
         ):
             run_all_workload(

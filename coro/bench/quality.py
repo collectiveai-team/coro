@@ -5,10 +5,127 @@ from __future__ import annotations
 import sys
 import tempfile
 import traceback
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
 import string
 from typing import Any
+
+
+@dataclass
+class WerStats:
+    """Word-error-rate breakdown for one metric."""
+
+    wer: float
+    errors: int
+    length: int
+    insertions: int
+    deletions: int
+    substitutions: int
+
+
+@dataclass
+class DerStats:
+    """Diarization-error-rate breakdown."""
+
+    der: float
+    false_alarm: float
+    missed_detection: float
+    speaker_error: float
+    total_speech: float
+
+
+@dataclass
+class DiarizationSanity:
+    """Degenerate-diarization check for one item."""
+
+    ref_speakers: int
+    hyp_speakers: int
+    degenerate: bool
+
+
+@dataclass
+class NormalizedMetrics:
+    """WER metrics after punctuation/whitespace normalization."""
+
+    cpwer: WerStats | None = None
+    orcwer: WerStats | None = None
+    dicpwer: WerStats | None = None
+
+
+@dataclass
+class ScoreMetrics:
+    """Per-item metric block produced by :func:`score_item`."""
+
+    cpwer: WerStats | None = None
+    orcwer: WerStats | None = None
+    dicpwer: WerStats | None = None
+    normalized: NormalizedMetrics | None = None
+    der: DerStats | None = None
+
+
+@dataclass
+class ScoreError:
+    """Captured exception info when scoring an item fails."""
+
+    type: str
+    message: str
+
+
+@dataclass
+class ScoreResult:
+    """Result of scoring one hypothesis against its reference."""
+
+    session_id: str = ""
+    audio_seconds: float = 0.0
+    metrics: ScoreMetrics | None = None
+    diarization_only: bool = False
+    diarization: DiarizationSanity | None = None
+    error: ScoreError | None = None
+    # Raw meeteval result objects, keyed by metric, retained for cross-item
+    # combination. Not JSON-serialisable and never written to artifacts.
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass
+class CombinedMetrics:
+    """Workload-level combined metrics across all succeeded items."""
+
+    cpwer: WerStats | None = None
+    orcwer: WerStats | None = None
+    dicpwer: WerStats | None = None
+    normalized: NormalizedMetrics | None = None
+    der: DerStats | None = None
+
+
+@dataclass
+class PerItemEntry:
+    """Flattened per-item summary row (WER values, not full breakdowns)."""
+
+    session_id: str = ""
+    audio_seconds: float | None = None
+    diarization_only: bool | None = None
+    diarization: DiarizationSanity | None = None
+    cpwer: float | None = None
+    orcwer: float | None = None
+    dicpwer: float | None = None
+    der: float | None = None
+    normalized_cpwer: float | None = None
+    normalized_orcwer: float | None = None
+    normalized_dicpwer: float | None = None
+
+
+@dataclass
+class QualitySummary:
+    """Workload-level quality summary written to ``quality/summary.json``."""
+
+    workload_set: list[str] = field(default_factory=list)
+    n_succeeded: int = 0
+    n_failed: int = 0
+    n_degenerate_diarization: int = 0
+    combined: CombinedMetrics | None = None
+    per_item: list[PerItemEntry] = field(default_factory=list)
+    n_skipped: int = 0
 
 
 def _require_meeteval():
@@ -25,34 +142,34 @@ def _require_meeteval():
         sys.exit(1)
 
 
-def _wer_to_dict(result) -> dict[str, Any]:
-    """Convert a meeteval WER result object to a plain dict.
+def _wer_to_dict(result) -> WerStats:
+    """Convert a meeteval WER result object to :class:`WerStats`.
 
     meeteval 0.4.x uses `error_rate` instead of `wer` as the attribute name.
     """
-    return {
-        "wer": result.error_rate,
-        "errors": result.errors,
-        "length": result.length,
-        "insertions": result.insertions,
-        "deletions": result.deletions,
-        "substitutions": result.substitutions,
-    }
+    return WerStats(
+        wer=result.error_rate,
+        errors=result.errors,
+        length=result.length,
+        insertions=result.insertions,
+        deletions=result.deletions,
+        substitutions=result.substitutions,
+    )
 
 
-def _der_to_dict(result) -> dict[str, Any]:
-    """Convert a meeteval DER result object to a plain dict.
+def _der_to_dict(result) -> DerStats:
+    """Convert a meeteval DER result object to :class:`DerStats`.
 
     meeteval 0.4.x DiaErrorRate uses `*_speaker_time` field names and
     returns Decimal values; cast to float for JSON serialisability.
     """
-    return {
-        "der": float(result.error_rate),
-        "false_alarm": float(result.falarm_speaker_time),
-        "missed_detection": float(result.missed_speaker_time),
-        "speaker_error": float(result.speaker_error_time),
-        "total_speech": float(result.scored_speaker_time),
-    }
+    return DerStats(
+        der=float(result.error_rate),
+        false_alarm=float(result.falarm_speaker_time),
+        missed_detection=float(result.missed_speaker_time),
+        speaker_error=float(result.speaker_error_time),
+        total_speech=float(result.scored_speaker_time),
+    )
 
 
 def _combine_multifile(meeteval, results: dict) -> Any:
@@ -98,7 +215,7 @@ def _count_stm_speakers(path: Path) -> int:
     return len(speakers)
 
 
-def diarization_sanity(ref_stm_path: Path, hyp_stm_path: Path) -> dict[str, Any]:
+def diarization_sanity(ref_stm_path: Path, hyp_stm_path: Path) -> DiarizationSanity:
     """Flag degenerate diarization: a single hyp speaker against multi-speaker ref.
 
     A diarization-invariant metric like ORC-WER stays low even when every word
@@ -108,11 +225,11 @@ def diarization_sanity(ref_stm_path: Path, hyp_stm_path: Path) -> dict[str, Any]
     ref_speakers = _count_stm_speakers(ref_stm_path)
     hyp_speakers = _count_stm_speakers(hyp_stm_path)
     degenerate = hyp_speakers <= 1 and ref_speakers > 1
-    return {
-        "ref_speakers": ref_speakers,
-        "hyp_speakers": hyp_speakers,
-        "degenerate": degenerate,
-    }
+    return DiarizationSanity(
+        ref_speakers=ref_speakers,
+        hyp_speakers=hyp_speakers,
+        degenerate=degenerate,
+    )
 
 
 def _write_normalized_stm(src: Path, dst: Path) -> None:
@@ -135,7 +252,7 @@ def score_item(
     *,
     der_collar: float = 0.0,
     der_regions: str = "all",
-) -> dict[str, Any]:
+) -> ScoreResult:
     """Score one hypothesis STM against the reference STM.
 
     Passes file paths directly to meeteval so it handles STM parsing
@@ -150,7 +267,7 @@ def score_item(
 
     try:
         raw: dict[str, Any] = {}
-        metrics: dict[str, Any] = {}
+        metrics = ScoreMetrics()
 
         # Diarization-only references (speaker turns, no transcript) can only be
         # scored for DER; computing WER against a sentinel transcript would be
@@ -161,17 +278,17 @@ def score_item(
             raw["cpwer"] = _combine_multifile(
                 meeteval, meeteval.wer.cpwer(ref_stm_path, hyp_stm_path)
             )
-            metrics["cpwer"] = _wer_to_dict(raw["cpwer"])
+            metrics.cpwer = _wer_to_dict(raw["cpwer"])
 
             raw["orcwer"] = _combine_multifile(
                 meeteval, meeteval.wer.greedy_orcwer(ref_stm_path, hyp_stm_path)
             )
-            metrics["orcwer"] = _wer_to_dict(raw["orcwer"])
+            metrics.orcwer = _wer_to_dict(raw["orcwer"])
 
             raw["dicpwer"] = _combine_multifile(
                 meeteval, meeteval.wer.greedy_dicpwer(ref_stm_path, hyp_stm_path)
             )
-            metrics["dicpwer"] = _wer_to_dict(raw["dicpwer"])
+            metrics.dicpwer = _wer_to_dict(raw["dicpwer"])
 
             with tempfile.TemporaryDirectory(prefix="coro-quality-") as tmp:
                 tmp_dir = Path(tmp)
@@ -180,22 +297,20 @@ def score_item(
                 _write_normalized_stm(ref_stm_path, normalized_ref)
                 _write_normalized_stm(hyp_stm_path, normalized_hyp)
 
-                normalized_metrics: dict[str, Any] = {}
                 raw["normalized_cpwer"] = _combine_multifile(
                     meeteval, meeteval.wer.cpwer(normalized_ref, normalized_hyp)
                 )
-                normalized_metrics["cpwer"] = _wer_to_dict(raw["normalized_cpwer"])
-
                 raw["normalized_orcwer"] = _combine_multifile(
                     meeteval, meeteval.wer.greedy_orcwer(normalized_ref, normalized_hyp)
                 )
-                normalized_metrics["orcwer"] = _wer_to_dict(raw["normalized_orcwer"])
-
                 raw["normalized_dicpwer"] = _combine_multifile(
                     meeteval, meeteval.wer.greedy_dicpwer(normalized_ref, normalized_hyp)
                 )
-                normalized_metrics["dicpwer"] = _wer_to_dict(raw["normalized_dicpwer"])
-                metrics["normalized"] = normalized_metrics
+                metrics.normalized = NormalizedMetrics(
+                    cpwer=_wer_to_dict(raw["normalized_cpwer"]),
+                    orcwer=_wer_to_dict(raw["normalized_orcwer"]),
+                    dicpwer=_wer_to_dict(raw["normalized_dicpwer"]),
+                )
 
         der_results = meeteval.der.md_eval_22(
             ref_stm_path,
@@ -204,14 +319,14 @@ def score_item(
             regions=der_regions,
         )
         raw["der"] = _combine_multifile(meeteval, der_results)
-        metrics["der"] = _der_to_dict(raw["der"])
+        metrics.der = _der_to_dict(raw["der"])
 
-        return {
-            "metrics": metrics,
-            "_raw": raw,
-            "diarization_only": diarization_only,
-            "diarization": diarization_sanity(ref_stm_path, hyp_stm_path),
-        }
+        return ScoreResult(
+            metrics=metrics,
+            diarization_only=diarization_only,
+            diarization=diarization_sanity(ref_stm_path, hyp_stm_path),
+            raw=raw,
+        )
 
     except Exception as exc:
         # Print full traceback to stderr so the operator can see the real cause
@@ -220,13 +335,10 @@ def score_item(
             f"[bench/quality] scoring failed for {hyp_stm_path.name}:\n{traceback.format_exc()}",
             file=sys.stderr,
         )
-        return {
-            "metrics": None,
-            "error": {
-                "type": type(exc).__name__,
-                "message": str(exc),
-            },
-        }
+        return ScoreResult(
+            metrics=None,
+            error=ScoreError(type=type(exc).__name__, message=str(exc)),
+        )
 
 
 # sisower removed: SISO-WER requires unique (session, speaker) pairs,
@@ -234,9 +346,9 @@ def score_item(
 WER_METRIC_KEYS = ("cpwer", "orcwer", "dicpwer")
 
 
-def _combine_raw_key(meeteval, succeeded: list[dict], raw_key: str) -> dict[str, Any] | None:
-    """Aggregate one ``_raw`` key (WER or DER) across all succeeded items."""
-    raw_objects = [r["_raw"][raw_key] for r in succeeded if raw_key in r.get("_raw", {})]
+def _combine_raw_key(meeteval, succeeded: list[ScoreResult], raw_key: str) -> Any:
+    """Aggregate one ``raw`` key (WER or DER) across all succeeded items."""
+    raw_objects = [r.raw[raw_key] for r in succeeded if raw_key in r.raw]
     if not raw_objects:
         return None
     combined = meeteval.wer.combine_error_rates(*raw_objects)
@@ -244,54 +356,65 @@ def _combine_raw_key(meeteval, succeeded: list[dict], raw_key: str) -> dict[str,
     return converter(combined)
 
 
-def _combined_metrics(meeteval, succeeded: list[dict]) -> dict[str, Any]:
+def _combined_metrics(meeteval, succeeded: list[ScoreResult]) -> CombinedMetrics:
     """Build the workload-level combined metric block from succeeded items."""
-    combined: dict[str, Any] = {
-        key: _combine_raw_key(meeteval, succeeded, key) for key in WER_METRIC_KEYS
-    }
-    combined["normalized"] = {
-        key: _combine_raw_key(meeteval, succeeded, f"normalized_{key}") for key in WER_METRIC_KEYS
-    }
-    combined["der"] = _combine_raw_key(meeteval, succeeded, "der")
-    return combined
+    return CombinedMetrics(
+        cpwer=_combine_raw_key(meeteval, succeeded, "cpwer"),
+        orcwer=_combine_raw_key(meeteval, succeeded, "orcwer"),
+        dicpwer=_combine_raw_key(meeteval, succeeded, "dicpwer"),
+        normalized=NormalizedMetrics(
+            cpwer=_combine_raw_key(meeteval, succeeded, "normalized_cpwer"),
+            orcwer=_combine_raw_key(meeteval, succeeded, "normalized_orcwer"),
+            dicpwer=_combine_raw_key(meeteval, succeeded, "normalized_dicpwer"),
+        ),
+        der=_combine_raw_key(meeteval, succeeded, "der"),
+    )
 
 
-def _per_item_entry(result: dict[str, Any]) -> dict[str, Any]:
+def _per_item_entry(result: ScoreResult) -> PerItemEntry:
     """Flatten one item's metrics + diarization sanity into a summary row."""
-    entry: dict[str, Any] = {"session_id": result.get("session_id", "")}
-    if "audio_seconds" in result:
-        entry["audio_seconds"] = result["audio_seconds"]
-    if result.get("diarization_only"):
-        entry["diarization_only"] = True
-    if result.get("diarization") is not None:
-        entry["diarization"] = result["diarization"]
-    metrics = result.get("metrics")
+    entry = PerItemEntry(
+        session_id=result.session_id,
+        audio_seconds=result.audio_seconds,
+        diarization_only=True if result.diarization_only else None,
+        diarization=result.diarization,
+    )
+    metrics = result.metrics
     if metrics is not None:
-        for key in WER_METRIC_KEYS:
-            if metrics.get(key) is not None:
-                entry[key] = metrics[key]["wer"]
-        if metrics.get("der") is not None:
-            entry["der"] = metrics["der"]["der"]
-        normalized = metrics.get("normalized", {})
-        for key in WER_METRIC_KEYS:
-            if normalized.get(key) is not None:
-                entry[f"normalized_{key}"] = normalized[key]["wer"]
+        if metrics.cpwer is not None:
+            entry.cpwer = metrics.cpwer.wer
+        if metrics.orcwer is not None:
+            entry.orcwer = metrics.orcwer.wer
+        if metrics.dicpwer is not None:
+            entry.dicpwer = metrics.dicpwer.wer
+        if metrics.der is not None:
+            entry.der = metrics.der.der
+        normalized = metrics.normalized
+        if normalized is not None:
+            if normalized.cpwer is not None:
+                entry.normalized_cpwer = normalized.cpwer.wer
+            if normalized.orcwer is not None:
+                entry.normalized_orcwer = normalized.orcwer.wer
+            if normalized.dicpwer is not None:
+                entry.normalized_dicpwer = normalized.dicpwer.wer
     return entry
 
 
-def combine_items(item_results: list[dict[str, Any]]) -> dict[str, Any]:
+def combine_items(item_results: list[ScoreResult]) -> QualitySummary:
     """Aggregate per-item score_item results into a workload-level summary."""
     meeteval = _require_meeteval()
 
-    succeeded = [r for r in item_results if r.get("metrics") is not None]
-    failed = [r for r in item_results if r.get("metrics") is None]
-    n_degenerate = sum(1 for r in item_results if (r.get("diarization") or {}).get("degenerate"))
+    succeeded = [r for r in item_results if r.metrics is not None]
+    failed = [r for r in item_results if r.metrics is None]
+    n_degenerate = sum(
+        1 for r in item_results if r.diarization is not None and r.diarization.degenerate
+    )
 
-    return {
-        "workload_set": [r.get("session_id", "") for r in item_results],
-        "n_succeeded": len(succeeded),
-        "n_failed": len(failed),
-        "n_degenerate_diarization": n_degenerate,
-        "combined": _combined_metrics(meeteval, succeeded),
-        "per_item": [_per_item_entry(r) for r in item_results],
-    }
+    return QualitySummary(
+        workload_set=[r.session_id for r in item_results],
+        n_succeeded=len(succeeded),
+        n_failed=len(failed),
+        n_degenerate_diarization=n_degenerate,
+        combined=_combined_metrics(meeteval, succeeded),
+        per_item=[_per_item_entry(r) for r in item_results],
+    )

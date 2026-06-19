@@ -11,6 +11,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from coro.bench.quality import ScoreError, ScoreResult
+
 
 CANNED_DIARIZED_JSON = {
     "task": "transcribe",
@@ -150,16 +152,16 @@ class TestScoreItem:
 
         result = score_item(ref_stm, hyp_stm)
 
-        assert result["metrics"] is not None
-        metrics = result["metrics"]
-        assert "cpwer" in metrics
-        assert "orcwer" in metrics
-        assert "dicpwer" in metrics
-        assert "der" in metrics
+        assert result.metrics is not None
+        metrics = result.metrics
+        assert metrics.cpwer is not None
+        assert metrics.orcwer is not None
+        assert metrics.dicpwer is not None
+        assert metrics.der is not None
         # Perfect match -> zero WER on every speaker-attributed metric.
-        assert metrics["cpwer"]["wer"] == 0.0
-        assert metrics["orcwer"]["wer"] == 0.0
-        assert metrics["dicpwer"]["wer"] == 0.0
+        assert metrics.cpwer.wer == 0.0
+        assert metrics.orcwer.wer == 0.0
+        assert metrics.dicpwer.wer == 0.0
 
     def test_score_item_wer_metrics_have_full_breakdown(self, tmp_path: Path):
         ref_stm, hyp_stm = _write_stm_pair(
@@ -173,9 +175,10 @@ class TestScoreItem:
 
         result = score_item(ref_stm, hyp_stm)
 
-        cpwer = result["metrics"]["cpwer"]
+        assert result.metrics is not None and result.metrics.cpwer is not None
+        cpwer = result.metrics.cpwer
         for key in ("wer", "errors", "length", "insertions", "deletions", "substitutions"):
-            assert key in cpwer
+            assert hasattr(cpwer, key)
 
     def test_score_item_der_has_full_breakdown(self, tmp_path: Path):
         ref_stm, hyp_stm = _write_stm_pair(
@@ -189,9 +192,10 @@ class TestScoreItem:
 
         result = score_item(ref_stm, hyp_stm)
 
-        der = result["metrics"]["der"]
+        assert result.metrics is not None and result.metrics.der is not None
+        der = result.metrics.der
         for key in ("der", "false_alarm", "missed_detection", "speaker_error", "total_speech"):
-            assert key in der
+            assert hasattr(der, key)
 
     def test_score_item_returns_error_when_meeteval_raises(self, tmp_path: Path):
         ref_stm, hyp_stm = _write_stm_pair(
@@ -208,10 +212,10 @@ class TestScoreItem:
 
             result = score_item(ref_stm, hyp_stm)
 
-        assert result["metrics"] is None
-        assert "error" in result
-        assert result["error"]["type"] == "RuntimeError"
-        assert "scoring failed" in result["error"]["message"]
+        assert result.metrics is None
+        assert result.error is not None
+        assert result.error.type == "RuntimeError"
+        assert "scoring failed" in result.error.message
 
     def test_score_item_reports_diarization_sanity(self, tmp_path: Path):
         # Single hyp speaker against a two-speaker reference is degenerate.
@@ -226,20 +230,21 @@ class TestScoreItem:
 
         result = score_item(ref_stm, hyp_stm)
 
-        diar = result["diarization"]
-        assert diar["ref_speakers"] == 2
-        assert diar["hyp_speakers"] == 1
-        assert diar["degenerate"] is True
+        diar = result.diarization
+        assert diar is not None
+        assert diar.ref_speakers == 2
+        assert diar.hyp_speakers == 1
+        assert diar.degenerate is True
 
 
-def _scored(tmp_path: Path, name: str, ref: str, hyp: str, seconds: float) -> dict:
+def _scored(tmp_path: Path, name: str, ref: str, hyp: str, seconds: float) -> ScoreResult:
     """Score a tiny STM pair with real meeteval and tag it like the orchestrator."""
     ref_stm, hyp_stm = _write_stm_pair(tmp_path, name, ref, hyp)
     from coro.bench.quality import score_item
 
     result = score_item(ref_stm, hyp_stm)
-    result["session_id"] = name
-    result["audio_seconds"] = seconds
+    result.session_id = name
+    result.audio_seconds = seconds
     return result
 
 
@@ -256,13 +261,13 @@ class TestCombineItems:
 
         summary = combine_items(item_results)
 
-        assert summary["n_succeeded"] == 2
-        assert summary["n_failed"] == 0
-        assert "combined" in summary
-        assert summary["combined"]["cpwer"] is not None
-        assert summary["combined"]["der"] is not None
-        assert summary["per_item"][0]["session_id"] == "A"
-        assert summary["per_item"][1]["session_id"] == "B"
+        assert summary.n_succeeded == 2
+        assert summary.n_failed == 0
+        assert summary.combined is not None
+        assert summary.combined.cpwer is not None
+        assert summary.combined.der is not None
+        assert summary.per_item[0].session_id == "A"
+        assert summary.per_item[1].session_id == "B"
 
     def test_combine_items_aggregates_der_across_all_items(self, tmp_path: Path):
         """Regression: combined DER must reflect every item, not just the first.
@@ -288,10 +293,12 @@ class TestCombineItems:
 
         summary = combine_items(item_results)
 
-        first_item_der = item_results[0]["metrics"]["der"]["der"]
+        assert item_results[0].metrics is not None and item_results[0].metrics.der is not None
+        first_item_der = item_results[0].metrics.der.der
         assert first_item_der == 0.0
-        assert summary["combined"]["der"]["der"] > 0.0
-        assert summary["n_degenerate_diarization"] == 1
+        assert summary.combined is not None and summary.combined.der is not None
+        assert summary.combined.der.der > 0.0
+        assert summary.n_degenerate_diarization == 1
 
     def test_combine_items_counts_failures(self, tmp_path: Path):
         from coro.bench.quality import combine_items
@@ -299,19 +306,19 @@ class TestCombineItems:
         good = _scored(tmp_path, "A", "A 1 X 0.0 2.0 hello\n", "A 1 X 0.0 2.0 hello\n", 2.0)
         item_results = [
             good,
-            {
-                "session_id": "B",
-                "metrics": None,
-                "error": {"type": "RuntimeError", "message": "fail"},
-            },
+            ScoreResult(
+                session_id="B",
+                metrics=None,
+                error=ScoreError(type="RuntimeError", message="fail"),
+            ),
         ]
 
         summary = combine_items(item_results)
 
-        assert summary["n_succeeded"] == 1
-        assert summary["n_failed"] == 1
-        assert len(summary["per_item"]) == 2
-        assert summary["per_item"][1]["session_id"] == "B"
+        assert summary.n_succeeded == 1
+        assert summary.n_failed == 1
+        assert len(summary.per_item) == 2
+        assert summary.per_item[1].session_id == "B"
 
 
 class TestDiarizationOnly:
@@ -333,9 +340,15 @@ class TestDiarizationOnly:
         ref, hyp = _write_stm_pair(tmp_path, "rec", self._REF, self._HYP)
         result = score_item(ref, hyp)
 
-        assert result["diarization_only"] is True
-        assert set(result["metrics"].keys()) == {"der"}
-        assert result["metrics"]["der"]["der"] >= 0.0
+        assert result.diarization_only is True
+        assert result.metrics is not None
+        # Only DER is computed for diarization-only references.
+        assert result.metrics.der is not None
+        assert result.metrics.cpwer is None
+        assert result.metrics.orcwer is None
+        assert result.metrics.dicpwer is None
+        assert result.metrics.normalized is None
+        assert result.metrics.der.der >= 0.0
 
     def test_combine_items_aggregates_der_without_wer(self, tmp_path: Path):
         from coro.bench.quality import combine_items
@@ -343,14 +356,15 @@ class TestDiarizationOnly:
         result = _scored(tmp_path, "rec", self._REF, self._HYP, 4.0)
         summary = combine_items([result])
 
-        assert summary["n_succeeded"] == 1
-        assert summary["n_failed"] == 0
-        assert summary["combined"]["cpwer"] is None
-        assert summary["combined"]["der"] is not None
-        entry = summary["per_item"][0]
-        assert entry["diarization_only"] is True
-        assert "cpwer" not in entry
-        assert "der" in entry
+        assert summary.n_succeeded == 1
+        assert summary.n_failed == 0
+        assert summary.combined is not None
+        assert summary.combined.cpwer is None
+        assert summary.combined.der is not None
+        entry = summary.per_item[0]
+        assert entry.diarization_only is True
+        assert entry.cpwer is None
+        assert entry.der is not None
 
 
 class TestCLIFlags:
@@ -476,10 +490,10 @@ class TestQualityRun:
         def fail_on_second(ref_path, hyp_path, **kwargs):
             call_count[0] += 1
             if call_count[0] > 1:
-                return {
-                    "metrics": None,
-                    "error": {"type": "RuntimeError", "message": "scoring failed for meeting2"},
-                }
+                return ScoreResult(
+                    metrics=None,
+                    error=ScoreError(type="RuntimeError", message="scoring failed for meeting2"),
+                )
             return real_score_item(ref_path, hyp_path, **kwargs)
 
         with patch.object(quality_mod, "score_item", side_effect=fail_on_second):
