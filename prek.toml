@@ -71,7 +71,7 @@ repo = "local"
 [[repos.hooks]]
 id = "pyrefly"
 name = "pyrefly"
-entry = "uv run pyrefly check"
+entry = "uv run pyrefly check coro/"
 language = "system"
 types = ["python"]
 pass_filenames = false
