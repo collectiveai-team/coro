@@ -115,6 +115,48 @@ For a throwaway run without installing at all, use `uvx` (see
 [Quickstart](#quickstart)). On a GPU host the `coro-asr[cuda]` build still needs the
 `libcublas.so.12` loader-path fix — see [GPU on a bare host](#gpu-on-a-bare-host).
 
+## Run with Docker
+
+Prebuilt images are published to GHCR with `-cpu` / `-gpu` flavour suffixes
+(`latest`, the release version, and `sha-…` tags). The image entrypoint is
+`coro`, so append any `--flag` or `CORO_*` env var just like the CLI; the server
+binds `0.0.0.0:8000` inside the container.
+
+```bash
+# CPU
+docker run --rm -p 8000:8000 \
+  ghcr.io/collectiveai-team/coro:latest-cpu \
+  --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 --asr-device cpu
+
+# NVIDIA GPU (needs the NVIDIA Container Toolkit)
+docker run --rm --gpus all -p 8000:8000 \
+  ghcr.io/collectiveai-team/coro:latest-gpu \
+  --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3
+```
+
+Cache downloaded model weights across runs by mounting a Hugging Face cache
+volume (avoids re-downloading on every container start):
+
+```bash
+docker run --rm -p 8000:8000 \
+  -v coro-hf-cache:/root/.cache/huggingface \
+  ghcr.io/collectiveai-team/coro:latest-cpu --port 8000
+```
+
+To build the image yourself instead of pulling, pass the matching
+`CORE_IMAGE` / `EXTRA` build args (see the [Dockerfile](Dockerfile)):
+
+```bash
+# CPU
+docker build -t coro:cpu \
+  --build-arg CORE_IMAGE=ubuntu:noble --build-arg EXTRA=cpu .
+
+# NVIDIA GPU
+docker build -t coro:gpu \
+  --build-arg CORE_IMAGE=nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04 \
+  --build-arg EXTRA=cuda .
+```
+
 ## Configuration
 
 Coro can be configured two equivalent ways — use whichever fits your
