@@ -53,6 +53,13 @@ def build_diarization_adapter(
 
         return build_nemo_diarization_adapter(model_diarization, device=device)
 
+    if provider == "pyannote":
+        from coro.backends.diarization.pyannote import build_pyannote_diarization_adapter
+
+        return build_pyannote_diarization_adapter(
+            model_diarization, device=device, hf_token=hf_token
+        )
+
     msg = f"Unknown diarization backend provider: {provider!r}"
     raise ValueError(msg)
 
