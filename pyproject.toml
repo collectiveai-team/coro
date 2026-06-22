@@ -117,6 +117,7 @@ explicit = true
 [project.scripts]
 coro = "coro.cli:main"
 coro-bench = "coro.bench.cli:main"
+coro-bench-diar = "coro.bench.eval_diarization_quality:main"
 
 # MARK: Ruff
 [tool.ruff]
