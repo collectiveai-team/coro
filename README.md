@@ -43,10 +43,10 @@ your machine:
 
 ```bash
 # CPU-only
-uvx --from "coro[cpu]  @ git+https://github.com/collectiveai-team/coro" coro --port 8000
+uvx --from "coro-asr[cpu]  @ git+https://github.com/collectiveai-team/coro" coro --port 8000
 
 # NVIDIA GPU
-uvx --from "coro[cuda] @ git+https://github.com/collectiveai-team/coro" coro --port 8000
+uvx --from "coro-asr[cuda] @ git+https://github.com/collectiveai-team/coro" coro --port 8000
 ```
 
 `uvx` builds a throwaway isolated environment and launches the `coro` command —
@@ -91,8 +91,8 @@ no clone, no project environment. Pick the hardware extra that matches your
 machine (`cpu` / `cuda` are mutually exclusive):
 
 ```bash
-uv tool install "coro[cpu]"  @ git+https://github.com/collectiveai-team/coro   # CPU-only
-uv tool install "coro[cuda]" @ git+https://github.com/collectiveai-team/coro   # NVIDIA GPU
+uv tool install "coro-asr[cpu]"  @ git+https://github.com/collectiveai-team/coro   # CPU-only
+uv tool install "coro-asr[cuda]" @ git+https://github.com/collectiveai-team/coro   # NVIDIA GPU
 ```
 
 Then run the server directly (no `uv run`):
@@ -103,7 +103,7 @@ coro --port 8000
 
 Upgrade with `uv tool upgrade coro`; uninstall with `uv tool uninstall coro`.
 For a throwaway run without installing at all, use `uvx` (see
-[Quickstart](#quickstart)). On a GPU host the `coro[cuda]` build still needs the
+[Quickstart](#quickstart)). On a GPU host the `coro-asr[cuda]` build still needs the
 `libcublas.so.12` loader-path fix — see [GPU on a bare host](#gpu-on-a-bare-host).
 
 ## Configuration
@@ -530,7 +530,7 @@ Running the GPU build outside the devcontainer has two gotchas:
 1. **`uv run` re-syncs to the *default* environment and uninstalls the `cuda`
    extra.** Run the server with the extra explicitly so the GPU wheels stay
    installed: `uv run --extra cuda coro` (or re-run `uv sync --extra cuda`
-   after any plain `uv sync` / `uv run`). (`uv tool install "coro[cuda]"` is
+    after any plain `uv sync` / `uv run`). (`uv tool install "coro-asr[cuda]"` is
    not affected — its environment is not re-synced.)
 2. **faster-whisper (CTranslate2) needs `libcublas.so.12` + cuDNN 9**, which
    ship in the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` wheels (pulled by the
