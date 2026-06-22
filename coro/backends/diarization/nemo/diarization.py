@@ -26,6 +26,16 @@ class NemoDiarizationAdapter:
     def __init__(self, model) -> None:
         self._model = model
 
+    @property
+    def model(self):
+        """The wrapped Sortformer model.
+
+        Exposed so the diarization Backend Adapter Factory can build the
+        streaming diarizer from the same shared model without reaching into a
+        private attribute.
+        """
+        return self._model
+
     async def diarize_pcm(self, pcm: bytes) -> list[SpeakerSegment]:
         """Run batch diarization over full PCM audio."""
         return await asyncio.to_thread(self._diarize_sync, pcm)
@@ -50,7 +60,7 @@ class NemoDiarizationAdapter:
         return convert_diarization_segments(predicted, duration=duration)
 
 
-def build_diarization_adapter(
+def build_nemo_diarization_adapter(
     model_diarization: str,
     *,
     device: str = "auto",
