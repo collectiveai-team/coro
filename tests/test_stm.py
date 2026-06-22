@@ -308,3 +308,46 @@ class TestSliceStmWindow:
         out = slice_stm_window(self.SAMPLE, 0.0, 8.0)
         times = [float(line.split()[3]) for line in out.splitlines()]
         assert times == sorted(times)
+
+
+class TestSpeakerTimelineToStm:
+    """speaker_timeline_to_stm converts a SpeakerSegment timeline to a DER-only STM."""
+
+    def _timeline(self):
+        from coro.core.models import SpeakerSegment
+
+        return [
+            SpeakerSegment(start=0.5, end=1.0, speaker=2),
+            SpeakerSegment(start=0.0, end=0.5, speaker=1),
+        ]
+
+    def test_emits_diarization_only_sentinel_text(self):
+        from coro.bench.stm import DIARIZATION_ONLY_TEXT, speaker_timeline_to_stm
+
+        out = speaker_timeline_to_stm(self._timeline(), "MEET1")
+        for line in out.splitlines():
+            assert line.split(maxsplit=5)[5] == DIARIZATION_ONLY_TEXT
+
+    def test_lines_use_recording_id_and_speaker_label(self):
+        from coro.bench.stm import speaker_timeline_to_stm
+
+        out = speaker_timeline_to_stm(self._timeline(), "MEET1")
+        first = out.splitlines()[0].split()
+        assert first[0] == "MEET1"
+        assert first[2] == "spk1"
+        assert first[3] == "0.000"
+        assert first[4] == "0.500"
+
+    def test_output_sorted_by_time_then_speaker(self):
+        from coro.bench.stm import speaker_timeline_to_stm
+
+        out = speaker_timeline_to_stm(self._timeline(), "MEET1")
+        times = [float(line.split()[3]) for line in out.splitlines()]
+        assert times == sorted(times)
+
+    def test_drops_zero_and_negative_duration_segments(self):
+        from coro.bench.stm import speaker_timeline_to_stm
+        from coro.core.models import SpeakerSegment
+
+        timeline = [SpeakerSegment(start=1.0, end=1.0, speaker=1)]
+        assert speaker_timeline_to_stm(timeline, "MEET1") == ""

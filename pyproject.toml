@@ -47,6 +47,7 @@ dependencies = [
 [project.optional-dependencies]
 cpu = [
     "torch>=2.1.0,<4.0",
+    "torchaudio>=2.1.0,<4.0",
     "onnxruntime>=1.22,!=1.24.1",
     "onnxruntime-genai>=0.14.0",
 ]
@@ -54,8 +55,14 @@ cuda = [
     "nvidia-cublas-cu12>=12.0.0.0",
     "nvidia-cudnn-cu12>=9.0.0.0",
     "torch>=2.1.0,<4.0",
+    "torchaudio>=2.1.0,<4.0",
     "onnxruntime-gpu>=1.22,!=1.24.1",
     "onnxruntime-genai-cuda>=0.14.0",
+]
+# Optional, gated batch-only diarization backend (pyannote community-1).
+# Heavy dependency kept out of the core install; enable with `--extra diar-pyannote`.
+diar-pyannote = [
+    "pyannote.audio>=4.0",
 ]
 
 # Internal-only groups (PEP 735). Not exposed via pip; uv-native.
@@ -98,6 +105,9 @@ requires-dist = [
 
 [tool.uv.sources]
 torch = [{ index = "torch-cpu", extra = "cpu" }]
+# pyannote.audio (diar-pyannote extra) pulls torchaudio; pin it to the same CPU
+# index as torch so its native lib matches the installed torch ABI under --extra cpu.
+torchaudio = [{ index = "torch-cpu", extra = "cpu" }]
 
 [[tool.uv.index]]
 name = "torch-cpu"
@@ -107,6 +117,7 @@ explicit = true
 [project.scripts]
 coro = "coro.cli:main"
 coro-bench = "coro.bench.cli:main"
+coro-bench-diar = "coro.bench.eval_diarization_quality:main"
 
 # MARK: Ruff
 [tool.ruff]
@@ -169,8 +180,9 @@ convention = "google"
 max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
-# Tests assert/lack docstrings and use fixed /tmp paths for deterministic fixtures.
-"tests/**" = ["S101", "D", "S108"]
+# Tests assert/lack docstrings, use fixed /tmp paths for deterministic fixtures,
+# and pass dummy tokens (S106) to gated-model settings/adapters.
+"tests/**" = ["S101", "D", "S108", "S106"]
 # FastAPI routes use the idiomatic `= File(...)` / `= Form(...)` default style.
 "coro/api/v1/transcriptions.py" = ["FAST002", "B008"]
 "coro/audio.py" = ["C901"]
@@ -242,7 +254,10 @@ disable-project-excludes-heuristics = true
 python-interpreter-path = ".venv/bin/python"
 # onnxruntime_genai is a compiled extension shipping no type stubs; treat its
 # attributes as Any rather than reporting every og.* access as missing.
-replace-imports-with-any = ["onnxruntime_genai"]
+# pyannote.audio is an optional, gated diarization backend behind the
+# `diar-pyannote` extra; it is not installed in the default (or CI) env, so
+# treat its lazy import as Any rather than reporting a missing module.
+replace-imports-with-any = ["onnxruntime_genai", "pyannote.audio"]
 
 
 # MARK: Pytest

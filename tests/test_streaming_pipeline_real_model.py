@@ -50,8 +50,8 @@ async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
     from nemo.collections.asr.models import SortformerEncLabelModel
 
     from coro.audio import AudioInput
-    from coro.backends.faster_whisper import build_asr_adapter
-    from coro.backends.nemo_streaming import StreamingDiarizerFactory
+    from coro.backends.asr.faster_whisper import build_asr_adapter
+    from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
     from coro.pipelines.streaming import StreamingPipeline
     from coro.bench.data import WARMUP_AUDIO_PATH
 
@@ -60,7 +60,7 @@ async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
     diar_model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
     # NeMo stub types from_pretrained as str.
     diar_model.eval()  # pyrefly: ignore[missing-attribute]
-    factory = StreamingDiarizerFactory(diar_model, tier="very-high")
+    factory = NemoStreamingDiarizerFactory(diar_model, tier="very-high")
 
     pipeline = StreamingPipeline(
         asr=asr,
@@ -93,7 +93,7 @@ def test_streaming_diarizer_frame_count_matches_audio_duration():
     import numpy as np
     from nemo.collections.asr.models import SortformerEncLabelModel
 
-    from coro.backends.nemo_streaming import StreamingDiarizerFactory
+    from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
 
     SAMPLE_RATE = 16000
     SUBSAMPLING = 8
@@ -105,7 +105,7 @@ def test_streaming_diarizer_frame_count_matches_audio_duration():
     model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
     # NeMo stub types from_pretrained as str.
     model.eval()  # pyrefly: ignore[missing-attribute]
-    factory = StreamingDiarizerFactory(model, tier="very-high")
+    factory = NemoStreamingDiarizerFactory(model, tier="very-high")
     diar = factory()
 
     rng = np.random.default_rng(0)

@@ -11,7 +11,10 @@ import html
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from coro.core.models import SpeakerSegment
 
 
 _ID_RE = re.compile(r"id\(([^)]+)\)")
@@ -138,6 +141,29 @@ def rttm_to_stm(
             continue
         speaker = parts[7]
         lines.append(f"{recording_id} {channel} {speaker} {start_f:.3f} {end_f:.3f} {text}")
+    lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def speaker_timeline_to_stm(
+    timeline: list[SpeakerSegment],
+    recording_id: str,
+    *,
+    channel: str = "1",
+    text: str = DIARIZATION_ONLY_TEXT,
+) -> str:
+    """Convert a Project-Owned speaker timeline to a diarization-only STM.
+
+    Diarization Adapters return SpeakerSegment timelines with no transcript, so
+    every emitted STM line carries the diarization-only sentinel text — enough
+    for DER scoring, which uses only speaker labels and timings. Output is
+    sorted by (start_time, speaker), matching the other STM builders.
+    """
+    lines = [
+        f"{recording_id} {channel} spk{seg.speaker} {seg.start:.3f} {seg.end:.3f} {text}"
+        for seg in timeline
+        if seg.end > seg.start
+    ]
     lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
     return "\n".join(lines) + "\n" if lines else ""
 

@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 # MARK: Startup Selector Types
 PipelineSelector = Literal["full-memory", "streaming"]
 ASRBackendProvider = Literal["faster-whisper", "onnx-asr", "onnx-genai"]
-DiarizationBackendProvider = Literal["none", "nemo"]
+DiarizationBackendProvider = Literal["none", "nemo", "pyannote"]
 ASRDevice = Literal["auto", "cuda", "cpu"]
 OnnxVadSelector = Literal["enabled", "disabled"]
 DiarizationDevice = Literal["auto", "cuda", "cpu"]
@@ -27,7 +27,13 @@ DiarizationLatencyTier = Literal["very-high", "high", "low", "ultra-low"]
 class ServerSettings(BaseSettings):
     """Runtime-injectable settings for the coro package."""
 
-    model_config = SettingsConfigDict(env_prefix="CORO_", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_prefix="CORO_",
+        case_sensitive=False,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # Process Settings ------------------------------------------------------
     host: str = Field(default="0.0.0.0", description="Bind host.")
@@ -69,7 +75,14 @@ class ServerSettings(BaseSettings):
     )
     model_diarization: str | None = Field(default=None, description="Diarization Model Selection.")
     diarization_device: DiarizationDevice = Field(
-        default="auto", description="NeMo diarization device selection."
+        default="auto", description="Diarization device selection."
+    )
+    hf_token: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CORO_HF_TOKEN", "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"),
+        description="HuggingFace access token for gated diarization models (e.g. the "
+        "pyannote community-1 pipeline). Read from CORO_HF_TOKEN, HF_TOKEN, or "
+        "HUGGING_FACE_HUB_TOKEN; masked in logs.",
     )
     transcript_spill_dir: str | None = Field(
         default=None,
@@ -99,6 +112,21 @@ class ServerSettings(BaseSettings):
     # Derived Defaults ------------------------------------------------------
     @model_validator(mode="after")
     def default_enabled_diarization_model(self) -> ServerSettings:
-        if self.backend_diarization == "nemo" and self.model_diarization is None:
-            self.model_diarization = "nvidia/diar_streaming_sortformer_4spk-v2"
+        if self.model_diarization is None:
+            if self.backend_diarization == "nemo":
+                self.model_diarization = "nvidia/diar_streaming_sortformer_4spk-v2"
+            elif self.backend_diarization == "pyannote":
+                self.model_diarization = "pyannote/speaker-diarization-community-1"
+        return self
+
+    @model_validator(mode="after")
+    def reject_streaming_pyannote(self) -> ServerSettings:
+        """Reject the Streaming Pipeline for the batch-only pyannote backend."""
+        if self.backend_diarization == "pyannote" and self.pipeline == "streaming":
+            msg = (
+                "The 'pyannote' diarization backend is batch-only and cannot run "
+                "with the 'streaming' pipeline. Use CORO_PIPELINE=full-memory, or "
+                "select a streaming-capable diarization backend (e.g. 'nemo')."
+            )
+            raise ValueError(msg)
         return self

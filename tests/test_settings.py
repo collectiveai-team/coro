@@ -48,6 +48,51 @@ def test_nemo_diarization_gets_default_model():
     assert settings.model_diarization == "nvidia/diar_streaming_sortformer_4spk-v2"
 
 
+def test_pyannote_diarization_gets_default_model():
+    settings = ServerSettings(
+        backend_diarization="pyannote",
+        _env_file=None,
+    )
+
+    assert settings.model_diarization == "pyannote/speaker-diarization-community-1"
+
+
+def test_pyannote_streaming_pipeline_is_rejected():
+    with pytest.raises(ValidationError, match="batch-only"):
+        ServerSettings(
+            backend_diarization="pyannote",
+            pipeline="streaming",
+            _env_file=None,
+        )
+
+
+def test_pyannote_full_memory_pipeline_is_allowed():
+    settings = ServerSettings(
+        backend_diarization="pyannote",
+        pipeline="full-memory",
+        _env_file=None,
+    )
+
+    assert settings.backend_diarization == "pyannote"
+    assert settings.pipeline == "full-memory"
+
+
+@pytest.mark.parametrize("env_name", ["CORO_HF_TOKEN", "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"])
+def test_hf_token_read_from_standard_env_names(monkeypatch, env_name: str):
+    monkeypatch.setenv(env_name, "secret-token")
+    settings = ServerSettings(_env_file=None)
+
+    assert settings.hf_token is not None
+    assert settings.hf_token.get_secret_value() == "secret-token"
+
+
+def test_hf_token_is_masked_in_repr():
+    settings = ServerSettings(hf_token="secret-token", _env_file=None)
+
+    assert "secret-token" not in repr(settings)
+    assert "secret-token" not in str(settings.model_dump())
+
+
 def test_transcript_spill_dir_defaults_none_and_reads_env(monkeypatch):
     assert ServerSettings(_env_file=None).transcript_spill_dir is None
     monkeypatch.setenv("CORO_TRANSCRIPT_SPILL_DIR", "/var/lib/asr-spill")

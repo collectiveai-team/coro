@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from coro.backends.onnx_asr import (
+from coro.backends.asr.onnx_asr import (
     OnnxAsrASRAdapter,
     _LAST_WORD_PAD,
     convert_onnx_asr_result,

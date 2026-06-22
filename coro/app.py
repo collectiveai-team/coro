@@ -53,7 +53,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
-        from coro.backends.nemo import build_diarization_adapter
+        from coro.backends.asr.factory import build_asr_adapter
+        from coro.backends.diarization import factory as diarization_factory
         from coro.pipelines.streaming import StreamingPipeline
         from coro.pipelines.full_memory import FullMemoryPipeline
 
@@ -67,52 +68,31 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             settings.model_dump(mode="json"),
         )
 
-        # Build ASR adapter (always required), dispatching on the configured backend.
-        if settings.backend_asr == "onnx-asr":
-            from coro.backends.onnx_asr import build_onnx_asr_adapter
-
-            asr_adapter = build_onnx_asr_adapter(
-                settings.model_asr,
-                device=settings.asr_device,
-                quantization=settings.asr_quantization,
-                vad_enabled=settings.asr_onnx_vad == "enabled",
-                vad_threshold=settings.asr_onnx_vad_threshold,
-            )
-        elif settings.backend_asr == "onnx-genai":
-            from coro.backends.onnx_genai import build_onnx_genai_adapter
-
-            asr_adapter = build_onnx_genai_adapter(
-                settings.model_asr,
-                device=settings.asr_device,
-                quantization=settings.asr_quantization,
-            )
-        else:
-            from coro.backends.faster_whisper import build_asr_adapter
-
-            asr_adapter = build_asr_adapter(
-                settings.model_asr,
-                device=settings.asr_device,
-                compute_type=settings.asr_compute_type,
-            )
+        # Build ASR adapter (always required) via the ASR Backend Adapter Factory.
+        asr_adapter = build_asr_adapter(settings)
         runtime.asr_adapter = asr_adapter
 
-        # Build optional diarization adapter
+        # Build optional diarization adapter via the diarization Backend Adapter Factory.
         diarization_adapter = None
-        if settings.backend_diarization == "nemo" and settings.model_diarization:
-            diarization_adapter = build_diarization_adapter(
+        if settings.backend_diarization != "none" and settings.model_diarization:
+            diarization_adapter = diarization_factory.build_diarization_adapter(
+                settings.backend_diarization,
                 settings.model_diarization,
                 device=settings.diarization_device,
+                hf_token=settings.hf_token.get_secret_value() if settings.hf_token else None,
             )
             runtime.diarization_adapter = diarization_adapter
 
-            if settings.pipeline == "streaming":
-                from coro.backends.nemo_streaming import StreamingDiarizerFactory
-
-                streaming_factory = StreamingDiarizerFactory(
-                    diarization_adapter._model,
-                    tier=settings.diarization_latency,
+            if settings.pipeline == "streaming" and diarization_factory.supports_streaming(
+                settings.backend_diarization
+            ):
+                runtime.streaming_diarizer_factory = (
+                    diarization_factory.build_streaming_diarizer_factory(
+                        settings.backend_diarization,
+                        diarization_adapter,
+                        tier=settings.diarization_latency,
+                    )
                 )
-                runtime.streaming_diarizer_factory = streaming_factory
                 runtime.diarization_latency = settings.diarization_latency
 
         # Construct the pipeline

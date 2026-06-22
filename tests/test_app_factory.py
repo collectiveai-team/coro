@@ -71,7 +71,7 @@ async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
 
     from starlette.testclient import TestClient
 
-    with patch("coro.backends.faster_whisper.build_asr_adapter") as mock_build:
+    with patch("coro.backends.asr.faster_whisper.build_asr_adapter") as mock_build:
         mock_build.return_value = object()
         settings = ServerSettings(warmup="disabled")
         application = create_app(settings)
@@ -91,7 +91,7 @@ def test_warmup_failure_fails_server_startup():
 
     from starlette.testclient import TestClient
 
-    with patch("coro.backends.faster_whisper.build_asr_adapter") as mock_build:
+    with patch("coro.backends.asr.faster_whisper.build_asr_adapter") as mock_build:
         mock_build.return_value = object()
         settings = ServerSettings(warmup="enabled")
         application = create_app(settings)

@@ -33,10 +33,20 @@ class DiarizationAdapter(Protocol):
     async def diarize_pcm(self, pcm: bytes) -> list[SpeakerSegment]: ...
 
 
+class StreamingDiarizer(Protocol):
+    """Protocol for a per-request streaming diarizer consumed by the Streaming Pipeline."""
+
+    def ingest_pcm_chunk(self, pcm: bytes) -> None:
+        """Feed one sequential PCM chunk into the online diarization model."""
+
+    def finalize(self) -> list[SpeakerSegment]:
+        """Flush any buffered audio and return the final speaker timeline."""
+
+
 class StreamingDiarizerFactory(Protocol):
     """Protocol for factories that produce per-request StreamingDiarizer instances."""
 
-    def __call__(self):
+    def __call__(self) -> StreamingDiarizer:
         """Return a fresh StreamingDiarizer bound to the shared model."""
 
 
