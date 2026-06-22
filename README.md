@@ -265,6 +265,41 @@ per-capability Backend Adapter Factory (see ADR 0007). Select it with
   `full-memory`). The model is **gated**: you must accept its conditions on the
   Hugging Face model page and provide a token.
 
+### NeMo Sortformer setup (default, no token)
+
+Sortformer ships with the **core install** — no extra dependency, no Hugging
+Face token. Just turn the backend on; the default model
+(`nvidia/diar_streaming_sortformer_4spk-v2`) is selected automatically and
+downloaded on first run.
+
+```bash
+# Batch (full-memory pipeline, the default) — env-var form
+CORO_BACKEND_DIARIZATION=nemo coro --port 8000
+# equivalent CLI form:
+coro --backend-diarization nemo --port 8000
+```
+
+Combine with an ASR backend and pin the device as usual:
+
+```bash
+coro --port 8000 \
+  --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
+  --backend-diarization nemo --diarization-device cuda
+```
+
+Sortformer is the **only streaming-capable** backend. To diarize live as audio
+arrives, switch the pipeline to `streaming` (optionally tune the latency tier):
+
+```bash
+coro --port 8000 \
+  --backend-diarization nemo \
+  --pipeline streaming \
+  --diarization-latency very-high   # very-high | high | low | ultra-low
+```
+
+Either way, request `response_format=diarized_json` to get per-segment speaker
+labels back. Sortformer handles **≤ 4 speakers**; for more, use pyannote below.
+
 ### pyannote setup (gated model + token)
 
 1. Install the optional dependency (kept out of the core install):
