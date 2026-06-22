@@ -126,13 +126,18 @@ binds `0.0.0.0:8000` inside the container.
 # CPU
 docker run --rm -p 8000:8000 \
   ghcr.io/collectiveai-team/coro:latest-cpu \
-  --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 --asr-device cpu
+  --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 --asr-device cpu \
+  --backend-diarization nemo --diarization-device cpu
 
 # NVIDIA GPU (needs the NVIDIA Container Toolkit)
 docker run --rm --gpus all -p 8000:8000 \
   ghcr.io/collectiveai-team/coro:latest-gpu \
-  --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3
+  --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
+  --backend-diarization nemo --diarization-device cuda
 ```
+
+The `--backend-diarization nemo` flag turns on Sortformer speaker labels; omit it
+for an ASR-only server.
 
 Cache downloaded model weights across runs by mounting a Hugging Face cache
 volume (avoids re-downloading on every container start):
@@ -172,14 +177,22 @@ Each `ServerSettings` field maps to both forms, e.g. `backend_asr` →
 environment variables > defaults**. See `coro/settings.py` for the full list.
 
 ```bash
-# Env vars
+# Env vars (add CORO_BACKEND_DIARIZATION to enable speaker labels; omit for ASR-only)
 CORO_BACKEND_ASR=onnx-asr CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3 \
-  CORO_ASR_DEVICE=cuda coro --port 8000
+  CORO_ASR_DEVICE=cuda \
+  CORO_BACKEND_DIARIZATION=nemo CORO_DIARIZATION_DEVICE=cuda \
+  coro --port 8000
 
 # Equivalent CLI flags
 coro --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
-  --asr-device cuda --port 8000
+  --asr-device cuda \
+  --backend-diarization nemo --diarization-device cuda \
+  --port 8000
 ```
+
+Drop the two diarization flags for an ASR-only server, or swap
+`nemo` → `pyannote` (`--pipeline full-memory`, needs `--extra diar-pyannote`
+and an HF token) for > 4 speakers — see [Diarization backends](#diarization-backends).
 
 ### Endpoints
 
