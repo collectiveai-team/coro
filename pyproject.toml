@@ -254,7 +254,10 @@ disable-project-excludes-heuristics = true
 python-interpreter-path = ".venv/bin/python"
 # onnxruntime_genai is a compiled extension shipping no type stubs; treat its
 # attributes as Any rather than reporting every og.* access as missing.
-replace-imports-with-any = ["onnxruntime_genai"]
+# pyannote.audio is an optional, gated diarization backend behind the
+# `diar-pyannote` extra; it is not installed in the default (or CI) env, so
+# treat its lazy import as Any rather than reporting a missing module.
+replace-imports-with-any = ["onnxruntime_genai", "pyannote.audio"]
 
 
 # MARK: Pytest
