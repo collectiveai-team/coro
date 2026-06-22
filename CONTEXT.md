@@ -288,9 +288,9 @@ _Avoid_: Pydantic model, response schema
 An external integration selected to provide ASR or diarization model access for the server.
 _Avoid_: Model name, capability type
 
-**Provider-First Backend Layout**:
-A `backends/` package structure organized by backend provider rather than by ASR or diarization capability.
-_Avoid_: Capability-first backend tree, duplicated provider setup
+**Capability-First Backend Layout**:
+A `backends/` package structure organized by capability first — `backends/asr/` and `backends/diarization/` subpackages, each owning its **Backend Adapter Factory** — rather than by backend provider. A provider that supplies one capability lives wholly in that capability's subpackage; a provider spanning both is split across subpackages with any backend-specific shared setup extracted, not duplicated. See ADR 0007 (supersedes the former Provider-First Backend Layout in ADR 0001).
+_Avoid_: Provider-first backend tree, duplicated provider setup, capability code split across unrelated directories
 
 **ASR Model Selection**:
 The Hugging Face-style model identifier passed to the configured ASR backend provider.
@@ -383,7 +383,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Backend Adapter Factory** creates adapters during startup from configured backend providers and model selections.
 - A **ML Model Integration** is distinct from core schemas and internal data types.
 - A **Backend Provider** may provide ASR, diarization, or both capabilities.
-- **ML Model Integration** modules use a **Provider-First Backend Layout**.
+- **ML Model Integration** modules use a **Capability-First Backend Layout**.
 - **ASR Model Selection** and **Diarization Model Selection** are configured independently, even when they use the same **Backend Provider**.
 
 ## Example Dialogue
@@ -548,7 +548,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "They are **Backend Provider** values; `openai/whisper-medium` is an **ASR Model Selection** and `nvidia/diar_streaming_sortformer_4spk-v2` is a **Diarization Model Selection**."
 
 > **Dev:** "Should backend modules be split first by ASR versus diarization?"
-> **Domain expert:** "No — use a **Provider-First Backend Layout** so one provider can expose both adapter capabilities."
+> **Domain expert:** "Yes — use a **Capability-First Backend Layout** (`backends/asr/`, `backends/diarization/`) so each capability's adapters share a **Backend Adapter Factory** and startup selector; a provider spanning both is split across the subpackages. See ADR 0007, which supersedes the earlier provider-first answer."
 
 > **Dev:** "Should pipelines call Faster Whisper or NeMo directly because they own the selected models?"
 > **Domain expert:** "No — a **Backend Adapter Factory** creates **ASR Adapter** and **Diarization Adapter** instances, and pipelines call only those protocols."
@@ -606,7 +606,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "ASR model integration" was used to include diarization by implication — resolved: **ASR Adapter** and **Diarization Adapter** are separate capabilities.
 - "model" was used to mean both Pydantic data shapes and ML backends — resolved: **ML Model Integration** lives under `backends/`, while core uses schemas and types.
 - "backend" was used to mean provider, capability, and model family — resolved: **Backend Provider** selects the integration, while **ASR Model Selection** and **Diarization Model Selection** select models within providers.
-- "backend layout" was used to imply capability-first directories — resolved: use a **Provider-First Backend Layout**.
+- "backend layout" was first resolved as provider-first, then reversed — resolved: use a **Capability-First Backend Layout** (`backends/asr/`, `backends/diarization/`), each with its own **Backend Adapter Factory**, per ADR 0007 (supersedes ADR 0001's provider-first decision).
 - "backend interface" was used to imply pipelines might call providers directly — resolved: pipelines call **ASR Adapter** and **Diarization Adapter** protocols created by a **Backend Adapter Factory**.
 - "ASR lock" was used to imply a pipeline-level concern — resolved: concurrency is an **Adapter Concurrency Policy**.
 - "diarization backend" was used to imply a required server dependency — resolved: diarization is optional, and an **ASR-Only Server** is valid.
