@@ -3,6 +3,8 @@ name: Docker
 # Builds CPU and GPU runtime images and pushes them to GHCR.
 #   - push to main  -> :latest-<flavour> and :sha-<short>-<flavour>
 #   - tag vX.Y.Z    -> :X.Y.Z-<flavour> and :latest-<flavour>
+# The GPU build additionally publishes the unsuffixed aliases :latest and
+# :X.Y.Z, so the bare image:version / image:latest point at the GPU image.
 # GPU images only need a GPU to *run*, not to build, so they build on the
 # standard hosted runner (a free-disk-space step makes room for the CUDA layers).
 
@@ -75,6 +77,9 @@ jobs:
             type=sha,prefix=sha-
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
+            # Unsuffixed aliases (image:version / image:latest) -> the GPU image.
+            type=semver,pattern={{version}},suffix=,enable=${{ matrix.flavour == 'gpu' }}
+            type=raw,value=latest,suffix=,enable=${{ matrix.flavour == 'gpu' && github.ref == 'refs/heads/main' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
