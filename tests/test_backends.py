@@ -16,8 +16,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from coro.backends.faster_whisper import convert_asr_segments
-from coro.backends.nemo import convert_diarization_segments
+from coro.backends.asr.faster_whisper import convert_asr_segments
+from coro.backends.diarization.segments import convert_diarization_segments
 from coro.core.models import SpeakerSegment, TranscriptToken
 
 

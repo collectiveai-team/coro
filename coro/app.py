@@ -53,7 +53,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
-        from coro.backends.nemo import build_diarization_adapter
+        from coro.backends.diarization.nemo.diarization import build_diarization_adapter
         from coro.pipelines.streaming import StreamingPipeline
         from coro.pipelines.full_memory import FullMemoryPipeline
 
@@ -69,7 +69,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
         # Build ASR adapter (always required), dispatching on the configured backend.
         if settings.backend_asr == "onnx-asr":
-            from coro.backends.onnx_asr import build_onnx_asr_adapter
+            from coro.backends.asr.onnx_asr import build_onnx_asr_adapter
 
             asr_adapter = build_onnx_asr_adapter(
                 settings.model_asr,
@@ -79,7 +79,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 vad_threshold=settings.asr_onnx_vad_threshold,
             )
         elif settings.backend_asr == "onnx-genai":
-            from coro.backends.onnx_genai import build_onnx_genai_adapter
+            from coro.backends.asr.onnx_genai import build_onnx_genai_adapter
 
             asr_adapter = build_onnx_genai_adapter(
                 settings.model_asr,
@@ -87,7 +87,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 quantization=settings.asr_quantization,
             )
         else:
-            from coro.backends.faster_whisper import build_asr_adapter
+            from coro.backends.asr.faster_whisper import build_asr_adapter
 
             asr_adapter = build_asr_adapter(
                 settings.model_asr,
@@ -106,9 +106,9 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             runtime.diarization_adapter = diarization_adapter
 
             if settings.pipeline == "streaming":
-                from coro.backends.nemo_streaming import StreamingDiarizerFactory
+                from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
 
-                streaming_factory = StreamingDiarizerFactory(
+                streaming_factory = NemoStreamingDiarizerFactory(
                     diarization_adapter._model,
                     tier=settings.diarization_latency,
                 )

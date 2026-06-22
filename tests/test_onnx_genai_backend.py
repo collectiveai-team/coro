@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from coro.backends.onnx_asr import convert_onnx_asr_result
-from coro.backends.onnx_genai import _LANG_TAG_RE, _lang_id_for
+from coro.backends.asr.onnx_asr import convert_onnx_asr_result
+from coro.backends.asr.onnx_genai import _LANG_TAG_RE, _lang_id_for
 
 
 def test_lang_id_known_codes():

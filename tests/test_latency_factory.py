@@ -31,7 +31,7 @@ class TestLatencyTierSettings:
 
 class TestLatencyTierMapping:
     def test_very_high_params(self):
-        from coro.backends.nemo_streaming import get_latency_tier_params
+        from coro.backends.diarization.nemo.streaming import get_latency_tier_params
 
         params = get_latency_tier_params("very-high")
         assert params.chunk_len == 340
@@ -41,21 +41,21 @@ class TestLatencyTierMapping:
         assert params.spkcache_len == 188
 
     def test_high_params(self):
-        from coro.backends.nemo_streaming import get_latency_tier_params
+        from coro.backends.diarization.nemo.streaming import get_latency_tier_params
 
         params = get_latency_tier_params("high")
         assert params.chunk_len == 124
         assert params.chunk_right_context == 1
 
     def test_low_params(self):
-        from coro.backends.nemo_streaming import get_latency_tier_params
+        from coro.backends.diarization.nemo.streaming import get_latency_tier_params
 
         params = get_latency_tier_params("low")
         assert params.chunk_len == 6
         assert params.chunk_right_context == 7
 
     def test_ultra_low_params(self):
-        from coro.backends.nemo_streaming import get_latency_tier_params
+        from coro.backends.diarization.nemo.streaming import get_latency_tier_params
 
         params = get_latency_tier_params("ultra-low")
         assert params.chunk_len == 3
@@ -63,7 +63,7 @@ class TestLatencyTierMapping:
     def test_all_tiers_have_required_fields(self):
         import dataclasses
 
-        from coro.backends.nemo_streaming import get_latency_tier_params
+        from coro.backends.diarization.nemo.streaming import get_latency_tier_params
 
         required = {
             "chunk_len",
@@ -79,7 +79,7 @@ class TestLatencyTierMapping:
     def test_params_are_immutable(self):
         import dataclasses
 
-        from coro.backends.nemo_streaming import (
+        from coro.backends.diarization.nemo.streaming import (
             LATENCY_TIER_PARAMS,
             get_latency_tier_params,
         )
@@ -90,7 +90,7 @@ class TestLatencyTierMapping:
         assert LATENCY_TIER_PARAMS["very-high"].chunk_len == 340
 
 
-class TestStreamingDiarizerFactory:
+class TestNemoStreamingDiarizerFactory:
     def _make_mock_model(self):
         import torch
 
@@ -111,10 +111,10 @@ class TestStreamingDiarizerFactory:
         return model
 
     def test_factory_applies_tier_params_to_model(self):
-        from coro.backends.nemo_streaming import StreamingDiarizerFactory
+        from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
 
         model = self._make_mock_model()
-        StreamingDiarizerFactory(model, tier="very-high")
+        NemoStreamingDiarizerFactory(model, tier="very-high")
         assert model.sortformer_modules.chunk_len == 340
         assert model.sortformer_modules.chunk_right_context == 40
         assert model.sortformer_modules.fifo_len == 40
@@ -123,10 +123,10 @@ class TestStreamingDiarizerFactory:
         model.sortformer_modules._check_streaming_parameters.assert_called_once()
 
     def test_factory_produces_distinct_instances(self):
-        from coro.backends.nemo_streaming import StreamingDiarizerFactory
+        from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
 
         model = self._make_mock_model()
-        factory = StreamingDiarizerFactory(model, tier="low")
+        factory = NemoStreamingDiarizerFactory(model, tier="low")
         d1 = factory()
         d2 = factory()
         assert d1 is not d2
@@ -134,10 +134,10 @@ class TestStreamingDiarizerFactory:
         assert d2._pcm_buffer == b""
 
     def test_factory_default_tier_is_very_high(self):
-        from coro.backends.nemo_streaming import StreamingDiarizerFactory
+        from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
 
         model = self._make_mock_model()
-        factory = StreamingDiarizerFactory(model)
+        factory = NemoStreamingDiarizerFactory(model)
         assert factory._tier == "very-high"
 
 

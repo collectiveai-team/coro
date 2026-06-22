@@ -11,7 +11,7 @@ import numpy as np
 import torch
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
-from coro.backends.nemo import convert_diarization_segments
+from coro.backends.diarization.segments import convert_diarization_segments
 from coro.core.models import SpeakerSegment
 
 logger = logging.getLogger(__name__)
@@ -65,8 +65,12 @@ def get_latency_tier_params(tier: str) -> LatencyTierParams:
     return LATENCY_TIER_PARAMS[tier]
 
 
-class StreamingDiarizerFactory:
-    """Produces fresh per-request StreamingDiarizer instances bound to a shared model."""
+class NemoStreamingDiarizerFactory:
+    """Produces fresh per-request StreamingDiarizer instances bound to a shared NeMo model.
+
+    Conforms to the core ``StreamingDiarizerFactory`` protocol; named distinctly so
+    the concrete implementation does not collide with that protocol.
+    """
 
     def __init__(self, model, *, tier: str = "very-high") -> None:
         self._model = model

@@ -1,4 +1,4 @@
-"""NeMo ML Model Integration."""
+"""NeMo batch Sortformer ML Model Integration."""
 
 from __future__ import annotations
 
@@ -6,80 +6,18 @@ import asyncio
 import contextlib
 import logging
 import os
-import re
 import tempfile
 import wave
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import torch
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
+from coro.backends.diarization.segments import convert_diarization_segments
 from coro.core.models import SpeakerSegment
 
 logger = logging.getLogger(__name__)
-
-
-def _speaker_to_one_indexed(speaker) -> int:
-    """Convert a zero-indexed or string speaker label to 1-indexed int."""
-    if isinstance(speaker, int):
-        return speaker + 1
-    if isinstance(speaker, np.integer):
-        return int(speaker) + 1
-    match = re.search(r"\d+", str(speaker))
-    if match:
-        return int(match.group(0)) + 1
-    return 1
-
-
-def _coerce_diarization_segment(seg):
-    if isinstance(seg, str):
-        parts = seg.replace(",", " ").split()
-        if len(parts) >= 3:
-            return float(parts[0]), float(parts[1]), parts[2]
-    if isinstance(seg, (tuple, list)) and len(seg) >= 3:
-        return float(seg[0]), float(seg[1]), seg[2]
-    return (
-        float(getattr(seg, "start", 0.0) or 0.0),
-        float(getattr(seg, "end", 0.0) or 0.0),
-        getattr(seg, "speaker", 0),
-    )
-
-
-def convert_diarization_segments(
-    native_segments,
-    *,
-    duration: float,
-) -> list[SpeakerSegment]:
-    """Convert NeMo diarization segment objects to SpeakerSegments.
-
-    Args:
-        native_segments: Iterable of NeMo diarization outputs.
-        duration: Total audio duration in seconds; end times are clamped.
-
-    Returns:
-        Deduplicated list of SpeakerSegment sorted by start time.
-
-    """
-    timeline: list[SpeakerSegment] = []
-    seen: set[tuple[float, float, int]] = set()
-
-    for seg in native_segments:
-        start, end, speaker_label = _coerce_diarization_segment(seg)
-        start = max(0.0, start)
-        end = min(duration, end)
-        if end <= start:
-            continue
-        speaker = _speaker_to_one_indexed(speaker_label)
-        key = (round(start, 3), round(end, 3), speaker)
-        if key in seen:
-            continue
-        seen.add(key)
-        timeline.append(SpeakerSegment(start=key[0], end=key[1], speaker=speaker))
-
-    timeline.sort(key=lambda s: s.start)
-    return timeline
 
 
 class NemoDiarizationAdapter:
