@@ -29,6 +29,12 @@ dependencies = [
     "faster-whisper>=1.2.0,<1.3.0",
     "lightning==2.4.0",
     "nemo-toolkit[asr]>=2.7.0,<2.8.0",
+    # nemo-toolkit -> resampy -> numba (floor only, no numpy ceiling). On a fresh
+    # resolution (uvx / uv tool install, which ignore uv.lock) uv picks the newest
+    # numpy, finds no recent numba supports it, and backtracks numba down to 0.53.1
+    # — a wheel that only builds on Python <3.10. Pin a numba floor that ships
+    # py3.12 wheels so the backtrack can't reach the broken release.
+    "numba>=0.61",
     "onnx-asr[hub]>=0.11.0",
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.27",
