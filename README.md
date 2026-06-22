@@ -28,7 +28,7 @@ attributed to who spoke them.
 
 The key features are:
 - **OpenAI-compatible API** — drop-in `/v1/audio/transcriptions`; clients reuse the official `openai` SDK types (`Transcription` / `TranscriptionVerbose` / `TranscriptionDiarized`) with no custom schema
-- **Speaker diarization** — NVIDIA NeMo Sortformer attributes every segment to a speaker (`diarized_json`), so you get *who spoke, when, and what*
+- **Pluggable diarization backends** — pick per deployment: NVIDIA NeMo Sortformer (streaming-capable, **≤ 4 speakers**) or pyannote community-1 (batch/whole-file, **handles > 4 speakers**); both attribute every segment to a speaker (`diarized_json`), so you get *who spoke, when, and what*
 - **Pluggable ASR backends** — pick per deployment: Faster-Whisper (best accuracy, multilingual), onnx-asr Parakeet (highest GPU throughput), or onnx-genai Nemotron (real-time streaming)
 - **Streaming over SSE** — OpenAI-exact `transcript.text.delta` / `transcript.text.done` / `[DONE]` events with `stream=true`
 - **Flat-memory long audio** — the streaming pipeline spills the transcript to disk so host RSS stays flat from 11 s to multi-hour recordings
@@ -188,6 +188,62 @@ For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
 per-request transcript spills to disk and host RSS stays flat regardless of
 recording length. Consume the result over SSE (`stream=true`).
 
+## Diarization backends
+
+Diarization is **optional** (default `none` — an ASR-only server is valid) and
+pluggable behind a single `DiarizationAdapter` contract, dispatched by a
+per-capability Backend Adapter Factory (see ADR 0007). Select it with
+`CORO_BACKEND_DIARIZATION` + `CORO_MODEL_DIARIZATION`; pick the device with
+`CORO_DIARIZATION_DEVICE` (`auto` | `cpu` | `cuda`).
+
+| Backend (`CORO_BACKEND_DIARIZATION`) | Default model | Speakers | Streaming | Gated / token | Install |
+|---|---|---|---|---|---|
+| `nemo` | `nvidia/diar_streaming_sortformer_4spk-v2` | **≤ 4** (4-speaker Sortformer) | ✅ works with `CORO_PIPELINE=streaming` | no | core install |
+| `pyannote` | `pyannote/speaker-diarization-community-1` | **unbounded** — handles **> 4** | ❌ batch/whole-file only | **yes — Hugging Face token required** | `--extra diar-pyannote` |
+
+**Which to pick:**
+
+- **NeMo Sortformer** — choose for ≤ 4 speakers and/or when you need the
+  **streaming pipeline** (Sortformer is the only streaming-capable backend). The
+  `diar_streaming_sortformer_4spk-v2` model is **designed for at most 4
+  speakers**; on meetings with more than 4 distinct speakers it will collapse the
+  extras and DER degrades.
+- **pyannote community-1** — choose when a recording may contain **more than 4
+  speakers**. It clusters speakers over the **whole file**, so it is **batch-only**
+  and is rejected at startup if you select `CORO_PIPELINE=streaming` (use
+  `full-memory`). The model is **gated**: you must accept its conditions on the
+  Hugging Face model page and provide a token.
+
+### pyannote setup (gated model + token)
+
+1. Install the optional dependency (kept out of the core install):
+
+   ```bash
+   uv sync --extra cpu --extra diar-pyannote   # or: --extra cuda --extra diar-pyannote
+   ```
+
+2. Accept the user conditions for
+   [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1)
+   on Hugging Face, then provide a token. Any of these is read (and the value is
+   masked in logs); `.env` is loaded automatically:
+
+   ```bash
+   # .env (auto-loaded), or any of these env vars:
+   HF_TOKEN=hf_xxx                 # standard HF name
+   HUGGING_FACE_HUB_TOKEN=hf_xxx   # standard HF name
+   CORO_HF_TOKEN=hf_xxx            # coro-namespaced
+   ```
+
+3. Run with the full-memory pipeline:
+
+   ```bash
+   CORO_BACKEND_DIARIZATION=pyannote CORO_PIPELINE=full-memory coro --port 8000
+   # equivalent CLI: coro --backend-diarization pyannote --pipeline full-memory
+   ```
+
+> Without a valid token (or before accepting the model conditions) the pyannote
+> pipeline fails to load at startup with an actionable error.
+
 ### Settings reference
 
 Every setting below is available as both an environment variable and a CLI
@@ -206,10 +262,11 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 | `CORO_ASR_QUANTIZATION` | `--asr-quantization` | _(unset)_ | onnx-asr quantization (e.g. `int8`); ignored by `faster-whisper`. |
 | `CORO_ASR_ONNX_VAD` | `--asr-onnx-vad` | `disabled` | Silero VAD segmentation for `onnx-asr` (`enabled` \| `disabled`). |
 | `CORO_ASR_ONNX_VAD_THRESHOLD` | `--asr-onnx-vad-threshold` | _(unset)_ | Silero VAD speech-probability threshold; only when VAD enabled. |
-| `CORO_BACKEND_DIARIZATION` | `--backend-diarization` | `none` | Diarization backend provider (`none` \| `nemo`). |
-| `CORO_MODEL_DIARIZATION` | `--model-diarization` | _(unset)_ | Diarization model; defaults to `nvidia/diar_streaming_sortformer_4spk-v2` when backend is `nemo`. |
-| `CORO_DIARIZATION_DEVICE` | `--diarization-device` | `auto` | NeMo diarization device (`auto` \| `cuda` \| `cpu`). |
-| `CORO_DIARIZATION_LATENCY` | `--diarization-latency` | `very-high` | Streaming Sortformer latency tier (`very-high` \| `high` \| `low` \| `ultra-low`). |
+| `CORO_BACKEND_DIARIZATION` | `--backend-diarization` | `none` | Diarization backend provider (`none` \| `nemo` \| `pyannote`). |
+| `CORO_MODEL_DIARIZATION` | `--model-diarization` | _(unset)_ | Diarization model; defaults to `nvidia/diar_streaming_sortformer_4spk-v2` (`nemo`) or `pyannote/speaker-diarization-community-1` (`pyannote`). |
+| `CORO_DIARIZATION_DEVICE` | `--diarization-device` | `auto` | Diarization device (`auto` \| `cuda` \| `cpu`). |
+| `CORO_DIARIZATION_LATENCY` | `--diarization-latency` | `very-high` | Streaming Sortformer latency tier (`very-high` \| `high` \| `low` \| `ultra-low`); `nemo` streaming only. |
+| `CORO_HF_TOKEN` | `--CORO-HF-TOKEN` | _(unset)_ | Hugging Face token for gated diarization models (e.g. pyannote community-1). Also read from `HF_TOKEN` / `HUGGING_FACE_HUB_TOKEN` (and matching `--HF-TOKEN` flags) and `.env`; masked in logs. |
 | `CORO_TRANSCRIPT_SPILL_DIR` | `--transcript-spill-dir` | _(system temp)_ | Streaming transcript spill dir; must be real disk (non-tmpfs) for flat RAM. |
 | `CORO_WARMUP` | `--warmup` | `enabled` | Run warmup against the warmup audio asset at startup (`enabled` \| `disabled`). |
 | `CORO_LOG_LEVEL` | `--log-level` | `info` | Log level (CLI use only). |
@@ -449,6 +506,13 @@ extras are mutually exclusive and carry the matching `onnxruntime` /
 git clone https://github.com/collectiveai-team/coro && cd coro
 uv sync --extra cpu     # CPU-only
 uv sync --extra cuda    # NVIDIA GPU
+```
+
+Add `--extra diar-pyannote` (combinable with `cpu` or `cuda`) for the gated
+pyannote diarization backend — see [Diarization backends](#diarization-backends):
+
+```bash
+uv sync --extra cpu --extra diar-pyannote
 ```
 
 Run the server and the checks from the project environment with `uv run`:

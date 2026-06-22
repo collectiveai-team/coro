@@ -1,4 +1,4 @@
-"""Pure-diarization DER comparison: NeMo Sortformer vs pyannote community-1.
+r"""Pure-diarization DER comparison: NeMo Sortformer vs pyannote community-1.
 
 Runs each Diarization Adapter's ``diarize_pcm`` directly over AMI Mix-Headset
 audio (bypassing ASR so speaker quality is isolated), writes a diarization-only
@@ -7,8 +7,8 @@ Quality Benchmark scoring (``coro.bench.quality.score_item`` / ``DerStats``) and
 the shared STM writers — not a parallel DER/STM implementation.
 
 Usage:
-    coro-bench-diar --ami-root ../../amicorpus \\
-        --meetings IS1009a ES2004a TS3003a \\
+    coro-bench-diar --ami-root ../../amicorpus \
+        --meetings IS1009a ES2004a TS3003a \
         --collar 0.25 --regions all --out-dir /tmp/diar-eval
 
 The pyannote model is gated; provide a token via CORO_HF_TOKEN, HF_TOKEN, or
@@ -104,8 +104,7 @@ def _run_backend(
         hyp_stm.write_text(speaker_timeline_to_stm(timeline, meeting_id))
 
         der_by_mode = {
-            mode: _score_der(ref_stm, hyp_stm, collar=collar, regions=mode)
-            for mode in region_modes
+            mode: _score_der(ref_stm, hyp_stm, collar=collar, regions=mode) for mode in region_modes
         }
         n_spk = len({s.speaker for s in timeline})
         rtf = elapsed / duration if duration else 0.0
@@ -223,7 +222,7 @@ def main() -> None:
                 name, adapter, args.meetings, ami_root, out_dir, args.collar, region_modes
             )
             _free(adapter)
-        except Exception as exc:  # noqa: BLE001 - surface per-backend failure, keep going
+        except Exception as exc:
             errors[name] = f"{type(exc).__name__}: {exc}"
             print(f"  [{name}] FAILED: {errors[name]}", flush=True)
 
