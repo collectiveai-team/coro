@@ -21,3 +21,11 @@ coro/_version.py
 /dist/
 /build/
 *.egg-info/
+
+# secrets (varlock) — ignore all .env* except the committed schema/example
+.env.*
+!.env.schema
+!.env.example
+.tmp/
+.scratch/
+.journals/

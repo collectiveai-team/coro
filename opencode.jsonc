@@ -3,11 +3,86 @@
     // MARK: Plugins
     "plugin": [
         // "superpowers@git+https://github.com/obra/superpowers.git"
+        "opencode-sessions-explorer",
+        "opencode-varlock@latest"
     ],
     "permission": {
+        "external_directory": {
+            "~/.local/share/opencode/**": "allow"
+        },
         // MARK: Skills
         "skill": {
             "*": "allow"
+        },
+        // MARK: Secret protection (varlock-managed; never read/write/edit secrets)
+        "read": {
+            "*.env*": "deny",
+            "*.env.schema": "allow",
+            "*.env.example": "allow",
+            "*.pem": "deny",
+            "*.key": "deny",
+            "*credentials*": "deny",
+            "*.pgpass": "deny",
+            "*varlock.config*": "deny"
+        },
+        "write": {
+            "*.env*": "deny",
+            "*.pem": "deny",
+            "*.key": "deny",
+            "*varlock.config*": "deny"
+        },
+        "edit": {
+            "*.env*": "deny",
+            "*.pem": "deny",
+            "*.key": "deny",
+            "*varlock.config*": "deny"
+        },
+        "bash": {
+            "cat *.env*": "deny",
+            "less *.env*": "deny",
+            "more *.env*": "deny",
+            "head *.env*": "deny",
+            "tail *.env*": "deny",
+            "grep * .env*": "deny",
+            "sed * .env*": "deny",
+            "awk * .env*": "deny",
+            "cut * .env*": "deny",
+            "sort .env*": "deny",
+            "dd if=.env*": "deny",
+            "tee * .env*": "deny",
+            "xxd .env*": "deny",
+            "echo $*": "deny",
+            "python*getenv*": "deny",
+            "python*os.environ*": "deny",
+            "python*open*env*": "deny",
+            "node*process.env*": "deny",
+            "node*readFileSync*env*": "deny",
+            "ruby*File.read*env*": "deny",
+            "printenv*": "deny",
+            "env": "deny",
+            "env *": "deny",
+            "export -p": "deny",
+            "declare -x": "deny",
+            "compgen -v": "deny",
+            "compgen -A variable": "deny",
+            "typeset -x": "deny",
+            "source .env*": "deny",
+            ". .env*": "deny",
+            "set -a*": "deny",
+            "curl *env*": "deny",
+            "wget *env*": "deny",
+            "varlock printenv*": "deny",
+            "varlock load --show*": "deny",
+            "varlock load --format*": "deny",
+            "varlock load -f*": "deny",
+            "*base64*|*bash*": "deny",
+            "*base64*|*sh*": "deny",
+            "npm test": "allow",
+            "npm run *": "allow",
+            "bun test": "allow",
+            "bun run *": "allow",
+            "git *": "allow",
+            "ls *": "allow"
         }
     },
     // MARK: MCPs

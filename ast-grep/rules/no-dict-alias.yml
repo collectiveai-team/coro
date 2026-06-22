@@ -1,0 +1,15 @@
+id: no-dict-alias
+language: python
+severity: error
+message: "Type alias points at a raw dict. Aliasing `dict` to a name hides a raw-dict boundary from the no-dict-return rules. Prefer a @dataclass (internal boundaries) or a pydantic BaseModel (where validation is needed). If a dict truly is correct (e.g. a JSON-serialization boundary), keep the `dict` annotation and add an explicit `# ast-grep-ignore: no-dict-return-annotation` at the call site so the exception is visible."
+rule:
+  any:
+    # X = dict / X = dict[...]
+    - pattern: "$NAME = dict"
+    - pattern: "$NAME = dict[$$$ARGS]"
+    # X: TypeAlias = dict / X: TypeAlias = dict[...]
+    - pattern: "$NAME: $ANN = dict"
+    - pattern: "$NAME: $ANN = dict[$$$ARGS]"
+    # PEP 695: type X = dict[...]
+    - pattern: "type $NAME = dict"
+    - pattern: "type $NAME = dict[$$$ARGS]"

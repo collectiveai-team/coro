@@ -37,6 +37,20 @@ priority = 0
 id = "end-of-file-fixer"
 priority = 0
 
+# MARK: trailing-whitespace
+[[repos.hooks]]
+id = "trailing-whitespace"
+priority = 0
+
+# MARK: betterleaks
+# Secret scanner (gitleaks fork). language = "golang" so prek builds it from the
+# pinned tag in an isolated toolchain. Scans staged changes on commit; --redact
+# keeps any matched secret out of the output.
+[[repos]]
+repo = "https://github.com/betterleaks/betterleaks"
+rev = "v1.5.0"
+hooks = [{ id = "betterleaks", priority = 0 }]
+
 # MARK: validate-pyproject
 [[repos]]
 repo = "https://github.com/abravalheri/validate-pyproject"
