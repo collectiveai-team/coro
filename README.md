@@ -78,6 +78,15 @@ for segment in result.segments:          # who spoke, when, and what
     print(f"[{segment.start:.2f}-{segment.end:.2f}] {segment.speaker}: {segment.text}")
 ```
 
+Or hit the endpoint directly with `curl` (the same OpenAI multipart contract):
+
+```bash
+curl http://127.0.0.1:8000/v1/audio/transcriptions \
+  -F file=@audio.wav \
+  -F model=whisper-1 \
+  -F response_format=diarized_json
+```
+
 That's the whole integration — because Coro returns standard OpenAI shapes, the
 SDK parses the response into typed objects with no custom schema. See
 [Client integration](#client-integration) for streaming (SSE) and the full
@@ -477,6 +486,26 @@ from openai.types.audio import (
 
 payload = httpx.post(url, files=..., data={"response_format": "verbose_json"}).json()
 parsed = TranscriptionVerbose.model_validate(payload)
+```
+
+### Option C — call the HTTP endpoint directly with `curl`
+
+No SDK required — `POST /v1/audio/transcriptions` accepts a standard multipart
+form (`file`, `model`, `response_format`) and returns the OpenAI JSON shapes:
+
+```bash
+# Non-streaming (json | verbose_json | diarized_json)
+curl http://<host>:<port>/v1/audio/transcriptions \
+  -F file=@audio.wav \
+  -F model=whisper-1 \
+  -F response_format=diarized_json
+
+# Streaming token deltas over SSE
+curl -N http://<host>:<port>/v1/audio/transcriptions \
+  -F file=@audio.wav \
+  -F model=whisper-1 \
+  -F response_format=json \
+  -F stream=true
 ```
 
 ### Format ↔ SDK type mapping
