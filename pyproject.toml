@@ -52,7 +52,7 @@ dependencies = [
 # the runtime is supplied solely by the selected extra (onnxruntime / onnxruntime-gpu).
 [project.optional-dependencies]
 cpu = [
-    "torch>=2.1.0,<4.0",
+    "torch>=2.12.1,<4.0",
     "torchaudio>=2.1.0,<4.0",
     "onnxruntime>=1.22,!=1.24.1",
     "onnxruntime-genai>=0.14.0",
@@ -60,9 +60,9 @@ cpu = [
 cuda = [
     "nvidia-cublas-cu12>=12.0.0.0",
     "nvidia-cudnn-cu12>=9.0.0.0",
-    "torch>=2.1.0,<4.0",
+    "torch>=2.12.1,<4.0",
     "torchaudio>=2.1.0,<4.0",
-    "onnxruntime-gpu>=1.22,!=1.24.1",
+    "onnxruntime-gpu!=1.24.1,>=1.27.0",
     "onnxruntime-genai-cuda>=0.14.0",
 ]
 # Optional, gated batch-only diarization backend (pyannote community-1).
@@ -74,9 +74,9 @@ diar-pyannote = [
 # Internal-only groups (PEP 735). Not exposed via pip; uv-native.
 [dependency-groups]
 dev = [
-    "matplotlib>=3.10.9",
+    "matplotlib>=3.11.0",
     "pandas>=3.0.2",
-    "pytest>=8.0.0",
+    "pytest>=9.1.1",
     "pytest-asyncio>=0.24.0",
     "httpx>=0.27.0",
     "anyio>=4.0.0",
