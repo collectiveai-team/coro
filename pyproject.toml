@@ -74,7 +74,7 @@ diar-pyannote = [
 # Internal-only groups (PEP 735). Not exposed via pip; uv-native.
 [dependency-groups]
 dev = [
-    "matplotlib>=3.10.9",
+    "matplotlib>=3.11.0",
     "pandas>=3.0.2",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
