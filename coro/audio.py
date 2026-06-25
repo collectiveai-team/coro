@@ -1,6 +1,6 @@
 """Audio Module — ffmpeg conversion, PCM streaming, upload spooling, and constants.
 
-This module owns all audio IO concerns so that ffmpeg and byte-streaming
+This module owns all audio or video IO concerns so that ffmpeg and byte-streaming
 behaviour do not pollute API routers or core transformations.
 
 Public surface:
@@ -21,7 +21,6 @@ from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
 
-
 # MARK: Audio Constants
 SAMPLE_RATE: int = 16000
 """Canonical audio sample rate in Hz."""
@@ -32,11 +31,12 @@ BYTES_PER_SAMPLE: int = 2
 
 # MARK: Audio Input
 class AudioInput:
-    """Package-owned uploaded audio representation with cleanup ownership."""
+    """Package-owned uploaded audio or video representation with cleanup ownership."""
 
-    def __init__(self, data: bytes) -> None:
+    def __init__(self, data: bytes, filename: str | None = None) -> None:
         self._data = data
         self._temp_path: str | None = None
+        self._filename = filename
 
     @classmethod
     async def from_upload(cls, upload: Any) -> AudioInput:
@@ -46,14 +46,15 @@ class AudioInput:
             if not chunk:
                 break
             chunks.append(chunk)
-        return cls(b"".join(chunks))
+        return cls(b"".join(chunks), filename=getattr(upload, "filename", None))
 
     async def read_bytes(self) -> bytes:
         return self._data
 
     async def temp_path(self) -> str:
         if self._temp_path is None:
-            fd, path = tempfile.mkstemp(prefix="asr-upload-", suffix=".audio")
+            suffix = Path(self._filename).suffix if self._filename else ".audio"
+            fd, path = tempfile.mkstemp(prefix="asr-upload-", suffix=suffix or ".audio")
             with os.fdopen(fd, "wb") as tmp:
                 tmp.write(self._data)
             self._temp_path = path
@@ -117,11 +118,12 @@ def iter_aligned_pcm_chunks(
 
 
 # MARK: FFmpeg Conversion
-async def convert_to_pcm_bytes(audio_bytes: bytes) -> bytes:
-    """Convert any audio format to PCM s16le mono 16 kHz using ffmpeg (full-memory).
+async def convert_to_pcm_bytes(audio_bytes: bytes, *, _hint_ext: str = ".media") -> bytes:
+    """Convert any audio or video format to PCM s16le mono 16 kHz using ffmpeg.
 
     Args:
-        audio_bytes: Raw audio data in any format supported by ffmpeg.
+        audio_bytes: Raw audio or video data in any format supported by ffmpeg.
+        _hint_ext: Temporary input-file suffix used as a container hint. Defaults to ".media".
 
     Returns:
         Raw PCM bytes (s16le mono 16 kHz).
@@ -130,28 +132,35 @@ async def convert_to_pcm_bytes(audio_bytes: bytes) -> bytes:
         ValueError: If ffmpeg returns a non-zero exit code.
 
     """
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg",
-        "-i",
-        "pipe:0",
-        *_FFMPEG_PCM_ARGS,
-        "pipe:1",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate(input=audio_bytes)
-    if proc.returncode != 0:
-        raise ValueError(f"Audio conversion failed: {stderr.decode().strip()}")
-    return stdout
+    fd, tmp_path = tempfile.mkstemp(prefix="asr-conv-", suffix=_hint_ext or ".media")
+    try:
+        with os.fdopen(fd, "wb") as tmp:
+            tmp.write(audio_bytes)
+
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-i",
+            tmp_path,
+            *_FFMPEG_PCM_ARGS,
+            "pipe:1",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise ValueError(f"Audio conversion failed: {stderr.decode().strip()}")
+        return stdout
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            Path(tmp_path).unlink()
 
 
 # MARK: FFmpeg Streaming
 async def stream_pcm_from_file(path: str, chunk_seconds: float = 1.0) -> AsyncIterator[bytes]:
-    """Stream PCM chunks from a file path via ffmpeg.
+    """Stream PCM chunks from an audio or video file path via ffmpeg.
 
     Args:
-        path: Filesystem path to the audio file.
+        path: Filesystem path to the audio or video file.
         chunk_seconds: Target chunk duration in seconds.
 
     Yields:
