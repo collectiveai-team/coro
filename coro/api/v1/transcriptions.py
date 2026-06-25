@@ -21,6 +21,7 @@ from fastapi.responses import Response
 
 from coro.api.dependencies import get_pipeline
 from coro.api.exceptions import (
+    UNDECODABLE_MEDIA_MESSAGE,
     TranscriptionProcessingError,
     TranscriptionValidationError,
     UnsupportedStreamingError,
@@ -36,7 +37,7 @@ from coro.api.schemas import (
     VerboseJsonWord,
 )
 from coro.api.sse import streaming_response
-from coro.audio import AudioInput
+from coro.audio import AudioConversionError, AudioInput
 
 
 # MARK: Router Configuration
@@ -337,6 +338,14 @@ async def create_transcription(
         result = await pipeline.transcribe(audio, language=language, prompt=prompt_value)
     except TranscriptionValidationError:
         raise
+    except AudioConversionError as exc:
+        logger.info(
+            "transcription[%s] undecodable upload after %.3fs: %s",
+            request_id,
+            time.perf_counter() - started,
+            exc,
+        )
+        raise TranscriptionValidationError(UNDECODABLE_MEDIA_MESSAGE, param="file") from exc
     except Exception as exc:
         logger.exception(
             "transcription[%s] pipeline failed after %.3fs",

@@ -7,13 +7,21 @@ probing against non-seekable input.
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from coro.audio import SAMPLE_RATE, AudioInput, convert_to_pcm_bytes, iter_aligned_pcm_chunks
+from coro.audio import (
+    SAMPLE_RATE,
+    AudioInput,
+    _suffix_from_filename,
+    convert_to_pcm_bytes,
+    iter_aligned_pcm_chunks,
+    stream_pcm_from_file,
+)
 
 # ---------------------------------------------------------------------------
 # iter_aligned_pcm_chunks
@@ -108,6 +116,99 @@ async def test_audio_input_temp_path_preserves_upload_suffix():
         assert Path(path).suffix == ".mp4"
     finally:
         await audio.cleanup()
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        ("clip.mp4", ".mp4"),
+        ("CLIP.WEBM", ".WEBM"),
+        ("archive.tar.gz", ".gz"),
+        (None, ".media"),
+        ("noextension", ".media"),
+        ("weird name.m p4", ".media"),  # space -> not a real extension
+        ("danger.mp4\n", ".media"),  # control char
+        ("x." + "y" * 40, ".media"),  # absurdly long suffix
+    ],
+)
+def test_suffix_from_filename_sanitizes_untrusted_input(filename, expected):
+    """Only short, plain-alphanumeric extensions survive; the rest fall back."""
+    assert _suffix_from_filename(filename) == expected
+
+
+@pytest.mark.asyncio
+async def test_convert_to_pcm_bytes_rejects_empty_ffmpeg_output(monkeypatch):
+    """ffmpeg exiting 0 with no PCM is a failure, not silent empty success."""
+
+    class _FakeProc:
+        returncode = 0
+
+        async def communicate(self, _input=None):
+            return b"", b"silently produced nothing"
+
+    async def _fake_exec(*_args, **_kwargs):
+        return _FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    with pytest.raises(ValueError, match="no decodable audio stream"):
+        await convert_to_pcm_bytes(b"whatever")
+
+
+@pytest.mark.asyncio
+async def test_convert_to_pcm_bytes_raises_on_nonzero_exit(monkeypatch):
+    """A non-zero ffmpeg exit surfaces the stderr as a conversion failure."""
+
+    class _FakeProc:
+        returncode = 1
+
+        async def communicate(self, _input=None):
+            return b"", b"Invalid data found when processing input"
+
+    async def _fake_exec(*_args, **_kwargs):
+        return _FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    with pytest.raises(ValueError, match="Audio conversion failed: Invalid data"):
+        await convert_to_pcm_bytes(b"whatever")
+
+
+class _FakeStream:
+    """Minimal async stream reader yielding queued chunks then EOF."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = list(chunks)
+
+    async def read(self, _size: int = -1) -> bytes:
+        return self._chunks.pop(0) if self._chunks else b""
+
+
+@pytest.mark.asyncio
+async def test_stream_pcm_from_file_rejects_empty_output(monkeypatch):
+    """A clean ffmpeg exit that streamed no PCM raises instead of yielding nothing."""
+
+    class _FakeProc:
+        def __init__(self) -> None:
+            self.stdout = _FakeStream([])  # no PCM ever produced
+            self.stderr = _FakeStream([b"no decodable stream here"])
+            self.returncode: int | None = None
+
+        async def wait(self) -> int:
+            self.returncode = 0
+            return 0
+
+        def kill(self) -> None:
+            self.returncode = 0
+
+    async def _fake_exec(*_args, **_kwargs):
+        return _FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    with pytest.raises(ValueError, match="no decodable audio stream"):
+        async for _chunk in stream_pcm_from_file("/nonexistent.wav"):
+            pass
 
 
 @pytest.mark.asyncio
