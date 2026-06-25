@@ -19,6 +19,8 @@ from collections.abc import AsyncIterator
 
 from fastapi.responses import StreamingResponse
 
+from coro.api.exceptions import UNDECODABLE_MEDIA_MESSAGE
+from coro.audio import AudioConversionError
 from coro.core.models import PipelineStreamEvent
 from coro.pipelines.done_frame import StreamingDoneFrame
 
@@ -46,17 +48,20 @@ async def _sse_generator(event_source: AsyncIterator[PipelineStreamEvent]):
                 continue
             yield f"data: {json.dumps(dataclasses.asdict(event))}\n\n"
         yield "data: [DONE]\n\n"
-    except Exception as exc:
-        error_event = json.dumps(
-            {
-                "error": {
-                    "message": str(exc),
-                    "type": "server_error",
-                }
-            }
-        )
-        yield f"data: {error_event}\n\n"
+    except AudioConversionError:
+        # Client-side problem (unsupported/corrupt media): curated message,
+        # invalid_request_error type, and no raw ffmpeg stderr leaked.
+        yield _error_frame(UNDECODABLE_MEDIA_MESSAGE, error_type="invalid_request_error")
         yield "data: [DONE]\n\n"
+    except Exception as exc:
+        yield _error_frame(str(exc), error_type="server_error")
+        yield "data: [DONE]\n\n"
+
+
+def _error_frame(message: str, *, error_type: str) -> str:
+    """Render a single OpenAI-style SSE error frame."""
+    payload = json.dumps({"error": {"message": message, "type": error_type}})
+    return f"data: {payload}\n\n"
 
 
 def streaming_response(event_source: AsyncIterator[PipelineStreamEvent]) -> StreamingResponse:

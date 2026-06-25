@@ -20,7 +20,9 @@ import wave
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from coro.api.exceptions import UNDECODABLE_MEDIA_MESSAGE
 from coro.app import create_app
+from coro.audio import AudioConversionError
 from coro.core.models import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptionResult
 from coro.runtime import RuntimeState
 from coro.settings import ServerSettings
@@ -139,3 +141,43 @@ async def test_streaming_has_no_progress_events():
         e for e in events if isinstance(e, dict) and e.get("type") == "transcript.progress"
     ]
     assert progress_events == []
+
+
+class _UndecodableStreamingPipeline:
+    async def transcribe(self, audio, *, language=None, prompt=None):
+        return TranscriptionResult()
+
+    async def stream(self, audio, *, language=None, prompt=None):
+        for _ in ():  # empty loop makes this an async generator that yields nothing
+            yield _
+        raise AudioConversionError("Audio conversion failed: moov atom not found")
+
+
+@pytest.mark.asyncio
+async def test_streaming_undecodable_media_emits_invalid_request_error():
+    """A conversion failure mid-stream emits an invalid_request_error event, no ffmpeg leak."""
+    from fastapi import FastAPI
+
+    application: FastAPI = create_app(ServerSettings())
+    runtime = RuntimeState(asr_adapter=object())
+    runtime.pipeline = _UndecodableStreamingPipeline()
+    application.state.runtime = runtime
+
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("clip.mp4", b"not really an mp4", "video/mp4")},
+            data={"model": "whisper-1", "stream": "true"},
+        )
+
+    assert response.status_code == 200  # SSE errors are delivered in-band
+    events = _parse_sse_events(response.text)
+    error_events = [e for e in events if isinstance(e, dict) and "error" in e]
+    assert len(error_events) == 1
+    err = error_events[0]["error"]
+    assert err["type"] == "invalid_request_error"
+    assert err["message"] == UNDECODABLE_MEDIA_MESSAGE
+    assert "moov atom" not in err["message"]  # ffmpeg detail not leaked
+    assert events[-1] == "[DONE]"

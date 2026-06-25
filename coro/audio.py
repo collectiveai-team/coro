@@ -1,6 +1,6 @@
 """Audio Module — ffmpeg conversion, PCM streaming, upload spooling, and constants.
 
-This module owns all audio IO concerns so that ffmpeg and byte-streaming
+This module owns all audio or video IO concerns so that ffmpeg and byte-streaming
 behaviour do not pollute API routers or core transformations.
 
 Public surface:
@@ -16,11 +16,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import re
 import tempfile
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
-
 
 # MARK: Audio Constants
 SAMPLE_RATE: int = 16000
@@ -29,14 +29,56 @@ SAMPLE_RATE: int = 16000
 BYTES_PER_SAMPLE: int = 2
 """Bytes per PCM sample (16-bit little-endian mono)."""
 
+DEFAULT_MEDIA_SUFFIX: str = ".media"
+"""Generic container-hint suffix used when an upload has no usable extension."""
+
+_SAFE_SUFFIX = re.compile(r"\A\.[A-Za-z0-9][A-Za-z0-9]{0,11}\Z")
+"""A short, alphanumeric file extension (e.g. ``.mp4``, ``.webm``, ``.m4a``)."""
+
+
+# MARK: Errors
+class AudioConversionError(ValueError):
+    """Raised when ffmpeg cannot decode the input into PCM.
+
+    Signals a *client* problem (unsupported/corrupt/silent media) so the API
+    boundary can map it to a 400 instead of a generic 500. Subclasses
+    ``ValueError`` to stay backward-compatible with broad ``except`` callers.
+    """
+
+
+# MARK: Temp File Spooling
+def _suffix_from_filename(filename: str | None) -> str:
+    """Derive a safe temp-file suffix from a (client-controlled) upload filename.
+
+    Only short, plain-alphanumeric extensions are honoured; anything else
+    (missing, extensionless, spaces, unicode, over-long, path-like) falls back
+    to ``DEFAULT_MEDIA_SUFFIX`` so untrusted input never shapes the temp filename.
+    """
+    if not filename:
+        return DEFAULT_MEDIA_SUFFIX
+    suffix = Path(filename).suffix
+    return suffix if _SAFE_SUFFIX.match(suffix) else DEFAULT_MEDIA_SUFFIX
+
+
+def _spool_to_temp(data: bytes, *, prefix: str, suffix: str) -> str:
+    """Write bytes to a uniquely-named temp file and return its path.
+
+    The caller owns the returned path and is responsible for unlinking it.
+    """
+    fd, path = tempfile.mkstemp(prefix=prefix, suffix=suffix)
+    with os.fdopen(fd, "wb") as tmp:
+        tmp.write(data)
+    return path
+
 
 # MARK: Audio Input
 class AudioInput:
-    """Package-owned uploaded audio representation with cleanup ownership."""
+    """Package-owned uploaded audio or video representation with cleanup ownership."""
 
-    def __init__(self, data: bytes) -> None:
+    def __init__(self, data: bytes, filename: str | None = None) -> None:
         self._data = data
         self._temp_path: str | None = None
+        self._filename = filename
 
     @classmethod
     async def from_upload(cls, upload: Any) -> AudioInput:
@@ -46,17 +88,15 @@ class AudioInput:
             if not chunk:
                 break
             chunks.append(chunk)
-        return cls(b"".join(chunks))
+        return cls(b"".join(chunks), filename=getattr(upload, "filename", None))
 
     async def read_bytes(self) -> bytes:
         return self._data
 
     async def temp_path(self) -> str:
         if self._temp_path is None:
-            fd, path = tempfile.mkstemp(prefix="asr-upload-", suffix=".audio")
-            with os.fdopen(fd, "wb") as tmp:
-                tmp.write(self._data)
-            self._temp_path = path
+            suffix = _suffix_from_filename(self._filename)
+            self._temp_path = _spool_to_temp(self._data, prefix="asr-upload-", suffix=suffix)
         return self._temp_path
 
     async def cleanup(self) -> None:
@@ -79,6 +119,20 @@ _FFMPEG_PCM_ARGS = (
     "-loglevel",
     "error",
 )
+
+
+def _conversion_error(stderr: bytes, *, empty_output: bool = False) -> AudioConversionError:
+    """Build a uniform ffmpeg-failure error from captured stderr.
+
+    ``empty_output`` distinguishes a clean exit that yielded no PCM (e.g. an
+    input with no decodable audio stream) from a non-zero ffmpeg exit.
+    """
+    detail = stderr.decode().strip()
+    if empty_output:
+        return AudioConversionError(
+            f"Audio conversion produced no PCM output (no decodable audio stream?): {detail}"
+        )
+    return AudioConversionError(f"Audio conversion failed: {detail}")
 
 
 # MARK: PCM Chunking
@@ -118,47 +172,59 @@ def iter_aligned_pcm_chunks(
 
 # MARK: FFmpeg Conversion
 async def convert_to_pcm_bytes(audio_bytes: bytes) -> bytes:
-    """Convert any audio format to PCM s16le mono 16 kHz using ffmpeg (full-memory).
+    """Convert any audio or video format to PCM s16le mono 16 kHz using ffmpeg.
+
+    Decodes through a seekable temporary file (not ``pipe:0``) so ffmpeg can
+    probe container formats whose index lives at the end of the stream (e.g.
+    MP4 ``moov`` atoms). ffmpeg auto-detects the container from the file
+    content, so no extension hint is required.
 
     Args:
-        audio_bytes: Raw audio data in any format supported by ffmpeg.
+        audio_bytes: Raw audio or video data in any format supported by ffmpeg.
 
     Returns:
         Raw PCM bytes (s16le mono 16 kHz).
 
     Raises:
-        ValueError: If ffmpeg returns a non-zero exit code.
+        AudioConversionError: If ffmpeg fails, or succeeds but decodes no audio
+            (e.g. the input has no decodable audio stream).
 
     """
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg",
-        "-i",
-        "pipe:0",
-        *_FFMPEG_PCM_ARGS,
-        "pipe:1",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate(input=audio_bytes)
-    if proc.returncode != 0:
-        raise ValueError(f"Audio conversion failed: {stderr.decode().strip()}")
-    return stdout
+    tmp_path = _spool_to_temp(audio_bytes, prefix="asr-conv-", suffix=DEFAULT_MEDIA_SUFFIX)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-i",
+            tmp_path,
+            *_FFMPEG_PCM_ARGS,
+            "pipe:1",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise _conversion_error(stderr)
+        if not stdout:
+            raise _conversion_error(stderr, empty_output=True)
+        return stdout
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            Path(tmp_path).unlink()
 
 
 # MARK: FFmpeg Streaming
 async def stream_pcm_from_file(path: str, chunk_seconds: float = 1.0) -> AsyncIterator[bytes]:
-    """Stream PCM chunks from a file path via ffmpeg.
+    """Stream PCM chunks from an audio or video file path via ffmpeg.
 
     Args:
-        path: Filesystem path to the audio file.
+        path: Filesystem path to the audio or video file.
         chunk_seconds: Target chunk duration in seconds.
 
     Yields:
         PCM byte chunks (s16le mono 16 kHz), aligned to 2-byte boundaries.
 
     Raises:
-        ValueError: If ffmpeg returns a non-zero exit code.
+        AudioConversionError: If ffmpeg fails, or succeeds but decodes no audio.
 
     """
     target_bytes = max(2, int(SAMPLE_RATE * BYTES_PER_SAMPLE * chunk_seconds))
@@ -189,6 +255,7 @@ async def stream_pcm_from_file(path: str, chunk_seconds: float = 1.0) -> AsyncIt
 
     stderr_task = asyncio.create_task(_drain_stderr())
     pending = b""
+    produced = False
 
     try:
         while True:
@@ -199,17 +266,21 @@ async def stream_pcm_from_file(path: str, chunk_seconds: float = 1.0) -> AsyncIt
             aligned_len = len(pending) - (len(pending) % 2)
             while aligned_len >= target_bytes:
                 yield pending[:target_bytes]
+                produced = True
                 pending = pending[target_bytes:]
                 aligned_len = len(pending) - (len(pending) % 2)
 
         returncode = await proc.wait()
         await stderr_task
         if returncode != 0:
-            stderr = b"".join(stderr_chunks)
-            raise ValueError(f"Audio conversion failed: {stderr.decode().strip()}")
+            raise _conversion_error(b"".join(stderr_chunks))
 
         if len(pending) >= 2:
             yield pending[: len(pending) - (len(pending) % 2)]
+            produced = True
+
+        if not produced:
+            raise _conversion_error(b"".join(stderr_chunks), empty_output=True)
 
     finally:
         if proc.returncode is None:

@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from fastapi import status
 
+# MARK: Client-facing Messages
+UNDECODABLE_MEDIA_MESSAGE = (
+    "Could not decode the uploaded file as audio or video. "
+    "Ensure it is a supported, non-corrupt media format."
+)
+"""Safe, ffmpeg-detail-free message for an upload that cannot be decoded."""
+
 
 # MARK: Base Transcription Exception
 class TranscriptionError(Exception):

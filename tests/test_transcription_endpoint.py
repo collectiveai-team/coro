@@ -13,7 +13,9 @@ import wave
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from coro.api.exceptions import UNDECODABLE_MEDIA_MESSAGE
 from coro.app import create_app
+from coro.audio import AudioConversionError
 from coro.core.models import (
     DiarizationItem,
     ResponseSegment,
@@ -62,15 +64,20 @@ class _FakePipeline:
         return _PIPELINE_RESULT
 
 
-def _app_with_fake_pipeline():
-    """Build app with a fake configured pipeline injected into RuntimeState."""
+def _app_with_pipeline(pipeline):
+    """Build app with the given pipeline injected into RuntimeState."""
     from fastapi import FastAPI
 
     application: FastAPI = create_app(ServerSettings())
     runtime = RuntimeState(asr_adapter=object())  # non-None → ready=True
-    runtime.pipeline = _FakePipeline()
+    runtime.pipeline = pipeline
     application.state.runtime = runtime
     return application
+
+
+def _app_with_fake_pipeline():
+    """Build app with a fake configured pipeline injected into RuntimeState."""
+    return _app_with_pipeline(_FakePipeline())
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +196,50 @@ async def test_transcription_endpoint_tolerates_swagger_blank_fields():
             },
         )
     assert response.status_code == 200, response.text
+
+
+@pytest.mark.asyncio
+async def test_transcription_endpoint_undecodable_media_returns_400():
+    """An undecodable upload is a client error: 400 invalid_request_error, no ffmpeg leak."""
+
+    class _BadMediaPipeline:
+        async def transcribe(self, audio, *, language=None, prompt=None):
+            raise AudioConversionError("Audio conversion failed: moov atom not found")
+
+    app = _app_with_pipeline(_BadMediaPipeline())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("clip.mp4", b"not really an mp4", "video/mp4")},
+            data={"model": "whisper-1"},
+        )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["type"] == "invalid_request_error"
+    assert body["error"]["param"] == "file"
+    assert body["error"]["message"] == UNDECODABLE_MEDIA_MESSAGE
+    assert "moov atom" not in body["error"]["message"]  # ffmpeg detail not leaked
+
+
+@pytest.mark.asyncio
+async def test_transcription_endpoint_internal_valueerror_stays_500():
+    """A non-conversion ValueError (e.g. config) is NOT misclassified as a 400."""
+
+    class _ConfigErrorPipeline:
+        async def transcribe(self, audio, *, language=None, prompt=None):
+            raise ValueError("overlap_seconds must be less than window_seconds")
+
+    app = _app_with_pipeline(_ConfigErrorPipeline())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+            data={"model": "whisper-1"},
+        )
+    assert response.status_code == 500
+    body = response.json()
+    assert body["error"]["type"] == "server_error"
+    assert body["error"]["message"] == "Transcription processing failed."
 
 
 @pytest.mark.asyncio
