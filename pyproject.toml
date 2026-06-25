@@ -82,7 +82,7 @@ dev = [
     "anyio>=4.0.0",
     "openai>=2.0.0",
     "ruff>=0.15,<0.16",
-    "pyrefly>=0.17.0",
+    "pyrefly>=1.1.1",
 ]
 bench = [
     "meeteval>=0.4.3",
