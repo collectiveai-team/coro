@@ -28,8 +28,10 @@ attributed to who spoke them.
 
 The key features are:
 - **OpenAI-compatible API** — drop-in `/v1/audio/transcriptions`; clients reuse the official `openai` SDK types (`Transcription` / `TranscriptionVerbose` / `TranscriptionDiarized`) with no custom schema
+- **Audio *and* video input** — uploads are decoded through ffmpeg, so any container it supports works: audio (`.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`, …) and video (`.mp4`, `.mkv`, `.mov`, `.webm`, …); the audio track is extracted to 16 kHz mono PCM automatically — same endpoint, same response shapes
 - **Pluggable diarization backends** — pick per deployment: NVIDIA NeMo Sortformer (streaming-capable, **≤ 4 speakers**) or pyannote community-1 (batch/whole-file, **handles > 4 speakers**); both attribute every segment to a speaker (`diarized_json`), so you get *who spoke, when, and what*
 - **Pluggable ASR backends** — pick per deployment: Faster-Whisper (best accuracy, multilingual), onnx-asr Parakeet (highest GPU throughput), or onnx-genai Nemotron (real-time streaming)
+- **Two transcription pipelines** — `full-memory` (default) decodes and holds the whole recording in RAM for lowest latency on short/medium clips; `streaming` streams 1 s PCM chunks off disk and spills the growing transcript to a per-request on-disk store, trading a little latency for **flat host RAM on arbitrarily long audio**. Select with `CORO_PIPELINE` / `--pipeline` — see [the pipeline comparison](#two-transcription-pipelines-full-memory-vs-streaming)
 - **Streaming over SSE** — OpenAI-exact `transcript.text.delta` / `transcript.text.done` / `[DONE]` events with `stream=true`
 - **Flat-memory long audio** — the streaming pipeline spills the transcript to disk so host RSS stays flat from 11 s to multi-hour recordings
 - **CPU & GPU** — mutually-exclusive `cpu` / `cuda` extras carry the matching `onnxruntime` wheels; multilingual on either
@@ -204,6 +206,43 @@ ASR-only server, or swap `nemo` → `pyannote` (`--pipeline full-memory`, needs
 `response_format` accepts `json`, `verbose_json`, and `diarized_json`. With
 `stream=true` the endpoint emits OpenAI-exact SSE
 (`transcript.text.delta` / `transcript.text.done` / `[DONE]`).
+
+## Two transcription pipelines (full-memory vs streaming)
+
+Coro ships two interchangeable pipelines behind the same OpenAI endpoint and
+response shapes; switch between them with `CORO_PIPELINE` / `--pipeline`
+(default `full-memory`). They differ only in *how* the audio and transcript are
+held in memory — the wire format you get back is identical.
+
+- **`full-memory` (default)** — ffmpeg decodes the upload to PCM **once, in
+  full**, and the pipeline holds the entire signal plus the accumulated
+  tokens/segments/words in RAM. Simplest and lowest-latency for short to medium
+  clips, but **host RAM grows ~linearly with recording length**, so it is not
+  suited to unbounded audio. It is the only pipeline that works with the
+  whole-file `pyannote` diarizer.
+- **`streaming`** — ffmpeg streams 1 s PCM chunks off disk instead of buffering
+  the whole recording, and the growing transcript spills to a per-request
+  on-disk SQLite (WAL) store instead of Python lists. Consumed over **SSE
+  (`stream=true`)** it keeps **flat peak host RSS, independent of recording
+  length** (11 s ≈ 58 min ≈ multi-hour): only bounded working buffers stay
+  resident and the final `transcript.text.done` frame is rendered straight from
+  the store one segment/word at a time. This is the **only** pipeline that can
+  diarize live as audio arrives, and it requires a streaming-capable backend
+  (NeMo Sortformer for diarization).
+
+| | `full-memory` | `streaming` |
+|---|---|---|
+| Audio decode | whole recording at once | 1 s PCM chunks off disk |
+| Transcript storage | in-RAM Python lists | per-request on-disk SQLite (WAL) |
+| Host RAM vs length | grows ~linearly | **flat** (over SSE) |
+| Live/incremental output | ❌ (one final response) | ✅ over SSE |
+| Diarization backends | `nemo` *or* `pyannote` | `nemo` only (Sortformer) |
+| Best for | short/medium clips, > 4-speaker pyannote | long/unbounded audio |
+
+For flat RAM on long audio, point `CORO_TRANSCRIPT_SPILL_DIR` at a persistent
+(non-tmpfs) directory — the default temp dir is RAM-backed on many systems,
+which would defeat the spill. See [Benchmarks](#benchmarks) for the measured
+memory behaviour.
 
 ## ASR backends
 
