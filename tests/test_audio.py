@@ -1,17 +1,19 @@
 """Cycle 8: Audio module — aligned PCM chunking and edge cases.
 
-Tests use small in-memory byte streams.  No real ffmpeg subprocess is invoked;
-the aligned-chunking logic is tested in isolation using pre-built PCM bytes.
+Most tests use small in-memory byte streams. The video conversion regression
+uses a generated MP4 fixture because the bug depends on ffmpeg container
+probing against non-seekable input.
 """
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from coro.audio import AudioInput, SAMPLE_RATE, iter_aligned_pcm_chunks
-
+from coro.audio import SAMPLE_RATE, AudioInput, convert_to_pcm_bytes, iter_aligned_pcm_chunks
 
 # ---------------------------------------------------------------------------
 # iter_aligned_pcm_chunks
@@ -69,8 +71,9 @@ def test_sample_rate_constant():
 
 
 class _FakeUpload:
-    def __init__(self, chunks: list[bytes]) -> None:
+    def __init__(self, chunks: list[bytes], filename: str | None = None) -> None:
         self._chunks = list(chunks)
+        self.filename = filename
 
     async def read(self, _size: int = -1) -> bytes:
         if not self._chunks:
@@ -94,3 +97,52 @@ async def test_audio_input_temp_path_is_removed_on_cleanup():
     await audio.cleanup()
 
     assert not Path(path).exists()
+
+
+@pytest.mark.asyncio
+async def test_audio_input_temp_path_preserves_upload_suffix():
+    audio = await AudioInput.from_upload(_FakeUpload([b"video"], filename="clip.mp4"))
+    path = await audio.temp_path()
+
+    try:
+        assert Path(path).suffix == ".mp4"
+    finally:
+        await audio.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_convert_to_pcm_bytes_decodes_video_container(tmp_path):
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg is required for video conversion regression coverage")
+
+    video_path = tmp_path / "sample.mp4"
+    subprocess.run(  # noqa: S603
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=320x240:rate=30:duration=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=2",
+            "-shortest",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:v",
+            "mpeg4",
+            "-c:a",
+            "aac",
+            str(video_path),
+        ],
+        check=True,
+    )
+
+    pcm = await convert_to_pcm_bytes(video_path.read_bytes())
+
+    assert len(pcm) > SAMPLE_RATE * 2
