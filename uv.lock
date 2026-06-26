@@ -2470,7 +2470,7 @@ wheels = [
 
 [[package]]
 name = "pyannote-audio"
-version = "4.0.4"
+version = "4.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asteroid-filterbanks" },
@@ -2499,9 +2499,9 @@ dependencies = [
     { name = "torchcodec" },
     { name = "torchmetrics" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/20/05/6b2d4829ab00f2933b8966035cc8da5e27f81dc9c8c3c9eb58419ffa51e8/pyannote_audio-4.0.4.tar.gz", hash = "sha256:dee724dc3cff17dac9ea5afd36053f373ab7839f7b3044e617ff51e099deb131", size = 13960474, upload-time = "2026-02-07T09:56:27.776Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/98/469af8f06b0e78e4c54630246f7a2db2767f4fdba0451ad6281cf4002b1c/pyannote_audio-4.0.5.tar.gz", hash = "sha256:ee592c1000d87061a9e3e56ab73a4427ffd3eee168fff602dd6b8ed768c39da0", size = 13960403, upload-time = "2026-06-22T09:29:26.208Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/af/702d6cba8d040c6c83e8ffdc01a42903add3024c0c31f7531a1bf8819a3f/pyannote_audio-4.0.4-py3-none-any.whl", hash = "sha256:f9f8f597a938789684dd3efa22b427ebb1755d172dab2049ff322bfae9cd528a", size = 893682, upload-time = "2026-02-07T09:56:25.541Z" },
+    { url = "https://files.pythonhosted.org/packages/78/86/6fef011066d228d2082ba245cab4de907c810e446ab96b5ff25a3351992a/pyannote_audio-4.0.5-py3-none-any.whl", hash = "sha256:08f1c8c134672b84c5819acdcb9845ccc474c3aeb77892f99aa9cf6a0ca3d668", size = 893491, upload-time = "2026-06-22T09:29:24.22Z" },
 ]
 
 [[package]]
