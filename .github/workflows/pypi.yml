@@ -1,12 +1,15 @@
 name: Publish to PyPI
 
-# Last stage of the tag-driven release pipeline. Fires on the `release:
-# published` event emitted by release.yml's github-release job, i.e. after
-# ci -> docker -> github-release have all succeeded. Releases are only ever cut
-# from a vX.Y.Z tag, so this is effectively tag-only. Kept as its own workflow
-# so a PyPI misconfiguration fails in isolation without affecting the Release,
-# and so Trusted Publishing stays pinned to pypi.yml as the top-level workflow.
-# Re-run manually via the Actions tab (workflow_dispatch) if needed.
+# Last stage of the tag-driven release pipeline. release.yml's github-release
+# job dispatches this workflow (gh workflow run pypi.yml -f ref=vX.Y.Z) once
+# ci -> docker -> github-release have all succeeded. Dispatch is used instead of
+# the `release: published` event because GitHub suppresses events emitted by
+# GITHUB_TOKEN (anti-recursion); workflow_dispatch is the documented exception.
+# Kept as its own workflow so a PyPI misconfiguration fails in isolation without
+# affecting the Release, and so Trusted Publishing stays pinned to pypi.yml as
+# the top-level workflow. The `release: published` trigger below is retained as
+# a fallback for releases published by a human/PAT (those do cascade); re-run
+# manually via the Actions tab (workflow_dispatch) any time.
 #
 # Setup required (one-time, on PyPI):
 #   pypi.org -> project `coro-asr` -> Publishing -> Add a Trusted Publisher:

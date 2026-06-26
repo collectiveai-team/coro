@@ -10,11 +10,13 @@ name: Release
 #   3. github-release build the sdist/wheel and cut the Release, with notes
 #                     referencing the images just pushed (needs: docker)
 #
-# Publishing to PyPI is a separate workflow (pypi.yml) that fires on the
-# `release: published` event emitted by step 3 — so it runs after the Release
-# and a PyPI misconfiguration never blocks the GitHub Release. Keeping it
-# separate also keeps PyPI Trusted Publishing pinned to pypi.yml as its
-# top-level workflow.
+# Publishing to PyPI is a separate workflow (pypi.yml) that this job dispatches
+# explicitly via `gh workflow run` once the Release is cut — so it runs after
+# the Release and a PyPI misconfiguration never blocks the GitHub Release.
+# (We can't rely on the `release: published` event: GitHub suppresses events
+# emitted by GITHUB_TOKEN to prevent recursion; workflow_dispatch is the
+# documented exception.) Keeping it separate also keeps PyPI Trusted Publishing
+# pinned to pypi.yml as its own top-level workflow / OIDC subject.
 
 on:
   push:
@@ -45,6 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write # dispatch pypi.yml at the end of this job
     steps:
       - uses: actions/checkout@v7
         with:
@@ -95,3 +98,14 @@ jobs:
           append_body: true
           body: ${{ steps.images.outputs.body }}
           files: dist/*
+
+      # The Release above is created with GITHUB_TOKEN, and GitHub deliberately
+      # does NOT let a GITHUB_TOKEN-emitted `release: published` event trigger
+      # other workflows (anti-recursion). workflow_dispatch / repository_dispatch
+      # are the documented exceptions, so we dispatch pypi.yml explicitly here.
+      # This keeps PyPI Trusted Publishing pinned to pypi.yml as its own
+      # top-level run (its own OIDC subject), while still being fully automatic.
+      - name: Dispatch PyPI publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run pypi.yml -f ref="${{ github.ref_name }}"
