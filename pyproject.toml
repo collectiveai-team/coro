@@ -17,12 +17,36 @@ packages = ["coro"]
 name = "coro-asr"
 dynamic = ["version"]
 description = "Coro: OpenAI-compatible ASR + speaker-diarization server with pluggable backends."
+# Rendered as the long description on the PyPI project page.
+readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12, <3.13"
+authors = [
+    { name = "collective.ai" },
+    { name = "jedzill4", email = "raulonco@gmail.com" },
+]
+keywords = [
+    "asr",
+    "speech-to-text",
+    "transcription",
+    "speaker-diarization",
+    "whisper",
+    "openai-compatible",
+    "fastapi",
+]
+# NB: with the SPDX `license` expression above, the legacy "License :: OSI
+# Approved" trove classifier is intentionally omitted (PEP 639 / hatchling
+# rejects declaring both).
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "fastapi>=0.115.0",
@@ -40,6 +64,14 @@ dependencies = [
     "python-multipart>=0.0.27",
     "uvicorn>=0.30.0",
 ]
+
+# Shown in the PyPI sidebar. The `Homepage`/`Source`/`Issues` keys map to the
+# well-known icons; others render as plain links.
+[project.urls]
+Homepage = "https://github.com/collectiveai-team/coro"
+Source = "https://github.com/collectiveai-team/coro"
+Issues = "https://github.com/collectiveai-team/coro/issues"
+Changelog = "https://github.com/collectiveai-team/coro/releases"
 
 
 # onnxruntime and onnxruntime-genai each ship as two mutually-exclusive wheels (CPU vs GPU),

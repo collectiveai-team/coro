@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/coro-logo.png" alt="Coro — OpenAI-compatible ASR + speaker diarization" style="width:600px; max-width:100%; height:auto;" />
+  <img src="https://raw.githubusercontent.com/collectiveai-team/coro/main/assets/coro-logo.png" alt="Coro — OpenAI-compatible ASR + speaker diarization" style="width:600px; max-width:100%; height:auto;" />
 </p>
 
 <p align="center">
@@ -45,10 +45,10 @@ your machine:
 
 ```bash
 # CPU-only
-uvx --from "coro-asr[cpu]  @ git+https://github.com/collectiveai-team/coro" coro --port 8000
+uvx --from "coro-asr[cpu]" coro --port 8000
 
 # NVIDIA GPU
-uvx --from "coro-asr[cuda] @ git+https://github.com/collectiveai-team/coro" coro --port 8000
+uvx --from "coro-asr[cuda]" coro --port 8000
 ```
 
 `uvx` builds a throwaway isolated environment and launches the `coro` command —
@@ -102,8 +102,8 @@ no clone, no project environment. Pick the hardware extra that matches your
 machine (`cpu` / `cuda` are mutually exclusive):
 
 ```bash
-uv tool install "coro-asr[cpu]"  @ git+https://github.com/collectiveai-team/coro   # CPU-only
-uv tool install "coro-asr[cuda]" @ git+https://github.com/collectiveai-team/coro   # NVIDIA GPU
+uv tool install "coro-asr[cpu]"    # CPU-only
+uv tool install "coro-asr[cuda]"   # NVIDIA GPU
 ```
 
 Then run the server directly (no `uv run`):
