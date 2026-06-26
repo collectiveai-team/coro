@@ -1,22 +1,50 @@
 name: Release
 
-# Tag-driven (hatch-vcs): `git tag vX.Y.Z && git push origin vX.Y.Z`.
-# Builds the sdist/wheel and creates a GitHub Release. PyPI publishing is a
-# separate workflow (pypi.yml) triggered when this Release is published, so a
-# PyPI misconfiguration never blocks the GitHub Release.
+# Tag-driven release pipeline (hatch-vcs): `git tag vX.Y.Z && git push origin vX.Y.Z`.
+# Everything below is gated on the tag and runs strictly in order:
+#
+#   ci  ->  docker  ->  github-release  ->  (pypi.yml, on release published)
+#
+#   1. ci             reuse CI (lint, type-check, test) as the release gate
+#   2. docker         build & push the CPU/GPU images to GHCR (needs: ci)
+#   3. github-release build the sdist/wheel and cut the Release, with notes
+#                     referencing the images just pushed (needs: docker)
+#
+# Publishing to PyPI is a separate workflow (pypi.yml) that fires on the
+# `release: published` event emitted by step 3 — so it runs after the Release
+# and a PyPI misconfiguration never blocks the GitHub Release. Keeping it
+# separate also keeps PyPI Trusted Publishing pinned to pypi.yml as its
+# top-level workflow.
 
 on:
   push:
     tags:
       - "v*.*.*"
 
+# Default for jobs that don't override it. The docker / github-release jobs set
+# their own (packages: write / contents: write) below.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  ci:
+    name: ci gate
+    uses: ./.github/workflows/ci.yml
+
+  docker:
+    name: docker images
+    needs: ci
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+
+  github-release:
     name: build & github release
+    needs: docker
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,8 +66,32 @@ jobs:
           name: dist
           path: dist/*
 
+      # Container images published by the `docker` job above, surfaced in the
+      # release notes so each Release links the wheel and its images together.
+      - name: Compose image reference notes
+        id: images
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/coro
+          VERSION: ${{ github.ref_name }}
+        run: |
+          version="${VERSION#v}"
+          {
+            echo 'body<<EOF'
+            echo '## Container images'
+            echo
+            echo 'Published to GHCR by this release:'
+            echo
+            echo '| Flavour | Tags |'
+            echo '| --- | --- |'
+            echo "| GPU (default) | \`${IMAGE}:${version}\`, \`${IMAGE}:latest\`, \`${IMAGE}:${version}-gpu\`, \`${IMAGE}:latest-gpu\` |"
+            echo "| CPU | \`${IMAGE}:${version}-cpu\`, \`${IMAGE}:latest-cpu\` |"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
+          append_body: true
+          body: ${{ steps.images.outputs.body }}
           files: dist/*

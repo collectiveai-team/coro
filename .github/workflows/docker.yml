@@ -1,18 +1,20 @@
 name: Docker
 
-# Builds CPU and GPU runtime images and pushes them to GHCR.
-#   - push to main  -> :latest-<flavour> and :sha-<short>-<flavour>
-#   - tag vX.Y.Z    -> :X.Y.Z-<flavour> and :latest-<flavour>
+# Builds CPU and GPU runtime images for a release and pushes them to GHCR.
+#   tag vX.Y.Z -> :X.Y.Z-<flavour> and :latest-<flavour>
 # The GPU build additionally publishes the unsuffixed aliases :latest and
 # :X.Y.Z, so the bare image:version / image:latest point at the GPU image.
 # GPU images only need a GPU to *run*, not to build, so they build on the
 # standard hosted runner (a free-disk-space step makes room for the CUDA layers).
+#
+# This workflow is release-only: it is driven by the Release pipeline
+# (release.yml), which calls it via workflow_call *after* CI passes and
+# *before* the GitHub Release is cut, so the images exist by the time the
+# release notes reference them. workflow_dispatch allows a manual re-run from a
+# tag. There is no continuous (per-main-push) image build.
 
 on:
-  push:
-    branches: [main]
-    tags:
-      - "v*.*.*"
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
@@ -53,9 +55,19 @@ jobs:
           tool-cache: true
           large-packages: false
 
-      - name: Resolve version
+      # hatch-vcs is the source of truth for the version and always emits a
+      # PEP 440 string (e.g. 1.0.2, or 1.0.2.dev3+g<sha> off-tag). The previous
+      # `git describe | sed` produced `1.0.1-7-g<sha>` off-tag, which is not
+      # PEP 440 and broke the in-container wheel build via HATCH_VCS_PRETEND_VERSION.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.12"
+          enable-cache: true
+
+      - name: Resolve version (PEP 440 via hatch-vcs)
         id: ver
-        run: echo "value=$(git describe --tags --always | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+        run: echo "value=$(uvx hatch version)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -73,13 +85,11 @@ jobs:
             latest=false
             suffix=-${{ matrix.flavour }},onlatest=true
           tags: |
-            type=ref,event=branch
-            type=sha,prefix=sha-
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
             # Unsuffixed aliases (image:version / image:latest) -> the GPU image.
             type=semver,pattern={{version}},suffix=,enable=${{ matrix.flavour == 'gpu' }}
-            type=raw,value=latest,suffix=,enable=${{ matrix.flavour == 'gpu' && github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,suffix=,enable=${{ matrix.flavour == 'gpu' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Reused by the Release pipeline (release.yml) as the gate before the Docker
+  # build, so a tagged release runs the exact same lint/type-check/test job.
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
