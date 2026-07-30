@@ -161,7 +161,7 @@ docker build -t coro:cpu \
 
 # NVIDIA GPU
 docker build -t coro:gpu \
-  --build-arg CORE_IMAGE=nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04 \
+  --build-arg CORE_IMAGE=nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04 \
   --build-arg EXTRA=cuda .
 ```
 
@@ -699,10 +699,12 @@ Running the GPU build outside the devcontainer has two gotchas:
    export LD_LIBRARY_PATH="$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cublas/lib:\
    $VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
    ```
-   The devcontainer avoids both: its `nvidia/cuda:12.x` base image provides
-   `libcublas.so.12` system-wide via `LD_LIBRARY_PATH=/usr/local/cuda/lib64`.
-   The `onnx-asr` / `onnx-genai` backends use onnxruntime-gpu and are
-   unaffected by gotcha 2.
+   The shipped Docker GPU image bakes the `nvidia-cublas-cu12` wheel dir onto
+   `LD_LIBRARY_PATH` for you (see the `Dockerfile` runtime stage). In the
+   devcontainer or a bare `uv` env — both now on the `nvidia/cuda:13.x` base,
+   which ships `libcublas.so.13`, not `.so.12` — you still need the export
+   above. The `onnx-asr` / `onnx-genai` backends use onnxruntime-gpu (CUDA 13,
+   matching the base) and are unaffected by gotcha 2.
 
 ## License
 

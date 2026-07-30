@@ -41,7 +41,7 @@ jobs:
             core_image: ubuntu:noble
           - flavour: gpu
             extra: cuda
-            core_image: nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04
+            core_image: nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04
     steps:
       - uses: actions/checkout@v7
         with:
