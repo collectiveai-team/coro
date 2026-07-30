@@ -25,7 +25,7 @@ services:
       context: ..
       dockerfile: .devcontainer/Dockerfile
       args:
-        - CORE_IMAGE=nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04
+        - CORE_IMAGE=nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04
     deploy:
       resources:
         reservations:

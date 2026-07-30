@@ -13,7 +13,7 @@
 #
 #   CPU:  --build-arg CORE_IMAGE=ubuntu:noble \
 #         --build-arg EXTRA=cpu
-#   GPU:  --build-arg CORE_IMAGE=nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04 \
+#   GPU:  --build-arg CORE_IMAGE=nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04 \
 #         --build-arg EXTRA=cuda
 #
 # Unlike .devcontainer/Dockerfile this ships no dev tooling (node, zsh,
@@ -130,6 +130,13 @@ WORKDIR /app
 # The venv is self-contained and installed at the same path it was built at,
 # so its console scripts and interpreter symlink resolve unchanged.
 COPY --from=builder /app/.venv /app/.venv
+
+# faster-whisper's CTranslate2 links libcublas.so.12 (CUDA 12), but the CUDA 13
+# base ships libcublas.so.13, so add the nvidia-cublas-cu12 wheel lib dir (cuda
+# extra) to the loader path. The soname is unique, so onnxruntime-gpu still binds
+# the base's CUDA 13 cuBLAS; cuDNN 9 stays on the default path for both. No-op on
+# the CPU image (the wheel — and thus the dir — is absent).
+ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.12/site-packages/nvidia/cublas/lib:$LD_LIBRARY_PATH
 
 EXPOSE 8000
 
