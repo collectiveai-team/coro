@@ -35,7 +35,7 @@ DEFAULT_START = 0.0
 
 
 def clip_is_materialized(out_dir: Path, meeting_id: str, start: float, duration: float) -> bool:
-    """True when both the clip audio and its Reference STM already exist."""
+    """Report whether both the clip audio and its Reference STM already exist."""
     stem = clip_stem(meeting_id, start, duration)
     return (out_dir / f"{stem}.wav").exists() and (out_dir / f"{stem}.ref.stm").exists()
 
