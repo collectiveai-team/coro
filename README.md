@@ -497,7 +497,7 @@ only. Each is materialized into a `--clips-dir` of `(<stem>.wav,
 
 | Dataset | License | Metrics | Materialize with |
 |---|---|---|---|
-| **AMI** (English meetings) | CC-BY | WER + DER | `utils.make_ami_clip` |
+| **AMI** (English meetings) | CC-BY | WER + DER | `utils.make_ami_clip` (one meeting), `utils.make_ami_clip_set` (a whole group) |
 | **VoxConverse** (multi-speaker, in-the-wild) | CC-BY-4.0 | DER only (no transcript) | `utils.make_rttm_clip` |
 | **Common Voice** (single-speaker read speech, any language incl. `es`) | CC0 | WER only (single speaker) | `utils.make_common_voice_clips` |
 
@@ -570,7 +570,8 @@ WER scoring is skipped.
 
 - `--clips-dir DIR` — a directory of `(<stem>.wav, <stem>.ref.stm)` pairs, e.g.
   produced by the dataset materializers (`utils.make_ami_clip`,
-  `utils.make_common_voice_clips`, `utils.make_rttm_clip`).
+  `utils.make_ami_clip_set`, `utils.make_common_voice_clips`,
+  `utils.make_rttm_clip`).
 - `--ami-preset sample|eval|full` (or `--ami-groups` / `--ami-meetings`) — pull
   AMI meetings into `--ami-root` (default `./amicorpus/`); add `--no-download` to
   use only what is already present.

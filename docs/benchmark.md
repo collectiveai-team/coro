@@ -111,6 +111,30 @@ coro-bench all --clips-dir clips --server-url http://127.0.0.1:8123 \
 python -m coro.bench.utils.visualize_quality run --alignment tcp cp
 ```
 
+### The ES clip workload set
+
+For measurements that compare two runs — a baseline against a later
+re-measurement — build the whole workload set in one reproducible command
+instead of cutting clips meeting by meeting:
+
+```bash
+# 30 AMI ES meetings, 10-minute clips + rebased reference STMs, into
+# ./amicorpus/clips (override with --out-dir; --group and --duration are flags):
+python -m coro.bench.utils.make_ami_clip_set --ami-root ./amicorpus
+
+coro-bench quality --clips-dir ./amicorpus/clips \
+  --server-url http://127.0.0.1:8123 --out-dir run
+```
+
+Re-running skips meetings that are already materialized and never re-downloads,
+so both runs score provably identical audio.
+
+**ES**, not the built-in `sample` preset (IB4001 + IN1001, n=2, both
+non-scenario). Every ES meeting has exactly four participants, matching the
+default diarization model's hard four-speaker cap; the non-scenario groups can
+exceed it, forcing the diarizer to merge two real speakers and inflating
+speaker-attribution error for a reason no segmentation change can recover.
+
 Other dataset loaders: `make_rttm_clip` (VoxConverse / diarization-only DER),
 `make_common_voice_clips` (Common Voice WER). A trustworthy **Spanish** DER+WER
 target (Albayzín-RTVE2020) is gated behind an RTVE licence — see the README

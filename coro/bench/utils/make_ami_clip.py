@@ -45,6 +45,43 @@ def cut_audio_clip(src: Path, dst: Path, start: float, duration: float) -> None:
     )
 
 
+def clip_stem(meeting_id: str, start: float, duration: float) -> str:
+    """Return the clip stem, which is also the benchmark Workload Item id."""
+    return f"{meeting_id}_{int(start)}_{int(duration)}"
+
+
+def materialize_clip(
+    ami_root: Path,
+    meeting_id: str,
+    start: float,
+    duration: float,
+    out_dir: Path,
+) -> tuple[Path, Path]:
+    """Cut one clip and write its rebased Reference STM; return both paths.
+
+    The single unit of AMI clip materialization, shared by the single-meeting
+    CLI and the clip Workload Set materializer so neither duplicates the audio
+    cutting or the STM windowing.
+    """
+    stem = clip_stem(meeting_id, start, duration)
+    audio_dst = out_dir / f"{stem}.wav"
+    stm_dst = out_dir / f"{stem}.ref.stm"
+
+    cut_audio_clip(get_audio_path(ami_root, meeting_id), audio_dst, start, duration)
+    # The clip stem is the benchmark item_id, so the reference session id must
+    # match it (the hypothesis STM is keyed by item_id).
+    stm_text = clip_reference_stm(
+        ami_root,
+        meeting_id,
+        start,
+        duration,
+        recording_id=stem,
+    )
+    stm_dst.parent.mkdir(parents=True, exist_ok=True)
+    stm_dst.write_text(stm_text, encoding="utf-8")
+    return audio_dst, stm_dst
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Cut a short AMI clip + reference STM.")
     parser.add_argument("meeting_id")
@@ -54,29 +91,16 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, default=Path("ami-clips"))
     args = parser.parse_args()
 
-    stem = f"{args.meeting_id}_{int(args.start)}_{int(args.duration)}"
-    audio_dst = args.out_dir / f"{stem}.wav"
-    stm_dst = args.out_dir / f"{stem}.ref.stm"
-
-    cut_audio_clip(
-        get_audio_path(args.ami_root, args.meeting_id),
-        audio_dst,
-        args.start,
-        args.duration,
-    )
-    # The clip stem is the benchmark item_id, so the reference session id must
-    # match it (the hypothesis STM is keyed by item_id).
-    stm_text = clip_reference_stm(
+    audio_dst, stm_dst = materialize_clip(
         args.ami_root,
         args.meeting_id,
         args.start,
         args.duration,
-        recording_id=stem,
+        args.out_dir,
     )
-    stm_dst.write_text(stm_text, encoding="utf-8")
 
     print(f"wrote {audio_dst}")
-    print(f"wrote {stm_dst} ({len(stm_text.splitlines())} lines)")
+    print(f"wrote {stm_dst} ({len(stm_dst.read_text().splitlines())} lines)")
 
 
 if __name__ == "__main__":
