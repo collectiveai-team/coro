@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from coro.bench.models.report import BenchReport, PerformanceRow, QualityRow
+from coro.bench.models.report import BenchReport, PerformanceRow, QualityRow, SegmentShapeRow
 
 
 def build_report(out_dir: Path) -> BenchReport:
@@ -44,6 +44,7 @@ def build_report(out_dir: Path) -> BenchReport:
         normalized_quality_combined,
         quality_footnotes,
     ) = _load_quality(out_dir)
+    segment_shape_rows, segment_shape_combined = _load_segment_shape(out_dir)
     performance_rows = _load_performance(out_dir, stream=stream)
 
     total_wall = _compute_total_wall(performance_rows, quality_rows)
@@ -62,6 +63,8 @@ def build_report(out_dir: Path) -> BenchReport:
         normalized_quality_rows=normalized_quality_rows,
         normalized_quality_combined=normalized_quality_combined,
         quality_footnotes=quality_footnotes,
+        segment_shape_rows=segment_shape_rows,
+        segment_shape_combined=segment_shape_combined,
         performance_rows=performance_rows,
         versions=versions,
         cli_args=cli_args,
@@ -161,6 +164,39 @@ def _load_quality(
         )
 
     return rows, combined, normalized_rows, normalized_combined, footnotes
+
+
+def _segment_shape_row(session_id: str, data: Any) -> SegmentShapeRow | None:
+    """Build one Segment Shape Counters row, or None when the run has none."""
+    if not isinstance(data, dict):
+        return None
+    return SegmentShapeRow(
+        session_id=session_id,
+        segment_count=int(data.get("segment_count", 0)),
+        median_words_per_segment=_wer_val(data.get("median_words_per_segment")),
+        single_word_segment_count=int(data.get("single_word_segment_count", 0)),
+    )
+
+
+def _load_segment_shape(out_dir: Path) -> tuple[list[SegmentShapeRow], SegmentShapeRow | None]:
+    """Read Segment Shape Counters from the quality summary.
+
+    Runs recorded before the counters existed simply yield no rows, so the
+    table is omitted rather than rendered empty.
+    """
+    summary_path = out_dir / "quality" / "summary.json"
+    if not summary_path.exists():
+        return [], None
+
+    summary = _read_json(summary_path)
+
+    rows: list[SegmentShapeRow] = []
+    for item in summary.get("per_item", []):
+        row = _segment_shape_row(item.get("session_id", ""), item.get("segment_shape"))
+        if row is not None:
+            rows.append(row)
+
+    return rows, _segment_shape_row("COMBINED", summary.get("segment_shape"))
 
 
 def _wer_val(v: Any) -> float | None:
@@ -283,6 +319,10 @@ def render_markdown(report: BenchReport) -> str:
         lines.append("")
         lines += _normalized_quality_table_md(report)
 
+    if report.segment_shape_rows or report.segment_shape_combined:
+        lines.append("")
+        lines += _segment_shape_table_md(report)
+
     if report.performance_rows:
         lines.append("")
         lines += _performance_table_md(report)
@@ -365,6 +405,43 @@ def _normalized_quality_table_md(report: BenchReport) -> list[str]:
         lines.append(
             f"| **{c.session_id}** | {c.duration:.1f} "
             f"| {_fmt(c.cpwer)} | {_fmt(c.orcwer)} | {_fmt(c.dicpwer)} |"
+        )
+
+    return lines
+
+
+_SEGMENT_SHAPE_NOTE = (
+    "Unscored counts. cpWER concatenates all words per speaker, so it improves "
+    "monotonically as segments are shredded; read these beside it."
+)
+
+
+def _fmt_median(value: float | None) -> str:
+    return "-" if value is None else f"{value:.1f}"
+
+
+def _segment_shape_table_md(report: BenchReport) -> list[str]:
+    lines: list[str] = []
+    lines.append("## Segment Shape")
+    lines.append("")
+    lines.append(_SEGMENT_SHAPE_NOTE)
+    lines.append("")
+    lines.append("| session | segments | median words/seg | single-word segs |")
+    lines.append("|---------|----------|------------------|------------------|")
+
+    for row in report.segment_shape_rows:
+        lines.append(
+            f"| {row.session_id} | {row.segment_count} "
+            f"| {_fmt_median(row.median_words_per_segment)} "
+            f"| {row.single_word_segment_count} |"
+        )
+
+    c = report.segment_shape_combined
+    if c is not None:
+        lines.append(
+            f"| **{c.session_id}** | {c.segment_count} "
+            f"| {_fmt_median(c.median_words_per_segment)} "
+            f"| {c.single_word_segment_count} |"
         )
 
     return lines
@@ -461,7 +538,35 @@ def _render_stdout_rich(report: BenchReport) -> None:
     console.print(Panel(_rich_header(report), title="Benchmark Report"))
     _rich_quality_table(console, report)
     _rich_normalized_quality_table(console, report)
+    _rich_segment_shape_table(console, report)
     _rich_performance_table(console, report)
+
+
+def _rich_segment_shape_table(console: Any, report: BenchReport) -> None:
+    if not (report.segment_shape_rows or report.segment_shape_combined):
+        return
+    from rich.table import Table
+
+    st = Table(title="Segment Shape", show_lines=True)
+    for col in ("session", "segments", "median words/seg", "single-word segs"):
+        st.add_column(col)
+    for row in report.segment_shape_rows:
+        st.add_row(
+            row.session_id,
+            str(row.segment_count),
+            _fmt_median(row.median_words_per_segment),
+            str(row.single_word_segment_count),
+        )
+    c = report.segment_shape_combined
+    if c is not None:
+        st.add_row(
+            f"[bold]{c.session_id}[/bold]",
+            f"[bold]{c.segment_count}[/bold]",
+            f"[bold]{_fmt_median(c.median_words_per_segment)}[/bold]",
+            f"[bold]{c.single_word_segment_count}[/bold]",
+        )
+    console.print(st)
+    console.print(f"  * {_SEGMENT_SHAPE_NOTE}")
 
 
 def _rich_header(report: BenchReport) -> str:

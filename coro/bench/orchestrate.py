@@ -13,6 +13,7 @@ from typing import Any
 
 from coro.bench.errors import ServerUnreachableError
 from coro.bench.models.performance import PerRepSummary
+from coro.bench.models.quality import QualityItemArtifact
 from coro.bench.models.resource import ResourceBaseline
 from coro.bench.performance import (
     compute_per_rep_summary,
@@ -225,6 +226,20 @@ def run_all_workload(
     )
 
 
+def _quality_artifact(item_id: str, audio_seconds: float, scored: Any) -> QualityItemArtifact:
+    """Build the per-item ``quality/<item_id>.json`` payload."""
+    from coro.bench.quality import segment_shape_counters
+
+    return QualityItemArtifact(
+        session_id=item_id,
+        audio_seconds=audio_seconds,
+        metrics=scored.metrics,
+        segment_shape=segment_shape_counters(scored.segment_word_counts),
+        diarization=scored.diarization,
+        error=scored.error,
+    )
+
+
 def _run_quality_scoring_with_skip(
     *,
     out_dir: Path,
@@ -265,17 +280,8 @@ def _run_quality_scoring_with_skip(
         scored.session_id = item_id
         scored.audio_seconds = item.get("audio_seconds", 0.0)
 
-        artifact: dict[str, Any] = {
-            "session_id": item_id,
-            "audio_seconds": item.get("audio_seconds", 0.0),
-            "metrics": asdict(scored.metrics) if scored.metrics is not None else None,
-        }
-        if scored.diarization is not None:
-            artifact["diarization"] = asdict(scored.diarization)
-        if scored.error is not None:
-            artifact["error"] = asdict(scored.error)
-
-        (quality_dir / f"{item_id}.json").write_text(json.dumps(artifact, indent=2))
+        artifact = _quality_artifact(item_id, item.get("audio_seconds", 0.0), scored)
+        (quality_dir / f"{item_id}.json").write_text(json.dumps(asdict(artifact), indent=2))
 
         item_results.append(scored)
 
@@ -317,15 +323,8 @@ def _run_quality_scoring(
         scored.session_id = item_id
         scored.audio_seconds = item.get("audio_seconds", 0.0)
 
-        artifact: dict[str, Any] = {
-            "session_id": item_id,
-            "audio_seconds": item.get("audio_seconds", 0.0),
-            "metrics": asdict(scored.metrics) if scored.metrics is not None else None,
-        }
-        if scored.error is not None:
-            artifact["error"] = asdict(scored.error)
-
-        (quality_dir / f"{item_id}.json").write_text(json.dumps(artifact, indent=2))
+        artifact = _quality_artifact(item_id, item.get("audio_seconds", 0.0), scored)
+        (quality_dir / f"{item_id}.json").write_text(json.dumps(asdict(artifact), indent=2))
 
         item_results.append(scored)
 

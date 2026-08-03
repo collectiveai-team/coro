@@ -558,6 +558,14 @@ uv run --group bench coro-bench all \
 half); `performance` does not. The run prints a report and writes `REPORT.md`
 plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
 
+Beside the scored metrics, `quality` reports a **Segment Shape** table — segment
+count, median words per segment, and single-word segment count, per item and
+pooled over the workload. These are unscored counts, and they are the only
+guard against a misleading win: cpWER concatenates all words per speaker, so it
+improves monotonically as segments are shredded and no WER penalises
+fragmentation. They are reported even for diarization-only references, where
+WER scoring is skipped.
+
 #### Larger workloads
 
 - `--clips-dir DIR` — a directory of `(<stem>.wav, <stem>.ref.stm)` pairs, e.g.

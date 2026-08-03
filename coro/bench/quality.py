@@ -5,9 +5,11 @@ from __future__ import annotations
 import sys
 import tempfile
 import traceback
+from collections.abc import Sequence
 from pathlib import Path
 import re
 import string
+from statistics import median
 from typing import Any
 
 from coro.bench.models.quality import (
@@ -20,6 +22,7 @@ from coro.bench.models.quality import (
     ScoreError,
     ScoreMetrics,
     ScoreResult,
+    SegmentShapeCounters,
     WerStats,
 )
 
@@ -99,6 +102,33 @@ def is_diarization_only_stm(path: Path) -> bool:
         if parts[5].strip() != DIARIZATION_ONLY_TEXT:
             return False
     return saw_line
+
+
+def stm_words_per_segment(path: Path) -> list[int]:
+    """Return the word count of every segment in an STM file, in file order.
+
+    The raw material for :func:`segment_shape_counters`. Kept separate so a
+    workload-level aggregate can pool every item's segments before reducing,
+    matching how meeteval combines raw error counts across items.
+    """
+    counts: list[int] = []
+    for line in path.read_text().splitlines():
+        parts = line.strip().split(maxsplit=5)
+        if len(parts) < 6:
+            continue
+        counts.append(len(parts[5].split()))
+    return counts
+
+
+def segment_shape_counters(words_per_segment: Sequence[int]) -> SegmentShapeCounters:
+    """Reduce per-segment word counts to Segment Shape Counters."""
+    if not words_per_segment:
+        return SegmentShapeCounters()
+    return SegmentShapeCounters(
+        segment_count=len(words_per_segment),
+        median_words_per_segment=float(median(words_per_segment)),
+        single_word_segment_count=sum(1 for n in words_per_segment if n == 1),
+    )
 
 
 def _count_stm_speakers(path: Path) -> int:
@@ -222,6 +252,7 @@ def score_item(
             diarization_only=diarization_only,
             diarization=diarization_sanity(ref_stm_path, hyp_stm_path),
             raw=raw,
+            segment_word_counts=stm_words_per_segment(hyp_stm_path),
         )
 
     except Exception as exc:
@@ -274,6 +305,7 @@ def _per_item_entry(result: ScoreResult) -> PerItemEntry:
         audio_seconds=result.audio_seconds,
         diarization_only=True if result.diarization_only else None,
         diarization=result.diarization,
+        segment_shape=segment_shape_counters(result.segment_word_counts),
     )
     metrics = result.metrics
     if metrics is not None:
@@ -313,4 +345,7 @@ def combine_items(item_results: list[ScoreResult]) -> QualitySummary:
         n_degenerate_diarization=n_degenerate,
         combined=_combined_metrics(meeteval, succeeded),
         per_item=[_per_item_entry(r) for r in item_results],
+        segment_shape=segment_shape_counters(
+            [n for r in item_results for n in r.segment_word_counts]
+        ),
     )

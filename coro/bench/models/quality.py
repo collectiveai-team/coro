@@ -44,6 +44,21 @@ class DiarizationSanity:
 
 
 @dataclass
+class SegmentShapeCounters:
+    """Unscored transcript-shape counts reported beside the MeetEval Metric Set.
+
+    No WER penalises fragmentation — cpWER concatenates all words per speaker,
+    so it improves monotonically as segments are shredded. These counters make a
+    cpWER win bought with a segment explosion visible in the same report.
+    ``median_words_per_segment`` is None when there are no segments.
+    """
+
+    segment_count: int = 0
+    median_words_per_segment: float | None = None
+    single_word_segment_count: int = 0
+
+
+@dataclass
 class NormalizedMetrics:
     """WER metrics after punctuation/whitespace normalization."""
 
@@ -84,6 +99,28 @@ class ScoreResult:
     # Raw meeteval result objects, keyed by metric, retained for cross-item
     # combination. Not JSON-serialisable and never written to artifacts.
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
+    # Words per segment in the Hypothesis STM, retained so the workload-level
+    # Segment Shape Counters can pool every item's segments before reducing.
+    # combine_error_rates takes only meeteval objects, so this cannot ride on
+    # ``raw``. Never written to artifacts; the reduced counters are.
+    segment_word_counts: list[int] = field(default_factory=list, repr=False)
+
+
+@dataclass
+class QualityItemArtifact:
+    """The per-item ``quality/<item_id>.json`` payload.
+
+    Segment Shape Counters sit beside the MeetEval Metric Set rather than
+    inside it: they are unscored counts, and they are present even when WER
+    scoring was skipped for a diarization-only reference.
+    """
+
+    session_id: str
+    audio_seconds: float
+    metrics: ScoreMetrics | None = None
+    segment_shape: SegmentShapeCounters | None = None
+    diarization: DiarizationSanity | None = None
+    error: ScoreError | None = None
 
 
 @dataclass
@@ -105,6 +142,7 @@ class PerItemEntry:
     audio_seconds: float | None = None
     diarization_only: bool | None = None
     diarization: DiarizationSanity | None = None
+    segment_shape: SegmentShapeCounters | None = None
     cpwer: float | None = None
     orcwer: float | None = None
     dicpwer: float | None = None
@@ -125,3 +163,6 @@ class QualitySummary:
     combined: CombinedMetrics | None = None
     per_item: list[PerItemEntry] = field(default_factory=list)
     n_skipped: int = 0
+    # Pooled over every segment in the workload set, matching how meeteval
+    # combines raw error counts — not a median of per-item medians.
+    segment_shape: SegmentShapeCounters | None = None

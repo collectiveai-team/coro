@@ -185,6 +185,65 @@ def test_build_report_diarization_only_item_shows_der_not_error(tmp_path: Path):
     assert "| voxc_clip | 6.0 | - | - | - | 0.0943 |" in md
 
 
+def test_build_report_renders_segment_shape_counters(tmp_path: Path):
+    """Counters are reported beside the MeetEval Metric Set, in their own table.
+
+    They are unscored, so they do not belong in the WER table; without them a
+    cpWER win bought by shredding segments is invisible in the report.
+    """
+    shape = {
+        "segment_count": 412,
+        "median_words_per_segment": 6.0,
+        "single_word_segment_count": 37,
+    }
+    summary = {
+        "workload_set": ["ES2002a_0_600"],
+        "n_succeeded": 1,
+        "n_failed": 0,
+        "n_degenerate_diarization": 0,
+        "combined": {"cpwer": {"wer": 0.21}, "orcwer": None, "dicpwer": None, "der": None},
+        "per_item": [
+            {
+                "session_id": "ES2002a_0_600",
+                "audio_seconds": 600.0,
+                "cpwer": 0.21,
+                "segment_shape": shape,
+            }
+        ],
+        "segment_shape": shape,
+    }
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    (quality_dir / "summary.json").write_text(json.dumps(summary))
+
+    report = build_report(tmp_path)
+    md = render_markdown(report)
+
+    assert "## Segment Shape" in md
+    assert "| ES2002a_0_600 | 412 | 6.0 | 37 |" in md
+    assert "| **COMBINED** | 412 | 6.0 | 37 |" in md
+    render_stdout(report)
+
+
+def test_build_report_without_segment_shape_omits_the_table(tmp_path: Path):
+    """Older runs have no counters in summary.json; the table is simply absent."""
+    summary = {
+        "workload_set": ["old_run"],
+        "n_succeeded": 1,
+        "n_failed": 0,
+        "n_degenerate_diarization": 0,
+        "combined": {"cpwer": {"wer": 0.2}, "orcwer": None, "dicpwer": None, "der": None},
+        "per_item": [{"session_id": "old_run", "audio_seconds": 6.0, "cpwer": 0.2}],
+    }
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    (quality_dir / "summary.json").write_text(json.dumps(summary))
+
+    md = render_markdown(build_report(tmp_path))
+
+    assert "## Segment Shape" not in md
+
+
 def test_render_markdown_stream_false_omits_ttft_column():
     report = _performance_report(stream=False)
     md = render_markdown(report)

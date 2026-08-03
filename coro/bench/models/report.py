@@ -23,6 +23,20 @@ class QualityRow:
 
 
 @dataclass
+class SegmentShapeRow:
+    """One row in the Segment Shape Counters table.
+
+    Unscored transcript-shape counts. No WER penalises fragmentation, so these
+    are the only place a segment explosion is visible in the report.
+    """
+
+    session_id: str
+    segment_count: int
+    median_words_per_segment: float | None
+    single_word_segment_count: int
+
+
+@dataclass
 class PerformanceRow:
     """One row in the performance results table."""
 
@@ -58,6 +72,8 @@ class BenchReport:
     normalized_quality_rows: list[QualityRow] = field(default_factory=list)
     normalized_quality_combined: QualityRow | None = None
     quality_footnotes: list[str] = field(default_factory=list)
+    segment_shape_rows: list[SegmentShapeRow] = field(default_factory=list)
+    segment_shape_combined: SegmentShapeRow | None = None
     performance_rows: list[PerformanceRow] = field(default_factory=list)
     versions: dict = field(default_factory=dict)
     cli_args: list[str] = field(default_factory=list)
