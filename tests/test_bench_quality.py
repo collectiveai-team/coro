@@ -120,26 +120,89 @@ def _write_stm_pair(tmp_path: Path, name: str, ref: str, hyp: str) -> tuple[Path
     return ref_stm, hyp_stm
 
 
+class TestTextSchemaMetrics:
+    """Every text schema is scored, and the schemas stay independent."""
+
+    def test_score_item_reports_every_text_schema(self, tmp_path: Path):
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "m",
+            "m 1 A 0.0 2.0 Um , I'm Okay .\n",
+            "m 1 A 0.0 2.0 Um , I'm Okay .\n",
+        )
+
+        from coro.bench.quality import score_item
+
+        result = score_item(ref_stm, hyp_stm)
+
+        assert result.metrics is not None
+        for schema in (result.metrics.normalized, result.metrics.leaderboard):
+            assert schema is not None
+            assert schema.cpwer is not None
+            assert schema.orcwer is not None
+            assert schema.dicpwer is not None
+
+    def test_schemas_score_the_same_hypothesis_differently(self, tmp_path: Path):
+        """Casing and fillers are errors under one schema and invisible to the other."""
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "m",
+            "m 1 A 0.0 2.0 Um okay we are done\n",
+            "m 1 A 0.0 2.0 Okay we're done\n",
+        )
+
+        from coro.bench.quality import score_item
+
+        result = score_item(ref_stm, hyp_stm)
+
+        assert result.metrics is not None
+        normalized = result.metrics.normalized
+        leaderboard = result.metrics.leaderboard
+        assert normalized is not None and normalized.cpwer is not None
+        assert leaderboard is not None and leaderboard.cpwer is not None
+        # The leaderboard schema forgives the filler, the case and the contraction.
+        assert leaderboard.cpwer.wer == 0.0
+        assert normalized.cpwer.wer > 0.0
+
+    def test_diarization_only_reference_skips_every_schema(self, tmp_path: Path):
+        from coro.bench.stm import DIARIZATION_ONLY_TEXT
+
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "m",
+            f"m 1 A 0.0 1.0 {DIARIZATION_ONLY_TEXT}\n",
+            "m 1 A 0.0 1.0 hello world\n",
+        )
+
+        from coro.bench.quality import score_item
+
+        result = score_item(ref_stm, hyp_stm)
+
+        assert result.metrics is not None
+        assert result.metrics.normalized is None
+        assert result.metrics.leaderboard is None
+
+    def test_combine_items_and_per_item_carry_leaderboard_metrics(self, tmp_path: Path):
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "m",
+            "m 1 A 0.0 2.0 hello world\n",
+            "m 1 A 0.0 2.0 hello world\n",
+        )
+
+        from coro.bench.quality import combine_items, score_item
+
+        result = score_item(ref_stm, hyp_stm)
+        result.session_id = "m"
+        summary = combine_items([result])
+
+        assert summary.combined is not None
+        assert summary.combined.leaderboard is not None
+        assert summary.combined.leaderboard.cpwer is not None
+        assert summary.per_item[0].leaderboard_cpwer is not None
+
+
 class TestScoreItem:
-    def test_normalize_transcript_text_removes_punctuation_and_extra_spaces(self):
-        from coro.bench.quality import _normalize_transcript_text
-
-        assert _normalize_transcript_text("Hello,   world!!") == "Hello world"
-
-    def test_write_normalized_stm_preserves_metadata_and_normalizes_text(
-        self,
-        tmp_path: Path,
-    ):
-        from coro.bench.quality import _write_normalized_stm
-
-        src = tmp_path / "in.stm"
-        dst = tmp_path / "out.stm"
-        src.write_text("meeting 1 A 0.000 1.500 Hello,   world!!\n")
-
-        _write_normalized_stm(src, dst)
-
-        assert dst.read_text() == "meeting 1 A 0.000 1.500 Hello world\n"
-
     def test_score_item_returns_all_wer_and_der_metrics(self, tmp_path: Path):
         ref_stm, hyp_stm = _write_stm_pair(
             tmp_path,

@@ -121,6 +121,9 @@ bench = [
     "nvidia-ml-py>=12.0.0",
     "rich>=15.0.0",
     "simplejson>=3.0.0",
+    # Leaderboard Text Schema: the Whisper EnglishTextNormalizer the Open ASR
+    # Leaderboard scores with, so coro's WERs can be read beside published ones.
+    "whisper-normalizer>=0.1.0",
 ]
 
 [tool.uv]

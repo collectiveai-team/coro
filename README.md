@@ -566,6 +566,22 @@ improves monotonically as segments are shredded and no WER penalises
 fragmentation. They are reported even for diarization-only references, where
 WER scoring is skipped.
 
+Every WER is reported under three text schemas, because a WER only means
+something next to the text conventions behind it:
+
+| Table | Text schema |
+|---|---|
+| Quality Results | raw — reference text as written, punctuation included |
+| Normalized Quality Results | ASCII punctuation stripped, whitespace collapsed |
+| Leaderboard Text Schema Quality Results | the Whisper `EnglishTextNormalizer` conventions used by the Open ASR Leaderboard |
+
+Use the **Leaderboard Text Schema** table to compare against published numbers,
+such as the AMI WER on an ASR model card. The other two are not comparable with
+anything outside this repo: the raw table counts a reference `.` as a word (AMI
+STMs tokenize punctuation separately), and the normalized one does not lowercase.
+Beware of reading a threshold expressed as a *percentage of* cpWER without
+naming the schema — the denominator moves between them.
+
 #### Larger workloads
 
 - `--clips-dir DIR` — a directory of `(<stem>.wav, <stem>.ref.stm)` pairs, e.g.

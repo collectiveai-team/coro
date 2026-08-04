@@ -364,7 +364,7 @@ def test_build_report_reads_manifest_and_summaries(tmp_path):
     assert report.quality_combined.session_id == "COMBINED"
 
 
-def test_build_report_reads_normalized_quality_summaries(tmp_path):
+def test_build_report_reads_every_text_schema_quality_summary(tmp_path):
     manifest = {
         "timestamp": "2026-05-04T10:00:00+00:00",
         "git_sha": "deadbeef",
@@ -389,6 +389,11 @@ def test_build_report_reads_normalized_quality_summaries(tmp_path):
                 "orcwer": {"wer": 0.16},
                 "dicpwer": {"wer": 0.11},
             },
+            "leaderboard": {
+                "cpwer": {"wer": 0.18},
+                "orcwer": {"wer": 0.14},
+                "dicpwer": {"wer": 0.09},
+            },
         },
         "per_item": [
             {
@@ -401,6 +406,9 @@ def test_build_report_reads_normalized_quality_summaries(tmp_path):
                 "normalized_cpwer": 0.21,
                 "normalized_orcwer": 0.16,
                 "normalized_dicpwer": 0.11,
+                "leaderboard_cpwer": 0.18,
+                "leaderboard_orcwer": 0.14,
+                "leaderboard_dicpwer": 0.09,
             },
         ],
     }
@@ -409,12 +417,55 @@ def test_build_report_reads_normalized_quality_summaries(tmp_path):
     report = build_report(tmp_path)
     md = render_markdown(report)
 
-    assert len(report.normalized_quality_rows) == 1
-    assert report.normalized_quality_combined is not None
-    assert report.normalized_quality_rows[0].cpwer == 0.21
+    tables = {table.key: table for table in report.schema_quality_tables}
+    assert list(tables) == ["normalized", "leaderboard"]
+    assert len(tables["normalized"].rows) == 1
+    assert tables["normalized"].combined is not None
+    assert tables["normalized"].rows[0].cpwer == 0.21
+    assert tables["leaderboard"].rows[0].cpwer == 0.18
     assert "## Quality Results" in md
     assert "## Normalized Quality Results" in md
+    assert "## Leaderboard Text Schema Quality Results" in md
     assert "| IB4001 | 10.0 | 0.2100 | 0.1600 | 0.1100 |" in md
+    assert "| IB4001 | 10.0 | 0.1800 | 0.1400 | 0.0900 |" in md
+
+
+def test_build_report_omits_a_text_schema_absent_from_the_summary(tmp_path):
+    """A run scored before a schema existed must still render, minus that table."""
+    manifest = {
+        "timestamp": "2026-05-04T10:00:00+00:00",
+        "git_sha": "deadbeef",
+        "subcommand": "quality",
+        "workload_set": [{"item_id": "IB4001", "audio_path": "/data/IB4001.wav"}],
+        "server_health": {"startup_selection": {}},
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    (quality_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "combined": {
+                    "cpwer": {"wer": 0.30},
+                    "normalized": {"cpwer": {"wer": 0.21}},
+                },
+                "per_item": [
+                    {
+                        "session_id": "IB4001",
+                        "audio_seconds": 10.0,
+                        "cpwer": 0.30,
+                        "normalized_cpwer": 0.21,
+                    }
+                ],
+            }
+        )
+    )
+
+    report = build_report(tmp_path)
+    md = render_markdown(report)
+
+    assert [table.key for table in report.schema_quality_tables] == ["normalized"]
+    assert "## Leaderboard Text Schema Quality Results" not in md
 
 
 def test_build_report_surfaces_degenerate_diarization_warning(tmp_path):
