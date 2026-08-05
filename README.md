@@ -416,12 +416,17 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 ## Benchmarks
 
 > **Picking a backend?** See the full **[leaderboard →
-> docs/benchmark.md](docs/benchmark.md)** (WER, DER, RTFx, VRAM and RAM across
-> backends, with reproduction commands). TL;DR: **faster-whisper
-> `large-v3-turbo`** is the best GPU default — best WER *and* DER, multilingual,
-> ~3 GB VRAM; **faster-whisper `small`** for max GPU throughput; **onnx-asr
-> `parakeet`** for CPU; **nemotron** for real-time streaming. Don't run Whisper
-> through the onnx-asr backend (slower and less accurate than faster-whisper).
+> docs/benchmark.md](docs/benchmark.md)** (WER, DER, VRAM and RAM across
+> backends, with reproduction commands). TL;DR, from a 61-clip / 10.2 h AMI
+> measurement: **onnx-asr `parakeet`** is the best GPU default on quality —
+> best cpWER, ORC-WER *and* DER — but is **English only**; use
+> **faster-whisper `large-v3-turbo`** (~3.3 GB VRAM) for anything
+> multilingual. **onnx-asr `parakeet`** for CPU; **nemotron** for real-time
+> streaming. Don't run Whisper through the onnx-asr backend (slower and less
+> accurate than faster-whisper).
+>
+> No throughput recommendation is made: the only RTFx figures ever collected
+> are from a sample now known to be void.
 
 The table below is a separate, ASR-only view (diarization off).
 

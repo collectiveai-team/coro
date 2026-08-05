@@ -28,10 +28,11 @@ own data before trusting absolute numbers.
 > a 3-word reference is noise, so the "most robust backend" claim below rests on
 > nothing.
 >
-> **A properly sized measurement now exists for three of the four backends** —
-> see *Current measurement* immediately below. It contradicts the 5-clip
-> ordering rather than confirming it. Only faster-whisper `small` is still
-> un-rerun; doing so is the outstanding work on this page.
+> **A properly sized measurement now exists for every backend we ship** — see
+> *Current measurement* immediately below. It contradicts the 5-clip ordering
+> rather than confirming it. faster-whisper `small` was deliberately not
+> re-measured: it is not a shipping option, so there is no outstanding
+> measurement work on this page.
 
 ## Current measurement (trustworthy)
 
@@ -60,7 +61,13 @@ failures, no degenerate diarization, and the same 88,515-word reference.
 | onnx-asr `nemo-parakeet-tdt-0.6b-v3` | **0.1967** | **0.1742** | **0.1541** | **0.2831** |
 | faster-whisper `large-v3-turbo` | 0.2170 | 0.1966 | 0.1871 | 0.3131 |
 | faster-whisper `medium` | 0.2417 | 0.2267 | 0.2147 | 0.3342 |
-| faster-whisper `small` | _not re-run_ | | | |
+
+faster-whisper `small` is **not shipped and not measured**. It appears in the
+voided 5-clip tables below and nowhere else; do not read its absence here as a
+gap in the data. Quality falls monotonically with model size across the two
+faster-whisper rows that were measured, so `small` would be expected to score
+worse than `medium`'s 0.2417 cpWER — but that is an extrapolation, not a
+measurement, and it is not a recommendation.
 
 **Parakeet wins on every metric, reversing the 5-clip table below.** That table
 ranked `large-v3-turbo` ahead of parakeet and recommended it as the default;
@@ -179,9 +186,12 @@ small on CPU.
 
 ## Suggestions for the end user
 
-Quality claims here come from the 61-clip measurement; throughput claims still
-come from the voided 5-clip table, because no trustworthy RTFx numbers have
-been collected yet. They are flagged individually below.
+Quality claims here come from the 61-clip measurement. **No trustworthy RTFx
+numbers exist**, so this page no longer makes a throughput recommendation —
+the only RTFx figures ever collected are in the voided 5-clip table, and they
+cannot support one. Measure throughput on your own hardware and audio lengths;
+the 5-clip numbers were taken on 60 s clips, which penalises backends with
+per-request overhead and flatters ones with none.
 
 - **Best quality (GPU):** **onnx-asr `nemo-parakeet-tdt-0.6b-v3`** — best
   cpWER, ORC-WER and DER of the three backends measured on the 61-clip
@@ -190,11 +200,11 @@ been collected yet. They are flagged individually below.
 - **Best quality with multilingual support:** faster-whisper
   `large-v3-turbo` — 2.2 points of cpWER behind parakeet, ~3.3 GB peak GPU,
   comfortably fits an 8 GB card. Pick this when the audio is not English.
-- **Max GPU throughput:** faster-whisper `small` — ⚠️ *based on the voided
-  5-clip table (~31× RTFx); its quality has not been re-measured.*
 - **CPU deployment:** onnx-asr `parakeet-tdt-0.6b-v3` (int8) — fastest and most
   accurate on CPU.
-- **Lowest VRAM:** parakeet (but watch host RAM) or faster-whisper `small`.
+- **Lowest VRAM:** faster-whisper `large-v3-turbo` at ~3.3 GB peak, measured on
+  the 61-clip workload with the diarizer resident. Parakeet is lower on paper
+  but ran at ~4.3 GB here, and watch its host RAM.
 - **Real-time / streaming:** onnx-genai `nemotron` (cache-aware streaming).
 - **Avoid:** running Whisper through the onnx-asr backend — slower and less
   accurate than faster-whisper.
