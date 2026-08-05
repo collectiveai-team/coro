@@ -28,9 +28,10 @@ own data before trusting absolute numbers.
 > a 3-word reference is noise, so the "most robust backend" claim below rests on
 > nothing.
 >
-> **A properly sized measurement now exists for one backend** — see *Current
-> measurement* immediately below. The other three backends have not been re-run
-> on it; doing so is the outstanding work on this page.
+> **A properly sized measurement now exists for three of the four backends** —
+> see *Current measurement* immediately below. It contradicts the 5-clip
+> ordering rather than confirming it. Only faster-whisper `small` is still
+> un-rerun; doing so is the outstanding work on this page.
 
 ## Current measurement (trustworthy)
 
@@ -48,20 +49,49 @@ directly comparable with published numbers. A WER is meaningless without naming
 its text schema; coro reports three, and they differ by more than a factor of
 two on the same hypothesis.
 
+The faster-whisper rows are fp16 (`CORO_ASR_COMPUTE_TYPE=float16`); parakeet is
+fp32. Everything else is held fixed — same clips, same NeMo Sortformer
+diarizer, same `full-memory` pipeline, and the default 2 word / 0.4 s
+**Minimum Turn Threshold** in every run. All rows scored 61/61 clips with no
+failures, no degenerate diarization, and the same 88,515-word reference.
+
 | Backend / model | cpWER ↓ | ORC-WER ↓ | DI-cpWER ↓ | DER ↓ |
 |---|---:|---:|---:|---:|
-| onnx-asr `nemo-parakeet-tdt-0.6b-v3` | **0.1967** | **0.1742** | 0.1541 | **0.2831** |
-| faster-whisper `large-v3-turbo` | _not re-run_ | | | |
-| faster-whisper `medium` | _not re-run_ | | | |
+| onnx-asr `nemo-parakeet-tdt-0.6b-v3` | **0.1967** | **0.1742** | **0.1541** | **0.2831** |
+| faster-whisper `large-v3-turbo` | 0.2170 | 0.1966 | 0.1871 | 0.3131 |
+| faster-whisper `medium` | 0.2417 | 0.2267 | 0.2147 | 0.3342 |
 | faster-whisper `small` | _not re-run_ | | | |
 
-For scale: NVIDIA publish **11.31%** WER for this model on AMI **IHM**, which is
+**Parakeet wins on every metric, reversing the 5-clip table below.** That table
+ranked `large-v3-turbo` ahead of parakeet and recommended it as the default;
+on a workload large enough to support a conclusion, parakeet leads
+`large-v3-turbo` by 2.2 points of cpWER and 2.2 points of ORC-WER. Treat the
+old ordering as an artefact of a 420-word sample and four scoring bugs, not as
+a finding that was later overturned by a better model.
+
+The ordering is also monotonic in model size here (`large-v3-turbo` >
+`medium`), where the 5-clip sample had `medium` scoring *worse* than `small` —
+another sign that sample was reading noise.
+
+**DER varies across ASR backends**, which is easy to misread: the diarizer is
+byte-identical in all three runs. DER is scored from the Hypothesis STM, whose
+segment boundaries come from ASR segmentation, so a backend that segments
+differently moves DER without the speaker timeline changing at all. DER here is
+a property of the pipeline, not of Sortformer alone.
+
+For scale: NVIDIA publish **11.31%** WER for parakeet on AMI **IHM**, which is
 per-speaker headset audio, pre-segmented, with no diarization — a materially
 easier task than the mixed-headset, diarized, unsegmented workload here. 17.42%
 ORC-WER against that is a sane ratio.
 
-Run cost: 9 min wall on an idle RTX 3070 Laptop, ~4.3 GB VRAM. Reproducing the
-other three backends is roughly 30 min more plus faster-whisper model downloads.
+Run cost, and why the wall times are not comparable: parakeet 9 min,
+`large-v3-turbo` 33 min, `medium` 105 min. The `medium` run overlapped host
+load averaging ~20 on a 16-thread box, and **host load is the dominant variable
+in wall time on this hardware** — a run measured at load 41 elsewhere took 6×
+its idle time. These wall times are therefore *not* an RTFx comparison. Quality
+scores are unaffected: they are deterministic given fixed audio and a fixed
+model. Peak whole-GPU memory (ASR + diarizer resident together) was ~3.3 GB for
+`large-v3-turbo` and ~3.7 GB for `medium`, against parakeet's ~4.3 GB.
 
 > **Read the caveats.** These runs are a **small AMI English sample** on one
 > laptop GPU. They are a *relative* signal, not an absolute quality verdict —
@@ -74,6 +104,10 @@ other three backends is roughly 30 min more plus faster-whisper model downloads.
 - Diarization: **NeMo Sortformer** (`nvidia/diar_streaming_sortformer_4spk-v2`).
 - Pipeline: `full-memory`. ASR precision: **fp16** on GPU, **int8** on CPU.
 - `--reps 2`; quality scored from rep 1, performance averaged across reps.
+
+The last two bullets describe the **voided 5-clip runs only**. The 61-clip
+measurement used `coro-bench quality` (no `--reps`, no performance sampling),
+fp16 for faster-whisper and fp32 for parakeet.
 
 ## Metrics
 
@@ -107,12 +141,16 @@ allocations; treat it as a lower bound. Its lower RTFx and higher host RAM here
 reflect onnx-asr's per-request overhead on short clips — its offline-batched
 throughput on long audio is much higher.
 
-**Highlights**
-- **`large-v3-turbo` wins on both WER and DER**, fits in ~3 GB VRAM, is
-  multilingual, and is the most *robust* — it held up on the hard `IN1001` clip
-  where `small`/`medium` collapsed (~0.98 norm ORC-WER).
-- `medium` scored *worse* than `small` on this sample — driven by the
-  pathological clips; another reason not to over-read a small sample.
+**Highlights — both since disproven, retained as a record of the error**
+- ~~`large-v3-turbo` wins on both WER and DER~~ — **wrong.** On the 61-clip
+  workload parakeet leads it on cpWER, ORC-WER *and* DER. The win here came
+  from a 420-word sample scored against a broken reference.
+- ~~`medium` scored *worse* than `small`~~ — an inversion that does not survive
+  a larger sample; the 61-clip ordering is monotonic in model size.
+
+The one claim that still stands is the warning attached to them: do not
+over-read a small sample. Both conclusions above were drawn from this table and
+both were false.
 
 ## Leaderboard — CPU (ASR only, diarization off)
 
@@ -141,10 +179,19 @@ small on CPU.
 
 ## Suggestions for the end user
 
-- **Best overall (GPU):** **faster-whisper `large-v3-turbo`** — best WER + DER,
-  multilingual, ~3 GB VRAM, comfortably fits an 8 GB GPU. Recommended default.
-- **Max GPU throughput:** faster-whisper `small` (~31× RTFx) when speed matters
-  more than the last few WER points.
+Quality claims here come from the 61-clip measurement; throughput claims still
+come from the voided 5-clip table, because no trustworthy RTFx numbers have
+been collected yet. They are flagged individually below.
+
+- **Best quality (GPU):** **onnx-asr `nemo-parakeet-tdt-0.6b-v3`** — best
+  cpWER, ORC-WER and DER of the three backends measured on the 61-clip
+  workload. **English only**, so it is not a candidate for multilingual
+  deployments.
+- **Best quality with multilingual support:** faster-whisper
+  `large-v3-turbo` — 2.2 points of cpWER behind parakeet, ~3.3 GB peak GPU,
+  comfortably fits an 8 GB card. Pick this when the audio is not English.
+- **Max GPU throughput:** faster-whisper `small` — ⚠️ *based on the voided
+  5-clip table (~31× RTFx); its quality has not been re-measured.*
 - **CPU deployment:** onnx-asr `parakeet-tdt-0.6b-v3` (int8) — fastest and most
   accurate on CPU.
 - **Lowest VRAM:** parakeet (but watch host RAM) or faster-whisper `small`.
@@ -190,6 +237,25 @@ coro-bench quality --clips-dir ./amicorpus/clips \
 
 Re-running skips meetings that are already materialized and never re-downloads,
 so both runs score provably identical audio.
+
+To reproduce a *row* of the 61-clip table, start a server with the backend you
+want and everything else pinned, then attach the quality workload to it. Only
+the first three variables change between rows:
+
+```bash
+CORO_BACKEND_ASR=faster-whisper CORO_MODEL_ASR=openai/whisper-large-v3-turbo \
+CORO_ASR_COMPUTE_TYPE=float16 \
+CORO_ASR_DEVICE=cuda CORO_BACKEND_DIARIZATION=nemo CORO_PIPELINE=full-memory \
+  coro --port 8123
+```
+
+`CORO_MIN_TURN_WORDS` / `CORO_MIN_TURN_SECONDS` are deliberately left unset so
+every row runs the default 2 word / 0.4 s **Minimum Turn Threshold**. The
+parakeet row substitutes `CORO_BACKEND_ASR=onnx-asr`,
+`CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3` and drops `CORO_ASR_COMPUTE_TYPE`
+(fp32). Wait for `/health` to report **both** `ready` and `warmup_ready` before
+starting the bench — `coro-bench quality` attaches over HTTP and does not
+manage the server for you.
 
 **ES**, not the built-in `sample` preset (IB4001 + IN1001, n=2, both
 non-scenario). Every ES meeting has exactly four participants, matching the
