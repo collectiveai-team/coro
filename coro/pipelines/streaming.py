@@ -15,6 +15,7 @@ from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, stream_pcm_fro
 from coro.core.protocols import ASRAdapter
 from coro.core.models import SpeakerSegment, TokenBatchEvent, TranscriptionResult
 from coro.pipelines.done_frame import StreamingDoneFrame
+from coro.core.segmentation import MinimumTurnThreshold
 from coro.pipelines.finalizer import (
     StreamingTranscriptFinalizer,
     build_streaming_response,
@@ -40,6 +41,7 @@ class StreamingPipeline:
         windowing: ASRWindowing | None = None,
         streaming_diarizer_factory=None,
         spill_dir: str | None = None,
+        min_turn: MinimumTurnThreshold | None = None,
     ) -> None:
         self._asr = asr
         self._windowing = windowing or ASRWindowing()
@@ -47,6 +49,7 @@ class StreamingPipeline:
         # Directory for the per-request transcript spill store. MUST be real
         # disk for flat RSS (on this platform /tmp is tmpfs/RAM-backed).
         self._spill_dir = spill_dir
+        self._min_turn = min_turn or MinimumTurnThreshold()
 
     async def transcribe(
         self,
@@ -127,7 +130,7 @@ class StreamingPipeline:
                 store.segment_count,
                 len(timeline),
             )
-            return build_streaming_response(store, timeline)
+            return build_streaming_response(store, timeline, self._min_turn)
         except Exception:
             logger.exception(
                 "streaming_pipeline transcribe failed elapsed=%.3fs chunks=%d diarizer_chunks=%d",
@@ -223,7 +226,7 @@ class StreamingPipeline:
             # Ownership of the store passes to the frame, which closes it once
             # rendered; the final transcript is never materialised in memory.
             store_released = True
-            yield StreamingDoneFrame(store=store, timeline=timeline)
+            yield StreamingDoneFrame(store=store, timeline=timeline, threshold=self._min_turn)
         except Exception:
             logger.exception(
                 "streaming_pipeline sse failed elapsed=%.3fs chunks=%d diarizer_chunks=%d",

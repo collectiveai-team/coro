@@ -64,6 +64,69 @@ def test_finalizer_matches_batch_builder_with_diarization(tmp_path):
     assert streamed.raw_words == batch.raw_words
 
 
+def test_speaker_boundary_split_matches_batch(tmp_path):
+    """Both pipelines split one punctuation segment at the same turn change.
+
+    The Full-Memory Pipeline splits during segmentation with the tokens in
+    hand; the Streaming Pipeline splits at assembly against stored words. They
+    must still emit identical segments.
+    """
+    # One punctuation-bounded segment, speaker changes after the third word.
+    tokens = [
+        _tok(0.0, 0.5, " uno"),
+        _tok(0.5, 1.0, " dos"),
+        _tok(1.0, 1.5, " tres"),
+        _tok(1.5, 2.0, " cuatro"),
+        _tok(2.0, 2.5, " cinco"),
+        _tok(2.5, 3.0, " seis."),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.5, speaker=2),
+        SpeakerSegment(start=1.5, end=3.0, speaker=3),
+    ]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(tokens)
+        finalizer.finish()
+        streamed = build_streaming_response(store, timeline)
+
+    batch = build_transcription_response(tokens, timeline, duration=3.0)
+
+    assert len(batch.segments) == 2, "the turn change must split the segment"
+    assert [s.speaker for s in batch.segments] == ["2", "3"]
+    assert [s.text for s in batch.segments] == ["uno dos tres", "cuatro cinco seis."]
+    assert streamed.segments == batch.segments
+    assert streamed.word_segments == batch.word_segments
+    assert streamed.transcript == batch.transcript
+    assert streamed.diarization == batch.diarization
+
+
+def test_backchannel_does_not_split_either_pipeline(tmp_path):
+    """A one-word interruption stays with the surrounding speaker, on both paths."""
+    tokens = [
+        _tok(0.0, 0.5, " uno"),
+        _tok(0.5, 1.0, " dos"),
+        _tok(1.0, 1.2, " mm"),
+        _tok(1.2, 1.7, " tres"),
+        _tok(1.7, 2.2, " cuatro."),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.0, speaker=2),
+        SpeakerSegment(start=1.0, end=1.2, speaker=3),
+        SpeakerSegment(start=1.2, end=2.2, speaker=2),
+    ]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(tokens)
+        finalizer.finish()
+        streamed = build_streaming_response(store, timeline)
+
+    batch = build_transcription_response(tokens, timeline, duration=2.2)
+
+    assert len(batch.segments) == 1
+    assert streamed.segments == batch.segments
+
+
 def test_persisted_segment_words_carry_measured_starts(tmp_path):
     """Words spilled before diarization exists hold real token times.
 

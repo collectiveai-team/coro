@@ -36,6 +36,7 @@ from coro.core.models import (
     TranscriptToken,
     TranscriptWord,
 )
+from coro.core.segmentation import MinimumTurnThreshold, speaker_runs
 from coro.pipelines.transcript_store import TranscriptSpillStore
 
 
@@ -104,29 +105,73 @@ def _assign_segment_speaker(
         word.speaker = str(spk)
 
 
+def split_stored_segment(
+    seg: ResponseSegment,
+    merged: list[SpeakerSegment],
+    last_end: float,
+    threshold: MinimumTurnThreshold,
+) -> list[ResponseSegment]:
+    """Apply the Speaker Boundary Split to one persisted segment.
+
+    The Streaming Pipeline commits segments before the diarizer has a timeline,
+    so by the time one exists the segment is a single stored row and its words —
+    carrying Measured Word Start values since issue 06 — are the only
+    sub-segment structure left to cut on.
+
+    Pure: it reads the row and returns new segments, never mutating the store.
+    The SSE done-frame re-iterates the store four times, and the four JSON
+    arrays would disagree if this were not deterministic.
+    """
+    starts = [w.start for w in seg.words]
+    runs = speaker_runs(starts, seg.end, merged, last_end, threshold)
+    if not runs:
+        return [seg]
+
+    pieces: list[ResponseSegment] = []
+    for run in runs:
+        words = seg.words[run.start : run.end]
+        if not words:
+            continue
+        end = starts[run.end] if run.end < len(starts) else seg.end
+        pieces.append(
+            ResponseSegment(
+                start=round(words[0].start, 2),
+                end=round(end, 2),
+                text=" ".join(w.word for w in words),
+                speaker=seg.speaker,
+                words=words,
+            )
+        )
+    return pieces or [seg]
+
+
 def iter_response_segments(
     store: TranscriptSpillStore,
     speaker_timeline: list[SpeakerSegment] | None = None,
+    threshold: MinimumTurnThreshold | None = None,
 ) -> Iterator[ResponseSegment]:
-    """Yield finalized segments, speaker-attributed and overlap-clamped.
+    """Yield finalized segments, split at speaker changes, attributed and clamped.
 
     Speakers are assigned per segment from the (complete) diarization timeline,
     then a one-segment-lookahead clamp ensures a segment never ends past the
     next one's start (matching ``_clamp_overlaps`` for in-order input).  Only a
-    single segment is buffered, so memory stays flat.
+    single segment is buffered, plus the pieces of the row being read — bounded
+    by that row's word count — so memory stays flat in audio length.
     """
     merged = merge_speaker_timeline(speaker_timeline or [])
     last_end = merged[-1].end if merged else 0.0
     has_timeline = bool(merged)
+    threshold = threshold or MinimumTurnThreshold()
 
     prev: ResponseSegment | None = None
-    for seg in store.iter_segments():
-        _assign_segment_speaker(seg, merged, last_end, has_timeline)
-        if prev is not None:
-            if prev.end > seg.start:
-                prev.end = round(max(prev.start, seg.start), 2)
-            yield prev
-        prev = seg
+    for stored in store.iter_segments():
+        for seg in split_stored_segment(stored, merged, last_end, threshold):
+            _assign_segment_speaker(seg, merged, last_end, has_timeline)
+            if prev is not None:
+                if prev.end > seg.start:
+                    prev.end = round(max(prev.start, seg.start), 2)
+                yield prev
+            prev = seg
     if prev is not None:
         yield prev
 
@@ -134,6 +179,7 @@ def iter_response_segments(
 def build_streaming_response(
     store: TranscriptSpillStore,
     speaker_timeline: list[SpeakerSegment] | None = None,
+    threshold: MinimumTurnThreshold | None = None,
 ) -> TranscriptionResult:
     """Assemble the full :class:`TranscriptionResult` from a spill store.
 
@@ -143,7 +189,7 @@ def build_streaming_response(
     """
     segments: list[ResponseSegment] = []
     word_segments: list[TranscriptWord] = []
-    for seg in iter_response_segments(store, speaker_timeline):
+    for seg in iter_response_segments(store, speaker_timeline, threshold):
         segments.append(seg)
         word_segments.extend(seg.words)
     transcript = [TranscriptItem(start=s.start, end=s.end, text=s.text) for s in segments]

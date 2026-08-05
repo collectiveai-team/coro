@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from coro.core.models import SpeakerSegment
+from coro.core.segmentation import MinimumTurnThreshold
 from coro.pipelines.finalizer import iter_response_segments
 from coro.pipelines.transcript_store import TranscriptSpillStore
 
@@ -38,26 +39,27 @@ class StreamingDoneFrame:
 
     store: TranscriptSpillStore
     timeline: list[SpeakerSegment]
+    threshold: MinimumTurnThreshold = field(default_factory=MinimumTurnThreshold)
 
     def inner_fragments(self) -> Iterator[str]:
         """Yield the response JSON piecewise, equal to json.dumps(response)."""
         yield '{"segments": ['
-        for i, seg in enumerate(iter_response_segments(self.store, self.timeline)):
+        for i, seg in enumerate(iter_response_segments(self.store, self.timeline, self.threshold)):
             yield ", " if i else ""
             yield json.dumps(asdict(seg))
         yield '], "word_segments": ['
         first = True
-        for seg in iter_response_segments(self.store, self.timeline):
+        for seg in iter_response_segments(self.store, self.timeline, self.threshold):
             for word in seg.words:
                 yield "" if first else ", "
                 first = False
                 yield json.dumps(asdict(word))
         yield '], "transcript": ['
-        for i, seg in enumerate(iter_response_segments(self.store, self.timeline)):
+        for i, seg in enumerate(iter_response_segments(self.store, self.timeline, self.threshold)):
             yield ", " if i else ""
             yield json.dumps({"start": seg.start, "end": seg.end, "text": seg.text})
         yield '], "diarization": ['
-        for i, seg in enumerate(iter_response_segments(self.store, self.timeline)):
+        for i, seg in enumerate(iter_response_segments(self.store, self.timeline, self.threshold)):
             yield ", " if i else ""
             yield json.dumps({"start": seg.start, "end": seg.end, "speaker": seg.speaker})
         yield '], "raw_words": ['

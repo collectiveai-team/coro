@@ -6,6 +6,7 @@ import json
 from dataclasses import asdict
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, convert_to_pcm_bytes
+from coro.core.segmentation import MinimumTurnThreshold
 from coro.core.response import build_transcription_response
 from coro.core.protocols import ASRAdapter, DiarizationAdapter
 from coro.core.models import TokenBatchEvent, TranscriptDoneEvent, TranscriptionResult
@@ -22,10 +23,12 @@ class FullMemoryPipeline:
         asr: ASRAdapter,
         diarization: DiarizationAdapter | None = None,
         windowing: ASRWindowing | None = None,
+        min_turn: MinimumTurnThreshold | None = None,
     ) -> None:
         self._asr = asr
         self._diarization = diarization
         self._windowing = windowing or ASRWindowing()
+        self._min_turn = min_turn or MinimumTurnThreshold()
 
     # PCM Decoding ----------------------------------------------------------
     async def _pcm(self, audio: AudioInput) -> bytes:
@@ -50,7 +53,7 @@ class FullMemoryPipeline:
         timeline = []
         if self._diarization is not None:
             timeline = await self._diarization.diarize_pcm(pcm)
-        return build_transcription_response(result.tokens, timeline, duration)
+        return build_transcription_response(result.tokens, timeline, duration, self._min_turn)
 
     # Streaming Transcription ----------------------------------------------
     async def stream(
@@ -77,5 +80,7 @@ class FullMemoryPipeline:
         if self._diarization is not None:
             timeline = await self._diarization.diarize_pcm(pcm)
         yield TranscriptDoneEvent(
-            text=json.dumps(asdict(build_transcription_response(tokens, timeline, duration))),
+            text=json.dumps(
+                asdict(build_transcription_response(tokens, timeline, duration, self._min_turn))
+            ),
         )
