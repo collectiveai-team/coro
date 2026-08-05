@@ -202,6 +202,89 @@ class TestAmiMeetingToStm:
         (segments_dir / "TS3003a.B.segments.xml").write_text(seg_b_xml)
         return root
 
+    @pytest.fixture()
+    def ami_realistic_fixture(self, tmp_path: Path) -> Path:
+        """An AMI tree shaped like the real corpus.
+
+        Real AMI word files interleave ``<w>`` with ``<disfmarker>``,
+        ``<vocalsound>`` and ``<gap>``, and a segment's ``<child>`` href is a
+        RANGE whose endpoints may be any of those — not necessarily a word.
+        Real segments carry ``transcriber_start``/``transcriber_end``, not
+        ``starttime``/``endtime``.
+        """
+        root = tmp_path / "amicorpus"
+        words_dir = root / "TS3003a" / "words"
+        segments_dir = root / "TS3003a" / "segments"
+        words_dir.mkdir(parents=True)
+        segments_dir.mkdir(parents=True)
+
+        (words_dir / "TS3003a.A.words.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<nite:root xmlns:nite="http://nite.sourceforge.net/">\n'
+            '  <w nite:id="TS3003a.A.words0" starttime="0.0" endtime="0.5">Hello</w>\n'
+            '  <w nite:id="TS3003a.A.words1" starttime="0.5" endtime="1.0">everyone</w>\n'
+            '  <disfmarker nite:id="TS3003a.A.words2" starttime="1.0" endtime="1.1"/>\n'
+            '  <w nite:id="TS3003a.A.words3" starttime="2.0" endtime="2.5">second</w>\n'
+            '  <w nite:id="TS3003a.A.words4" starttime="2.5" endtime="3.0">turn</w>\n'
+            '  <vocalsound nite:id="TS3003a.A.words5" starttime="3.0" endtime="3.2"/>\n'
+            "</nite:root>\n"
+        )
+        (segments_dir / "TS3003a.A.segments.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<nite:root xmlns:nite="http://nite.sourceforge.net/">\n'
+            '  <segment nite:id="s0" transcriber_start="0.0" transcriber_end="1.1">\n'
+            '    <child href="TS3003a.A.words.xml#id(TS3003a.A.words0)..'
+            'id(TS3003a.A.words2)"/>\n'
+            "  </segment>\n"
+            '  <segment nite:id="s1" transcriber_start="2.0" transcriber_end="3.2">\n'
+            '    <child href="TS3003a.A.words.xml#id(TS3003a.A.words3)..'
+            'id(TS3003a.A.words5)"/>\n'
+            "  </segment>\n"
+            "</nite:root>\n"
+        )
+        return root
+
+    def test_href_range_ending_on_a_non_word_keeps_its_words(self, ami_realistic_fixture: Path):
+        """A range terminating on <disfmarker>/<vocalsound> must not drop the segment.
+
+        AMI href ranges routinely end on a non-word element. Resolving the range
+        against a word-only index loses every word in it — 28.5% of segments and
+        ~30k reference words across the AMI ES meetings.
+        """
+        from coro.bench.stm import ami_meeting_to_stm
+
+        result = ami_meeting_to_stm(ami_realistic_fixture, "TS3003a")
+
+        assert "Hello everyone" in result
+        assert "second turn" in result
+        assert len(result.strip().splitlines()) == 2
+
+    def test_segment_falls_back_to_transcriber_times(self, tmp_path: Path):
+        """When no href resolves, the segment's own transcriber_* window is used."""
+        root = tmp_path / "amicorpus"
+        words_dir = root / "TS3003a" / "words"
+        segments_dir = root / "TS3003a" / "segments"
+        words_dir.mkdir(parents=True)
+        segments_dir.mkdir(parents=True)
+        (words_dir / "TS3003a.A.words.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<nite:root xmlns:nite="http://nite.sourceforge.net/">\n'
+            '  <w nite:id="TS3003a.A.words0" starttime="0.0" endtime="0.5">Hello</w>\n'
+            "</nite:root>\n"
+        )
+        (segments_dir / "TS3003a.A.segments.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<nite:root xmlns:nite="http://nite.sourceforge.net/">\n'
+            '  <segment nite:id="s0" transcriber_start="0.0" transcriber_end="1.0">\n'
+            '    <child href="TS3003a.A.words.xml#id(TS3003a.A.unknown)"/>\n'
+            "  </segment>\n"
+            "</nite:root>\n"
+        )
+
+        from coro.bench.stm import ami_meeting_to_stm
+
+        assert "Hello" in ami_meeting_to_stm(root, "TS3003a")
+
     def test_produces_stm_with_correct_speakers(self, ami_fixture: Path):
         from coro.bench.stm import ami_meeting_to_stm
 

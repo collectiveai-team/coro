@@ -194,6 +194,19 @@ def _get_time(elem: ET.Element, name: str) -> float | None:
         return None
 
 
+def _first_time(elem: ET.Element, *names: str) -> float | None:
+    """Return the first parsable time attribute among ``names``.
+
+    Written as an explicit None check rather than ``or`` because a legitimate
+    time of 0.0 is falsy.
+    """
+    for name in names:
+        value = _get_time(elem, name)
+        if value is not None:
+            return value
+    return None
+
+
 def _normalize_token(text: str) -> str:
     text = html.unescape(text or "")
     text = text.strip()
@@ -201,20 +214,39 @@ def _normalize_token(text: str) -> str:
 
 
 def _read_words(path: Path) -> tuple[list[dict], dict[str, int]]:
+    """Read an AMI word file, returning its words and an id index.
+
+    The index spans EVERY identified element, not only ``<w>``. AMI word files
+    interleave words with ``<disfmarker>``, ``<vocalsound>`` and ``<gap>``, and a
+    segment's href range may terminate on any of them; indexing words alone
+    leaves those endpoints unresolvable and silently discards the segment.
+    Non-word elements are indexed as positions but carry no word payload.
+    """
     tree = ET.parse(path)
     words: list[dict] = []
+    id_to_index: dict[str, int] = {}
     for elem in tree.getroot().iter():
-        if _local_name(elem.tag) != "w":
+        element_id = _get_id(elem)
+        if not element_id:
             continue
-        word_id = _get_id(elem)
-        start = _get_time(elem, "starttime")
-        end = _get_time(elem, "endtime")
-        token = _normalize_token("".join(elem.itertext()))
-        if not word_id or start is None or end is None or not token:
-            continue
-        words.append({"id": word_id, "start": start, "end": end, "word": token})
-    id_to_index = {w["id"]: i for i, w in enumerate(words)}
+        if _local_name(elem.tag) == "w":
+            start = _get_time(elem, "starttime")
+            end = _get_time(elem, "endtime")
+            token = _normalize_token("".join(elem.itertext()))
+            if start is not None and end is not None and token:
+                id_to_index[element_id] = len(words)
+                words.append({"id": element_id, "start": start, "end": end, "word": token})
+                continue
+        # A non-word (or unusable word) element still anchors a range endpoint:
+        # point it at the next word position so a range through it resolves.
+        id_to_index[element_id] = len(words)
     return words, id_to_index
+
+
+def _is_word_id(words: list[dict], id_to_index: dict[str, int], element_id: str) -> bool:
+    """Report whether an indexed element is itself a word."""
+    index = id_to_index[element_id]
+    return index < len(words) and words[index]["id"] == element_id
 
 
 def _words_from_child_href(
@@ -222,19 +254,25 @@ def _words_from_child_href(
     words: list[dict],
     id_to_index: dict[str, int],
 ) -> list[dict]:
+    """Resolve a ``<child>`` href to the words it covers.
+
+    An href is a single id or an ``id(a)..id(b)`` range. A non-word endpoint
+    indexes the word that follows it, so it bounds the range without
+    contributing a token of its own.
+    """
     ids = _ID_RE.findall(href)
     if not ids:
         return []
-    if len(ids) == 1:
-        idx = id_to_index.get(ids[0])
-        return [] if idx is None else [words[idx]]
-    start_idx = id_to_index.get(ids[0])
-    end_idx = id_to_index.get(ids[-1])
-    if start_idx is None or end_idx is None:
+    first, last = ids[0], ids[-1]
+    if first not in id_to_index or last not in id_to_index:
         return []
-    if start_idx > end_idx:
-        start_idx, end_idx = end_idx, start_idx
-    return words[start_idx : end_idx + 1]
+    if id_to_index[first] > id_to_index[last]:
+        first, last = last, first
+    start = id_to_index[first]
+    end = id_to_index[last]
+    if _is_word_id(words, id_to_index, last):
+        end += 1
+    return words[start:end]
 
 
 def _read_segments(
@@ -254,8 +292,10 @@ def _read_segments(
             href = child.attrib.get("href", "")
             seg_words.extend(_words_from_child_href(href, words, id_to_index))
         if not seg_words:
-            start = _get_time(seg, "starttime")
-            end = _get_time(seg, "endtime")
+            # AMI segments time themselves with transcriber_start/transcriber_end;
+            # starttime/endtime is the word-level spelling and never appears here.
+            start = _first_time(seg, "transcriber_start", "starttime")
+            end = _first_time(seg, "transcriber_end", "endtime")
             if start is not None and end is not None:
                 seg_words = [w for w in words if w["start"] >= start and w["end"] <= end]
         if not seg_words:
