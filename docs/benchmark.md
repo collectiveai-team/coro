@@ -4,6 +4,30 @@ Backend/model leaderboard for the full **transcription + diarization** pipeline,
 produced with `coro-bench`. Use it to pick a backend; reproduce it on your
 own data before trusting absolute numbers.
 
+> ### ⚠️ STALE — every number below predates two scoring fixes
+>
+> **Do not cite these figures.** They were measured before:
+>
+> 1. **`e71dc71`** — ASR Windowing had no **Overlap Token Acceptance**, so every
+>    window re-emitted its predecessor's final 2 s. These are 60 s clips, so each
+>    one contains a seam. All backends over-emit; the inflation is not uniform
+>    across them, so the *ordering* is not safe either.
+> 2. **`c082427`** — the AMI reference builder silently dropped segments whose
+>    annotation range ended on a `<disfmarker>`/`<gap>`/`<vocalsound>`. On this
+>    sample 8% of reference words were missing (`IN1001` 70%, `TS3003a` 29%),
+>    so correctly transcribed speech was scored as insertions.
+>
+> On the separate AMI ES workload, repairing these two moved ORC-WER 0.3889 →
+> 0.1797 and DER 0.6242 → 0.3292 **with the hypotheses unchanged**. Expect
+> movement of that order here.
+>
+> The sample is also too small to carry its conclusions: **420 reference words
+> across all five clips**, and `IN1001` has **3** (10 after the fix). A WER over
+> a 3-word reference is noise, so the robustness claim below rests on nothing.
+>
+> Re-run before trusting this page, with a workload large enough to separate the
+> backends — `coro.bench.utils.make_ami_clip_set` materializes one.
+
 > **Read the caveats.** These runs are a **small AMI English sample** on one
 > laptop GPU. They are a *relative* signal, not an absolute quality verdict —
 > reproduce on data that matches your domain/language (the bench ships loaders
