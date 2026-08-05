@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Speaker attribution via segmentation, not forced alignment
@@ -38,6 +38,21 @@ The split is gated on a **Speaker Attribution Gap** of at least 15% of cpWER,
 measured on AMI ES 10-minute clips after **Overlap Token Acceptance** is in
 place. Below that, this decision is not implemented and the aligner question
 stays closed on the evidence.
+
+**The gate passed.** On 61 ten-minute clips from the 30 AMI ES meetings the gap
+is 19.56% of cpWER under the **Leaderboard Text Schema** (95% CI 17.00–22.26%,
+clustered by meeting; P(gap ≥ 15%) = 100.0% over 10,000 resamples). The verdict,
+the issue 04 delta and the recorded deviations are in
+`.scratch/speaker-attribution/gate-report.md`.
+
+The threshold was fixed before any number was seen but did not name a text
+schema, and the verdict depends on it — 5.87% on raw text, 15.09% under the
+punctuation-stripping schema, 19.56% under the leaderboard one. Only raw (robust
+fail) and leaderboard (robust pass) resolve it; the middle schema sits on the
+threshold at P = 52.1% and cannot decide anything. That a percentage-of-cpWER
+threshold is under-specified without its schema is a defect in how the gate was
+written, and is why **a WER is meaningless without naming its text schema** is
+now a CONTEXT.md invariant.
 
 cpWER is insensitive to segment count, so it rewards fragmentation without
 limit. The **Minimum Turn Threshold** exists to keep backchannels from shredding
