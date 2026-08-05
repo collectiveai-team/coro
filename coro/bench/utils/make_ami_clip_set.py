@@ -15,10 +15,12 @@ preset (IB4001 + IN1001) must not be used for that measurement.
     python -m coro.bench.utils.make_ami_clip_set --ami-root ./amicorpus
     coro-bench quality --clips-dir ./amicorpus/clips --server-url http://127.0.0.1:8123
 
-Re-running is idempotent: meetings whose clip and Reference STM already exist
-are skipped, and audio for them is never re-downloaded. That is what lets the
+Re-running is idempotent for audio: meetings whose clip already exists are
+skipped and their source audio is never re-downloaded. That is what lets the
 baseline (issue 03) and the post-dedup re-measurement (issue 05) run against
-provably identical audio.
+provably identical audio. Reference STMs are always rebuilt, because they are
+derived from annotation-parsing code that changes and a corrected builder has
+to reach clips that already exist.
 """
 
 from __future__ import annotations
@@ -27,17 +29,16 @@ import argparse
 from pathlib import Path
 
 from coro.bench.ami import AMI_GROUPS, ensure_audio_and_annotations
-from coro.bench.utils.make_ami_clip import clip_stem, materialize_clip
+from coro.bench.utils.make_ami_clip import clip_stem, materialize_clip, write_clip_reference
 
 DEFAULT_GROUP = "ES"
 DEFAULT_DURATION = 600.0
 DEFAULT_START = 0.0
 
 
-def clip_is_materialized(out_dir: Path, meeting_id: str, start: float, duration: float) -> bool:
-    """Report whether both the clip audio and its Reference STM already exist."""
-    stem = clip_stem(meeting_id, start, duration)
-    return (out_dir / f"{stem}.wav").exists() and (out_dir / f"{stem}.ref.stm").exists()
+def clip_audio_exists(out_dir: Path, meeting_id: str, start: float, duration: float) -> bool:
+    """Report whether the clip audio already exists."""
+    return (out_dir / f"{clip_stem(meeting_id, start, duration)}.wav").exists()
 
 
 def materialize_clip_set(
@@ -49,23 +50,32 @@ def materialize_clip_set(
     duration: float = DEFAULT_DURATION,
     no_download: bool = False,
 ) -> list[str]:
-    """Materialize a clip Workload Set; return the meetings actually processed.
+    """Materialize a clip Workload Set; return the meetings whose audio was cut.
 
-    Already-materialized meetings are filtered out *before* the download step,
-    so a completed set can be re-run without the full-length source audio being
-    present at all.
+    Only the audio is treated as already-done work. Meetings whose clip audio
+    exists are filtered out *before* the download step, so a completed set can
+    be re-run without the full-length source audio being present at all, and the
+    clips stay byte-identical between runs.
+
+    Reference STMs are rewritten every time. They are derived from
+    annotation-parsing code that changes; skipping them when the audio is
+    present would mean a corrected reference builder never reaches an existing
+    workload, so the run would silently score against stale references.
     """
-    pending = [m for m in meetings if not clip_is_materialized(out_dir, m, start, duration)]
-    if not pending:
-        return []
+    missing_audio = [m for m in meetings if not clip_audio_exists(out_dir, m, start, duration)]
 
-    ensure_audio_and_annotations(pending, ami_root, no_download=no_download)
+    if missing_audio:
+        ensure_audio_and_annotations(missing_audio, ami_root, no_download=no_download)
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    for meeting_id in pending:
-        audio_dst, stm_dst = materialize_clip(ami_root, meeting_id, start, duration, out_dir)
-        print(f"wrote {audio_dst} and {stm_dst}")
-    return pending
+    for meeting_id in meetings:
+        if meeting_id in set(missing_audio):
+            audio_dst, stm_dst = materialize_clip(ami_root, meeting_id, start, duration, out_dir)
+            print(f"wrote {audio_dst} and {stm_dst}")
+        else:
+            stm_dst = write_clip_reference(ami_root, meeting_id, start, duration, out_dir)
+            print(f"refreshed {stm_dst}")
+    return missing_audio
 
 
 def main() -> None:

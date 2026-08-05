@@ -50,6 +50,36 @@ def clip_stem(meeting_id: str, start: float, duration: float) -> str:
     return f"{meeting_id}_{int(start)}_{int(duration)}"
 
 
+def write_clip_reference(
+    ami_root: Path,
+    meeting_id: str,
+    start: float,
+    duration: float,
+    out_dir: Path,
+) -> Path:
+    """Write one clip's rebased Reference STM; return its path.
+
+    Split from the audio cut because the two have opposite lifetimes: the clip
+    audio is an immutable fixture that must stay byte-identical across runs,
+    while the reference is derived from annotation-parsing code that changes and
+    therefore has to be rebuildable in place.
+    """
+    stem = clip_stem(meeting_id, start, duration)
+    stm_dst = out_dir / f"{stem}.ref.stm"
+    # The clip stem is the benchmark item_id, so the reference session id must
+    # match it (the hypothesis STM is keyed by item_id).
+    stm_text = clip_reference_stm(
+        ami_root,
+        meeting_id,
+        start,
+        duration,
+        recording_id=stem,
+    )
+    stm_dst.parent.mkdir(parents=True, exist_ok=True)
+    stm_dst.write_text(stm_text, encoding="utf-8")
+    return stm_dst
+
+
 def materialize_clip(
     ami_root: Path,
     meeting_id: str,
@@ -65,20 +95,9 @@ def materialize_clip(
     """
     stem = clip_stem(meeting_id, start, duration)
     audio_dst = out_dir / f"{stem}.wav"
-    stm_dst = out_dir / f"{stem}.ref.stm"
 
     cut_audio_clip(get_audio_path(ami_root, meeting_id), audio_dst, start, duration)
-    # The clip stem is the benchmark item_id, so the reference session id must
-    # match it (the hypothesis STM is keyed by item_id).
-    stm_text = clip_reference_stm(
-        ami_root,
-        meeting_id,
-        start,
-        duration,
-        recording_id=stem,
-    )
-    stm_dst.parent.mkdir(parents=True, exist_ok=True)
-    stm_dst.write_text(stm_text, encoding="utf-8")
+    stm_dst = write_clip_reference(ami_root, meeting_id, start, duration, out_dir)
     return audio_dst, stm_dst
 
 

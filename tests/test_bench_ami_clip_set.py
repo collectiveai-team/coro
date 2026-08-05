@@ -57,6 +57,29 @@ def test_rerun_skips_materialized_meetings_and_does_not_redownload(tmp_path: Pat
     cut.assert_not_called()
 
 
+def test_rerun_refreshes_references_without_recutting_audio(tmp_path: Path):
+    """A reference-builder fix must reach clips that already exist.
+
+    Clip audio is an immutable fixture — re-cutting it would break the
+    identical-audio guarantee between runs. The Reference STM is a derived
+    artifact of code that does change, so skipping it whenever the audio is
+    present means a corrected builder never applies to the materialized
+    workload and the fix is silently invisible.
+    """
+    out_dir = tmp_path / "clips"
+    argv = ["--ami-root", str(tmp_path / "amicorpus"), "--out-dir", str(out_dir)]
+    _run(argv)
+    stale = out_dir / "ES2002a_0_600.ref.stm"
+    stale.write_text("ES2002a_0_600 1 A 0.000 1.000 stale reference\n")
+
+    ensure, cut = _run(argv)
+
+    cut.assert_not_called()
+    ensure.assert_not_called()
+    assert "stale reference" not in stale.read_text()
+    assert "hola mundo" in stale.read_text()
+
+
 def test_partial_set_only_materializes_the_missing_meetings(tmp_path: Path):
     out_dir = tmp_path / "clips"
     argv = ["--ami-root", str(tmp_path / "amicorpus"), "--out-dir", str(out_dir)]
