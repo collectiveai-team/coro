@@ -136,7 +136,7 @@ class TestTextSchemaMetrics:
         result = score_item(ref_stm, hyp_stm)
 
         assert result.metrics is not None
-        for schema in (result.metrics.normalized, result.metrics.leaderboard):
+        for schema in (result.metrics.unpunctuated, result.metrics.whisper_english):
             assert schema is not None
             assert schema.cpwer is not None
             assert schema.orcwer is not None
@@ -156,8 +156,8 @@ class TestTextSchemaMetrics:
         result = score_item(ref_stm, hyp_stm)
 
         assert result.metrics is not None
-        normalized = result.metrics.normalized
-        leaderboard = result.metrics.leaderboard
+        normalized = result.metrics.unpunctuated
+        leaderboard = result.metrics.whisper_english
         assert normalized is not None and normalized.cpwer is not None
         assert leaderboard is not None and leaderboard.cpwer is not None
         # The leaderboard schema forgives the filler, the case and the contraction.
@@ -179,8 +179,8 @@ class TestTextSchemaMetrics:
         result = score_item(ref_stm, hyp_stm)
 
         assert result.metrics is not None
-        assert result.metrics.normalized is None
-        assert result.metrics.leaderboard is None
+        assert result.metrics.unpunctuated is None
+        assert result.metrics.whisper_english is None
 
     def test_combine_items_and_per_item_carry_leaderboard_metrics(self, tmp_path: Path):
         ref_stm, hyp_stm = _write_stm_pair(
@@ -197,9 +197,9 @@ class TestTextSchemaMetrics:
         summary = combine_items([result])
 
         assert summary.combined is not None
-        assert summary.combined.leaderboard is not None
-        assert summary.combined.leaderboard.cpwer is not None
-        assert summary.per_item[0].leaderboard_cpwer is not None
+        assert summary.combined.whisper_english is not None
+        assert summary.combined.whisper_english.cpwer is not None
+        assert summary.per_item[0].whisper_english_cpwer is not None
 
 
 class TestScoreItem:
@@ -510,7 +510,7 @@ class TestDiarizationOnly:
         assert result.metrics.cpwer is None
         assert result.metrics.orcwer is None
         assert result.metrics.dicpwer is None
-        assert result.metrics.normalized is None
+        assert result.metrics.unpunctuated is None
         assert result.metrics.der.der >= 0.0
 
     def test_combine_items_aggregates_der_without_wer(self, tmp_path: Path):

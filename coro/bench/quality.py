@@ -15,7 +15,7 @@ from coro.bench.models.quality import (
     CombinedMetrics,
     DerStats,
     DiarizationSanity,
-    NormalizedMetrics,
+    SchemaMetrics,
     PerItemEntry,
     QualitySummary,
     ScoreError,
@@ -164,9 +164,9 @@ def _score_wer_triple(meeteval, ref: Path, hyp: Path, raw: dict[str, Any], prefi
         raw[key] = _combine_multifile(meeteval, scorer(ref, hyp))
 
 
-def _metrics_from_raw(raw: dict[str, Any], prefix: str) -> NormalizedMetrics:
+def _metrics_from_raw(raw: dict[str, Any], prefix: str) -> SchemaMetrics:
     """Collect one text schema's raw results into a metric block."""
-    return NormalizedMetrics(
+    return SchemaMetrics(
         cpwer=_wer_to_dict(raw[f"{prefix}_cpwer"]),
         orcwer=_wer_to_dict(raw[f"{prefix}_orcwer"]),
         dicpwer=_wer_to_dict(raw[f"{prefix}_dicpwer"]),
@@ -225,8 +225,8 @@ def score_item(
             metrics.dicpwer = _wer_to_dict(raw["dicpwer"])
 
             _score_text_schemas(meeteval, ref_stm_path, hyp_stm_path, raw)
-            metrics.normalized = _metrics_from_raw(raw, "normalized")
-            metrics.leaderboard = _metrics_from_raw(raw, "leaderboard")
+            metrics.unpunctuated = _metrics_from_raw(raw, "unpunctuated")
+            metrics.whisper_english = _metrics_from_raw(raw, "whisper_english")
 
         der_results = meeteval.der.md_eval_22(
             ref_stm_path,
@@ -273,9 +273,9 @@ def _combine_raw_key(meeteval, succeeded: list[ScoreResult], raw_key: str) -> An
     return converter(combined)
 
 
-def _combined_schema(meeteval, succeeded: list[ScoreResult], prefix: str) -> NormalizedMetrics:
+def _combined_schema(meeteval, succeeded: list[ScoreResult], prefix: str) -> SchemaMetrics:
     """Combine one text schema's WER triple across all succeeded items."""
-    return NormalizedMetrics(
+    return SchemaMetrics(
         cpwer=_combine_raw_key(meeteval, succeeded, f"{prefix}_cpwer"),
         orcwer=_combine_raw_key(meeteval, succeeded, f"{prefix}_orcwer"),
         dicpwer=_combine_raw_key(meeteval, succeeded, f"{prefix}_dicpwer"),
@@ -288,8 +288,8 @@ def _combined_metrics(meeteval, succeeded: list[ScoreResult]) -> CombinedMetrics
         cpwer=_combine_raw_key(meeteval, succeeded, "cpwer"),
         orcwer=_combine_raw_key(meeteval, succeeded, "orcwer"),
         dicpwer=_combine_raw_key(meeteval, succeeded, "dicpwer"),
-        normalized=_combined_schema(meeteval, succeeded, "normalized"),
-        leaderboard=_combined_schema(meeteval, succeeded, "leaderboard"),
+        unpunctuated=_combined_schema(meeteval, succeeded, "unpunctuated"),
+        whisper_english=_combined_schema(meeteval, succeeded, "whisper_english"),
         der=_combine_raw_key(meeteval, succeeded, "der"),
     )
 
@@ -314,8 +314,8 @@ def _per_item_entry(result: ScoreResult) -> PerItemEntry:
         if metrics.der is not None:
             entry.der = metrics.der.der
         for prefix, block in (
-            ("normalized", metrics.normalized),
-            ("leaderboard", metrics.leaderboard),
+            ("unpunctuated", metrics.unpunctuated),
+            ("whisper_english", metrics.whisper_english),
         ):
             if block is None:
                 continue

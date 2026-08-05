@@ -48,9 +48,13 @@ _Avoid_: WER alone, custom metric mix
 Unscored counts reported beside the MeetEval Metric Set — segment count, median words per segment, and single-word segment count — that expose transcript fragmentation, which no WER metric penalises.
 _Avoid_: Readability score, a scored fragmentation metric
 
-**Leaderboard Text Schema**:
-The text conventions published ASR results are scored under — lowercased, punctuation removed, contractions expanded, numbers and spellings standardised, and fillers deleted — applied to reference and hypothesis so a coro WER can be read beside a model card's.
-_Avoid_: Normalized WER, cleaned text, the punctuation-stripping variant
+**Whisper English Text Schema**:
+The text conventions published ASR results are scored under — lowercased, punctuation removed, contractions expanded, numbers and spellings standardised, and fillers deleted — applied to reference and hypothesis so a coro WER can be read beside a model card's. Registry key `whisper_english`. Named for the transform, not for the leaderboard that popularised it, and because it is English-only.
+_Avoid_: Leaderboard Text Schema, Normalized WER, cleaned text, the punctuation-stripping variant
+
+**Unpunctuated Text Schema**:
+The long-standing schema that strips ASCII punctuation and collapses whitespace, leaving case, contractions and fillers intact. Registry key `unpunctuated`. Formerly called `normalized`, a name that invited it to be mistaken for the conventions published numbers use.
+_Avoid_: Normalized Text Schema, cleaned text
 
 **Speaker Attribution Gap**:
 The difference between cpWER and DI-cpWER within one benchmark run, isolating the cost of attributing transcript words to the wrong speaker from transcription errors and from diarization segmentation errors.
@@ -361,7 +365,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Performance Benchmark** and a **Quality Benchmark** may share one benchmark run; both consume the same hypothesis from the same request.
 - A **Resource CSV** uses a **Stable Resource Schema** across hardware profiles and contains only resource and timing columns; quality columns are not embedded.
 - A **Quality Benchmark** computes the **MeetEval Metric Set** for each workload item using its **Reference STM** and the converted **Hypothesis STM**.
-- The **MeetEval Metric Set** is reported under every text schema, including the **Leaderboard Text Schema**; a WER is only interpretable beside the text conventions it was computed with.
+- The **MeetEval Metric Set** is reported under every text schema, including the **Whisper English Text Schema**; a WER is only interpretable beside the text conventions it was computed with.
 - The **Speaker Attribution Gap** is expressed as a share of cpWER, so it moves with the text schema even though speaker attribution has not changed; a threshold on it names a schema or it is under-specified.
 - The **Speaker Attribution Gap** is derived from the **MeetEval Metric Set** of a **Quality Benchmark** and is the upper bound on what any change to speaker assignment can recover.
 - A **Hypothesis STM** is written from **Transcription Response** segments only, so a **Quality Benchmark** can observe a **Speaker Boundary Split** but cannot observe word-level speaker labels.

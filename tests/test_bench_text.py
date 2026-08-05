@@ -12,7 +12,7 @@ from pathlib import Path
 from coro.bench.text import (
     TEXT_SCHEMAS,
     english_normalizer,
-    leaderboard_text,
+    whisper_english_text,
     strip_punctuation,
     write_schema_stm,
 )
@@ -29,17 +29,17 @@ class TestStripPunctuation:
 
 class TestLeaderboardText:
     def test_lowercases(self):
-        assert leaderboard_text("Okay , Right .") == "okay right"
+        assert whisper_english_text("Okay , Right .") == "okay right"
 
     def test_expands_contractions(self):
-        assert leaderboard_text("I'm sure we're done .") == "i am sure we are done"
+        assert whisper_english_text("I'm sure we're done .") == "i am sure we are done"
 
     def test_removes_filler_words(self):
-        assert leaderboard_text("Um so uh we start .") == "so we start"
+        assert whisper_english_text("Um so uh we start .") == "so we start"
 
     def test_empties_a_backchannel_only_segment(self):
         """A reference segment of pure backchannel normalizes away entirely."""
-        assert leaderboard_text("Mm-hmm .") == ""
+        assert whisper_english_text("Mm-hmm .") == ""
 
     def test_normalizer_is_constructed_once(self):
         assert english_normalizer() is english_normalizer()
@@ -62,7 +62,7 @@ class TestWriteSchemaStm:
             "meeting 1 A 0.000 1.500 Mm-hmm .\nmeeting 1 A 2.000 3.000 Real words here .\n"
         )
 
-        write_schema_stm(src, dst, leaderboard_text)
+        write_schema_stm(src, dst, whisper_english_text)
 
         assert dst.read_text() == "meeting 1 A 2.000 3.000 real words here\n"
 
@@ -71,17 +71,17 @@ class TestWriteSchemaStm:
         dst = tmp_path / "out.stm"
         src.write_text("meeting 1 A 0.000 1.500 Mm-hmm .\n")
 
-        write_schema_stm(src, dst, leaderboard_text)
+        write_schema_stm(src, dst, whisper_english_text)
 
         assert dst.read_text() == ""
 
 
 class TestSchemaRegistry:
     def test_registry_names_both_schemas_in_report_order(self):
-        assert [key for key, _ in TEXT_SCHEMAS] == ["normalized", "leaderboard"]
+        assert [key for key, _ in TEXT_SCHEMAS] == ["unpunctuated", "whisper_english"]
 
     def test_schemas_disagree_on_the_same_text(self):
         """The two schemas must stay distinct, or reporting both is pointless."""
         text = "Um , I'm Okay ."
         by_key = dict(TEXT_SCHEMAS)
-        assert by_key["normalized"](text) != by_key["leaderboard"](text)
+        assert by_key["unpunctuated"](text) != by_key["whisper_english"](text)

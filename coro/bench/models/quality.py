@@ -59,7 +59,7 @@ class SegmentShapeCounters:
 
 
 @dataclass
-class NormalizedMetrics:
+class SchemaMetrics:
     """WER metrics computed under one text schema.
 
     Used for every schema in ``bench.text.TEXT_SCHEMAS``, so the block shape is
@@ -75,15 +75,15 @@ class NormalizedMetrics:
 class ScoreMetrics:
     """Per-item metric block produced by :func:`score_item`.
 
-    ``normalized`` strips punctuation only; ``leaderboard`` applies the
+    ``unpunctuated`` strips punctuation only; ``whisper_english`` applies the
     Leaderboard Text Schema, under which published ASR numbers are reported.
     """
 
     cpwer: WerStats | None = None
     orcwer: WerStats | None = None
     dicpwer: WerStats | None = None
-    normalized: NormalizedMetrics | None = None
-    leaderboard: NormalizedMetrics | None = None
+    unpunctuated: SchemaMetrics | None = None
+    whisper_english: SchemaMetrics | None = None
     der: DerStats | None = None
 
 
@@ -139,8 +139,8 @@ class CombinedMetrics:
     cpwer: WerStats | None = None
     orcwer: WerStats | None = None
     dicpwer: WerStats | None = None
-    normalized: NormalizedMetrics | None = None
-    leaderboard: NormalizedMetrics | None = None
+    unpunctuated: SchemaMetrics | None = None
+    whisper_english: SchemaMetrics | None = None
     der: DerStats | None = None
 
 
@@ -157,12 +157,12 @@ class PerItemEntry:
     orcwer: float | None = None
     dicpwer: float | None = None
     der: float | None = None
-    normalized_cpwer: float | None = None
-    normalized_orcwer: float | None = None
-    normalized_dicpwer: float | None = None
-    leaderboard_cpwer: float | None = None
-    leaderboard_orcwer: float | None = None
-    leaderboard_dicpwer: float | None = None
+    unpunctuated_cpwer: float | None = None
+    unpunctuated_orcwer: float | None = None
+    unpunctuated_dicpwer: float | None = None
+    whisper_english_cpwer: float | None = None
+    whisper_english_orcwer: float | None = None
+    whisper_english_dicpwer: float | None = None
 
 
 @dataclass

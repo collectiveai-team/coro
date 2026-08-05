@@ -16,7 +16,10 @@ _DEFAULT = MinimumTurnThreshold()
 def _runs(starts, span_end, timeline, threshold=_DEFAULT):
     merged = merge_speaker_timeline(timeline)
     last_end = merged[-1].end if merged else 0.0
-    return [(r.speaker, r.start, r.end) for r in speaker_runs(starts, span_end, merged, last_end, threshold)]
+    return [
+        (r.speaker, r.start, r.end)
+        for r in speaker_runs(starts, span_end, merged, last_end, threshold)
+    ]
 
 
 class TestSpeakerAtInstant:

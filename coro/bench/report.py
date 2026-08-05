@@ -79,12 +79,12 @@ def build_report(out_dir: Path) -> BenchReport:
 # match the summary.json blocks; order is report order.
 SCHEMA_TABLE_META: tuple[tuple[str, str, str], ...] = (
     (
-        "normalized",
+        "unpunctuated",
         "Normalized Quality Results",
         "WER metrics after removing punctuation and collapsing whitespace.",
     ),
     (
-        "leaderboard",
+        "whisper_english",
         "Leaderboard Text Schema Quality Results",
         "WER metrics under the Whisper EnglishTextNormalizer conventions used by the "
         "Open ASR Leaderboard: lowercased, punctuation removed, contractions expanded, "

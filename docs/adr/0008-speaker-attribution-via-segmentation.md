@@ -40,7 +40,7 @@ place. Below that, this decision is not implemented and the aligner question
 stays closed on the evidence.
 
 **The gate passed.** On 61 ten-minute clips from the 30 AMI ES meetings the gap
-is 19.56% of cpWER under the **Leaderboard Text Schema** (95% CI 17.00–22.26%,
+is 19.56% of cpWER under the **Whisper English Text Schema** (95% CI 17.00–22.26%,
 clustered by meeting; P(gap ≥ 15%) = 100.0% over 10,000 resamples). The verdict,
 the issue 04 delta and the recorded deviations are in
 `.scratch/speaker-attribution/gate-report.md`.

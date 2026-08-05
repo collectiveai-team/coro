@@ -3,17 +3,22 @@
 A WER is only meaningful next to the text conventions it was computed with, so
 the Quality Benchmark scores every metric under more than one schema:
 
-``normalized``
+``unpunctuated``
     Strips ASCII punctuation and collapses whitespace. Case, contractions and
     fillers survive. Coro's long-standing variant, kept so historical runs stay
-    comparable.
+    comparable. Named for what it does: it was once called ``normalized``, which
+    invited the reading that it applied the conventions published numbers use —
+    it does not, it does not even lowercase.
 
-``leaderboard``
-    The **Leaderboard Text Schema** — the Whisper ``EnglishTextNormalizer``
-    conventions used by the Open ASR Leaderboard, and therefore by the published
-    numbers on the model cards of the ASR backends coro runs. Lowercases,
-    removes punctuation, expands contractions, standardises numbers and
-    spellings, and deletes the fillers ``um``/``uh``/``hmm``/``mm``.
+``whisper_english``
+    The Whisper ``EnglishTextNormalizer`` conventions, used by the Open ASR
+    Leaderboard and therefore by the published numbers on the model cards of the
+    ASR backends coro runs. Lowercases, removes punctuation, expands
+    contractions, standardises numbers and spellings, and deletes the fillers
+    ``um``/``uh``/``hmm``/``mm``. Named for the transform rather than for the
+    leaderboard that popularised it, because the leaderboard can change its
+    conventions and because the name should show this is English-only — it
+    cannot be applied to coro's Spanish deployment.
 
 Only this module knows how text is rewritten; ``bench.quality`` scores whatever
 schemas the registry lists.
@@ -50,15 +55,15 @@ def english_normalizer():
     return EnglishTextNormalizer()
 
 
-def leaderboard_text(text: str) -> str:
-    """Normalize text the way published ASR leaderboard results are scored."""
+def whisper_english_text(text: str) -> str:
+    """Normalize text the way published English ASR results are scored."""
     return english_normalizer()(text).strip()
 
 
 # Report order, not an arbitrary mapping: schemas are printed in this sequence.
 TEXT_SCHEMAS: tuple[tuple[str, TextSchema], ...] = (
-    ("normalized", strip_punctuation),
-    ("leaderboard", leaderboard_text),
+    ("unpunctuated", strip_punctuation),
+    ("whisper_english", whisper_english_text),
 )
 
 

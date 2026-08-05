@@ -161,7 +161,7 @@ def test_build_report_diarization_only_item_shows_der_not_error(tmp_path: Path):
             "cpwer": None,
             "orcwer": None,
             "dicpwer": None,
-            "normalized": {"cpwer": None, "orcwer": None, "dicpwer": None},
+            "unpunctuated": {"cpwer": None, "orcwer": None, "dicpwer": None},
             "der": der,
         },
         "per_item": [
@@ -384,12 +384,12 @@ def test_build_report_reads_every_text_schema_quality_summary(tmp_path):
             "orcwer": {"wer": 0.25},
             "dicpwer": {"wer": 0.20},
             "der": {"der": 0.10},
-            "normalized": {
+            "unpunctuated": {
                 "cpwer": {"wer": 0.21},
                 "orcwer": {"wer": 0.16},
                 "dicpwer": {"wer": 0.11},
             },
-            "leaderboard": {
+            "whisper_english": {
                 "cpwer": {"wer": 0.18},
                 "orcwer": {"wer": 0.14},
                 "dicpwer": {"wer": 0.09},
@@ -403,12 +403,12 @@ def test_build_report_reads_every_text_schema_quality_summary(tmp_path):
                 "orcwer": 0.25,
                 "dicpwer": 0.20,
                 "der": 0.10,
-                "normalized_cpwer": 0.21,
-                "normalized_orcwer": 0.16,
-                "normalized_dicpwer": 0.11,
-                "leaderboard_cpwer": 0.18,
-                "leaderboard_orcwer": 0.14,
-                "leaderboard_dicpwer": 0.09,
+                "unpunctuated_cpwer": 0.21,
+                "unpunctuated_orcwer": 0.16,
+                "unpunctuated_dicpwer": 0.11,
+                "whisper_english_cpwer": 0.18,
+                "whisper_english_orcwer": 0.14,
+                "whisper_english_dicpwer": 0.09,
             },
         ],
     }
@@ -418,11 +418,11 @@ def test_build_report_reads_every_text_schema_quality_summary(tmp_path):
     md = render_markdown(report)
 
     tables = {table.key: table for table in report.schema_quality_tables}
-    assert list(tables) == ["normalized", "leaderboard"]
-    assert len(tables["normalized"].rows) == 1
-    assert tables["normalized"].combined is not None
-    assert tables["normalized"].rows[0].cpwer == 0.21
-    assert tables["leaderboard"].rows[0].cpwer == 0.18
+    assert list(tables) == ["unpunctuated", "whisper_english"]
+    assert len(tables["unpunctuated"].rows) == 1
+    assert tables["unpunctuated"].combined is not None
+    assert tables["unpunctuated"].rows[0].cpwer == 0.21
+    assert tables["whisper_english"].rows[0].cpwer == 0.18
     assert "## Quality Results" in md
     assert "## Normalized Quality Results" in md
     assert "## Leaderboard Text Schema Quality Results" in md
@@ -447,14 +447,14 @@ def test_build_report_omits_a_text_schema_absent_from_the_summary(tmp_path):
             {
                 "combined": {
                     "cpwer": {"wer": 0.30},
-                    "normalized": {"cpwer": {"wer": 0.21}},
+                    "unpunctuated": {"cpwer": {"wer": 0.21}},
                 },
                 "per_item": [
                     {
                         "session_id": "IB4001",
                         "audio_seconds": 10.0,
                         "cpwer": 0.30,
-                        "normalized_cpwer": 0.21,
+                        "unpunctuated_cpwer": 0.21,
                     }
                 ],
             }
@@ -464,7 +464,7 @@ def test_build_report_omits_a_text_schema_absent_from_the_summary(tmp_path):
     report = build_report(tmp_path)
     md = render_markdown(report)
 
-    assert [table.key for table in report.schema_quality_tables] == ["normalized"]
+    assert [table.key for table in report.schema_quality_tables] == ["unpunctuated"]
     assert "## Leaderboard Text Schema Quality Results" not in md
 
 
