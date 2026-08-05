@@ -7,6 +7,7 @@ AMI XML files from the local annotation tree.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import html
 import re
 import xml.etree.ElementTree as ET
@@ -83,6 +84,12 @@ def slice_stm_window(
     When ``recording_id`` is given, the STM session id (column 1) is rewritten to
     it so the clip's reference matches a hypothesis keyed by the clip stem.
     Output is sorted by (start_time, speaker), matching the other STM builders.
+
+    STM text carries no word timings, so a straddling segment can only have its
+    TIMES clamped — its text column crosses the edge intact. Callers that can
+    still see word times should window there instead; the AMI path does, via
+    ``ami_meeting_to_stm(window=...)``. This remains correct for references that
+    are timing-only (diarization RTTM), where there is no text to split.
     """
     if end <= start:
         return ""
@@ -279,9 +286,9 @@ def _read_segments(
     path: Path,
     words: list[dict],
     id_to_index: dict[str, int],
-) -> list[dict]:
+) -> list[_Segment]:
     tree = ET.parse(path)
-    segments: list[dict] = []
+    segments: list[_Segment] = []
     for seg in tree.getroot().iter():
         if _local_name(seg.tag) != "segment":
             continue
@@ -300,15 +307,57 @@ def _read_segments(
                 seg_words = [w for w in words if w["start"] >= start and w["end"] <= end]
         if not seg_words:
             continue
-        start = min(w["start"] for w in seg_words)
-        end = max(w["end"] for w in seg_words)
-        text = " ".join(w["word"] for w in seg_words)
-        if text.strip():
-            segments.append({"start": start, "end": end, "text": text.strip()})
+        if any(w["word"].strip() for w in seg_words):
+            segments.append(_segment_from_words(seg_words))
     return segments
 
 
-def _fallback_word_segments(words: list[dict], max_gap: float = 1.0) -> list[dict]:
+@dataclass
+class _Segment:
+    """One reference turn, retaining the words it was built from.
+
+    The words are kept so a window can be applied per word; once rendered to STM
+    text the timings are gone and only segment times can be clamped.
+    """
+
+    start: float
+    end: float
+    text: str
+    words: list[dict]
+
+
+def _segment_from_words(seg_words: list[dict]) -> _Segment:
+    """Build a segment from its words, keeping the words for later windowing."""
+    return _Segment(
+        start=min(w["start"] for w in seg_words),
+        end=max(w["end"] for w in seg_words),
+        text=" ".join(w["word"] for w in seg_words).strip(),
+        words=seg_words,
+    )
+
+
+def _window_segments(segments: list[_Segment], window: tuple[float, float]) -> list[_Segment]:
+    """Restrict segments to the words whose start falls in ``[lo, hi)``.
+
+    Windowing rendered STM text can only clamp a segment's times — its text
+    column is copied whole, so a segment crossing the edge donates every word to
+    a clip whose audio contains only some of them, and the surplus scores as
+    deletions. Word times are still available here, so membership is decided per
+    word. The bound is half-open on the word START, the same rule Overlap Token
+    Acceptance uses, so adjacent windows partition words instead of sharing or
+    dropping any at the seam.
+    """
+    lo, hi = window
+    windowed: list[_Segment] = []
+    for seg in segments:
+        kept = [w for w in seg.words if lo <= w["start"] < hi]
+        if not kept or not any(w["word"].strip() for w in kept):
+            continue
+        windowed.append(_segment_from_words(kept))
+    return windowed
+
+
+def _fallback_word_segments(words: list[dict], max_gap: float = 1.0) -> list[_Segment]:
     if not words:
         return []
     chunks = []
@@ -321,14 +370,7 @@ def _fallback_word_segments(words: list[dict], max_gap: float = 1.0) -> list[dic
         else:
             current.append(word)
     chunks.append(current)
-    return [
-        {
-            "start": min(w["start"] for w in chunk),
-            "end": max(w["end"] for w in chunk),
-            "text": " ".join(w["word"] for w in chunk),
-        }
-        for chunk in chunks
-    ]
+    return [_segment_from_words(chunk) for chunk in chunks]
 
 
 def _find_annotation_file(root: Path, kind: str, meeting: str, speaker: str) -> Path | None:
@@ -346,12 +388,22 @@ def _speakers_for_meeting(root: Path, meeting: str) -> list[str]:
     return sorted(speakers)
 
 
-def ami_meeting_to_stm(ami_root: Path, meeting_id: str) -> str:
+def ami_meeting_to_stm(
+    ami_root: Path,
+    meeting_id: str,
+    *,
+    window: tuple[float, float] | None = None,
+) -> str:
     """Produce a Reference STM string for an AMI meeting from its annotation tree.
 
     Walks the AMI annotation XML files under *ami_root*, extracts per-speaker
     word timing, groups words into segments, and returns STM text sorted by
     (start_time, speaker).
+
+    ``window`` restricts the result to a ``[lo, hi)`` span in meeting-absolute
+    seconds, applied per word rather than per segment so a segment straddling
+    the edge contributes only the words the span actually contains. Times are
+    not rebased — see ``slice_stm_window`` for that.
     """
     lines: list[str] = []
 
@@ -369,11 +421,14 @@ def ami_meeting_to_stm(ami_root: Path, meeting_id: str) -> str:
         else:
             segments = _fallback_word_segments(words)
 
+        if window is not None:
+            segments = _window_segments(segments, window)
+
         for seg in segments:
-            text = seg["text"].replace("\n", " ").strip()
+            text = seg.text.replace("\n", " ").strip()
             if not text:
                 continue
-            lines.append(f"{meeting_id} 1 {speaker} {seg['start']:.3f} {seg['end']:.3f} {text}")
+            lines.append(f"{meeting_id} 1 {speaker} {seg.start:.3f} {seg.end:.3f} {text}")
 
     lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
     return "\n".join(lines) + "\n" if lines else ""
