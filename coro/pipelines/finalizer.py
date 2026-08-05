@@ -54,7 +54,7 @@ class StreamingTranscriptFinalizer:
                     word=t.text,
                     start=round(t.start, 3),
                     end=round(t.end, 3),
-                    score=float(t.probability) if t.probability is not None else 1.0,
+                    score=t.probability,
                 )
                 for t in tokens
                 if t.text and t.text.strip()
@@ -73,13 +73,16 @@ class StreamingTranscriptFinalizer:
 
     def _flush(self) -> None:
         span = segment_span_from_tokens(self._open)
-        self._open = []
+        closed, self._open = self._open, []
         if span is None:
             return
         start, end, text = span
         # Provisional speaker 1; real attribution happens at assembly once the
-        # diarizer has produced its complete timeline.
-        seg = TranscriptSegment(start=start, end=end, text=text, speaker=1)
+        # diarizer has produced its complete timeline. The tokens travel with
+        # the segment so its persisted words carry Measured Word Start values —
+        # by assembly time this segment is one committed row, and those words
+        # are the only sub-segment structure left to attribute against.
+        seg = TranscriptSegment(start=start, end=end, text=text, speaker=1, tokens=closed)
         self._store.append_segment(build_segment(seg))
 
 

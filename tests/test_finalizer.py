@@ -64,6 +64,30 @@ def test_finalizer_matches_batch_builder_with_diarization(tmp_path):
     assert streamed.raw_words == batch.raw_words
 
 
+def test_persisted_segment_words_carry_measured_starts(tmp_path):
+    """Words spilled before diarization exists hold real token times.
+
+    The Streaming Pipeline commits a segment before the speaker timeline is
+    known, so by assembly time the stored words are the only sub-segment
+    structure a Speaker Boundary Split can cut on. Interpolated starts would
+    put the cut in the wrong place.
+    """
+    tokens = [
+        _tok(0.0, 0.4, " hola"),
+        _tok(0.4, 8.0, " mundo"),
+        _tok(8.0, 9.0, " otra."),
+    ]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(tokens)
+        finalizer.finish()
+        stored = list(store.iter_segments())
+
+    words = stored[0].words
+    assert [w.word for w in words] == ["hola", "mundo", "otra."]
+    assert [w.start for w in words] == [0.0, 0.4, 8.0]
+
+
 def test_finalizer_marks_segments_beyond_timeline_unknown(tmp_path):
     """Segments past the diarization horizon get speaker -1, matching batch."""
     timeline = [SpeakerSegment(start=0.0, end=1.0, speaker=2)]

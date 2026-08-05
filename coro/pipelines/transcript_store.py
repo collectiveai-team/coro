@@ -48,7 +48,9 @@ CREATE TABLE IF NOT EXISTS raw_words (
     word TEXT NOT NULL,
     start REAL NOT NULL,
     end REAL NOT NULL,
-    score REAL NOT NULL
+    -- Nullable: a backend that expresses no per-word probability stores NULL
+    -- rather than a fabricated 1.0.
+    score REAL
 );
 """
 
@@ -124,7 +126,7 @@ class TranscriptSpillStore:
                     str(w.word),
                     float(w.start),
                     float(w.end),
-                    float(w.score),
+                    None if w.score is None else float(w.score),
                 )
             )
             self._raw_word_count += 1
