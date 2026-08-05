@@ -4,9 +4,9 @@ Backend/model leaderboard for the full **transcription + diarization** pipeline,
 produced with `coro-bench`. Use it to pick a backend; reproduce it on your
 own data before trusting absolute numbers.
 
-> ### ⚠️ STALE — every number below predates two scoring fixes
+> ### ⚠️ STALE — the four-backend comparison below predates four scoring fixes
 >
-> **Do not cite these figures.** They were measured before:
+> **Do not cite the 5-clip tables.** They were measured before:
 >
 > 1. **`e71dc71`** — ASR Windowing had no **Overlap Token Acceptance**, so every
 >    window re-emitted its predecessor's final 2 s. These are 60 s clips, so each
@@ -16,17 +16,52 @@ own data before trusting absolute numbers.
 >    annotation range ended on a `<disfmarker>`/`<gap>`/`<vocalsound>`. On this
 >    sample 8% of reference words were missing (`IN1001` 70%, `TS3003a` 29%),
 >    so correctly transcribed speech was scored as insertions.
->
-> On the separate AMI ES workload, repairing these two moved ORC-WER 0.3889 →
-> 0.1797 and DER 0.6242 → 0.3292 **with the hypotheses unchanged**. Expect
-> movement of that order here.
+> 3. **`7326916`** — clip references were sliced from rendered STM text, which
+>    can only clamp a straddling segment's *times*; its words crossed the clip
+>    edge intact, so clips were credited with speech their audio does not
+>    contain.
+> 4. **`f55c395`** — segments were not split at speaker changes, so a segment
+>    spanning a turn attributed all its words to one speaker.
 >
 > The sample is also too small to carry its conclusions: **420 reference words
 > across all five clips**, and `IN1001` has **3** (10 after the fix). A WER over
-> a 3-word reference is noise, so the robustness claim below rests on nothing.
+> a 3-word reference is noise, so the "most robust backend" claim below rests on
+> nothing.
 >
-> Re-run before trusting this page, with a workload large enough to separate the
-> backends — `coro.bench.utils.make_ami_clip_set` materializes one.
+> **A properly sized measurement now exists for one backend** — see *Current
+> measurement* immediately below. The other three backends have not been re-run
+> on it; doing so is the outstanding work on this page.
+
+## Current measurement (trustworthy)
+
+Workload: **61 clips of 10 minutes** cut from the 30 meetings of the AMI **ES**
+group — 10.2 h of audio, 88,515 reference words, materialized by
+`coro.bench.utils.make_ami_clip_set`. This is the ADR 0008 measurement workload
+and it is large enough to separate backends; the 5-clip sample below is not.
+
+Configuration: `full-memory`, onnx-asr `nemo-parakeet-tdt-0.6b-v3` on CUDA
+(fp32), NeMo `diar_streaming_sortformer_4spk-v2`.
+
+Scored under the **Whisper English Text Schema** — the Whisper
+`EnglishTextNormalizer` conventions the Open ASR Leaderboard uses, so these are
+directly comparable with published numbers. A WER is meaningless without naming
+its text schema; coro reports three, and they differ by more than a factor of
+two on the same hypothesis.
+
+| Backend / model | cpWER ↓ | ORC-WER ↓ | DI-cpWER ↓ | DER ↓ |
+|---|---:|---:|---:|---:|
+| onnx-asr `nemo-parakeet-tdt-0.6b-v3` | **0.1967** | **0.1742** | 0.1541 | **0.2831** |
+| faster-whisper `large-v3-turbo` | _not re-run_ | | | |
+| faster-whisper `medium` | _not re-run_ | | | |
+| faster-whisper `small` | _not re-run_ | | | |
+
+For scale: NVIDIA publish **11.31%** WER for this model on AMI **IHM**, which is
+per-speaker headset audio, pre-segmented, with no diarization — a materially
+easier task than the mixed-headset, diarized, unsegmented workload here. 17.42%
+ORC-WER against that is a sane ratio.
+
+Run cost: 9 min wall on an idle RTX 3070 Laptop, ~4.3 GB VRAM. Reproducing the
+other three backends is roughly 30 min more plus faster-whisper model downloads.
 
 > **Read the caveats.** These runs are a **small AMI English sample** on one
 > laptop GPU. They are a *relative* signal, not an absolute quality verdict —
@@ -52,10 +87,13 @@ own data before trusting absolute numbers.
   (10× = 10 s of audio per 1 s of compute).
 - **Peak VRAM / host RAM** — peak resident during inference (per server process).
 
-## Leaderboard — GPU (diarization on)
+## Leaderboard — GPU (diarization on) — ⚠️ superseded, do not cite
 
 Sample: **5 AMI clips** (`ES2004a`, `IB4001`, `IN1001`, `IS1009a`, `TS3003a`;
-60 s each, 300 s total). Sorted by quality (best first).
+60 s each, 300 s total). Sorted by quality (best first). Retained only so the
+re-run has something to compare against; every figure is void for the four
+reasons above, and the sample could not support these conclusions even had the
+scoring been correct.
 
 | Backend / model | norm ORC-WER ↓ | DER ↓ | RTFx (GPU) ↑ | Peak VRAM | Peak host RAM |
 |---|---:|---:|---:|---:|---:|
