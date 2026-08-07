@@ -41,6 +41,30 @@ def test_store_round_trips_raw_words_in_order(tmp_path):
     assert store.raw_word_count == 3
 
 
+def test_store_round_trips_absent_confidence_as_null(tmp_path):
+    """A backend with no per-word probability persists NULL, not a stand-in.
+
+    onnx-genai and the onnx-asr text-only fallback emit probability=None; the
+    column has to keep that distinct from a real score of 1.0.
+    """
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        store.append_raw_words([RawWord(word=" hola", start=0.0, end=0.5, score=None)])
+        store.append_segment(
+            _segment(
+                0.0,
+                0.5,
+                "hola",
+                "1",
+                [TranscriptWord(word="hola", start=0.0, end=0.5, score=None, speaker="1")],
+            )
+        )
+        raw = list(store.iter_raw_words())
+        segments = list(store.iter_segments())
+
+    assert raw[0].score is None
+    assert segments[0].words[0].score is None
+
+
 def test_store_counts_track_appends(tmp_path):
     with TranscriptSpillStore(directory=str(tmp_path)) as store:
         assert store.segment_count == 0

@@ -120,26 +120,89 @@ def _write_stm_pair(tmp_path: Path, name: str, ref: str, hyp: str) -> tuple[Path
     return ref_stm, hyp_stm
 
 
+class TestTextSchemaMetrics:
+    """Every text schema is scored, and the schemas stay independent."""
+
+    def test_score_item_reports_every_text_schema(self, tmp_path: Path):
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "m",
+            "m 1 A 0.0 2.0 Um , I'm Okay .\n",
+            "m 1 A 0.0 2.0 Um , I'm Okay .\n",
+        )
+
+        from coro.bench.quality import score_item
+
+        result = score_item(ref_stm, hyp_stm)
+
+        assert result.metrics is not None
+        for schema in (result.metrics.unpunctuated, result.metrics.whisper_english):
+            assert schema is not None
+            assert schema.cpwer is not None
+            assert schema.orcwer is not None
+            assert schema.dicpwer is not None
+
+    def test_schemas_score_the_same_hypothesis_differently(self, tmp_path: Path):
+        """Casing and fillers are errors under one schema and invisible to the other."""
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "m",
+            "m 1 A 0.0 2.0 Um okay we are done\n",
+            "m 1 A 0.0 2.0 Okay we're done\n",
+        )
+
+        from coro.bench.quality import score_item
+
+        result = score_item(ref_stm, hyp_stm)
+
+        assert result.metrics is not None
+        normalized = result.metrics.unpunctuated
+        leaderboard = result.metrics.whisper_english
+        assert normalized is not None and normalized.cpwer is not None
+        assert leaderboard is not None and leaderboard.cpwer is not None
+        # The leaderboard schema forgives the filler, the case and the contraction.
+        assert leaderboard.cpwer.wer == 0.0
+        assert normalized.cpwer.wer > 0.0
+
+    def test_diarization_only_reference_skips_every_schema(self, tmp_path: Path):
+        from coro.bench.stm import DIARIZATION_ONLY_TEXT
+
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "m",
+            f"m 1 A 0.0 1.0 {DIARIZATION_ONLY_TEXT}\n",
+            "m 1 A 0.0 1.0 hello world\n",
+        )
+
+        from coro.bench.quality import score_item
+
+        result = score_item(ref_stm, hyp_stm)
+
+        assert result.metrics is not None
+        assert result.metrics.unpunctuated is None
+        assert result.metrics.whisper_english is None
+
+    def test_combine_items_and_per_item_carry_leaderboard_metrics(self, tmp_path: Path):
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "m",
+            "m 1 A 0.0 2.0 hello world\n",
+            "m 1 A 0.0 2.0 hello world\n",
+        )
+
+        from coro.bench.quality import combine_items, score_item
+
+        result = score_item(ref_stm, hyp_stm)
+        result.session_id = "m"
+        summary = combine_items([result])
+
+        assert summary.combined is not None
+        assert summary.combined.whisper_english is not None
+        assert summary.combined.whisper_english.cpwer is not None
+        assert summary.per_item[0].whisper_english_cpwer is not None
+
+
 class TestScoreItem:
-    def test_normalize_transcript_text_removes_punctuation_and_extra_spaces(self):
-        from coro.bench.quality import _normalize_transcript_text
-
-        assert _normalize_transcript_text("Hello,   world!!") == "Hello world"
-
-    def test_write_normalized_stm_preserves_metadata_and_normalizes_text(
-        self,
-        tmp_path: Path,
-    ):
-        from coro.bench.quality import _write_normalized_stm
-
-        src = tmp_path / "in.stm"
-        dst = tmp_path / "out.stm"
-        src.write_text("meeting 1 A 0.000 1.500 Hello,   world!!\n")
-
-        _write_normalized_stm(src, dst)
-
-        assert dst.read_text() == "meeting 1 A 0.000 1.500 Hello world\n"
-
     def test_score_item_returns_all_wer_and_der_metrics(self, tmp_path: Path):
         ref_stm, hyp_stm = _write_stm_pair(
             tmp_path,
@@ -235,6 +298,106 @@ class TestScoreItem:
         assert diar.ref_speakers == 2
         assert diar.hyp_speakers == 1
         assert diar.degenerate is True
+
+
+class TestSegmentShapeCounters:
+    """Unscored transcript-shape counts derived from the Hypothesis STM."""
+
+    def test_counters_from_hypothesis_stm(self, tmp_path: Path):
+        from coro.bench.quality import segment_shape_counters, stm_words_per_segment
+
+        hyp = tmp_path / "rec.hyp.stm"
+        hyp.write_text(
+            "rec 1 X 0.000 1.000 one\n"
+            "rec 1 X 1.000 2.000 two words\n"
+            "rec 1 Y 2.000 3.000 three words here\n"
+        )
+
+        counters = segment_shape_counters(stm_words_per_segment(hyp))
+
+        assert counters.segment_count == 3
+        assert counters.median_words_per_segment == 2.0
+        assert counters.single_word_segment_count == 1
+
+    def test_empty_transcript_has_no_segments_and_no_median(self, tmp_path: Path):
+        from coro.bench.quality import segment_shape_counters, stm_words_per_segment
+
+        hyp = tmp_path / "empty.hyp.stm"
+        hyp.write_text("")
+
+        counters = segment_shape_counters(stm_words_per_segment(hyp))
+
+        assert counters.segment_count == 0
+        assert counters.median_words_per_segment is None
+        assert counters.single_word_segment_count == 0
+
+    def test_single_segment_transcript(self, tmp_path: Path):
+        from coro.bench.quality import segment_shape_counters, stm_words_per_segment
+
+        hyp = tmp_path / "one.hyp.stm"
+        hyp.write_text("rec 1 X 0.000 3.000 four words in total\n")
+
+        counters = segment_shape_counters(stm_words_per_segment(hyp))
+
+        assert counters.segment_count == 1
+        assert counters.median_words_per_segment == 4.0
+        assert counters.single_word_segment_count == 0
+
+    def test_all_single_word_segments_are_fully_counted(self, tmp_path: Path):
+        """The shredded transcript cpWER rewards must be visible as a counter."""
+        from coro.bench.quality import segment_shape_counters, stm_words_per_segment
+
+        hyp = tmp_path / "shredded.hyp.stm"
+        hyp.write_text(
+            "rec 1 X 0.000 0.400 one\nrec 1 Y 0.400 0.800 two\nrec 1 X 0.800 1.200 three\n"
+        )
+
+        counters = segment_shape_counters(stm_words_per_segment(hyp))
+
+        assert counters.segment_count == 3
+        assert counters.median_words_per_segment == 1.0
+        assert counters.single_word_segment_count == 3
+
+    def test_score_item_retains_hypothesis_segment_word_counts(self, tmp_path: Path):
+        from coro.bench.quality import score_item
+
+        ref, hyp = _write_stm_pair(
+            tmp_path,
+            "rec",
+            "rec 1 X 0.000 2.000 hello world\nrec 1 Y 2.000 4.000 foo\n",
+            "rec 1 X 0.000 2.000 hello world\nrec 1 Y 2.000 4.000 foo\n",
+        )
+
+        result = score_item(ref, hyp)
+
+        assert result.segment_word_counts == [2, 1]
+
+    def test_combine_items_pools_segments_across_the_workload_set(self, tmp_path: Path):
+        """The run-level median pools every segment, not the per-item medians.
+
+        Item A's segments are 2 and 1 words (median 1.5); item B's is 4 words.
+        Pooled that is [1, 2, 4] -> median 2.0. A median of per-item medians
+        would give 2.75, so this assertion discriminates between the two.
+        """
+        from coro.bench.quality import combine_items
+
+        a = "A 1 X 0.0 2.0 hello world\nA 1 Y 2.0 4.0 foo\n"
+        b = "B 1 X 0.0 2.0 one two three four\n"
+        summary = combine_items(
+            [_scored(tmp_path, "A", a, a, 4.0), _scored(tmp_path, "B", b, b, 2.0)]
+        )
+
+        first = summary.per_item[0].segment_shape
+        assert first is not None
+        assert first.segment_count == 2
+        assert first.median_words_per_segment == 1.5
+        assert first.single_word_segment_count == 1
+
+        pooled = summary.segment_shape
+        assert pooled is not None
+        assert pooled.segment_count == 3
+        assert pooled.median_words_per_segment == 2.0
+        assert pooled.single_word_segment_count == 1
 
 
 def _scored(tmp_path: Path, name: str, ref: str, hyp: str, seconds: float) -> ScoreResult:
@@ -347,7 +510,7 @@ class TestDiarizationOnly:
         assert result.metrics.cpwer is None
         assert result.metrics.orcwer is None
         assert result.metrics.dicpwer is None
-        assert result.metrics.normalized is None
+        assert result.metrics.unpunctuated is None
         assert result.metrics.der.der >= 0.0
 
     def test_combine_items_aggregates_der_without_wer(self, tmp_path: Path):
@@ -365,6 +528,20 @@ class TestDiarizationOnly:
         assert entry.diarization_only is True
         assert entry.cpwer is None
         assert entry.der is not None
+
+    def test_segment_shape_counters_reported_despite_skipped_wer(self, tmp_path: Path):
+        """Counters describe the hypothesis, so they survive a reference with no words."""
+        from coro.bench.quality import combine_items
+
+        summary = combine_items([_scored(tmp_path, "rec", self._REF, self._HYP, 4.0)])
+
+        entry = summary.per_item[0]
+        assert entry.cpwer is None
+        assert entry.segment_shape is not None
+        assert entry.segment_shape.segment_count == 2
+        assert entry.segment_shape.median_words_per_segment == 2.0
+        assert summary.segment_shape is not None
+        assert summary.segment_shape.segment_count == 2
 
 
 class TestCLIFlags:
@@ -441,6 +618,12 @@ class TestQualityRun:
         assert item_data["metrics"] is not None
         assert "cpwer" in item_data["metrics"]
         assert "der" in item_data["metrics"]
+        # Segment Shape Counters ride beside the MeetEval Metric Set, not inside it.
+        assert item_data["segment_shape"] == {
+            "segment_count": 2,
+            "median_words_per_segment": 2.0,
+            "single_word_segment_count": 0,
+        }
 
         summary = json.loads((quality_dir / "summary.json").read_text())
         assert summary["n_succeeded"] == 1
@@ -448,6 +631,8 @@ class TestQualityRun:
         assert "combined" in summary
         assert "per_item" in summary
         assert summary["per_item"][0]["session_id"] == "meeting1"
+        assert summary["per_item"][0]["segment_shape"]["segment_count"] == 2
+        assert summary["segment_shape"]["segment_count"] == 2
 
     def test_quality_run_isolates_failures(self, e2e_server, tmp_path: Path):
         from coro.bench.orchestrate import run_workload

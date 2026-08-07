@@ -44,6 +44,22 @@ _Avoid_: Hypothesis Diarization, response JSON
 The fixed set of MeetEval scores reported for each workload item: siWER, cpWER, ORC-WER (greedy), DI-cpWER (greedy), and DER.
 _Avoid_: WER alone, custom metric mix
 
+**Segment Shape Counters**:
+Unscored counts reported beside the MeetEval Metric Set — segment count, median words per segment, and single-word segment count — that expose transcript fragmentation, which no WER metric penalises.
+_Avoid_: Readability score, a scored fragmentation metric
+
+**Whisper English Text Schema**:
+The text conventions published ASR results are scored under — lowercased, punctuation removed, contractions expanded, numbers and spellings standardised, and fillers deleted — applied to reference and hypothesis so a coro WER can be read beside a model card's. Registry key `whisper_english`. Named for the transform, not for the leaderboard that popularised it, and because it is English-only.
+_Avoid_: Leaderboard Text Schema, Normalized WER, cleaned text, the punctuation-stripping variant
+
+**Unpunctuated Text Schema**:
+The long-standing schema that strips ASCII punctuation and collapses whitespace, leaving case, contractions and fillers intact. Registry key `unpunctuated`. Formerly called `normalized`, a name that invited it to be mistaken for the conventions published numbers use.
+_Avoid_: Normalized Text Schema, cleaned text
+
+**Speaker Attribution Gap**:
+The difference between cpWER and DI-cpWER within one benchmark run, isolating the cost of attributing transcript words to the wrong speaker from transcription errors and from diarization segmentation errors.
+_Avoid_: cpWER alone, DER, the cpWER minus ORC-WER gap
+
 **Server Warmup**:
 A pipeline execution against a fixed warmup audio at server startup, completed before the server reports ready, so the first transcription endpoint request does not pay cold-model costs.
 _Avoid_: Lazy first-request warmup, client-driven warmup
@@ -164,6 +180,10 @@ _Avoid_: Temp-file fallback, disk staging, upload spooling
 The shared process of transcribing PCM in overlapping windows and emitting accepted transcript deltas per window.
 _Avoid_: Pipeline versioning, full-audio ASR call
 
+**Overlap Token Acceptance**:
+The rule deciding which tokens from an overlapping ASR window enter the transcript, so audio covered by two windows contributes its words once.
+_Avoid_: Accepting every window's tokens, post-hoc text deduplication, transcript-level dedup
+
 **Incremental ASR Windowing**:
 ASR windowing fed by sequential PCM chunks while preserving the configured window and overlap semantics of full-buffer ASR windowing.
 _Avoid_: Streaming ASR tuning, changed ASR windows
@@ -252,6 +272,26 @@ _Avoid_: Inline error response branches, FastAPI default handler
 The enriched transcription response containing transcript segments, word segments, diarization, transcript convenience data, and raw words.
 _Avoid_: Minimal OpenAI text response
 
+**Single-Speaker Segment Invariant**:
+The guarantee that a transcript segment never spans a speaker change, so the segment's one speaker label is correct for every word it contains.
+_Avoid_: Dominant-speaker label, majority-overlap segment speaker
+
+**Speaker Boundary Split**:
+A segment cut introduced where the speaker timeline changes, applied in addition to cuts at punctuation, that upholds the Single-Speaker Segment Invariant.
+_Avoid_: Punctuation-only segmentation, word-level speaker labels
+
+**Minimum Turn Threshold**:
+The shortest interrupting speaker turn that causes a Speaker Boundary Split. Turns below it leave their words attributed to the surrounding speaker, so backchannels do not fragment a transcript.
+_Avoid_: Backchannel filter, diarization smoothing, timeline post-processing
+
+**Measured Word Start**:
+A word start taken from the ASR backend's own token emission time. Word ends remain derived from the following word's start, so a word's span is trustworthy at its left edge only.
+_Avoid_: Aligned word boundary, forced-aligned timestamp, measured word span
+
+**Interpolated Word Timing** *(being replaced)*:
+Word starts and ends produced by dividing a segment's span evenly across its words, with a placeholder confidence. Retained only to name the behavior being removed in favour of **Measured Word Start**.
+_Avoid_: Word timestamp, treating it as measured data
+
 **OpenAI-Exact SSE**:
 The streaming transcription event contract that matches OpenAI event framing without package-specific progress events.
 _Avoid_: Progress extension, package-specific SSE
@@ -325,6 +365,16 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Performance Benchmark** and a **Quality Benchmark** may share one benchmark run; both consume the same hypothesis from the same request.
 - A **Resource CSV** uses a **Stable Resource Schema** across hardware profiles and contains only resource and timing columns; quality columns are not embedded.
 - A **Quality Benchmark** computes the **MeetEval Metric Set** for each workload item using its **Reference STM** and the converted **Hypothesis STM**.
+- The **MeetEval Metric Set** is reported under every text schema, including the **Whisper English Text Schema**; a WER is only interpretable beside the text conventions it was computed with.
+- The **Speaker Attribution Gap** is expressed as a share of cpWER, so it moves with the text schema even though speaker attribution has not changed; a threshold on it names a schema or it is under-specified.
+- The **Speaker Attribution Gap** is derived from the **MeetEval Metric Set** of a **Quality Benchmark** and is the upper bound on what any change to speaker assignment can recover.
+- A **Hypothesis STM** is written from **Transcription Response** segments only, so a **Quality Benchmark** can observe a **Speaker Boundary Split** but cannot observe word-level speaker labels.
+- A **Speaker Boundary Split** upholds the **Single-Speaker Segment Invariant** without changing the **Transcription API Contract**.
+- A **Speaker Boundary Split** is decided from **Measured Word Start** values, never from **Interpolated Word Timing**.
+- A **Speaker Boundary Split** occurs only when the interrupting turn clears the **Minimum Turn Threshold**, which is part of **Server Startup Selection**.
+- The **Minimum Turn Threshold** trades the **Single-Speaker Segment Invariant** against transcript readability; cpWER alone cannot observe that trade.
+- The **Streaming Pipeline** persists segments before the speaker timeline exists, so it applies a **Speaker Boundary Split** at response assembly; this requires the persisted segment to carry **Measured Word Start** values.
+- Both the **Full-Memory Pipeline** and the **Streaming Pipeline** apply the same **Speaker Boundary Split** so their emitted segments stay identical.
 - A **Resource CSV** contains both cumulative counters and **Sample Rate Field** values.
 - An **Observed Hardware Profile** is inferred from measurements, not from how the server was launched.
 - A **CPU+GPU Run** requires GPU activity attributable to the **Server Process Tree**.
@@ -359,6 +409,8 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Configured Transcription Pipeline** preserves the public **Transcription API Contract** while changing internal processing behavior.
 - `/health` reports **Server Startup Selection**, **Capability Readiness**, and **Warmup Readiness** rather than one ambiguous backend field.
 - The **Full-Memory Pipeline** and **Streaming Pipeline** both use shared **ASR Windowing**; they differ in how PCM is sourced.
+- **ASR Windowing** applies **Overlap Token Acceptance**; without it, overlap-region words are emitted twice and inflate every WER in the **MeetEval Metric Set**.
+- **Overlap Token Acceptance** must be in place before the **Speaker Attribution Gap** is used as a decision threshold, because duplicate insertions inflate the cpWER denominator.
 - A **Transcription Pipeline** receives **Audio Input** rather than FastAPI upload objects, raw bytes only, or temporary file paths only.
 - **Audio Input** owns **Audio Input Cleanup** for any temporary file it creates.
 - A **Pipeline Module** owns orchestration for one or more **Transcription Pipeline** implementations.

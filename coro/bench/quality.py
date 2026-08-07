@@ -5,21 +5,23 @@ from __future__ import annotations
 import sys
 import tempfile
 import traceback
+from collections.abc import Sequence
 from pathlib import Path
-import re
-import string
+from statistics import median
 from typing import Any
 
+from coro.bench.text import TEXT_SCHEMAS, write_schema_stm
 from coro.bench.models.quality import (
     CombinedMetrics,
     DerStats,
     DiarizationSanity,
-    NormalizedMetrics,
+    SchemaMetrics,
     PerItemEntry,
     QualitySummary,
     ScoreError,
     ScoreMetrics,
     ScoreResult,
+    SegmentShapeCounters,
     WerStats,
 )
 
@@ -73,15 +75,6 @@ def _combine_multifile(meeteval, results: dict) -> Any:
     return meeteval.wer.combine_error_rates(*results.values())
 
 
-_PUNCTUATION_TRANS = str.maketrans("", "", string.punctuation)
-
-
-def _normalize_transcript_text(text: str) -> str:
-    """Remove punctuation and collapse repeated whitespace in transcript text."""
-    no_punctuation = text.translate(_PUNCTUATION_TRANS)
-    return re.sub(r"\s+", " ", no_punctuation).strip()
-
-
 def is_diarization_only_stm(path: Path) -> bool:
     """Return True when every STM line's text is the diarization-only sentinel.
 
@@ -99,6 +92,33 @@ def is_diarization_only_stm(path: Path) -> bool:
         if parts[5].strip() != DIARIZATION_ONLY_TEXT:
             return False
     return saw_line
+
+
+def stm_words_per_segment(path: Path) -> list[int]:
+    """Return the word count of every segment in an STM file, in file order.
+
+    The raw material for :func:`segment_shape_counters`. Kept separate so a
+    workload-level aggregate can pool every item's segments before reducing,
+    matching how meeteval combines raw error counts across items.
+    """
+    counts: list[int] = []
+    for line in path.read_text().splitlines():
+        parts = line.strip().split(maxsplit=5)
+        if len(parts) < 6:
+            continue
+        counts.append(len(parts[5].split()))
+    return counts
+
+
+def segment_shape_counters(words_per_segment: Sequence[int]) -> SegmentShapeCounters:
+    """Reduce per-segment word counts to Segment Shape Counters."""
+    if not words_per_segment:
+        return SegmentShapeCounters()
+    return SegmentShapeCounters(
+        segment_count=len(words_per_segment),
+        median_words_per_segment=float(median(words_per_segment)),
+        single_word_segment_count=sum(1 for n in words_per_segment if n == 1),
+    )
 
 
 def _count_stm_speakers(path: Path) -> int:
@@ -128,18 +148,46 @@ def diarization_sanity(ref_stm_path: Path, hyp_stm_path: Path) -> DiarizationSan
     )
 
 
-def _write_normalized_stm(src: Path, dst: Path) -> None:
-    """Write an STM file with only the transcript text field normalized."""
-    lines: list[str] = []
-    for line in src.read_text().splitlines():
-        parts = line.strip().split(maxsplit=5)
-        if len(parts) < 6:
-            continue
-        text = _normalize_transcript_text(parts[5])
-        if not text:
-            continue
-        lines.append(" ".join([*parts[:5], text]))
-    dst.write_text("\n".join(lines) + ("\n" if lines else ""))
+def _score_wer_triple(meeteval, ref: Path, hyp: Path, raw: dict[str, Any], prefix: str) -> None:
+    """Score the three WER metrics for one (ref, hyp) pair into ``raw``.
+
+    ``prefix`` namespaces the raw keys so a text schema's results sit beside the
+    unnormalized ones without colliding. An empty prefix means raw text.
+    """
+    scorers = {
+        "cpwer": meeteval.wer.cpwer,
+        "orcwer": meeteval.wer.greedy_orcwer,
+        "dicpwer": meeteval.wer.greedy_dicpwer,
+    }
+    for metric, scorer in scorers.items():
+        key = f"{prefix}_{metric}" if prefix else metric
+        raw[key] = _combine_multifile(meeteval, scorer(ref, hyp))
+
+
+def _metrics_from_raw(raw: dict[str, Any], prefix: str) -> SchemaMetrics:
+    """Collect one text schema's raw results into a metric block."""
+    return SchemaMetrics(
+        cpwer=_wer_to_dict(raw[f"{prefix}_cpwer"]),
+        orcwer=_wer_to_dict(raw[f"{prefix}_orcwer"]),
+        dicpwer=_wer_to_dict(raw[f"{prefix}_dicpwer"]),
+    )
+
+
+def _score_text_schemas(meeteval, ref: Path, hyp: Path, raw: dict[str, Any]) -> None:
+    """Score every text schema into ``raw``, each from its own rewritten STMs.
+
+    One loop over the schema registry, so a new schema is an entry there plus a
+    field on the metric model — never another copy of the scoring block.
+    """
+    with tempfile.TemporaryDirectory(prefix="coro-quality-") as tmp:
+        for prefix, normalize in TEXT_SCHEMAS:
+            schema_dir = Path(tmp) / prefix
+            schema_dir.mkdir()
+            schema_ref = schema_dir / ref.name
+            schema_hyp = schema_dir / hyp.name
+            write_schema_stm(ref, schema_ref, normalize)
+            write_schema_stm(hyp, schema_hyp, normalize)
+            _score_wer_triple(meeteval, schema_ref, schema_hyp, raw, prefix)
 
 
 def score_item(
@@ -171,42 +219,14 @@ def score_item(
         diarization_only = is_diarization_only_stm(ref_stm_path)
 
         if not diarization_only:
-            raw["cpwer"] = _combine_multifile(
-                meeteval, meeteval.wer.cpwer(ref_stm_path, hyp_stm_path)
-            )
+            _score_wer_triple(meeteval, ref_stm_path, hyp_stm_path, raw, "")
             metrics.cpwer = _wer_to_dict(raw["cpwer"])
-
-            raw["orcwer"] = _combine_multifile(
-                meeteval, meeteval.wer.greedy_orcwer(ref_stm_path, hyp_stm_path)
-            )
             metrics.orcwer = _wer_to_dict(raw["orcwer"])
-
-            raw["dicpwer"] = _combine_multifile(
-                meeteval, meeteval.wer.greedy_dicpwer(ref_stm_path, hyp_stm_path)
-            )
             metrics.dicpwer = _wer_to_dict(raw["dicpwer"])
 
-            with tempfile.TemporaryDirectory(prefix="coro-quality-") as tmp:
-                tmp_dir = Path(tmp)
-                normalized_ref = tmp_dir / ref_stm_path.name
-                normalized_hyp = tmp_dir / hyp_stm_path.name
-                _write_normalized_stm(ref_stm_path, normalized_ref)
-                _write_normalized_stm(hyp_stm_path, normalized_hyp)
-
-                raw["normalized_cpwer"] = _combine_multifile(
-                    meeteval, meeteval.wer.cpwer(normalized_ref, normalized_hyp)
-                )
-                raw["normalized_orcwer"] = _combine_multifile(
-                    meeteval, meeteval.wer.greedy_orcwer(normalized_ref, normalized_hyp)
-                )
-                raw["normalized_dicpwer"] = _combine_multifile(
-                    meeteval, meeteval.wer.greedy_dicpwer(normalized_ref, normalized_hyp)
-                )
-                metrics.normalized = NormalizedMetrics(
-                    cpwer=_wer_to_dict(raw["normalized_cpwer"]),
-                    orcwer=_wer_to_dict(raw["normalized_orcwer"]),
-                    dicpwer=_wer_to_dict(raw["normalized_dicpwer"]),
-                )
+            _score_text_schemas(meeteval, ref_stm_path, hyp_stm_path, raw)
+            metrics.unpunctuated = _metrics_from_raw(raw, "unpunctuated")
+            metrics.whisper_english = _metrics_from_raw(raw, "whisper_english")
 
         der_results = meeteval.der.md_eval_22(
             ref_stm_path,
@@ -222,6 +242,7 @@ def score_item(
             diarization_only=diarization_only,
             diarization=diarization_sanity(ref_stm_path, hyp_stm_path),
             raw=raw,
+            segment_word_counts=stm_words_per_segment(hyp_stm_path),
         )
 
     except Exception as exc:
@@ -252,17 +273,23 @@ def _combine_raw_key(meeteval, succeeded: list[ScoreResult], raw_key: str) -> An
     return converter(combined)
 
 
+def _combined_schema(meeteval, succeeded: list[ScoreResult], prefix: str) -> SchemaMetrics:
+    """Combine one text schema's WER triple across all succeeded items."""
+    return SchemaMetrics(
+        cpwer=_combine_raw_key(meeteval, succeeded, f"{prefix}_cpwer"),
+        orcwer=_combine_raw_key(meeteval, succeeded, f"{prefix}_orcwer"),
+        dicpwer=_combine_raw_key(meeteval, succeeded, f"{prefix}_dicpwer"),
+    )
+
+
 def _combined_metrics(meeteval, succeeded: list[ScoreResult]) -> CombinedMetrics:
     """Build the workload-level combined metric block from succeeded items."""
     return CombinedMetrics(
         cpwer=_combine_raw_key(meeteval, succeeded, "cpwer"),
         orcwer=_combine_raw_key(meeteval, succeeded, "orcwer"),
         dicpwer=_combine_raw_key(meeteval, succeeded, "dicpwer"),
-        normalized=NormalizedMetrics(
-            cpwer=_combine_raw_key(meeteval, succeeded, "normalized_cpwer"),
-            orcwer=_combine_raw_key(meeteval, succeeded, "normalized_orcwer"),
-            dicpwer=_combine_raw_key(meeteval, succeeded, "normalized_dicpwer"),
-        ),
+        unpunctuated=_combined_schema(meeteval, succeeded, "unpunctuated"),
+        whisper_english=_combined_schema(meeteval, succeeded, "whisper_english"),
         der=_combine_raw_key(meeteval, succeeded, "der"),
     )
 
@@ -274,6 +301,7 @@ def _per_item_entry(result: ScoreResult) -> PerItemEntry:
         audio_seconds=result.audio_seconds,
         diarization_only=True if result.diarization_only else None,
         diarization=result.diarization,
+        segment_shape=segment_shape_counters(result.segment_word_counts),
     )
     metrics = result.metrics
     if metrics is not None:
@@ -285,14 +313,16 @@ def _per_item_entry(result: ScoreResult) -> PerItemEntry:
             entry.dicpwer = metrics.dicpwer.wer
         if metrics.der is not None:
             entry.der = metrics.der.der
-        normalized = metrics.normalized
-        if normalized is not None:
-            if normalized.cpwer is not None:
-                entry.normalized_cpwer = normalized.cpwer.wer
-            if normalized.orcwer is not None:
-                entry.normalized_orcwer = normalized.orcwer.wer
-            if normalized.dicpwer is not None:
-                entry.normalized_dicpwer = normalized.dicpwer.wer
+        for prefix, block in (
+            ("unpunctuated", metrics.unpunctuated),
+            ("whisper_english", metrics.whisper_english),
+        ):
+            if block is None:
+                continue
+            for metric in ("cpwer", "orcwer", "dicpwer"):
+                stats = getattr(block, metric)
+                if stats is not None:
+                    setattr(entry, f"{prefix}_{metric}", stats.wer)
     return entry
 
 
@@ -313,4 +343,7 @@ def combine_items(item_results: list[ScoreResult]) -> QualitySummary:
         n_degenerate_diarization=n_degenerate,
         combined=_combined_metrics(meeteval, succeeded),
         per_item=[_per_item_entry(r) for r in item_results],
+        segment_shape=segment_shape_counters(
+            [n for r in item_results for n in r.segment_word_counts]
+        ),
     )

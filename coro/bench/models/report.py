@@ -23,6 +23,35 @@ class QualityRow:
 
 
 @dataclass
+class QualitySchemaTable:
+    """One text schema's quality table, rendered beside the raw-text one.
+
+    A WER only means something next to the text conventions behind it, so each
+    schema gets its own titled table carrying the same columns.
+    """
+
+    key: str
+    title: str
+    note: str
+    rows: list[QualityRow] = field(default_factory=list)
+    combined: QualityRow | None = None
+
+
+@dataclass
+class SegmentShapeRow:
+    """One row in the Segment Shape Counters table.
+
+    Unscored transcript-shape counts. No WER penalises fragmentation, so these
+    are the only place a segment explosion is visible in the report.
+    """
+
+    session_id: str
+    segment_count: int
+    median_words_per_segment: float | None
+    single_word_segment_count: int
+
+
+@dataclass
 class PerformanceRow:
     """One row in the performance results table."""
 
@@ -55,9 +84,12 @@ class BenchReport:
     workload_set: list[str]
     quality_rows: list[QualityRow] = field(default_factory=list)
     quality_combined: QualityRow | None = None
-    normalized_quality_rows: list[QualityRow] = field(default_factory=list)
-    normalized_quality_combined: QualityRow | None = None
+    # One entry per text schema the metrics were also scored under, in report
+    # order. A new schema adds an entry, never another pair of fields.
+    schema_quality_tables: list[QualitySchemaTable] = field(default_factory=list)
     quality_footnotes: list[str] = field(default_factory=list)
+    segment_shape_rows: list[SegmentShapeRow] = field(default_factory=list)
+    segment_shape_combined: SegmentShapeRow | None = None
     performance_rows: list[PerformanceRow] = field(default_factory=list)
     versions: dict = field(default_factory=dict)
     cli_args: list[str] = field(default_factory=list)

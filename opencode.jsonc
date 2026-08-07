@@ -77,6 +77,27 @@
             "varlock load -f*": "deny",
             "*base64*|*bash*": "deny",
             "*base64*|*sh*": "deny",
+            // Sensitive-named inline env assignment, anywhere in the command
+            // (not anchored to the start) -- catches `env VAR=value`,
+            // `VAR=$VAR cmd`, and `--setenv=VAR=value` regardless of what
+            // wraps them (systemd-run, nohup, setsid, a bare prefix, ...).
+            // A loaded secret baked into a literal command string persists
+            // in `ps`/`systemctl status`/`journalctl` output for as long as
+            // the process or transient unit exists.
+            "*_TOKEN=*": "deny",
+            "*_SECRET=*": "deny",
+            "*_KEY=*": "deny",
+            "*_PASSWORD=*": "deny",
+            "*_PASS=*": "deny",
+            "*_CREDENTIAL*=*": "deny",
+            "*_PAT=*": "deny",
+            // Repo-specific token names, belt-and-suspenders in case a
+            // name-based glob above ever needs a carve-out.
+            "*HF_TOKEN=*": "deny",
+            "*HUGGING_FACE_HUB_TOKEN=*": "deny",
+            // Reading another process's environment/argv off disk.
+            "cat /proc/*/environ": "deny",
+            "*proc*environ*": "deny",
             "npm test": "allow",
             "npm run *": "allow",
             "bun test": "allow",

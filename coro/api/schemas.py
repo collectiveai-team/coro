@@ -7,14 +7,17 @@ from pydantic import BaseModel, ConfigDict
 
 # Item Models ---------------------------------------------------------------
 class WhisperWord(BaseModel):
-    """Word-level timestamp item in a segment."""
+    """Word-level timestamp item in a segment.
+
+    ``score`` is null when the ASR backend expresses no per-word probability.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     word: str
     start: float
     end: float
-    score: float
+    score: float | None
     speaker: str
 
 
@@ -51,14 +54,17 @@ class WhisperDiarizationItem(BaseModel):
 
 
 class RawWord(BaseModel):
-    """Raw ASR word item before segment interpolation."""
+    """Raw ASR word item, as the backend emitted it.
+
+    ``score`` is null when the ASR backend expresses no per-word probability.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     word: str
     start: float
     end: float
-    score: float
+    score: float | None
 
 
 # Response Model ------------------------------------------------------------

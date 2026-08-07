@@ -6,7 +6,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from coro.bench.models.report import BenchReport, PerformanceRow, QualityRow
+from coro.bench.models.report import (
+    BenchReport,
+    PerformanceRow,
+    QualityRow,
+    QualitySchemaTable,
+    SegmentShapeRow,
+)
 
 
 def build_report(out_dir: Path) -> BenchReport:
@@ -40,10 +46,10 @@ def build_report(out_dir: Path) -> BenchReport:
     (
         quality_rows,
         quality_combined,
-        normalized_quality_rows,
-        normalized_quality_combined,
+        schema_quality_tables,
         quality_footnotes,
     ) = _load_quality(out_dir)
+    segment_shape_rows, segment_shape_combined = _load_segment_shape(out_dir)
     performance_rows = _load_performance(out_dir, stream=stream)
 
     total_wall = _compute_total_wall(performance_rows, quality_rows)
@@ -59,28 +65,47 @@ def build_report(out_dir: Path) -> BenchReport:
         workload_set=workload_set,
         quality_rows=quality_rows,
         quality_combined=quality_combined,
-        normalized_quality_rows=normalized_quality_rows,
-        normalized_quality_combined=normalized_quality_combined,
+        schema_quality_tables=schema_quality_tables,
         quality_footnotes=quality_footnotes,
+        segment_shape_rows=segment_shape_rows,
+        segment_shape_combined=segment_shape_combined,
         performance_rows=performance_rows,
         versions=versions,
         cli_args=cli_args,
     )
 
 
+# Presentation metadata for the text schemas bench.quality scores under. Keys
+# match the summary.json blocks; order is report order.
+SCHEMA_TABLE_META: tuple[tuple[str, str, str], ...] = (
+    (
+        "unpunctuated",
+        "Normalized Quality Results",
+        "WER metrics after removing punctuation and collapsing whitespace.",
+    ),
+    (
+        "whisper_english",
+        "Leaderboard Text Schema Quality Results",
+        "WER metrics under the Whisper EnglishTextNormalizer conventions used by the "
+        "Open ASR Leaderboard: lowercased, punctuation removed, contractions expanded, "
+        "fillers (um/uh/hmm/mm) deleted. Comparable with published ASR numbers.",
+    ),
+)
+
+
 def _load_quality(
     out_dir: Path,
-) -> tuple[list[QualityRow], QualityRow | None, list[QualityRow], QualityRow | None, list[str]]:
+) -> tuple[list[QualityRow], QualityRow | None, list[QualitySchemaTable], list[str]]:
     summary_path = out_dir / "quality" / "summary.json"
     if not summary_path.exists():
-        return [], None, [], None, []
+        return [], None, [], []
 
     summary = _read_json(summary_path)
     per_item = summary.get("per_item", [])
     combined_data = summary.get("combined", {})
 
     rows: list[QualityRow] = []
-    normalized_rows: list[QualityRow] = []
+    schema_rows: dict[str, list[QualityRow]] = {key: [] for key, _, _ in SCHEMA_TABLE_META}
     footnotes: list[str] = []
 
     for item in per_item:
@@ -125,14 +150,16 @@ def _load_quality(
                     der=_wer_val(item.get("der")),
                 )
             )
-            if item.get("normalized_cpwer") is not None:
-                normalized_rows.append(
+            for key, _, _ in SCHEMA_TABLE_META:
+                if item.get(f"{key}_cpwer") is None:
+                    continue
+                schema_rows[key].append(
                     QualityRow(
                         session_id=session_id,
                         duration=duration,
-                        cpwer=_wer_val(item.get("normalized_cpwer")),
-                        orcwer=_wer_val(item.get("normalized_orcwer")),
-                        dicpwer=_wer_val(item.get("normalized_dicpwer")),
+                        cpwer=_wer_val(item.get(f"{key}_cpwer")),
+                        orcwer=_wer_val(item.get(f"{key}_orcwer")),
+                        dicpwer=_wer_val(item.get(f"{key}_dicpwer")),
                         der=None,
                     )
                 )
@@ -148,19 +175,65 @@ def _load_quality(
             der=_nested_der(combined_data),
         )
 
-    normalized_combined: QualityRow | None = None
-    normalized_combined_data = combined_data.get("normalized", {})
-    if normalized_combined_data:
-        normalized_combined = QualityRow(
-            session_id="COMBINED",
-            duration=sum(r.duration for r in normalized_rows),
-            cpwer=_nested_wer(normalized_combined_data, "cpwer"),
-            orcwer=_nested_wer(normalized_combined_data, "orcwer"),
-            dicpwer=_nested_wer(normalized_combined_data, "dicpwer"),
-            der=None,
-        )
+    return rows, combined, _schema_tables(schema_rows, combined_data), footnotes
 
-    return rows, combined, normalized_rows, normalized_combined, footnotes
+
+def _schema_tables(
+    schema_rows: dict[str, list[QualityRow]], combined_data: dict
+) -> list[QualitySchemaTable]:
+    """Build one table per text schema present in the summary, in report order."""
+    tables: list[QualitySchemaTable] = []
+    for key, title, note in SCHEMA_TABLE_META:
+        rows = schema_rows[key]
+        schema_combined_data = combined_data.get(key) or {}
+        combined: QualityRow | None = None
+        if schema_combined_data:
+            combined = QualityRow(
+                session_id="COMBINED",
+                duration=sum(r.duration for r in rows),
+                cpwer=_nested_wer(schema_combined_data, "cpwer"),
+                orcwer=_nested_wer(schema_combined_data, "orcwer"),
+                dicpwer=_nested_wer(schema_combined_data, "dicpwer"),
+                der=None,
+            )
+        if rows or combined:
+            tables.append(
+                QualitySchemaTable(key=key, title=title, note=note, rows=rows, combined=combined)
+            )
+    return tables
+
+
+def _segment_shape_row(session_id: str, data: Any) -> SegmentShapeRow | None:
+    """Build one Segment Shape Counters row, or None when the run has none."""
+    if not isinstance(data, dict):
+        return None
+    return SegmentShapeRow(
+        session_id=session_id,
+        segment_count=int(data.get("segment_count", 0)),
+        median_words_per_segment=_wer_val(data.get("median_words_per_segment")),
+        single_word_segment_count=int(data.get("single_word_segment_count", 0)),
+    )
+
+
+def _load_segment_shape(out_dir: Path) -> tuple[list[SegmentShapeRow], SegmentShapeRow | None]:
+    """Read Segment Shape Counters from the quality summary.
+
+    Runs recorded before the counters existed simply yield no rows, so the
+    table is omitted rather than rendered empty.
+    """
+    summary_path = out_dir / "quality" / "summary.json"
+    if not summary_path.exists():
+        return [], None
+
+    summary = _read_json(summary_path)
+
+    rows: list[SegmentShapeRow] = []
+    for item in summary.get("per_item", []):
+        row = _segment_shape_row(item.get("session_id", ""), item.get("segment_shape"))
+        if row is not None:
+            rows.append(row)
+
+    return rows, _segment_shape_row("COMBINED", summary.get("segment_shape"))
 
 
 def _wer_val(v: Any) -> float | None:
@@ -279,9 +352,13 @@ def render_markdown(report: BenchReport) -> str:
         lines.append("")
         lines += _quality_table_md(report)
 
-    if report.normalized_quality_rows or report.normalized_quality_combined:
+    for table in report.schema_quality_tables:
         lines.append("")
-        lines += _normalized_quality_table_md(report)
+        lines += _schema_quality_table_md(table)
+
+    if report.segment_shape_rows or report.segment_shape_combined:
+        lines.append("")
+        lines += _segment_shape_table_md(report)
 
     if report.performance_rows:
         lines.append("")
@@ -345,26 +422,63 @@ def _quality_table_md(report: BenchReport) -> list[str]:
     return lines
 
 
-def _normalized_quality_table_md(report: BenchReport) -> list[str]:
+def _schema_quality_table_md(table: QualitySchemaTable) -> list[str]:
     lines: list[str] = []
-    lines.append("## Normalized Quality Results")
+    lines.append(f"## {table.title}")
     lines.append("")
-    lines.append("WER metrics after removing punctuation and collapsing whitespace.")
+    lines.append(table.note)
     lines.append("")
     lines.append("| session | duration | cpWER | ORC-WER | DI-cpWER |")
     lines.append("|---------|----------|-------|---------|----------|")
 
-    for row in report.normalized_quality_rows:
+    for row in table.rows:
         lines.append(
             f"| {row.session_id} | {row.duration:.1f} "
             f"| {_fmt(row.cpwer)} | {_fmt(row.orcwer)} | {_fmt(row.dicpwer)} |"
         )
 
-    if report.normalized_quality_combined is not None:
-        c = report.normalized_quality_combined
+    if table.combined is not None:
+        c = table.combined
         lines.append(
             f"| **{c.session_id}** | {c.duration:.1f} "
             f"| {_fmt(c.cpwer)} | {_fmt(c.orcwer)} | {_fmt(c.dicpwer)} |"
+        )
+
+    return lines
+
+
+_SEGMENT_SHAPE_NOTE = (
+    "Unscored counts. cpWER concatenates all words per speaker, so it improves "
+    "monotonically as segments are shredded; read these beside it."
+)
+
+
+def _fmt_median(value: float | None) -> str:
+    return "-" if value is None else f"{value:.1f}"
+
+
+def _segment_shape_table_md(report: BenchReport) -> list[str]:
+    lines: list[str] = []
+    lines.append("## Segment Shape")
+    lines.append("")
+    lines.append(_SEGMENT_SHAPE_NOTE)
+    lines.append("")
+    lines.append("| session | segments | median words/seg | single-word segs |")
+    lines.append("|---------|----------|------------------|------------------|")
+
+    for row in report.segment_shape_rows:
+        lines.append(
+            f"| {row.session_id} | {row.segment_count} "
+            f"| {_fmt_median(row.median_words_per_segment)} "
+            f"| {row.single_word_segment_count} |"
+        )
+
+    c = report.segment_shape_combined
+    if c is not None:
+        lines.append(
+            f"| **{c.session_id}** | {c.segment_count} "
+            f"| {_fmt_median(c.median_words_per_segment)} "
+            f"| {c.single_word_segment_count} |"
         )
 
     return lines
@@ -460,8 +574,37 @@ def _render_stdout_rich(report: BenchReport) -> None:
     console = Console()
     console.print(Panel(_rich_header(report), title="Benchmark Report"))
     _rich_quality_table(console, report)
-    _rich_normalized_quality_table(console, report)
+    for table in report.schema_quality_tables:
+        _rich_schema_quality_table(console, table)
+    _rich_segment_shape_table(console, report)
     _rich_performance_table(console, report)
+
+
+def _rich_segment_shape_table(console: Any, report: BenchReport) -> None:
+    if not (report.segment_shape_rows or report.segment_shape_combined):
+        return
+    from rich.table import Table
+
+    st = Table(title="Segment Shape", show_lines=True)
+    for col in ("session", "segments", "median words/seg", "single-word segs"):
+        st.add_column(col)
+    for row in report.segment_shape_rows:
+        st.add_row(
+            row.session_id,
+            str(row.segment_count),
+            _fmt_median(row.median_words_per_segment),
+            str(row.single_word_segment_count),
+        )
+    c = report.segment_shape_combined
+    if c is not None:
+        st.add_row(
+            f"[bold]{c.session_id}[/bold]",
+            f"[bold]{c.segment_count}[/bold]",
+            f"[bold]{_fmt_median(c.median_words_per_segment)}[/bold]",
+            f"[bold]{c.single_word_segment_count}[/bold]",
+        )
+    console.print(st)
+    console.print(f"  * {_SEGMENT_SHAPE_NOTE}")
 
 
 def _rich_header(report: BenchReport) -> str:
@@ -523,15 +666,13 @@ def _rich_quality_table(console: object, report: BenchReport) -> None:
         console.print(f"  * {note}")  # type: ignore[attr-defined]
 
 
-def _rich_normalized_quality_table(console: object, report: BenchReport) -> None:
-    if not (report.normalized_quality_rows or report.normalized_quality_combined):
-        return
+def _rich_schema_quality_table(console: object, table: QualitySchemaTable) -> None:
     from rich.table import Table
 
-    qt = Table(title="Normalized Quality Results", show_lines=True)
+    qt = Table(title=table.title, show_lines=True)
     for col in ("session", "duration", "cpWER", "ORC-WER", "DI-cpWER"):
         qt.add_column(col)
-    for row in report.normalized_quality_rows:
+    for row in table.rows:
         qt.add_row(
             row.session_id,
             f"{row.duration:.1f}",
@@ -539,8 +680,8 @@ def _rich_normalized_quality_table(console: object, report: BenchReport) -> None
             _fmt(row.orcwer),
             _fmt(row.dicpwer),
         )
-    if report.normalized_quality_combined is not None:
-        c = report.normalized_quality_combined
+    if table.combined is not None:
+        c = table.combined
         qt.add_row(
             f"[bold]{c.session_id}[/bold]",
             f"{c.duration:.1f}",

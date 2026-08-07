@@ -404,6 +404,8 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 | `CORO_MODEL_DIARIZATION` | `--model-diarization` | _(unset)_ | Diarization model; defaults to `nvidia/diar_streaming_sortformer_4spk-v2` (`nemo`) or `pyannote/speaker-diarization-community-1` (`pyannote`). |
 | `CORO_DIARIZATION_DEVICE` | `--diarization-device` | `auto` | Diarization device (`auto` \| `cuda` \| `cpu`). |
 | `CORO_DIARIZATION_LATENCY` | `--diarization-latency` | `very-high` | Streaming Sortformer latency tier (`very-high` \| `high` \| `low` \| `ultra-low`); `nemo` streaming only. |
+| `CORO_MIN_TURN_WORDS` | `--min-turn-words` | `2` | Minimum Turn Threshold, word count. An interrupting turn shorter than this leaves its words with the surrounding speaker instead of splitting the segment. Diarization only. |
+| `CORO_MIN_TURN_SECONDS` | `--min-turn-seconds` | `0.4` | Minimum Turn Threshold, duration. A turn must clear **both** bounds to split a segment. |
 | `CORO_HF_TOKEN` | `--CORO-HF-TOKEN` | _(unset)_ | Hugging Face token for gated diarization models (e.g. pyannote community-1). Also read from `HF_TOKEN` / `HUGGING_FACE_HUB_TOKEN` (and matching `--HF-TOKEN` flags) and `.env`; masked in logs. |
 | `CORO_TRANSCRIPT_SPILL_DIR` | `--transcript-spill-dir` | _(system temp)_ | Streaming transcript spill dir; must be real disk (non-tmpfs) for flat RAM. |
 | `CORO_WARMUP` | `--warmup` | `enabled` | Run warmup against the warmup audio asset at startup (`enabled` \| `disabled`). |
@@ -414,12 +416,17 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 ## Benchmarks
 
 > **Picking a backend?** See the full **[leaderboard →
-> docs/benchmark.md](docs/benchmark.md)** (WER, DER, RTFx, VRAM and RAM across
-> backends, with reproduction commands). TL;DR: **faster-whisper
-> `large-v3-turbo`** is the best GPU default — best WER *and* DER, multilingual,
-> ~3 GB VRAM; **faster-whisper `small`** for max GPU throughput; **onnx-asr
-> `parakeet`** for CPU; **nemotron** for real-time streaming. Don't run Whisper
-> through the onnx-asr backend (slower and less accurate than faster-whisper).
+> docs/benchmark.md](docs/benchmark.md)** (WER, DER, VRAM and RAM across
+> backends, with reproduction commands). TL;DR, from a 61-clip / 10.2 h AMI
+> measurement: **onnx-asr `parakeet`** is the best GPU default on quality —
+> best cpWER, ORC-WER *and* DER — but is **English only**; use
+> **faster-whisper `large-v3-turbo`** (~3.3 GB VRAM) for anything
+> multilingual. **onnx-asr `parakeet`** for CPU; **nemotron** for real-time
+> streaming. Don't run Whisper through the onnx-asr backend (slower and less
+> accurate than faster-whisper).
+>
+> No throughput recommendation is made: the only RTFx figures ever collected
+> are from a sample now known to be void.
 
 The table below is a separate, ASR-only view (diarization off).
 
@@ -497,7 +504,7 @@ only. Each is materialized into a `--clips-dir` of `(<stem>.wav,
 
 | Dataset | License | Metrics | Materialize with |
 |---|---|---|---|
-| **AMI** (English meetings) | CC-BY | WER + DER | `utils.make_ami_clip` |
+| **AMI** (English meetings) | CC-BY | WER + DER | `utils.make_ami_clip` (one meeting), `utils.make_ami_clip_set` (a whole group) |
 | **VoxConverse** (multi-speaker, in-the-wild) | CC-BY-4.0 | DER only (no transcript) | `utils.make_rttm_clip` |
 | **Common Voice** (single-speaker read speech, any language incl. `es`) | CC0 | WER only (single speaker) | `utils.make_common_voice_clips` |
 
@@ -558,11 +565,36 @@ uv run --group bench coro-bench all \
 half); `performance` does not. The run prints a report and writes `REPORT.md`
 plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
 
+Beside the scored metrics, `quality` reports a **Segment Shape** table — segment
+count, median words per segment, and single-word segment count, per item and
+pooled over the workload. These are unscored counts, and they are the only
+guard against a misleading win: cpWER concatenates all words per speaker, so it
+improves monotonically as segments are shredded and no WER penalises
+fragmentation. They are reported even for diarization-only references, where
+WER scoring is skipped.
+
+Every WER is reported under three text schemas, because a WER only means
+something next to the text conventions behind it:
+
+| Table | Text schema |
+|---|---|
+| Quality Results | raw — reference text as written, punctuation included |
+| Normalized Quality Results | ASCII punctuation stripped, whitespace collapsed |
+| Leaderboard Text Schema Quality Results | the Whisper `EnglishTextNormalizer` conventions used by the Open ASR Leaderboard |
+
+Use the **Leaderboard Text Schema** table to compare against published numbers,
+such as the AMI WER on an ASR model card. The other two are not comparable with
+anything outside this repo: the raw table counts a reference `.` as a word (AMI
+STMs tokenize punctuation separately), and the normalized one does not lowercase.
+Beware of reading a threshold expressed as a *percentage of* cpWER without
+naming the schema — the denominator moves between them.
+
 #### Larger workloads
 
 - `--clips-dir DIR` — a directory of `(<stem>.wav, <stem>.ref.stm)` pairs, e.g.
   produced by the dataset materializers (`utils.make_ami_clip`,
-  `utils.make_common_voice_clips`, `utils.make_rttm_clip`).
+  `utils.make_ami_clip_set`, `utils.make_common_voice_clips`,
+  `utils.make_rttm_clip`).
 - `--ami-preset sample|eval|full` (or `--ami-groups` / `--ami-meetings`) — pull
   AMI meetings into `--ami-root` (default `./amicorpus/`); add `--no-download` to
   use only what is already present.

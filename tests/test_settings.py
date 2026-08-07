@@ -21,6 +21,31 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     assert settings.diarization_device == "auto"
     assert settings.asr_onnx_vad == "disabled"
     assert settings.asr_onnx_vad_threshold is None
+    assert settings.min_turn_words == 2
+    assert settings.min_turn_seconds == 0.4
+
+
+def test_minimum_turn_threshold_reads_from_env(monkeypatch):
+    monkeypatch.setenv("CORO_MIN_TURN_WORDS", "3")
+    monkeypatch.setenv("CORO_MIN_TURN_SECONDS", "0.75")
+    settings = ServerSettings(_env_file=None)
+
+    assert settings.min_turn_words == 3
+    assert settings.min_turn_seconds == 0.75
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("min_turn_words", 0), ("min_turn_words", -1), ("min_turn_seconds", -0.1)],
+)
+def test_minimum_turn_threshold_rejects_out_of_range(field, value):
+    """Strict Startup Validation rejects a threshold that cannot mean anything.
+
+    A zero-word turn would split on every diarizer flicker; a negative bound is
+    simply nonsense. Both fail at startup rather than silently mis-segmenting.
+    """
+    with pytest.raises(ValidationError):
+        ServerSettings(_env_file=None, **{field: value})
 
 
 def test_onnx_vad_settings_read_from_env(monkeypatch):

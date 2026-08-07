@@ -202,6 +202,140 @@ class TestAmiMeetingToStm:
         (segments_dir / "TS3003a.B.segments.xml").write_text(seg_b_xml)
         return root
 
+    @pytest.fixture()
+    def ami_realistic_fixture(self, tmp_path: Path) -> Path:
+        """An AMI tree shaped like the real corpus.
+
+        Real AMI word files interleave ``<w>`` with ``<disfmarker>``,
+        ``<vocalsound>`` and ``<gap>``, and a segment's ``<child>`` href is a
+        RANGE whose endpoints may be any of those — not necessarily a word.
+        Real segments carry ``transcriber_start``/``transcriber_end``, not
+        ``starttime``/``endtime``.
+        """
+        root = tmp_path / "amicorpus"
+        words_dir = root / "TS3003a" / "words"
+        segments_dir = root / "TS3003a" / "segments"
+        words_dir.mkdir(parents=True)
+        segments_dir.mkdir(parents=True)
+
+        (words_dir / "TS3003a.A.words.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<nite:root xmlns:nite="http://nite.sourceforge.net/">\n'
+            '  <w nite:id="TS3003a.A.words0" starttime="0.0" endtime="0.5">Hello</w>\n'
+            '  <w nite:id="TS3003a.A.words1" starttime="0.5" endtime="1.0">everyone</w>\n'
+            '  <disfmarker nite:id="TS3003a.A.words2" starttime="1.0" endtime="1.1"/>\n'
+            '  <w nite:id="TS3003a.A.words3" starttime="2.0" endtime="2.5">second</w>\n'
+            '  <w nite:id="TS3003a.A.words4" starttime="2.5" endtime="3.0">turn</w>\n'
+            '  <vocalsound nite:id="TS3003a.A.words5" starttime="3.0" endtime="3.2"/>\n'
+            "</nite:root>\n"
+        )
+        (segments_dir / "TS3003a.A.segments.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<nite:root xmlns:nite="http://nite.sourceforge.net/">\n'
+            '  <segment nite:id="s0" transcriber_start="0.0" transcriber_end="1.1">\n'
+            '    <child href="TS3003a.A.words.xml#id(TS3003a.A.words0)..'
+            'id(TS3003a.A.words2)"/>\n'
+            "  </segment>\n"
+            '  <segment nite:id="s1" transcriber_start="2.0" transcriber_end="3.2">\n'
+            '    <child href="TS3003a.A.words.xml#id(TS3003a.A.words3)..'
+            'id(TS3003a.A.words5)"/>\n'
+            "  </segment>\n"
+            "</nite:root>\n"
+        )
+        return root
+
+    def test_href_range_ending_on_a_non_word_keeps_its_words(self, ami_realistic_fixture: Path):
+        """A range terminating on <disfmarker>/<vocalsound> must not drop the segment.
+
+        AMI href ranges routinely end on a non-word element. Resolving the range
+        against a word-only index loses every word in it — 28.5% of segments and
+        ~30k reference words across the AMI ES meetings.
+        """
+        from coro.bench.stm import ami_meeting_to_stm
+
+        result = ami_meeting_to_stm(ami_realistic_fixture, "TS3003a")
+
+        assert "Hello everyone" in result
+        assert "second turn" in result
+        assert len(result.strip().splitlines()) == 2
+
+    def test_window_keeps_only_words_inside_it(self, ami_realistic_fixture: Path):
+        """A segment straddling the window contributes only its in-window words.
+
+        Clipping rendered STM text can only clamp a segment's TIMES; the text
+        column comes along whole, so a segment crossing the edge donates every
+        word to a clip whose audio holds just a few of them. Those words are
+        unspeakable and score as deletions. Word times are known at build time,
+        so the window is applied there instead.
+        """
+        from coro.bench.stm import ami_meeting_to_stm
+
+        # Window ends mid-segment s1 ("second" at 2.0, "turn" at 2.5).
+        result = ami_meeting_to_stm(ami_realistic_fixture, "TS3003a", window=(0.0, 2.4))
+
+        assert "Hello everyone" in result
+        assert "second" in result
+        assert "turn" not in result
+
+    def test_window_drops_segments_entirely_outside(self, ami_realistic_fixture: Path):
+        """Segments with no word starting inside the window are dropped."""
+        from coro.bench.stm import ami_meeting_to_stm
+
+        result = ami_meeting_to_stm(ami_realistic_fixture, "TS3003a", window=(1.9, 3.5))
+
+        assert "Hello" not in result
+        assert "second turn" in result
+        assert len(result.strip().splitlines()) == 1
+
+    def test_window_uses_half_open_word_start_membership(self, ami_realistic_fixture: Path):
+        """Membership is by word START on ``[lo, hi)`` — one window owns each word.
+
+        Matches the Overlap Token Acceptance convention, so adjacent windows
+        partition the words rather than sharing or dropping any at the seam.
+        """
+        from coro.bench.stm import ami_meeting_to_stm
+
+        lower = ami_meeting_to_stm(ami_realistic_fixture, "TS3003a", window=(0.0, 2.0))
+        upper = ami_meeting_to_stm(ami_realistic_fixture, "TS3003a", window=(2.0, 4.0))
+
+        # "second" starts exactly at 2.0: it belongs to the upper window only.
+        assert "second" not in lower
+        assert "second" in upper
+
+    def test_no_window_is_unchanged(self, ami_realistic_fixture: Path):
+        """Omitting the window keeps the full-meeting behaviour byte for byte."""
+        from coro.bench.stm import ami_meeting_to_stm
+
+        assert ami_meeting_to_stm(ami_realistic_fixture, "TS3003a", window=None) == (
+            ami_meeting_to_stm(ami_realistic_fixture, "TS3003a")
+        )
+
+    def test_segment_falls_back_to_transcriber_times(self, tmp_path: Path):
+        """When no href resolves, the segment's own transcriber_* window is used."""
+        root = tmp_path / "amicorpus"
+        words_dir = root / "TS3003a" / "words"
+        segments_dir = root / "TS3003a" / "segments"
+        words_dir.mkdir(parents=True)
+        segments_dir.mkdir(parents=True)
+        (words_dir / "TS3003a.A.words.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<nite:root xmlns:nite="http://nite.sourceforge.net/">\n'
+            '  <w nite:id="TS3003a.A.words0" starttime="0.0" endtime="0.5">Hello</w>\n'
+            "</nite:root>\n"
+        )
+        (segments_dir / "TS3003a.A.segments.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<nite:root xmlns:nite="http://nite.sourceforge.net/">\n'
+            '  <segment nite:id="s0" transcriber_start="0.0" transcriber_end="1.0">\n'
+            '    <child href="TS3003a.A.words.xml#id(TS3003a.A.unknown)"/>\n'
+            "  </segment>\n"
+            "</nite:root>\n"
+        )
+
+        from coro.bench.stm import ami_meeting_to_stm
+
+        assert "Hello" in ami_meeting_to_stm(root, "TS3003a")
+
     def test_produces_stm_with_correct_speakers(self, ami_fixture: Path):
         from coro.bench.stm import ami_meeting_to_stm
 
@@ -229,18 +363,27 @@ class TestAmiMeetingToStm:
         assert times == sorted(times)
 
     def test_clip_reference_stm_windows_and_rebases(self, ami_fixture: Path):
+        """A clip's reference holds only the words its audio contains.
+
+        Previously this asserted the whole segment text survived the clip edge
+        ("Hello world", "Good morning"), which is the defect: those references
+        credit a clip with words spoken outside it, and the ASR is charged a
+        deletion for each. Membership is now per word on ``[lo, hi)``.
+        """
         from coro.bench.ami import clip_reference_stm
 
-        # Full meeting: A 0.0-1.0 "Hello world", B 1.0-2.0 "Good morning".
+        # Full meeting: A "Hello"(0.0-0.5) "world"(0.5-1.0),
+        #               B "Good"(1.0-1.5) "morning"(1.5-2.0).
+        # Clip [0.5, 1.5) holds "world" and "Good" only.
         clip = clip_reference_stm(ami_fixture, "TS3003a", start=0.5, duration=1.0)
         lines = [line.split(maxsplit=5) for line in clip.splitlines()]
 
         assert lines[0][2] == "A"
         assert lines[0][3:5] == ["0.000", "0.500"]
-        assert lines[0][5] == "Hello world"
+        assert lines[0][5] == "world"
         assert lines[1][2] == "B"
         assert lines[1][3:5] == ["0.500", "1.000"]
-        assert lines[1][5] == "Good morning"
+        assert lines[1][5] == "Good"
 
 
 class TestSliceStmWindow:

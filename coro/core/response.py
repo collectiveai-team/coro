@@ -24,6 +24,7 @@ from coro.core.models import (
     TranscriptToken,
     TranscriptWord,
 )
+from coro.core.segmentation import MinimumTurnThreshold, speaker_runs
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -138,7 +139,14 @@ def _group_tokens_into_segments(tokens: list[TranscriptToken]) -> list[Transcrip
     def _flush():
         span = segment_span_from_tokens(current_tokens)
         if span is not None:
-            segments.append(TranscriptSegment(start=span[0], end=span[1], text=span[2]))
+            segments.append(
+                TranscriptSegment(
+                    start=span[0],
+                    end=span[1],
+                    text=span[2],
+                    tokens=list(current_tokens),
+                )
+            )
         current_tokens.clear()
 
     for token in tokens:
@@ -150,6 +158,56 @@ def _group_tokens_into_segments(tokens: list[TranscriptToken]) -> list[Transcrip
 
     _flush()
     return segments
+
+
+def _split_segment_on_speakers(
+    seg: TranscriptSegment,
+    merged: list[SpeakerSegment],
+    last_end: float,
+    threshold: MinimumTurnThreshold,
+) -> list[TranscriptSegment]:
+    """Cut one segment at its speaker changes, using Measured Word Start values."""
+    starts = [t.start for t in seg.tokens]
+    runs = speaker_runs(starts, seg.end, merged, last_end, threshold)
+    if not runs:
+        return [seg]
+
+    pieces: list[TranscriptSegment] = []
+    for run in runs:
+        tokens = seg.tokens[run.start : run.end]
+        words = [t.text.strip() for t in tokens if t.text.strip()]
+        if not words:
+            continue
+        end = starts[run.end] if run.end < len(starts) else seg.end
+        pieces.append(
+            TranscriptSegment(
+                start=starts[run.start],
+                end=end,
+                text=" ".join(words),
+                tokens=tokens,
+            )
+        )
+    return pieces or [seg]
+
+
+def _split_on_speaker_boundaries(
+    segments: list[TranscriptSegment],
+    speaker_timeline: list[SpeakerSegment],
+    threshold: MinimumTurnThreshold,
+) -> list[TranscriptSegment]:
+    """Apply the Speaker Boundary Split across every segment.
+
+    With no timeline — the default, diarization off — nothing is split and the
+    output is byte-identical to punctuation-only segmentation.
+    """
+    if not speaker_timeline:
+        return segments
+    merged = merge_speaker_timeline(speaker_timeline)
+    last_end = merged[-1].end
+    split: list[TranscriptSegment] = []
+    for seg in segments:
+        split.extend(_split_segment_on_speakers(seg, merged, last_end, threshold))
+    return split
 
 
 def _clamp_overlaps(segments: list[TranscriptSegment]) -> list[TranscriptSegment]:
@@ -166,9 +224,9 @@ def _clamp_overlaps(segments: list[TranscriptSegment]) -> list[TranscriptSegment
 def build_segment(seg: TranscriptSegment) -> ResponseSegment:
     """Build one speaker-attributed :class:`ResponseSegment` from a segment.
 
-    Produces ``start, end, text, speaker, words`` with interpolated word
-    timings.  Shared by the batch builder and the streaming finalizer so both
-    paths emit byte-identical segments.
+    Produces ``start, end, text, speaker, words`` with **Measured Word Start**
+    values taken from ``seg.tokens``.  Shared by the batch builder and the
+    streaming finalizer so both paths emit byte-identical segments.
     """
     return ResponseSegment(
         start=round(seg.start, 2),
@@ -180,24 +238,29 @@ def build_segment(seg: TranscriptSegment) -> ResponseSegment:
 
 
 def _build_words_for_segment(seg: TranscriptSegment) -> list[TranscriptWord]:
-    """Build linearly interpolated word-level timestamps for a segment."""
-    raw_words = seg.text.split()
-    if not raw_words:
-        return []
-    word_duration = (seg.end - seg.start) / len(raw_words)
+    """Build word-level timings for a segment from the tokens that formed it.
+
+    Starts are the ASR's own token emission times. Ends stay as the adapters
+    already derive them — the following token's start — because no consumer
+    reads word ends and the TDT duration that would give a true one is
+    discarded inside ``onnx-asr`` (ADR 0008).
+
+    A segment carrying no tokens yields no words. Dividing the span evenly, as
+    this once did, invents positions the model never reported, and a Speaker
+    Boundary Split cutting on them would cut in the wrong place.
+    """
     speaker_str = str(seg.speaker)
-    words = []
-    for j, word in enumerate(raw_words):
-        words.append(
-            TranscriptWord(
-                word=word,
-                start=round(seg.start + j * word_duration, 2),
-                end=round(seg.start + (j + 1) * word_duration, 2),
-                score=1.0,
-                speaker=speaker_str,
-            )
+    return [
+        TranscriptWord(
+            word=token.text.strip(),
+            start=token.start,
+            end=token.end,
+            score=token.probability,
+            speaker=speaker_str,
         )
-    return words
+        for token in seg.tokens
+        if token.text.strip()
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +272,7 @@ def build_transcription_response(
     tokens: list[TranscriptToken],
     speaker_timeline: list[SpeakerSegment],
     duration: float,
+    threshold: MinimumTurnThreshold | None = None,
 ) -> TranscriptionResult:
     """Build a :class:`TranscriptionResult` from project-owned types.
 
@@ -216,6 +280,7 @@ def build_transcription_response(
         tokens: Ordered transcript tokens (Project-Owned Transcript Model).
         speaker_timeline: Speaker timeline segments from the Diarization Adapter.
         duration: Total audio duration in seconds.
+        threshold: Minimum Turn Threshold governing the Speaker Boundary Split.
 
     Returns:
         TranscriptionResult with segments, word_segments, transcript,
@@ -234,14 +299,22 @@ def build_transcription_response(
             word=t.text,
             start=round(t.start, 3),
             end=round(t.end, 3),
-            score=float(t.probability) if t.probability is not None else 1.0,
+            score=t.probability,
         )
         for t in tokens
         if t.text and t.text.strip()
     ]
 
-    # Group and clamp
+    # Group, split at speaker changes, attribute, then clamp. Splitting before
+    # assignment means each piece is single-speaker by construction, so the
+    # existing max-overlap rule labels it correctly and there is still only one
+    # attribution path.
     seg_objects = _group_tokens_into_segments(tokens)
+    seg_objects = _split_on_speaker_boundaries(
+        seg_objects,
+        speaker_timeline,
+        threshold or MinimumTurnThreshold(),
+    )
     _assign_speakers(seg_objects, speaker_timeline)
     seg_objects = _clamp_overlaps(seg_objects)
 

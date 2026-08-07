@@ -161,7 +161,7 @@ def test_build_report_diarization_only_item_shows_der_not_error(tmp_path: Path):
             "cpwer": None,
             "orcwer": None,
             "dicpwer": None,
-            "normalized": {"cpwer": None, "orcwer": None, "dicpwer": None},
+            "unpunctuated": {"cpwer": None, "orcwer": None, "dicpwer": None},
             "der": der,
         },
         "per_item": [
@@ -183,6 +183,65 @@ def test_build_report_diarization_only_item_shows_der_not_error(tmp_path: Path):
     assert "ERROR for voxc_clip" not in md
     assert "0.0943" in md
     assert "| voxc_clip | 6.0 | - | - | - | 0.0943 |" in md
+
+
+def test_build_report_renders_segment_shape_counters(tmp_path: Path):
+    """Counters are reported beside the MeetEval Metric Set, in their own table.
+
+    They are unscored, so they do not belong in the WER table; without them a
+    cpWER win bought by shredding segments is invisible in the report.
+    """
+    shape = {
+        "segment_count": 412,
+        "median_words_per_segment": 6.0,
+        "single_word_segment_count": 37,
+    }
+    summary = {
+        "workload_set": ["ES2002a_0_600"],
+        "n_succeeded": 1,
+        "n_failed": 0,
+        "n_degenerate_diarization": 0,
+        "combined": {"cpwer": {"wer": 0.21}, "orcwer": None, "dicpwer": None, "der": None},
+        "per_item": [
+            {
+                "session_id": "ES2002a_0_600",
+                "audio_seconds": 600.0,
+                "cpwer": 0.21,
+                "segment_shape": shape,
+            }
+        ],
+        "segment_shape": shape,
+    }
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    (quality_dir / "summary.json").write_text(json.dumps(summary))
+
+    report = build_report(tmp_path)
+    md = render_markdown(report)
+
+    assert "## Segment Shape" in md
+    assert "| ES2002a_0_600 | 412 | 6.0 | 37 |" in md
+    assert "| **COMBINED** | 412 | 6.0 | 37 |" in md
+    render_stdout(report)
+
+
+def test_build_report_without_segment_shape_omits_the_table(tmp_path: Path):
+    """Older runs have no counters in summary.json; the table is simply absent."""
+    summary = {
+        "workload_set": ["old_run"],
+        "n_succeeded": 1,
+        "n_failed": 0,
+        "n_degenerate_diarization": 0,
+        "combined": {"cpwer": {"wer": 0.2}, "orcwer": None, "dicpwer": None, "der": None},
+        "per_item": [{"session_id": "old_run", "audio_seconds": 6.0, "cpwer": 0.2}],
+    }
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    (quality_dir / "summary.json").write_text(json.dumps(summary))
+
+    md = render_markdown(build_report(tmp_path))
+
+    assert "## Segment Shape" not in md
 
 
 def test_render_markdown_stream_false_omits_ttft_column():
@@ -305,7 +364,7 @@ def test_build_report_reads_manifest_and_summaries(tmp_path):
     assert report.quality_combined.session_id == "COMBINED"
 
 
-def test_build_report_reads_normalized_quality_summaries(tmp_path):
+def test_build_report_reads_every_text_schema_quality_summary(tmp_path):
     manifest = {
         "timestamp": "2026-05-04T10:00:00+00:00",
         "git_sha": "deadbeef",
@@ -325,10 +384,15 @@ def test_build_report_reads_normalized_quality_summaries(tmp_path):
             "orcwer": {"wer": 0.25},
             "dicpwer": {"wer": 0.20},
             "der": {"der": 0.10},
-            "normalized": {
+            "unpunctuated": {
                 "cpwer": {"wer": 0.21},
                 "orcwer": {"wer": 0.16},
                 "dicpwer": {"wer": 0.11},
+            },
+            "whisper_english": {
+                "cpwer": {"wer": 0.18},
+                "orcwer": {"wer": 0.14},
+                "dicpwer": {"wer": 0.09},
             },
         },
         "per_item": [
@@ -339,9 +403,12 @@ def test_build_report_reads_normalized_quality_summaries(tmp_path):
                 "orcwer": 0.25,
                 "dicpwer": 0.20,
                 "der": 0.10,
-                "normalized_cpwer": 0.21,
-                "normalized_orcwer": 0.16,
-                "normalized_dicpwer": 0.11,
+                "unpunctuated_cpwer": 0.21,
+                "unpunctuated_orcwer": 0.16,
+                "unpunctuated_dicpwer": 0.11,
+                "whisper_english_cpwer": 0.18,
+                "whisper_english_orcwer": 0.14,
+                "whisper_english_dicpwer": 0.09,
             },
         ],
     }
@@ -350,12 +417,55 @@ def test_build_report_reads_normalized_quality_summaries(tmp_path):
     report = build_report(tmp_path)
     md = render_markdown(report)
 
-    assert len(report.normalized_quality_rows) == 1
-    assert report.normalized_quality_combined is not None
-    assert report.normalized_quality_rows[0].cpwer == 0.21
+    tables = {table.key: table for table in report.schema_quality_tables}
+    assert list(tables) == ["unpunctuated", "whisper_english"]
+    assert len(tables["unpunctuated"].rows) == 1
+    assert tables["unpunctuated"].combined is not None
+    assert tables["unpunctuated"].rows[0].cpwer == 0.21
+    assert tables["whisper_english"].rows[0].cpwer == 0.18
     assert "## Quality Results" in md
     assert "## Normalized Quality Results" in md
+    assert "## Leaderboard Text Schema Quality Results" in md
     assert "| IB4001 | 10.0 | 0.2100 | 0.1600 | 0.1100 |" in md
+    assert "| IB4001 | 10.0 | 0.1800 | 0.1400 | 0.0900 |" in md
+
+
+def test_build_report_omits_a_text_schema_absent_from_the_summary(tmp_path):
+    """A run scored before a schema existed must still render, minus that table."""
+    manifest = {
+        "timestamp": "2026-05-04T10:00:00+00:00",
+        "git_sha": "deadbeef",
+        "subcommand": "quality",
+        "workload_set": [{"item_id": "IB4001", "audio_path": "/data/IB4001.wav"}],
+        "server_health": {"startup_selection": {}},
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    (quality_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "combined": {
+                    "cpwer": {"wer": 0.30},
+                    "unpunctuated": {"cpwer": {"wer": 0.21}},
+                },
+                "per_item": [
+                    {
+                        "session_id": "IB4001",
+                        "audio_seconds": 10.0,
+                        "cpwer": 0.30,
+                        "unpunctuated_cpwer": 0.21,
+                    }
+                ],
+            }
+        )
+    )
+
+    report = build_report(tmp_path)
+    md = render_markdown(report)
+
+    assert [table.key for table in report.schema_quality_tables] == ["unpunctuated"]
+    assert "## Leaderboard Text Schema Quality Results" not in md
 
 
 def test_build_report_surfaces_degenerate_diarization_warning(tmp_path):

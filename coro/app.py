@@ -56,6 +56,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         from coro.backends.asr.factory import build_asr_adapter
         from coro.backends.diarization import factory as diarization_factory
         from coro.pipelines.streaming import StreamingPipeline
+        from coro.core.segmentation import MinimumTurnThreshold
         from coro.pipelines.full_memory import FullMemoryPipeline
 
         application.state.settings = settings
@@ -95,15 +96,27 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 )
                 runtime.diarization_latency = settings.diarization_latency
 
+        # Minimum Turn Threshold governs the Speaker Boundary Split in both
+        # pipelines, so it is built once and handed to whichever is selected.
+        min_turn = MinimumTurnThreshold(
+            words=settings.min_turn_words,
+            seconds=settings.min_turn_seconds,
+        )
+
         # Construct the pipeline
         if settings.pipeline == "streaming":
             runtime.pipeline = StreamingPipeline(
                 asr=asr_adapter,
                 streaming_diarizer_factory=runtime.streaming_diarizer_factory,
                 spill_dir=settings.transcript_spill_dir,
+                min_turn=min_turn,
             )
         else:
-            runtime.pipeline = FullMemoryPipeline(asr=asr_adapter, diarization=diarization_adapter)
+            runtime.pipeline = FullMemoryPipeline(
+                asr=asr_adapter,
+                diarization=diarization_adapter,
+                min_turn=min_turn,
+            )
 
         # Server Warmup
         if settings.warmup == "enabled":

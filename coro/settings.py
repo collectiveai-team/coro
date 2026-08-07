@@ -98,6 +98,22 @@ class ServerSettings(BaseSettings):
         description="Diarization Latency Selection tier for streaming Sortformer.",
     )
 
+    # Speaker Boundary Split ------------------------------------------------
+    min_turn_words: int = Field(
+        default=2,
+        ge=1,
+        description="Minimum Turn Threshold, word count. An interrupting turn shorter "
+        "than this leaves its words with the surrounding speaker instead of splitting "
+        "the segment. Guards against backchannels ('mm-hmm', 'yeah') fragmenting a "
+        "sentence. Only used when diarization is enabled.",
+    )
+    min_turn_seconds: float = Field(
+        default=0.4,
+        ge=0.0,
+        description="Minimum Turn Threshold, duration in seconds. An interrupting turn "
+        "must clear BOTH this and min-turn-words to split a segment.",
+    )
+
     # Server Warmup ---------------------------------------------------------
     warmup: Literal["enabled", "disabled"] = Field(
         default="enabled",

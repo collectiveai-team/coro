@@ -247,8 +247,12 @@ def clip_reference_stm(
     references stay reliable on short, manually verifiable audio. Times are
     rebased to 0.0 to match a cut audio clip. ``recording_id`` overrides the STM
     session id (column 1) so it matches a hypothesis keyed by the clip stem.
+
+    The window is applied during annotation conversion, where word times still
+    exist, so a segment straddling a clip edge contributes only the words inside
+    the clip. ``slice_stm_window`` then only rebases and relabels.
     """
-    full = ami_meeting_to_stm(ami_root, meeting_id)
+    full = ami_meeting_to_stm(ami_root, meeting_id, window=(start, start + duration))
     return slice_stm_window(
         full,
         start,
