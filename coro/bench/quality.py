@@ -32,7 +32,10 @@ def _require_meeteval():
     except ImportError:
         print(
             "Error: meeteval is required for quality scoring.\n"
-            "Install with: pip install coro[bench]",
+            "The bench tooling is a PEP 735 dependency group, not an installable "
+            "extra.\n"
+            "Install with: uv sync --group bench\n"
+            "Then run the bench with: uv run --group bench coro-bench ...",
             file=sys.stderr,
         )
         sys.exit(1)
