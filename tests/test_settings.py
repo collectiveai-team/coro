@@ -21,6 +21,7 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     assert settings.diarization_device == "auto"
     assert settings.asr_onnx_vad == "disabled"
     assert settings.asr_onnx_vad_threshold is None
+    assert settings.diarization_postprocessing is None
 
 
 def test_onnx_vad_settings_read_from_env(monkeypatch):
@@ -97,6 +98,14 @@ def test_transcript_spill_dir_defaults_none_and_reads_env(monkeypatch):
     assert ServerSettings(_env_file=None).transcript_spill_dir is None
     monkeypatch.setenv("CORO_TRANSCRIPT_SPILL_DIR", "/var/lib/asr-spill")
     assert ServerSettings(_env_file=None).transcript_spill_dir == "/var/lib/asr-spill"
+
+
+def test_diarization_postprocessing_defaults_none_and_reads_env(monkeypatch):
+    """Unrestricted like model_diarization: a preset name or a custom path, resolved
+    by the NeMo adapter (see ADR 0009) — settings itself does not validate the value."""
+    assert ServerSettings(_env_file=None).diarization_postprocessing is None
+    monkeypatch.setenv("CORO_DIARIZATION_POSTPROCESSING", "dihard3-dev")
+    assert ServerSettings(_env_file=None).diarization_postprocessing == "dihard3-dev"
 
 
 @pytest.mark.parametrize("pipeline", ["unknown", "v1", "v2", ""])
