@@ -30,7 +30,7 @@ The key features are:
 - **OpenAI-compatible API** — drop-in `/v1/audio/transcriptions`; clients reuse the official `openai` SDK types (`Transcription` / `TranscriptionVerbose` / `TranscriptionDiarized`) with no custom schema
 - **Audio *and* video input** — uploads are decoded through ffmpeg, so any container it supports works: audio (`.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`, …) and video (`.mp4`, `.mkv`, `.mov`, `.webm`, …); the audio track is extracted to 16 kHz mono PCM automatically — same endpoint, same response shapes
 - **Pluggable diarization backends** — pick per deployment: NVIDIA NeMo Sortformer (streaming-capable, **≤ 4 speakers**) or pyannote community-1 (batch/whole-file, **handles > 4 speakers**); both attribute every segment to a speaker (`diarized_json`), so you get *who spoke, when, and what*
-- **Pluggable ASR backends** — pick per deployment: Faster-Whisper (best accuracy, multilingual), onnx-asr Parakeet (highest GPU throughput), or onnx-genai Nemotron (real-time streaming)
+- **Pluggable ASR backends** — pick per deployment: onnx-asr Parakeet (the default — fastest on CPU *and* GPU, strongest on Spanish), Faster-Whisper (best English meeting accuracy, multilingual), or onnx-genai Nemotron (real-time streaming)
 - **Two transcription pipelines** — `full-memory` (default) decodes and holds the whole recording in RAM for lowest latency on short/medium clips; `streaming` streams 1 s PCM chunks off disk and spills the growing transcript to a per-request on-disk store, trading a little latency for **flat host RAM on arbitrarily long audio**. Select with `CORO_PIPELINE` / `--pipeline` — see [the pipeline comparison](#two-transcription-pipelines-full-memory-vs-streaming)
 - **Streaming over SSE** — OpenAI-exact `transcript.text.delta` / `transcript.text.done` / `[DONE]` events with `stream=true`
 - **Flat-memory long audio** — the streaming pipeline spills the transcript to disk so host RSS stays flat from 11 s to multi-hour recordings
@@ -252,8 +252,8 @@ The ASR backend is pluggable behind a single adapter contract. Select it with
 
 | Backend (`CORO_BACKEND_ASR`) | Runtime | Typical model (`CORO_MODEL_ASR`) | Notes |
 |---|---|---|---|
-| `faster-whisper` | CTranslate2 | `openai/whisper-medium` | Default. Best accuracy; multilingual. `CORO_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
-| `onnx-asr` | onnxruntime | `nemo-parakeet-tdt-0.6b-v3` | NeMo Parakeet/Canary; multilingual. Offline (batched) → very high GPU throughput. `CORO_ASR_QUANTIZATION` = `int8` (CPU) or unset = fp32 (GPU). |
+| `onnx-asr` | onnxruntime | `nemo-parakeet-tdt-0.6b-v3` | **Default.** NeMo Parakeet/Canary; multilingual, and strongest of the three on Spanish. Offline (batched) → very high GPU throughput. Leave `CORO_ASR_QUANTIZATION` unset (fp32) — `int8` saves memory but does *not* go faster here. |
+| `faster-whisper` | CTranslate2 | `openai/whisper-medium` | Best English meeting accuracy; multilingual. `CORO_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
 | `onnx-genai` | onnxruntime-genai | `onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4` | NVIDIA Nemotron **cache-aware streaming**; 40 locales. Built for low-latency real-time, not batch throughput. Timestamps are 560 ms-resolution. GPU strongly recommended. |
 
 ### Recommended configuration
@@ -261,30 +261,33 @@ The ASR backend is pluggable behind a single adapter contract. Select it with
 Each setting below is shown as an env var; the equivalent CLI flag is the
 `--kebab-case` form (e.g. `--backend-asr onnx-asr`).
 
+The defaults (`onnx-asr` + `nemo-parakeet-tdt-0.6b-v3`, fp32) are already the
+recommended configuration on both CPU and GPU — you only need the settings below
+if you want to move off them.
+
 **GPU (`--extra cuda`):**
 ```bash
-CORO_BACKEND_ASR=onnx-asr
-CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
 CORO_ASR_DEVICE=cuda           # fp32 (leave CORO_ASR_QUANTIZATION unset)
 ```
-Or as CLI flags:
+Or as a CLI flag:
 ```bash
-coro --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
-  --asr-device cuda --port 8000
+coro --asr-device cuda --port 8000
 ```
 Fastest by a wide margin with near-best accuracy. Use `faster-whisper` +
-`float16` if you want the top accuracy point; use `onnx-genai` only for
-real-time low-latency streaming.
+`float16` if you want the top English-meeting accuracy point; use `onnx-genai`
+only for real-time low-latency streaming.
 
-**CPU (`--extra cpu`):**
-```bash
-CORO_BACKEND_ASR=onnx-asr
-CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
-CORO_ASR_DEVICE=cpu
-CORO_ASR_QUANTIZATION=int8     # ~4× faster than whisper-medium
-```
-For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
-`CORO_ASR_COMPUTE_TYPE=int8`. `onnx-genai` is not recommended on CPU.
+**CPU (`--extra cpu`):** nothing to set — the default selection is the CPU pick.
+Measured against `faster-whisper` + `openai/whisper-medium` on the same host:
+**~8.8× the throughput**, **23% lower Spanish WER**, ~1 GB less resident memory,
+and English meeting WER within noise. `onnx-genai` is not recommended on CPU.
+
+> **Do not reach for `int8` for speed.** For this transducer model int8 measured
+> **no throughput gain** (+0.6% / −3.6% across two workload sets — inside noise)
+> and cost 3–6% relative WER. Its real benefit is memory: it drops the resident
+> server from ~2.7 GB to ~1.3–1.7 GB. Set `CORO_ASR_QUANTIZATION=int8` to fit a
+> memory budget, never to go faster. Full numbers:
+> [docs/benchmark.md](docs/benchmark.md#quantization-int8-is-a-memory-tool-not-a-speed-tool).
 
 **Streaming on long audio:** set `CORO_PIPELINE=streaming` and point
 `CORO_TRANSCRIPT_SPILL_DIR` at a persistent (non-tmpfs) directory so the
@@ -298,6 +301,13 @@ pluggable behind a single `DiarizationAdapter` contract, dispatched by a
 per-capability Backend Adapter Factory (see ADR 0007). Select it with
 `CORO_BACKEND_DIARIZATION` + `CORO_MODEL_DIARIZATION`; pick the device with
 `CORO_DIARIZATION_DEVICE` (`auto` | `cpu` | `cuda`).
+
+> **Off by default is a deliberate choice, not an oversight.** Turning
+> Sortformer on costs ~24% throughput and ~1 GB of resident memory, adds a
+> ~500 MB download on first start, and caps the server at 4 speakers — so it is
+> opt-in rather than a default that could silently mis-attribute 5-speaker
+> audio. Enabling it is one setting: `CORO_BACKEND_DIARIZATION=nemo`. Rationale
+> and numbers: [docs/benchmark.md](docs/benchmark.md#diarization-by-default-stays-off).
 
 | Backend (`CORO_BACKEND_DIARIZATION`) | Default model | Speakers | Streaming | Gated / token | Install |
 |---|---|---|---|---|---|
@@ -393,11 +403,11 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 | `CORO_PORT` | `--port` | `8000` | Bind port. |
 | `CORO_CORS_ORIGINS` | `--cors-origins` | `["*"]` | Allowed CORS origins. |
 | `CORO_PIPELINE` | `--pipeline` | `full-memory` | Transcription pipeline selector (`full-memory` \| `streaming`). |
-| `CORO_BACKEND_ASR` | `--backend-asr` | `faster-whisper` | ASR backend provider (`faster-whisper` \| `onnx-asr` \| `onnx-genai`). |
-| `CORO_MODEL_ASR` | `--model-asr` | `openai/whisper-medium` | ASR model selection. |
+| `CORO_BACKEND_ASR` | `--backend-asr` | `onnx-asr` | ASR backend provider (`faster-whisper` \| `onnx-asr` \| `onnx-genai`). |
+| `CORO_MODEL_ASR` | `--model-asr` | `nemo-parakeet-tdt-0.6b-v3` | ASR model selection. |
 | `CORO_ASR_DEVICE` | `--asr-device` | `auto` | ASR device (`auto` \| `cuda` \| `cpu`). |
 | `CORO_ASR_COMPUTE_TYPE` | `--asr-compute-type` | `default` | Faster-Whisper compute type (ignored by `onnx-asr`). |
-| `CORO_ASR_QUANTIZATION` | `--asr-quantization` | _(unset)_ | onnx-asr quantization (e.g. `int8`); ignored by `faster-whisper`. |
+| `CORO_ASR_QUANTIZATION` | `--asr-quantization` | _(unset)_ | onnx-asr quantization (e.g. `int8`); ignored by `faster-whisper`. Unset = fp32; int8 is a memory-fitting option, not a speed one. |
 | `CORO_ASR_ONNX_VAD` | `--asr-onnx-vad` | `disabled` | Silero VAD segmentation for `onnx-asr` (`enabled` \| `disabled`). |
 | `CORO_ASR_ONNX_VAD_THRESHOLD` | `--asr-onnx-vad-threshold` | _(unset)_ | Silero VAD speech-probability threshold; only when VAD enabled. |
 | `CORO_BACKEND_DIARIZATION` | `--backend-diarization` | `none` | Diarization backend provider (`none` \| `nemo` \| `pyannote`). |
@@ -415,11 +425,12 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 
 > **Picking a backend?** See the full **[leaderboard →
 > docs/benchmark.md](docs/benchmark.md)** (WER, DER, RTFx, VRAM and RAM across
-> backends, with reproduction commands). TL;DR: **faster-whisper
-> `large-v3-turbo`** is the best GPU default — best WER *and* DER, multilingual,
-> ~3 GB VRAM; **faster-whisper `small`** for max GPU throughput; **onnx-asr
-> `parakeet`** for CPU; **nemotron** for real-time streaming. Don't run Whisper
-> through the onnx-asr backend (slower and less accurate than faster-whisper).
+> backends, with reproduction commands). TL;DR: the **default** (onnx-asr
+> `parakeet`, fp32) is the CPU pick and the Spanish pick; **faster-whisper
+> `large-v3-turbo`** is the best English-meeting GPU option; **faster-whisper
+> `small`** for max GPU throughput; **nemotron** for real-time streaming. Don't
+> run Whisper through the onnx-asr backend (slower and less accurate than
+> faster-whisper).
 
 The table below is a separate, ASR-only view (diarization off).
 
@@ -430,18 +441,34 @@ normalized ORC-WER, lower is better. (Absolute WER is high because AMI
 `Mix-Headset` is a hard far-field/overlap benchmark; treat the numbers as a
 *relative* comparison.)
 
+> **Why this table's RTFx differs from
+> [docs/benchmark.md](docs/benchmark.md#reading-the-throughput-tables).** RTFx is
+> a property of the measurement, not the model, and the two documents measure
+> different things: this table is **long-form (10 min+) audio with diarization
+> off**, the leaderboard's headline tables are **60 s clips with diarization
+> on**. Short clips do not amortise per-request cost and diarization is included
+> in the pipeline timing, which is most of the ~18× gap that used to sit
+> unexplained between the `~120×` below and the leaderboard's `6.7×`.
+
 | Backend / model | precision | RTFx (CPU) | RTFx (GPU) | ORC-WER (norm) |
 |---|---|---:|---:|---:|
-| faster-whisper `whisper-medium` | int8/fp16 | 1.3× | ~20× | **42–53%** |
-| onnx-asr `parakeet-tdt-0.6b-v3` | int8 (CPU) / fp32 (GPU) | 5.0× | **~120×** | 44–57% |
-| onnx-genai `nemotron-…-int4` | int4 streaming | ~0.4× (impractical) | ~10× | 44–57% |
+| **onnx-asr `parakeet-tdt-0.6b-v3`** (default) | fp32 | **5.0×** | **~120×** ‡ | 51–57% |
+| faster-whisper `whisper-medium` | int8/fp16 | 0.6× | ~20× ‡ | 52–53% |
+| onnx-genai `nemotron-…-int4` | int4 streaming | ~0.4× (impractical) | ~10× ‡ | 44–57% |
+
+‡ **GPU figures are historical and were not reproduced** by the current
+benchmark program — no artifacts for them exist in this repo. The CPU column and
+the WER column were re-measured on 40 min of AMI clips plus 12 min of Spanish
+FLEURS; `whisper-medium`'s CPU RTFx was previously listed as `1.3×` and measured
+**0.58×**. See [Measured defaults
+(CPU)](docs/benchmark.md#measured-defaults-cpu).
 
 Memory footprint — **baseline** (peak, model + runtime, short clip):
 
 | Backend / model | CPU RAM | GPU VRAM |
 |---|---|---|
-| faster-whisper `whisper-medium` | ~2.0 GB (int8) | ~2.3 GB (fp16) |
-| onnx-asr `parakeet-tdt-0.6b-v3` | ~1.2 GB (int8) / ~2.7 GB (fp32) | ~3.6 GB (fp32) / ~0.6 GB (int8) |
+| onnx-asr `parakeet-tdt-0.6b-v3` (default) | ~2.7 GB (fp32) / ~1.3–1.7 GB (int8) | ~3.6 GB (fp32) / ~0.6 GB (int8) |
+| faster-whisper `whisper-medium` | ~3.8 GB (default compute type) | ~2.3 GB (fp16) |
 | onnx-genai `nemotron-…-int4` | ~1.0 GB | ~1.4 GB |
 
 **Memory is not just the model on long audio.** The default **full-memory**
@@ -478,16 +505,19 @@ Notes:
   ~2.3–2.9 GB.
 
 Takeaways:
-- **Quality** is close across all three on this benchmark; faster-whisper
-  `medium` is marginally the most accurate.
-- **Parakeet on GPU is the throughput winner** (~120× — its offline encoder
-  batches frames). On GPU use **fp32**: int8 is *slower* there (onnxruntime
-  inserts many CPU↔GPU copies), lowers accuracy, and only saves VRAM
-  (~0.6 GB vs ~3.6 GB) — rarely worth it.
+- **English meeting quality** is close across all three on this benchmark
+  (parakeet 51.4% vs `whisper-medium` 51.6% normalized ORC-WER — a wash). On
+  **Spanish** the gap is real: parakeet 5.8% vs `whisper-medium` 7.6% WER on
+  FLEURS `es_419`, a 23% relative reduction.
+- **Parakeet is the throughput winner on both devices** — ~8.8× `whisper-medium`
+  on CPU, and its offline encoder batches frames on GPU.
+- **Use fp32, not int8, on either device.** On GPU int8 inserts many CPU↔GPU
+  copies; on CPU it is compute-bound, so int8 measured *no* speed gain and a
+  3–6% relative WER cost. int8's only real payoff is memory.
 - **Nemotron** is a *streaming* model: ~10× on GPU and impractical on CPU
   (~0.4×). Its value is low-latency real-time transcription, not batch speed.
 - **Memory**: all backends fit comfortably on an 8 GB GPU; nemotron (int4) is
-  the lightest, and parakeet int8 is the smallest CPU footprint (~1.2 GB).
+  the lightest, and parakeet int8 is the smallest CPU footprint.
 
 ### Benchmark datasets
 
