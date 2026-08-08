@@ -299,10 +299,10 @@ per-capability Backend Adapter Factory (see ADR 0007). Select it with
 `CORO_BACKEND_DIARIZATION` + `CORO_MODEL_DIARIZATION`; pick the device with
 `CORO_DIARIZATION_DEVICE` (`auto` | `cpu` | `cuda`).
 
-| Backend (`CORO_BACKEND_DIARIZATION`) | Default model | Speakers | Streaming | Gated / token | Install |
-|---|---|---|---|---|---|
-| `nemo` | `nvidia/diar_streaming_sortformer_4spk-v2` | **≤ 4** (4-speaker Sortformer) | ✅ works with `CORO_PIPELINE=streaming` | no | core install |
-| `pyannote` | `pyannote/speaker-diarization-community-1` | **unbounded** — handles **> 4** | ❌ batch/whole-file only | **yes — Hugging Face token required** | `--extra diar-pyannote` |
+| Backend (`CORO_BACKEND_DIARIZATION`) | Default model | Model licence | Speakers | Streaming | Gated / token | Install |
+|---|---|---|---|---|---|---|
+| `nemo` | `nvidia/diar_streaming_sortformer_4spk-v2` | CC-BY-4.0 | **≤ 4** (4-speaker Sortformer) | ✅ works with `CORO_PIPELINE=streaming` | no | core install |
+| `pyannote` | `pyannote/speaker-diarization-community-1` | CC-BY-4.0 | **unbounded** — handles **> 4** | ❌ batch/whole-file only | **yes — Hugging Face token required** | `--extra diar-pyannote` |
 
 **Which to pick:**
 
@@ -316,6 +316,25 @@ per-capability Backend Adapter Factory (see ADR 0007). Select it with
   and is rejected at startup if you select `CORO_PIPELINE=streaming` (use
   `full-memory`). The model is **gated**: you must accept its conditions on the
   Hugging Face model page and provide a token.
+
+### Model licensing
+
+`coro-asr` itself is MIT (see [`LICENSE`](LICENSE)), but **model weights carry
+their own licences** and you are responsible for complying with them. Every
+diarization model this project names:
+
+| Model | Licence | Commercial use | Used by `coro-asr` |
+|---|---|---|---|
+| [`nvidia/diar_streaming_sortformer_4spk-v2`](https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2) (streaming Sortformer) | **CC-BY-4.0** | ✅ permitted, with attribution | ✅ default for `--backend-diarization nemo` |
+| [`nvidia/diar_sortformer_4spk-v1`](https://huggingface.co/nvidia/diar_sortformer_4spk-v1) (batch Sortformer) | **CC-BY-NC-4.0 — non-commercial only** | ❌ **not permitted** | ❌ never a default; named here only as the earlier, offline-only Sortformer |
+| [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1) | **CC-BY-4.0** (gated — accept conditions + token) | ✅ permitted, with attribution | ✅ default for `--backend-diarization pyannote` |
+
+The NeMo backend accepts any Sortformer checkpoint via `CORO_MODEL_DIARIZATION`,
+so `nvidia/diar_sortformer_4spk-v1` *will* load if you ask for it explicitly —
+but it is **CC-BY-NC-4.0**, so doing so makes your deployment non-commercial.
+Leave `CORO_MODEL_DIARIZATION` unset to get the permissively licensed streaming
+default. When adding a new diarization model to this project, add its licence to
+the table above.
 
 ### NeMo Sortformer setup (default, no token)
 
