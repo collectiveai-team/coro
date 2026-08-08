@@ -44,6 +44,22 @@ _Avoid_: Hypothesis Diarization, response JSON
 The fixed set of MeetEval scores reported for each workload item: siWER, cpWER, ORC-WER (greedy), DI-cpWER (greedy), and DER.
 _Avoid_: WER alone, custom metric mix
 
+**Basic Text Normalizer**:
+The diacritic-preserving, language-agnostic text normalizer vendored from OpenAI Whisper (`coro/bench/normalizers/basic.py`), used as the Quality Benchmark's normalization protocol: bracketed and parenthesised content removed, lowercased, markers/symbols/punctuation mapped to spaces, whitespace collapsed. See ADR 0008.
+_Avoid_: EnglishTextNormalizer, `remove_diacritics=True`, ad hoc punctuation stripping, whisper dependency
+
+**Metric Lane**:
+One of the two normalization protocols under which every WER metric in the MeetEval Metric Set is reported, per workload item and in the run-level aggregate.
+_Avoid_: Normalization mode, WER variant
+
+**Raw Metric Lane**:
+The metric lane scoring Reference STM and Hypothesis STM text verbatim, so punctuation, casing and diacritics all count; it catches regressions the normalizer hides and is not comparable to published WER.
+_Avoid_: Unnormalized WER, the real WER, headline lane
+
+**Normalized Metric Lane**:
+The metric lane scoring Reference STM and Hypothesis STM after applying the Basic Text Normalizer identically to both; it is the lane comparable to published WER figures.
+_Avoid_: Normalized WER as a single number, punctuation-stripped WER, the corrected lane
+
 **Server Warmup**:
 A pipeline execution against a fixed warmup audio at server startup, completed before the server reports ready, so the first transcription endpoint request does not pay cold-model costs.
 _Avoid_: Lazy first-request warmup, client-driven warmup
@@ -325,6 +341,11 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Performance Benchmark** and a **Quality Benchmark** may share one benchmark run; both consume the same hypothesis from the same request.
 - A **Resource CSV** uses a **Stable Resource Schema** across hardware profiles and contains only resource and timing columns; quality columns are not embedded.
 - A **Quality Benchmark** computes the **MeetEval Metric Set** for each workload item using its **Reference STM** and the converted **Hypothesis STM**.
+- A **Quality Benchmark** reports every WER metric in both the **Raw Metric Lane** and the **Normalized Metric Lane**, per **Workload Item** and in the run-level aggregate; neither lane is reported alone.
+- DER belongs to no **Metric Lane** — it scores speaker time rather than text — and is reported once.
+- The **Normalized Metric Lane** applies the **Basic Text Normalizer** identically to the **Reference STM** and the **Hypothesis STM** at scoring time, leaving both artifacts unmodified on disk.
+- The **Basic Text Normalizer** preserves diacritics; the Whisper English normalizer is used for no language.
+- A rendered **Quality Benchmark** report labels each table with the **Metric Lane** that produced its figures.
 - A **Resource CSV** contains both cumulative counters and **Sample Rate Field** values.
 - An **Observed Hardware Profile** is inferred from measurements, not from how the server was launched.
 - A **CPU+GPU Run** requires GPU activity attributable to the **Server Process Tree**.
@@ -420,6 +441,21 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 
 > **Dev:** "Should we report only WER for the **Quality Benchmark**?"
 > **Domain expert:** "No — report the **MeetEval Metric Set** (siWER, cpWER, ORC-WER, DI-cpWER, DER) because each captures a different speaker-attribution assumption."
+
+> **Dev:** "Can we just strip punctuation and collapse whitespace before scoring WER?"
+> **Domain expert:** "No — use the **Basic Text Normalizer** for the **Normalized Metric Lane**, because a locally invented normalization is not comparable to any published Spanish WER."
+
+> **Dev:** "Should we strip accents so `está` and `esta` stop counting as errors?"
+> **Domain expert:** "No — the **Basic Text Normalizer** preserves diacritics, because `esta`/`está` and `ano`/`año` are distinct Spanish words and collapsing them understates error."
+
+> **Dev:** "Whisper ships an English normalizer that handles contractions — should we use it when the audio is English?"
+> **Domain expert:** "No — the English normalizer is used for no language; both lanes use the same **Basic Text Normalizer** so results stay comparable across the **Workload Set**."
+
+> **Dev:** "Now that we have a real protocol, can we drop the un-normalized numbers?"
+> **Domain expert:** "No — report both. Normalization is not neutral, and the **Raw Metric Lane** is the only thing that catches a punctuation or casing regression."
+
+> **Dev:** "Should the normalizer rewrite the **Reference STM** and **Hypothesis STM** files?"
+> **Domain expert:** "No — normalize at scoring time only, so the artifacts stay intact and the **Raw Metric Lane** remains recoverable."
 
 > **Dev:** "Should the sampled metrics file still be called `memory_N.csv`?"
 > **Domain expert:** "No — use a **Resource CSV** because the file contains memory, IO, CPU, and GPU observations."
@@ -570,6 +606,8 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "benchmark" was used to imply both resource comparison and output-quality validation — resolved: split into **Performance Benchmark** and **Quality Benchmark**, optionally combined in one benchmark run.
 - "ground truth" was used for existing output artifacts — resolved: quality scoring uses an explicit **Reference STM** per **Workload Item**.
 - "WER" was used as a single headline number — resolved: a **Quality Benchmark** reports the **MeetEval Metric Set** (siWER, cpWER, ORC-WER, DI-cpWER, DER).
+- "normalized WER" was used for an ad hoc punctuation-stripping step — resolved: the **Normalized Metric Lane** uses the vendored **Basic Text Normalizer**, and every WER figure names the **Metric Lane** it came from (ADR 0008).
+- "normalization" was treated as a neutral cleanup — resolved: it discards punctuation and casing, so the **Raw Metric Lane** and **Normalized Metric Lane** are always reported together.
 - "warmup" was used ambiguously between server lifecycle and benchmark client behavior — resolved: **Server Warmup** runs at startup and gates **Warmup Readiness**, while a **Benchmark Warmup Item** is opt-in client-side and shares the same **Warmup Audio Asset**.
 - "memory CSV" was used for the sampled metrics file — resolved: the file is a **Resource CSV**.
 - "rate" was used without specifying the denominator — resolved: per-sample rates are **Sample Rate Field** values using observed sample duration.
