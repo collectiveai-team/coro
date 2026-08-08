@@ -12,8 +12,8 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     settings = ServerSettings(_env_file=None)
 
     assert settings.pipeline == "full-memory"
-    assert settings.backend_asr == "faster-whisper"
-    assert settings.model_asr == "openai/whisper-medium"
+    assert settings.backend_asr == "onnx-asr"
+    assert settings.model_asr == "nemo-parakeet-tdt-0.6b-v3"
     assert settings.asr_device == "auto"
     assert settings.asr_compute_type == "default"
     assert settings.backend_diarization == "none"
@@ -21,6 +21,9 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     assert settings.diarization_device == "auto"
     assert settings.asr_onnx_vad == "disabled"
     assert settings.asr_onnx_vad_threshold is None
+    # int8 is a memory-fitting tool, not a speed tool, for the default transducer
+    # ASR Model Selection — quantization stays off unless explicitly opted into.
+    assert settings.asr_quantization is None
 
 
 def test_onnx_vad_settings_read_from_env(monkeypatch):
