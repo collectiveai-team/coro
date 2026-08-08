@@ -80,6 +80,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 settings.model_diarization,
                 device=settings.diarization_device,
                 hf_token=settings.hf_token.get_secret_value() if settings.hf_token else None,
+                postprocessing=settings.diarization_postprocessing,
             )
             runtime.diarization_adapter = diarization_adapter
 
