@@ -137,9 +137,7 @@ async def test_admission_releases_permit_on_failure():
 
 def test_serialized_policy_forces_one_permit():
     """A serialised adapter gets one permit regardless of configuration."""
-    controller = build_admission_controller(
-        max_concurrency=8, max_queue_depth=4, serialized=True
-    )
+    controller = build_admission_controller(max_concurrency=8, max_queue_depth=4, serialized=True)
     assert controller.max_concurrency == 1
     assert controller.max_queue_depth == 4
 
@@ -259,7 +257,7 @@ async def test_onnx_genai_adapter_serialises_by_policy():
             concurrent -= 1
         return []
 
-    adapter._stream = _fake_stream  # noqa: SLF001
+    adapter._stream = _fake_stream
     await _elapsed_for_two(adapter)
 
     assert peak == 1
