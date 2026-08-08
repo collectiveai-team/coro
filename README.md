@@ -516,13 +516,22 @@ meaningless score.
 
 ### Running benchmarks
 
-`coro-bench` scores a **running** server — it attaches over HTTP and does *not*
-start one for you. Install the bench tooling (MeetEval + samplers) and start the
-server you want to measure first:
+By default `coro-bench` **starts and stops the server it measures** (a
+*bench-managed* server): it spawns `coro` on a free port with the `CORO_*` env
+vars implied by the `--server-*` flags, waits for `/health` to report ready and
+warmup-ready, runs the workload, and tears the server down afterwards. Install
+the bench tooling first:
 
 ```bash
 uv sync --group bench                       # meeteval, nvidia-ml-py, rich
+```
+
+To measure a server you started yourself (a *bench-attached* server), pass
+`--server-url`; the `--server-*` flags are then rejected as mutually exclusive:
+
+```bash
 uv run --group bench coro --port 8123 &     # server under test (add --extra cuda for GPU)
+uv run --group bench coro-bench all --server-url http://127.0.0.1:8123 ...
 ```
 
 > Pass `--group bench` (and your hardware `--extra`) on **every** `uv run`
@@ -548,7 +557,6 @@ is the audio filename stem. The package vendors an 11 s `jfk.wav`:
 echo "jfk 1 JFK 0.000 11.000 and so my fellow americans ask not what your country can do for you ask what you can do for your country" > jfk.ref.stm
 
 uv run --group bench coro-bench all \
-  --server-url http://127.0.0.1:8123 \
   --audio coro/bench/data/jfk.wav \
   --reference-stm jfk.ref.stm \
   --out-dir ./bench-out
@@ -573,7 +581,10 @@ plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
 |---|---|
 | `--reps N` | repetitions per workload item (default 1) |
 | `--stream` | drive the server over SSE; `performance`/`all` only (rejected for `quality`) |
-| `--server-pid PID` / `--server-match STR` | which process tree to sample for `performance` (default match: `coro`) |
+| `--server-asr-backend` / `--server-asr-model` / `--server-diar-backend` / `--server-diar-model` / `--server-pipeline` / `--server-port` / `--no-diarization` | how the bench-managed server is launched |
+| `--server-url URL` | attach to an already-running server instead (excludes all `--server-*` launch flags) |
+| `--server-pid PID` / `--server-match STR` | bench-attached only: which process tree to sample (default match: `coro`). An ambiguous or empty match fails the run rather than sampling an unrelated process |
+| `--reuse-reference-stms` | reuse `<ami-root>/stm/*.ref.stm` instead of regenerating them (they then reflect an older STM builder) |
 | `--der-collar SECONDS` / `--der-regions all\|nooverlap\|single` | DER scoring options |
 
 ## Client integration

@@ -244,7 +244,8 @@ max-complexity = 10
     "SIM105",
     "C901",
 ]
-"coro/bench/cli.py" = ["S108", "DTZ005"]
+# The default --out-dir is a local, non-secret scratch path stamped with local wall time.
+"coro/bench/cli_args.py" = ["S108", "DTZ005"]
 "coro/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
 # Clip utilities shell out to the system ffmpeg binary by name.
 "coro/bench/utils/make_ami_clip.py" = ["S603", "S607"]
