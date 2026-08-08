@@ -74,10 +74,20 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
         # Build optional diarization adapter via the diarization Backend Adapter Factory.
         diarization_adapter = None
-        if settings.backend_diarization != "none" and settings.model_diarization:
+        if settings.backend_diarization != "none":
+            diarization_model = settings.model_diarization
+            if not diarization_model:
+                # Strict Startup Validation already rejects this combination; failing
+                # here too keeps the invariant enforced at the point of use, so an
+                # enabled provider can never silently degrade to an ASR-Only Server.
+                msg = (
+                    f"Diarization Backend Provider '{settings.backend_diarization}' is "
+                    "selected but the Diarization Model Selection is empty."
+                )
+                raise ValueError(msg)
             diarization_adapter = diarization_factory.build_diarization_adapter(
                 settings.backend_diarization,
-                settings.model_diarization,
+                diarization_model,
                 device=settings.diarization_device,
                 hf_token=settings.hf_token.get_secret_value() if settings.hf_token else None,
             )

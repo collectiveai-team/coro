@@ -77,6 +77,37 @@ def test_pyannote_full_memory_pipeline_is_allowed():
     assert settings.pipeline == "full-memory"
 
 
+@pytest.mark.parametrize("backend", ["nemo", "pyannote"])
+@pytest.mark.parametrize("model", ["", "   "])
+def test_enabled_diarization_with_empty_model_is_rejected(backend: str, model: str):
+    """An empty Diarization Model Selection must fail loudly, not degrade to ASR-only."""
+    with pytest.raises(ValidationError, match="Diarization Model Selection is empty"):
+        ServerSettings(
+            backend_diarization=backend,  # pyrefly: ignore[bad-argument-type]
+            model_diarization=model,
+            _env_file=None,
+        )
+
+
+def test_enabled_diarization_with_empty_model_from_env_is_rejected(monkeypatch):
+    monkeypatch.setenv("CORO_BACKEND_DIARIZATION", "nemo")
+    monkeypatch.setenv("CORO_MODEL_DIARIZATION", "")
+
+    with pytest.raises(ValidationError, match="Diarization Model Selection is empty"):
+        ServerSettings(_env_file=None)
+
+
+def test_disabled_diarization_with_empty_model_is_allowed():
+    """An ASR-Only Server is a valid configuration and stays valid."""
+    settings = ServerSettings(
+        backend_diarization="none",
+        model_diarization="",
+        _env_file=None,
+    )
+
+    assert settings.backend_diarization == "none"
+
+
 @pytest.mark.parametrize("env_name", ["CORO_HF_TOKEN", "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"])
 def test_hf_token_read_from_standard_env_names(monkeypatch, env_name: str):
     monkeypatch.setenv(env_name, "secret-token")

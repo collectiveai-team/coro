@@ -85,6 +85,33 @@ async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
     assert any("warmup" in r.message.lower() for r in caplog.records)
 
 
+def test_enabled_diarization_builds_a_diarization_adapter():
+    """An enabled Backend Provider always builds an adapter — never silently ASR-only."""
+    from unittest.mock import AsyncMock, patch
+
+    from starlette.testclient import TestClient
+
+    diarization_adapter = object()
+    with (
+        patch("coro.backends.asr.faster_whisper.build_asr_adapter", return_value=object()),
+        patch(
+            "coro.backends.diarization.factory.build_diarization_adapter",
+            return_value=diarization_adapter,
+        ) as mock_diarization,
+        patch(
+            "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
+            new_callable=AsyncMock,
+        ),
+    ):
+        settings = ServerSettings(backend_diarization="nemo", _env_file=None)
+        application = create_app(settings)
+        with TestClient(application):
+            runtime = application.state.runtime
+
+    mock_diarization.assert_called_once()
+    assert runtime.diarization_adapter is diarization_adapter
+
+
 def test_warmup_failure_fails_server_startup():
     """Server Warmup failures fail server startup loudly."""
     from unittest.mock import AsyncMock, patch
