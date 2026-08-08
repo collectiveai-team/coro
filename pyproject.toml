@@ -119,6 +119,9 @@ dev = [
 bench = [
     "meeteval>=0.4.3",
     "nvidia-ml-py>=12.0.0",
+    # Row-group-granular reads of the Hugging Face Parquet corpora behind the
+    # Spanish Workload Set (coro/bench/utils/hf_parquet.py).
+    "pyarrow>=17.0.0",
     "rich>=15.0.0",
     "simplejson>=3.0.0",
 ]
@@ -248,7 +251,9 @@ max-complexity = 10
 "coro/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
 # Clip utilities shell out to the system ffmpeg binary by name.
 "coro/bench/utils/make_ami_clip.py" = ["S603", "S607"]
-"coro/bench/utils/make_common_voice_clips.py" = ["S603", "S607"]
+"coro/bench/utils/audio_clips.py" = ["S603", "S607"]
+# Fetches public corpora over https from the Hugging Face Parquet index.
+"coro/bench/utils/hf_parquet.py" = ["S310"]
 "coro/bench/transport.py" = ["S310"]
 "coro/bench/orchestrate.py" = [
     "S310",

@@ -13,7 +13,10 @@ from coro.bench.ami import (
     materialize_reference_stms,
     resolve_workload_set,
 )
+from coro.bench.calibration import DEFAULT_CALIBRATION_MARGIN
 from coro.bench.errors import ServerUnreachableError
+from coro.bench.quarantine import CircularReferenceError, assert_scorable_reference
+from coro.bench.spanish import SPANISH_PRESETS
 
 _MANAGED_FLAGS = {
     "server_asr_backend",
@@ -92,6 +95,42 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--der-regions", choices=["all", "nooverlap", "single"], default="all")
     parser.add_argument("--stream", action="store_true", default=False)
 
+    spanish = parser.add_argument_group("Spanish workload set (public corpora)")
+    spanish.add_argument(
+        "--spanish-preset",
+        choices=sorted(SPANISH_PRESETS),
+        default=None,
+        help="Materialise a Spanish Workload Set from freely-licensed public "
+        "corpora and benchmark it as a --clips-dir workload. Single-speaker: "
+        "WER only, no meaningful DER.",
+    )
+    spanish.add_argument("--spanish-root", type=Path, default=Path("./spanish-corpora/"))
+    spanish.add_argument(
+        "--spanish-limit",
+        type=int,
+        default=None,
+        help="Override the preset's items-per-corpus count.",
+    )
+    spanish.add_argument(
+        "--spanish-fetch-plan",
+        action="store_true",
+        default=False,
+        help="Print the download footprint of --spanish-preset and exit.",
+    )
+    spanish.add_argument(
+        "--calibration-margin",
+        type=float,
+        default=DEFAULT_CALIBRATION_MARGIN,
+        help="Two-sided absolute WER band against published figures "
+        f"(default {DEFAULT_CALIBRATION_MARGIN}). Exceeding it fails the run.",
+    )
+    spanish.add_argument(
+        "--no-calibration",
+        action="store_true",
+        default=False,
+        help="Report calibration without failing the run on a deviation.",
+    )
+
 
 def _apply_defaults(args: argparse.Namespace) -> None:
     defaults = {
@@ -106,6 +145,24 @@ def _apply_defaults(args: argparse.Namespace) -> None:
     for flag, default in defaults.items():
         if getattr(args, flag) is None:
             setattr(args, flag, default)
+
+
+def _validate_reference_args(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Reject quarantined references and conflicting workload-set selectors."""
+    if args.reference_stm is not None:
+        try:
+            assert_scorable_reference(args.reference_stm)
+        except CircularReferenceError as exc:
+            parser.error(str(exc))
+
+    if args.spanish_preset is not None and args.clips_dir is not None:
+        parser.error("--spanish-preset is mutually exclusive with --clips-dir.")
+
+    if args.spanish_fetch_plan and args.spanish_preset is None:
+        parser.error("--spanish-fetch-plan requires --spanish-preset.")
 
 
 def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
@@ -135,6 +192,8 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
 
     if args.audio is not None and args.reference_stm is None and args.subcommand == "quality":
         parser.error("--audio without --reference-stm is not allowed for the 'quality' subcommand.")
+
+    _validate_reference_args(args, parser)
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -326,8 +385,74 @@ def _run_all(args: argparse.Namespace, meetings: list[str]) -> None:
     (out_dir / "REPORT.md").write_text(render_markdown(report))
 
 
+def _print_spanish_fetch_plan(args: argparse.Namespace) -> None:
+    """Print the per-corpus download footprint of the selected Spanish preset."""
+    from coro.bench.spanish import preset_fetch_plan
+
+    plans = preset_fetch_plan(args.spanish_preset, items_per_corpus=args.spanish_limit)
+    print(f"Spanish preset '{args.spanish_preset}' fetch plan:")
+    total = 0
+    for plan in plans:
+        total += plan.download_bytes
+        print(
+            f"  {plan.corpus:<12} rows={plan.rows:<5} "
+            f"row_groups={plan.row_groups:<3} download≈{plan.download_bytes / 1e6:,.1f} MB"
+        )
+    print(f"  {'total':<12} download≈{total / 1e6:,.1f} MB (one-time; cached on disk)")
+
+
+def _prepare_spanish_workload(args: argparse.Namespace) -> None:
+    """Materialise the selected Spanish preset into ``args.clips_dir``."""
+    from coro.bench.spanish import materialize_spanish_workload_set
+
+    args.clips_dir = materialize_spanish_workload_set(
+        args.spanish_preset,
+        args.spanish_root,
+        items_per_corpus=args.spanish_limit,
+        no_download=args.no_download,
+    )
+    print(f"Spanish workload set materialised at {args.clips_dir}")
+
+
+def _run_calibration(args: argparse.Namespace) -> bool:
+    """Score the run against published WER; return True when it deviates."""
+    import json
+    from dataclasses import asdict
+
+    from coro.bench.calibration import calibrate_run, model_id_from_manifest, render_calibration
+
+    report = calibrate_run(
+        args.out_dir,
+        model_id=model_id_from_manifest(args.out_dir),
+        margin=args.calibration_margin,
+    )
+    if not report.outcomes:
+        return False
+
+    print(render_calibration(report))
+    quality_dir = args.out_dir / "quality"
+    quality_dir.mkdir(parents=True, exist_ok=True)
+    (quality_dir / "calibration.json").write_text(json.dumps(asdict(report), indent=2))
+
+    if report.failed and not args.no_calibration:
+        print(
+            "error: Spanish WER calibration deviated beyond the margin; "
+            "treat this as a harness fault until proven otherwise.",
+            file=sys.stderr,
+        )
+        return True
+    return False
+
+
 def main() -> None:
     args = parse_args()
+
+    if args.spanish_fetch_plan:
+        _print_spanish_fetch_plan(args)
+        return
+
+    if args.spanish_preset is not None:
+        _prepare_spanish_workload(args)
 
     # A custom workload (--clips-dir / --audio) suppresses the implicit AMI
     # "sample" default so curated/short-clip runs don't pull AMI meetings.
@@ -360,6 +485,12 @@ def main() -> None:
     except ServerUnreachableError as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(2)
+    except CircularReferenceError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(4)
+
+    if args.subcommand in ("quality", "all") and _run_calibration(args):
+        sys.exit(3)
 
 
 if __name__ == "__main__":
