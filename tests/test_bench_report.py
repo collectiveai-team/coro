@@ -8,6 +8,8 @@ from pathlib import Path
 
 from coro.bench.models.report import BenchReport, PerformanceRow, QualityRow
 from coro.bench.report import (
+    NORMALIZED_LANE_LABEL,
+    RAW_LANE_LABEL,
     build_report,
     render_markdown,
     render_stdout,
@@ -353,9 +355,52 @@ def test_build_report_reads_normalized_quality_summaries(tmp_path):
     assert len(report.normalized_quality_rows) == 1
     assert report.normalized_quality_combined is not None
     assert report.normalized_quality_rows[0].cpwer == 0.21
-    assert "## Quality Results" in md
-    assert "## Normalized Quality Results" in md
+    assert "## Quality Results — Raw Metric Lane" in md
+    assert "## Quality Results — Normalized Metric Lane" in md
     assert "| IB4001 | 10.0 | 0.2100 | 0.1600 | 0.1100 |" in md
+
+
+def test_rendered_report_labels_each_metric_lane(tmp_path):
+    """Every quality figure must be attributable to the lane that produced it."""
+    manifest = {
+        "timestamp": "2026-05-04T10:00:00+00:00",
+        "git_sha": "deadbeef",
+        "subcommand": "quality",
+        "workload_set": [{"item_id": "IB4001", "audio_path": "/data/IB4001.wav"}],
+        "server_health": {"startup_selection": {}},
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+    quality_dir = tmp_path / "quality"
+    quality_dir.mkdir()
+    quality_dir.joinpath("summary.json").write_text(
+        json.dumps(
+            {
+                "combined": {
+                    "cpwer": {"wer": 0.30},
+                    "normalized": {"cpwer": {"wer": 0.21}},
+                },
+                "per_item": [
+                    {
+                        "session_id": "IB4001",
+                        "audio_seconds": 10.0,
+                        "cpwer": 0.30,
+                        "normalized_cpwer": 0.21,
+                    }
+                ],
+            }
+        )
+    )
+
+    md = render_markdown(build_report(tmp_path))
+
+    assert RAW_LANE_LABEL in md
+    assert NORMALIZED_LANE_LABEL in md
+    # The normalized lane states its protocol, including diacritic preservation.
+    assert "diacritics preserved" in md
+    assert "verbatim" in md
+    # The legacy, locally-invented protocol is no longer advertised.
+    assert "removing punctuation and collapsing whitespace" not in md
 
 
 def test_build_report_surfaces_degenerate_diarization_warning(tmp_path):
