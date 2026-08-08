@@ -64,6 +64,66 @@ def test_transcription_response_rejects_extra_fields_inside_items():
         )
 
 
+def test_segment_and_word_overlap_defaults_to_false():
+    """The additive overlap flag (ADR 0008) is optional on input."""
+    response = TranscriptionResponse.model_validate(
+        {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "hola",
+                    "speaker": "1",
+                    "words": [
+                        {"word": "hola", "start": 0.0, "end": 1.0, "score": 1.0, "speaker": "1"}
+                    ],
+                }
+            ],
+            "word_segments": [],
+            "transcript": [],
+            "diarization": [],
+            "raw_words": [],
+        }
+    )
+
+    assert response.segments[0].overlap is False
+    assert response.segments[0].words[0].overlap is False
+
+
+def test_segment_and_word_overlap_round_trips():
+    response = TranscriptionResponse.model_validate(
+        {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "hola",
+                    "speaker": "1",
+                    "words": [
+                        {
+                            "word": "hola",
+                            "start": 0.0,
+                            "end": 1.0,
+                            "score": 1.0,
+                            "speaker": "1",
+                            "overlap": True,
+                        }
+                    ],
+                    "overlap": True,
+                }
+            ],
+            "word_segments": [],
+            "transcript": [],
+            "diarization": [],
+            "raw_words": [],
+        }
+    )
+
+    dumped = response.model_dump()["segments"][0]
+    assert dumped["overlap"] is True
+    assert dumped["words"][0]["overlap"] is True
+
+
 def test_openai_error_response_shape():
     response = OpenAIErrorResponse.from_error(
         message="bad request",

@@ -25,13 +25,19 @@ class RawWord:
 
 @dataclass
 class ResponseSegment:
-    """A speaker-attributed, serialisable transcript segment with word timings."""
+    """A speaker-attributed, serialisable transcript segment with word timings.
+
+    A segment is speaker-homogeneous: the builder splits a segment run wherever
+    the word-level speaker changes. ``overlap`` is set when any of its words
+    falls inside concurrently active speaker timeline entries.
+    """
 
     start: float
     end: float
     text: str
     speaker: str
     words: list[TranscriptWord] = field(default_factory=list)
+    overlap: bool = False
 
 
 @dataclass

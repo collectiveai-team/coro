@@ -12,9 +12,12 @@ explicit ``directory`` on persistent storage; the default falls back to the
 system temp dir only for convenience in tests.
 
 Schema:
-- ``segments(idx, start, end, text, speaker, words_json)`` — one finalized,
-  speaker-attributed segment per row; ``words_json`` holds that segment's
-  interpolated word dicts (bounded by segment length).
+- ``segments(idx, start, end, text, tokens_json)`` — one finalized segment run
+  per row; ``tokens_json`` holds that run's Project-Owned transcript tokens
+  (bounded by run length), with their real timings and confidences. Tokens
+  rather than response words are stored because speaker attribution — and the
+  segment split that follows from it — happens at assembly, once the streaming
+  diarizer has produced its complete timeline.
 - ``raw_words(idx, word, start, end, score)`` — one ASR token per row.
 
 Rows are read back with a streaming cursor so iteration never materialises
@@ -32,7 +35,7 @@ from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
 
-from coro.core.models import RawWord, ResponseSegment, TranscriptWord
+from coro.core.models import RawWord, TranscriptToken
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS segments (
@@ -40,8 +43,7 @@ CREATE TABLE IF NOT EXISTS segments (
     start REAL NOT NULL,
     end REAL NOT NULL,
     text TEXT NOT NULL,
-    speaker TEXT NOT NULL,
-    words_json TEXT NOT NULL
+    tokens_json TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS raw_words (
     idx INTEGER PRIMARY KEY,
@@ -83,24 +85,31 @@ class TranscriptSpillStore:
         """Filesystem path of the backing database."""
         return self._path
 
-    def append_segment(self, segment: ResponseSegment) -> None:
-        """Persist one finalized, speaker-attributed segment.
+    def append_segment_tokens(
+        self,
+        tokens: list[TranscriptToken],
+        *,
+        start: float,
+        end: float,
+        text: str,
+    ) -> None:
+        """Persist one finalized segment run as its transcript tokens.
 
         Args:
-            segment: A :class:`ResponseSegment` with ``start``, ``end``,
-                ``text``, ``speaker`` and a ``words`` list.
+            tokens: The run's Project-Owned transcript tokens, in order.
+            start: Run start in seconds.
+            end: Run end in seconds.
+            text: The run's concatenated transcript text.
 
         """
         self._conn.execute(
-            "INSERT INTO segments (idx, start, end, text, speaker, words_json) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO segments (idx, start, end, text, tokens_json) VALUES (?, ?, ?, ?, ?)",
             (
                 self._segment_count,
-                float(segment.start),
-                float(segment.end),
-                str(segment.text),
-                str(segment.speaker),
-                json.dumps([asdict(w) for w in segment.words]),
+                float(start),
+                float(end),
+                str(text),
+                json.dumps([asdict(t) for t in tokens]),
             ),
         )
         self._segment_count += 1
@@ -144,19 +153,11 @@ class TranscriptSpillStore:
         """Number of raw words persisted so far."""
         return self._raw_word_count
 
-    def iter_segments(self) -> Iterator[ResponseSegment]:
-        """Yield finalized segments in insertion order via a streaming cursor."""
-        cursor = self._conn.execute(
-            "SELECT start, end, text, speaker, words_json FROM segments ORDER BY idx"
-        )
-        for start, end, text, speaker, words_json in cursor:
-            yield ResponseSegment(
-                start=start,
-                end=end,
-                text=text,
-                speaker=speaker,
-                words=[TranscriptWord(**w) for w in json.loads(words_json)],
-            )
+    def iter_segment_tokens(self) -> Iterator[list[TranscriptToken]]:
+        """Yield each finalized run's tokens in insertion order, streaming."""
+        cursor = self._conn.execute("SELECT tokens_json FROM segments ORDER BY idx")
+        for (tokens_json,) in cursor:
+            yield [TranscriptToken(**t) for t in json.loads(tokens_json)]
 
     def iter_raw_words(self) -> Iterator[RawWord]:
         """Yield raw words in insertion order via a streaming cursor."""

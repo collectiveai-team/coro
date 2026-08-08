@@ -7,7 +7,12 @@ from pydantic import BaseModel, ConfigDict
 
 # Item Models ---------------------------------------------------------------
 class WhisperWord(BaseModel):
-    """Word-level timestamp item in a segment."""
+    """Word-level timestamp item in a segment.
+
+    ``start``/``end``/``score`` are the ASR backend's real per-word values.
+    ``overlap`` flags a word whose span contains concurrently active speakers,
+    so the single-label collapse is visible rather than silent (see ADR 0008).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -16,10 +21,15 @@ class WhisperWord(BaseModel):
     end: float
     score: float
     speaker: str
+    overlap: bool = False
 
 
 class WhisperSegment(BaseModel):
-    """Segment item in the Whisper Response Schema."""
+    """Segment item in the Whisper Response Schema.
+
+    Segments are speaker-homogeneous; ``overlap`` is true when any word in the
+    segment falls in overlapped speech (see ADR 0008).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -28,6 +38,7 @@ class WhisperSegment(BaseModel):
     text: str
     speaker: str
     words: list[WhisperWord]
+    overlap: bool = False
 
 
 class WhisperTranscriptItem(BaseModel):

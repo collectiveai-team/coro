@@ -4,10 +4,15 @@ Accepts Project-Owned Transcript Model types and produces the enriched
 :class:`TranscriptionResult`.  No FastAPI or backend-native types are used.
 
 Key behaviours:
-- Groups tokens into punctuation-boundary segments.
-- Assigns speakers from a diarization timeline using maximum-overlap rule.
+- Groups tokens into segment runs using the Spanish-aware policy in
+  :mod:`coro.core.segmentation`.
+- Assigns a speaker to every *word* from the diarization timeline, then splits
+  a run wherever the word-level speaker changes.
+- Carries each backend's real per-word start, end and confidence through to the
+  response instead of interpolating them from the segment span.
+- Flags words and segments whose span contains concurrently active speakers.
 - Clamps adjacent segment overlaps to guarantee non-overlapping output.
-- Emits speaker='-1' for tokens beyond the last diarization entry.
+- Emits speaker='-1' for spans the diarization timeline does not support.
 - Builds transcript, diarization, and raw_words convenience fields.
 """
 
@@ -20,189 +25,112 @@ from coro.core.models import (
     SpeakerSegment,
     TranscriptionResult,
     TranscriptItem,
-    TranscriptSegment,
     TranscriptToken,
     TranscriptWord,
 )
+from coro.core.segmentation import group_tokens_into_runs
+from coro.core.speakers import (
+    SpeakerAttribution,
+    attribute_span,
+    merge_speaker_timeline,
+)
+
+_AttributedToken = tuple[TranscriptToken, SpeakerAttribution]
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-_SILENCE_SENTINEL = -2
-_UNKNOWN_SPEAKER = -1
-_PUNCTUATION = ".!?,"
+
+def _word_from_token(
+    token: TranscriptToken,
+    attribution: SpeakerAttribution,
+    speaker: str,
+) -> TranscriptWord:
+    """Build a response word from a token's *real* timing and confidence."""
+    return TranscriptWord(
+        word=token.text.strip(),
+        start=round(token.start, 2),
+        end=round(token.end, 2),
+        score=float(token.probability) if token.probability is not None else 1.0,
+        speaker=speaker,
+        overlap=attribution.overlap,
+    )
 
 
-def closes_segment(text: str) -> bool:
-    """Return True if a token's text ends on a punctuation boundary."""
-    stripped = text.rstrip()
-    return bool(stripped) and stripped[-1] in _PUNCTUATION
-
-
-def segment_span_from_tokens(
-    tokens: list[TranscriptToken],
-) -> tuple[float, float, str] | None:
-    """Collapse a run of tokens into a ``(start, end, text)`` span.
-
-    Returns ``None`` when the run is empty or whitespace-only.  Mirrors the
-    flush logic in :func:`_group_tokens_into_segments` so streaming and batch
-    grouping stay identical.
-    """
-    if not tokens:
-        return None
-    text = "".join(t.text for t in tokens)
-    if not text.strip():
-        return None
-    start = min(t.start for t in tokens)
-    end = max(t.end for t in tokens)
+def _segment_from_run(run: list[_AttributedToken]) -> ResponseSegment:
+    """Collapse a speaker-homogeneous run of attributed tokens into a segment."""
+    speaker = str(run[0][1].speaker)
+    words = [_word_from_token(token, attribution, speaker) for token, attribution in run]
+    start = min(token.start for token, _ in run)
+    end = max(token.end for token, _ in run)
     if end < start:
         start, end = end, start
-    return start, end, text
+    return ResponseSegment(
+        start=round(start, 2),
+        end=round(end, 2),
+        text="".join(token.text for token, _ in run).strip(),
+        speaker=speaker,
+        words=words,
+        overlap=any(word.overlap for word in words),
+    )
 
 
-def merge_speaker_timeline(
-    speaker_timeline: list[SpeakerSegment],
-) -> list[SpeakerSegment]:
-    """Merge consecutive same-speaker entries into a sorted, coalesced timeline."""
-    merged: list[SpeakerSegment] = []
-    for item in sorted(speaker_timeline, key=lambda x: x.start):
-        if merged and item.speaker == merged[-1].speaker:
-            merged[-1] = SpeakerSegment(
-                start=merged[-1].start,
-                end=max(merged[-1].end, item.end),
-                speaker=item.speaker,
-            )
-        else:
-            merged.append(item)
-    return merged
-
-
-def speaker_for_span(
-    start: float,
-    end: float,
-    merged: list[SpeakerSegment],
-    last_end: float,
-) -> int:
-    """Return the max-overlap speaker for a ``[start, end)`` span.
-
-    Spans starting at or beyond ``last_end`` (the diarization horizon) receive
-    speaker=-1; spans with no overlap default to speaker=1.  ``merged`` must be
-    the output of :func:`merge_speaker_timeline`.
-    """
-    if not merged:
-        return 1
-    if start >= last_end:
-        return _UNKNOWN_SPEAKER
-    max_overlap = 0.0
-    best = 1
-    for entry in merged:
-        overlap = max(0.0, min(end, entry.end) - max(start, entry.start))
-        if overlap > max_overlap:
-            max_overlap = overlap
-            best = entry.speaker
-    return best
-
-
-def _assign_speakers(
-    segments: list[TranscriptSegment],
-    speaker_timeline: list[SpeakerSegment],
-) -> None:
-    """Assign speaker labels to segments in-place using max-overlap rule.
-
-    Segments beyond the last timeline entry receive speaker=-1.
-    Segments with no matching timeline data receive speaker=1 (default).
-    """
-    if not speaker_timeline:
-        for seg in segments:
-            seg.speaker = 1
-        return
-
-    merged = merge_speaker_timeline(speaker_timeline)
-    last_end = merged[-1].end
-    for seg in segments:
-        seg.speaker = speaker_for_span(seg.start, seg.end, merged, last_end)
-
-
-def _group_tokens_into_segments(tokens: list[TranscriptToken]) -> list[TranscriptSegment]:
-    """Group tokens into segments at whitespace/punctuation boundaries.
-
-    Each segment spans contiguous non-silence tokens up to a punctuation mark.
-    """
-    if not tokens:
-        return []
-
-    segments: list[TranscriptSegment] = []
-    current_tokens: list[TranscriptToken] = []
-
-    def _flush():
-        span = segment_span_from_tokens(current_tokens)
-        if span is not None:
-            segments.append(TranscriptSegment(start=span[0], end=span[1], text=span[2]))
-        current_tokens.clear()
-
-    for token in tokens:
-        if not token.text:
-            continue
-        current_tokens.append(token)
-        if closes_segment(token.text):
-            _flush()
-
-    _flush()
-    return segments
-
-
-def _clamp_overlaps(segments: list[TranscriptSegment]) -> list[TranscriptSegment]:
+def _clamp_overlaps(segments: list[ResponseSegment]) -> list[ResponseSegment]:
     """Clamp adjacent segment end times to eliminate overlapping ranges."""
     ordered = sorted(segments, key=lambda s: s.start)
     for i in range(len(ordered) - 1):
         current = ordered[i]
         nxt = ordered[i + 1]
         if current.end > nxt.start:
-            current.end = max(current.start, nxt.start)
+            current.end = round(max(current.start, nxt.start), 2)
     return ordered
-
-
-def build_segment(seg: TranscriptSegment) -> ResponseSegment:
-    """Build one speaker-attributed :class:`ResponseSegment` from a segment.
-
-    Produces ``start, end, text, speaker, words`` with interpolated word
-    timings.  Shared by the batch builder and the streaming finalizer so both
-    paths emit byte-identical segments.
-    """
-    return ResponseSegment(
-        start=round(seg.start, 2),
-        end=round(seg.end, 2),
-        text=seg.text.strip(),
-        speaker=str(seg.speaker),
-        words=_build_words_for_segment(seg),
-    )
-
-
-def _build_words_for_segment(seg: TranscriptSegment) -> list[TranscriptWord]:
-    """Build linearly interpolated word-level timestamps for a segment."""
-    raw_words = seg.text.split()
-    if not raw_words:
-        return []
-    word_duration = (seg.end - seg.start) / len(raw_words)
-    speaker_str = str(seg.speaker)
-    words = []
-    for j, word in enumerate(raw_words):
-        words.append(
-            TranscriptWord(
-                word=word,
-                start=round(seg.start + j * word_duration, 2),
-                end=round(seg.start + (j + 1) * word_duration, 2),
-                score=1.0,
-                speaker=speaker_str,
-            )
-        )
-    return words
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+def build_response_segments(
+    tokens: list[TranscriptToken],
+    merged_timeline: list[SpeakerSegment],
+) -> list[ResponseSegment]:
+    """Turn one segment run into speaker-homogeneous response segments.
+
+    Every token is attributed independently, then the run is split wherever the
+    word-level speaker changes, so a run spanning a speaker turn no longer
+    stamps one label onto every word after the turn.
+
+    Args:
+        tokens: One segment run from :mod:`coro.core.segmentation`.
+        merged_timeline: Output of
+            :func:`coro.core.speakers.merge_speaker_timeline`.
+
+    Returns:
+        Zero or more segments, in token order. Shared by the batch builder and
+        the Streaming Pipeline's assembly so both emit identical segments.
+
+    """
+    attributed: list[_AttributedToken] = [
+        (token, attribute_span(token.start, token.end, merged_timeline))
+        for token in tokens
+        if token.text and token.text.strip()
+    ]
+    if not attributed:
+        return []
+
+    segments: list[ResponseSegment] = []
+    run: list[_AttributedToken] = []
+    for item in attributed:
+        if run and item[1].speaker != run[0][1].speaker:
+            segments.append(_segment_from_run(run))
+            run = []
+        run.append(item)
+    if run:
+        segments.append(_segment_from_run(run))
+    return segments
 
 
 def build_transcription_response(
@@ -240,18 +168,15 @@ def build_transcription_response(
         if t.text and t.text.strip()
     ]
 
-    # Group and clamp
-    seg_objects = _group_tokens_into_segments(tokens)
-    _assign_speakers(seg_objects, speaker_timeline)
-    seg_objects = _clamp_overlaps(seg_objects)
+    merged = merge_speaker_timeline(speaker_timeline)
+    built: list[ResponseSegment] = []
+    for run in group_tokens_into_runs(tokens):
+        built.extend(build_response_segments(run, merged))
+    segments = _clamp_overlaps(built)
 
-    segments: list[ResponseSegment] = []
     word_segments: list[TranscriptWord] = []
-
-    for seg in seg_objects:
-        rseg = build_segment(seg)
-        word_segments.extend(rseg.words)
-        segments.append(rseg)
+    for segment in segments:
+        word_segments.extend(segment.words)
 
     transcript = [TranscriptItem(start=s.start, end=s.end, text=s.text) for s in segments]
     diarization = [DiarizationItem(start=s.start, end=s.end, speaker=s.speaker) for s in segments]

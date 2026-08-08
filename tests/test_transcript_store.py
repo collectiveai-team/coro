@@ -4,25 +4,32 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from coro.core.models import RawWord, ResponseSegment, TranscriptWord
+from coro.core.models import RawWord, TranscriptToken
 from coro.pipelines.transcript_store import TranscriptSpillStore
 
 
-def _segment(start, end, text, speaker, words=None):
-    return ResponseSegment(start=start, end=end, text=text, speaker=speaker, words=words or [])
+def _append(store, start, end, text, tokens=None):
+    store.append_segment_tokens(
+        tokens if tokens is not None else [TranscriptToken(start=start, end=end, text=text)],
+        start=start,
+        end=end,
+        text=text,
+    )
 
 
-def test_store_round_trips_segments_in_order(tmp_path):
-    word = TranscriptWord(word="hola.", start=0.0, end=1.0, score=1.0, speaker="1")
+def test_store_round_trips_segment_tokens_in_order(tmp_path):
+    tokens = [
+        TranscriptToken(start=0.0, end=0.5, text=" hola", probability=0.9),
+        TranscriptToken(start=0.5, end=1.0, text=" mundo.", probability=0.8),
+    ]
     with TranscriptSpillStore(directory=str(tmp_path)) as store:
-        store.append_segment(_segment(0.0, 1.0, "hola.", "1", [word]))
-        store.append_segment(_segment(1.0, 2.0, "mundo.", "2"))
-        segments = list(store.iter_segments())
+        _append(store, 0.0, 1.0, " hola mundo.", tokens)
+        _append(store, 1.0, 2.0, " adios.")
+        runs = list(store.iter_segment_tokens())
 
-    assert [s.text for s in segments] == ["hola.", "mundo."]
-    assert [s.speaker for s in segments] == ["1", "2"]
-    assert segments[0].words == [word]
-    assert segments[0].start == 0.0 and segments[1].end == 2.0
+    assert runs[0] == tokens
+    assert [t.text for run in runs for t in run] == [" hola", " mundo.", " adios."]
+    assert runs[0][0].probability == 0.9
 
 
 def test_store_round_trips_raw_words_in_order(tmp_path):
@@ -44,8 +51,8 @@ def test_store_round_trips_raw_words_in_order(tmp_path):
 def test_store_counts_track_appends(tmp_path):
     with TranscriptSpillStore(directory=str(tmp_path)) as store:
         assert store.segment_count == 0
-        store.append_segment(_segment(0.0, 1.0, "a.", "1"))
-        store.append_segment(_segment(1.0, 2.0, "b.", "1"))
+        _append(store, 0.0, 1.0, " a.")
+        _append(store, 1.0, 2.0, " b.")
         assert store.segment_count == 2
 
 
@@ -67,7 +74,7 @@ def test_append_empty_raw_words_is_noop(tmp_path):
 
 def test_close_deletes_database_and_sidecars(tmp_path):
     store = TranscriptSpillStore(directory=str(tmp_path))
-    store.append_segment(_segment(0.0, 1.0, "a.", "1"))
+    _append(store, 0.0, 1.0, " a.")
     db_path = Path(store.path)
     assert db_path.exists()
     store.close()

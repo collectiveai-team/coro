@@ -87,7 +87,7 @@ def test_finalizer_emits_three_segments(tmp_path):
 
 
 def test_finalizer_defers_speaker_assignment_to_assembly(tmp_path):
-    """Finalizer spills provisional speaker 1; assembly assigns from timeline."""
+    """Finalizer spills bare tokens; assembly attributes them from the timeline."""
     timeline = [
         SpeakerSegment(start=0.0, end=0.8, speaker=2),
         SpeakerSegment(start=0.8, end=2.4, speaker=3),
@@ -96,8 +96,8 @@ def test_finalizer_defers_speaker_assignment_to_assembly(tmp_path):
         finalizer = StreamingTranscriptFinalizer(store)
         finalizer.add_tokens(_TOKENS)
         finalizer.finish()
-        # Stored provisionally as speaker 1 before assembly.
-        assert [s.speaker for s in store.iter_segments()] == ["1", "1", "1"]
+        # The store holds tokens only — no speaker is decided at spill time.
+        assert [len(run) for run in store.iter_segment_tokens()] == [2, 2, 2]
         streamed = build_streaming_response(store, timeline)
 
     assert [s.speaker for s in streamed.segments] == ["2", "3", "3"]
@@ -110,10 +110,10 @@ def test_finalizer_flushes_unterminated_tail(tmp_path):
         finalizer.add_tokens([_tok(0.0, 0.4, " sin"), _tok(0.4, 0.8, " punto")])
         assert store.segment_count == 0  # nothing finalized yet
         finalizer.finish()
-        segments = list(store.iter_segments())
+        streamed = build_streaming_response(store)
 
-    assert len(segments) == 1
-    assert segments[0].text == "sin punto"
+    assert len(streamed.segments) == 1
+    assert streamed.segments[0].text == "sin punto"
 
 
 def test_finalizer_open_buffer_stays_bounded(tmp_path):
@@ -123,13 +123,75 @@ def test_finalizer_open_buffer_stays_bounded(tmp_path):
         max_open = 0
         for i in range(500):
             finalizer.add_tokens([_tok(i, i + 0.5, f" w{i}.")])
-            max_open = max(max_open, len(finalizer._open))
+            max_open = max(max_open, len(finalizer.open_tokens))
         finalizer.finish()
 
     # Each batch is a single punctuation-terminated token, so the open run is
     # flushed every batch and never accumulates.
     assert max_open <= 1
     assert store.segment_count == 500
+
+
+def test_finalizer_matches_batch_when_a_speaker_changes_mid_run(tmp_path):
+    """Word-level splitting inside one segment run is identical in both paths."""
+    tokens = [
+        _tok(0.0, 0.4, " hola"),
+        _tok(0.4, 0.8, " mundo"),
+        _tok(2.0, 2.4, " adios"),
+        _tok(2.4, 2.8, " amigo."),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.0, speaker=2),
+        SpeakerSegment(start=1.5, end=3.0, speaker=3),
+    ]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(tokens)
+        finalizer.finish()
+        assert store.segment_count == 1  # one punctuation-bounded run
+        streamed = build_streaming_response(store, timeline)
+
+    batch = build_transcription_response(tokens, timeline, duration=3.0)
+    assert streamed.segments == batch.segments
+    assert streamed.word_segments == batch.word_segments
+    assert streamed.diarization == batch.diarization
+    assert [s.speaker for s in streamed.segments] == ["2", "3"]
+
+
+def test_finalizer_matches_batch_for_overlapped_speech(tmp_path):
+    timeline = [
+        SpeakerSegment(start=0.0, end=2.4, speaker=2),
+        SpeakerSegment(start=0.6, end=2.4, speaker=3),
+    ]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(_TOKENS)
+        finalizer.finish()
+        streamed = build_streaming_response(store, timeline)
+
+    batch = build_transcription_response(_TOKENS, timeline, duration=2.4)
+    assert streamed.segments == batch.segments
+    assert any(s.overlap for s in streamed.segments)
+
+
+def test_finalizer_matches_batch_with_real_word_timings(tmp_path):
+    """Uneven per-word timings and confidences survive the spill round-trip."""
+    tokens = [
+        _tok(0.0, 0.2, " muy", prob=0.9),
+        _tok(3.0, 4.0, " tarde.", prob=0.4),
+    ]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(tokens)
+        finalizer.finish()
+        streamed = build_streaming_response(store)
+
+    batch = build_transcription_response(tokens, [], duration=4.0)
+    assert streamed.word_segments == batch.word_segments
+    assert [(w.start, w.end, w.score) for w in streamed.word_segments] == [
+        (0.0, 0.2, 0.9),
+        (3.0, 4.0, 0.4),
+    ]
 
 
 def test_finalizer_clamps_overlapping_segments(tmp_path):
