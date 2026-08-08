@@ -239,10 +239,13 @@ held in memory — the wire format you get back is identical.
 | Diarization backends | `nemo` *or* `pyannote` | `nemo` only (Sortformer) |
 | Best for | short/medium clips, > 4-speaker pyannote | long/unbounded audio |
 
-For flat RAM on long audio, point `CORO_TRANSCRIPT_SPILL_DIR` at a persistent
-(non-tmpfs) directory — the default temp dir is RAM-backed on many systems,
-which would defeat the spill. See [Benchmarks](#benchmarks) for the measured
-memory behaviour.
+The spill directory needs to be on real disk, and that is handled for you: at
+startup the server picks the system temp dir when it is real disk, otherwise a
+directory under your cache dir, because `/tmp` is tmpfs (RAM-backed) on most
+Linux distributions and spilling there would defeat the spill. Override it with
+`CORO_TRANSCRIPT_SPILL_DIR`; pointing it at a RAM-backed path fails startup
+rather than silently costing you the flat-RAM property. See
+[Benchmarks](#benchmarks) for the measured memory behaviour.
 
 ## ASR backends
 
@@ -286,10 +289,10 @@ CORO_ASR_QUANTIZATION=int8     # ~4× faster than whisper-medium
 For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
 `CORO_ASR_COMPUTE_TYPE=int8`. `onnx-genai` is not recommended on CPU.
 
-**Streaming on long audio:** set `CORO_PIPELINE=streaming` and point
-`CORO_TRANSCRIPT_SPILL_DIR` at a persistent (non-tmpfs) directory so the
-per-request transcript spills to disk and host RSS stays flat regardless of
-recording length. Consume the result over SSE (`stream=true`).
+**Streaming on long audio:** set `CORO_PIPELINE=streaming` so the per-request
+transcript spills to disk and host RSS stays flat regardless of recording
+length; the spill directory defaults to real disk automatically. Consume the
+result over SSE (`stream=true`).
 
 ## Diarization backends
 
@@ -405,7 +408,7 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 | `CORO_DIARIZATION_DEVICE` | `--diarization-device` | `auto` | Diarization device (`auto` \| `cuda` \| `cpu`). |
 | `CORO_DIARIZATION_LATENCY` | `--diarization-latency` | `very-high` | Streaming Sortformer latency tier (`very-high` \| `high` \| `low` \| `ultra-low`); `nemo` streaming only. |
 | `CORO_HF_TOKEN` | `--CORO-HF-TOKEN` | _(unset)_ | Hugging Face token for gated diarization models (e.g. pyannote community-1). Also read from `HF_TOKEN` / `HUGGING_FACE_HUB_TOKEN` (and matching `--HF-TOKEN` flags) and `.env`; masked in logs. |
-| `CORO_TRANSCRIPT_SPILL_DIR` | `--transcript-spill-dir` | _(system temp)_ | Streaming transcript spill dir; must be real disk (non-tmpfs) for flat RAM. |
+| `CORO_TRANSCRIPT_SPILL_DIR` | `--transcript-spill-dir` | _(first real-disk default)_ | Streaming transcript spill dir. Unset resolves to the system temp dir, or the cache dir when temp is tmpfs. A RAM-backed value is rejected at startup. |
 | `CORO_WARMUP` | `--warmup` | `enabled` | Run warmup against the warmup audio asset at startup (`enabled` \| `disabled`). |
 | `CORO_LOG_LEVEL` | `--log-level` | `info` | Log level (CLI use only). |
 | `CORO_SSL_CERTFILE` | `--ssl-certfile` | _(unset)_ | TLS certificate file path. |
@@ -465,9 +468,11 @@ segment/word at a time (never materialised). The wire format is unchanged.
 | full-memory | grows ~linearly with length |
 
 Notes:
-- The on-disk store **must live on real disk** for the flat-RSS property. Set
-  `CORO_TRANSCRIPT_SPILL_DIR` to a persistent path; the default temp dir is
-  tmpfs (RAM-backed) on many systems, which would keep the transcript in memory.
+- The on-disk store **must live on real disk** for the flat-RSS property, and
+  the default now guarantees that: startup picks the system temp dir when it is
+  real disk and a cache directory when it is tmpfs (RAM-backed, as `/tmp` is on
+  most Linux distributions). An explicit RAM-backed `CORO_TRANSCRIPT_SPILL_DIR`
+  fails startup instead of silently keeping the transcript in memory.
 - The **non-streaming** `transcribe()` response inherently returns the whole
   transcript as one object, so its peak is O(length) at assembly time — use SSE
   consumption for unbounded audio.
