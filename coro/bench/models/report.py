@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class QualityRow:
-    """One row in the quality results table."""
+    """One row in a quality results table, for whichever metric lane owns it."""
 
     session_id: str
     duration: float
@@ -43,7 +43,12 @@ class PerformanceRow:
 
 @dataclass
 class BenchReport:
-    """In-memory report model consumed by both renderers."""
+    """In-memory report model consumed by both renderers.
+
+    Quality figures are held per metric lane: ``quality_rows`` /
+    ``quality_combined`` are the Raw Metric Lane, ``normalized_quality_rows`` /
+    ``normalized_quality_combined`` the Normalized Metric Lane.
+    """
 
     subcommand: str
     timestamp: str
