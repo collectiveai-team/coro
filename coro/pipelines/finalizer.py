@@ -8,10 +8,13 @@ finalizer exploits that to emit finalized segments incrementally, keeping only
 the current open run of tokens in memory and spilling finalized segments and
 raw words to a :class:`TranscriptSpillStore`.
 
-Speaker labels are NOT assigned here: the streaming diarizer only produces its
-complete timeline once the audio ends, so attribution is deferred to assembly
-(:func:`build_streaming_response`), which runs the same global max-overlap pass
-as the batch builder in a flat, one-segment-at-a-time sweep over the store.
+Speaker labels, overlap clamping and word interpolation are NOT applied here.
+Each depends on information that does not exist when a segment finalizes — the
+streaming diarizer only produces its complete timeline once the audio ends, and
+a segment's clamped end depends on the *next* segment's start.  All three are
+deferred to assembly (:func:`iter_response_segments`), which applies them in
+the batch builder's order — assign, clamp, then build words from the clamped
+span — in a flat, one-segment-at-a-time sweep over the store.
 """
 
 from __future__ import annotations
@@ -77,55 +80,35 @@ class StreamingTranscriptFinalizer:
         if span is None:
             return
         start, end, text = span
-        # Provisional speaker 1; real attribution happens at assembly once the
-        # diarizer has produced its complete timeline.
-        seg = TranscriptSegment(start=start, end=end, text=text, speaker=1)
-        self._store.append_segment(build_segment(seg))
-
-
-def _assign_segment_speaker(
-    seg: ResponseSegment,
-    merged: list[SpeakerSegment],
-    last_end: float,
-    has_timeline: bool,
-) -> None:
-    """Assign a segment's (and its words') speaker from the merged timeline.
-
-    Uses the segment's stored (pre-clamp) end so assignment matches the batch
-    builder's order of assign-then-clamp.  With no timeline every segment
-    defaults to speaker 1, mirroring ``_assign_speakers``.
-    """
-    spk = speaker_for_span(seg.start, seg.end, merged, last_end) if has_timeline else 1
-    seg.speaker = str(spk)
-    for word in seg.words:
-        word.speaker = str(spk)
+        self._store.append_segment(TranscriptSegment(start=start, end=end, text=text))
 
 
 def iter_response_segments(
     store: TranscriptSpillStore,
     speaker_timeline: list[SpeakerSegment] | None = None,
 ) -> Iterator[ResponseSegment]:
-    """Yield finalized segments, speaker-attributed and overlap-clamped.
+    """Yield finalized segments, speaker-attributed, overlap-clamped and worded.
 
-    Speakers are assigned per segment from the (complete) diarization timeline,
-    then a one-segment-lookahead clamp ensures a segment never ends past the
-    next one's start (matching ``_clamp_overlaps`` for in-order input).  Only a
-    single segment is buffered, so memory stays flat.
+    Applies the batch builder's three steps in its order: assign the speaker
+    from the (complete) diarization timeline using the raw span, clamp the end
+    against the next segment's start (matching ``_clamp_overlaps`` for in-order
+    input), then interpolate words over the clamped span via
+    :func:`build_segment`.  Only one segment is buffered, so memory stays flat.
     """
     merged = merge_speaker_timeline(speaker_timeline or [])
     last_end = merged[-1].end if merged else 0.0
     has_timeline = bool(merged)
 
-    prev: ResponseSegment | None = None
+    prev: TranscriptSegment | None = None
     for seg in store.iter_segments():
-        _assign_segment_speaker(seg, merged, last_end, has_timeline)
+        seg.speaker = speaker_for_span(seg.start, seg.end, merged, last_end) if has_timeline else 1
         if prev is not None:
             if prev.end > seg.start:
-                prev.end = round(max(prev.start, seg.start), 2)
-            yield prev
+                prev.end = max(prev.start, seg.start)
+            yield build_segment(prev)
         prev = seg
     if prev is not None:
-        yield prev
+        yield build_segment(prev)
 
 
 def build_streaming_response(
