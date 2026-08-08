@@ -55,7 +55,7 @@ class TestCliMutualExclusivity:
                     "--server-url",
                     "http://localhost:8000",
                     "--server-diar-model",
-                    "nvidia/diar_sortformer_4spk-v1",
+                    "nvidia/diar_streaming_sortformer_4spk-v2",
                 ]
             )
 

@@ -297,8 +297,8 @@ The Hugging Face-style model identifier passed to the configured ASR backend pro
 _Avoid_: ASR backend, provider name
 
 **Diarization Model Selection**:
-The Hugging Face-style model identifier passed to the configured diarization backend provider.
-_Avoid_: Diarization backend, provider name
+The Hugging Face-style model identifier passed to the configured diarization backend provider. The package is distributed under MIT, so a selection that is named as a default, a recommendation, or an example must be permissively licensed; a non-commercial selection may only be named as a comparative reference and must be labelled with its license.
+_Avoid_: Diarization backend, provider name, unlabelled non-commercial model
 
 **Diarization Adapter**:
 A model integration that produces speaker timeline segments from audio while hiding backend-specific diarization APIs.
@@ -355,7 +355,8 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - The default ASR **Backend Provider** is `faster-whisper`.
 - The default diarization **Backend Provider** is `none`.
 - The default **ASR Model Selection** is `openai/whisper-medium`.
-- When NeMo diarization is enabled without an explicit **Diarization Model Selection**, the default is `nvidia/diar_streaming_sortformer_4spk-v2`.
+- When NeMo diarization is enabled without an explicit **Diarization Model Selection**, the default is `nvidia/diar_streaming_sortformer_4spk-v2` (CC-BY-4.0).
+- Every **Diarization Model Selection** the project names carries a documented license; a non-commercially licensed model — such as the batch Sortformer `nvidia/diar_sortformer_4spk-v1` (CC-BY-NC-4.0) — is never a default, a recommendation, or an unannotated example.
 - A **Configured Transcription Pipeline** preserves the public **Transcription API Contract** while changing internal processing behavior.
 - `/health` reports **Server Startup Selection**, **Capability Readiness**, and **Warmup Readiness** rather than one ambiguous backend field.
 - The **Full-Memory Pipeline** and **Streaming Pipeline** both use shared **ASR Windowing**; they differ in how PCM is sourced.
@@ -488,10 +489,13 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "Use `faster-whisper` for ASR and `none` for diarization."
 
 > **Dev:** "Should model selections use short names like `whisper-medium` or full names?"
-> **Domain expert:** "Use Hugging Face-style full names such as `openai/whisper-medium` and `nvidia/diar_sortformer_4spk-v1`."
+> **Domain expert:** "Use Hugging Face-style full names such as `openai/whisper-medium` and `nvidia/diar_streaming_sortformer_4spk-v2`."
 
 > **Dev:** "If NeMo diarization is enabled without a model setting, what should load?"
 > **Domain expert:** "Use `nvidia/diar_streaming_sortformer_4spk-v2` as the default **Diarization Model Selection**."
+
+> **Dev:** "Can we show the batch Sortformer `nvidia/diar_sortformer_4spk-v1` as an example **Diarization Model Selection**?"
+> **Domain expert:** "No — it is licensed CC-BY-NC-4.0 while the package ships under MIT. Name it only as a comparative reference, always labelled with its license, and use the CC-BY-4.0 `nvidia/diar_streaming_sortformer_4spk-v2` for defaults, recommendations, and examples."
 
 > **Dev:** "Should `/health` still return one `backend` field?"
 > **Domain expert:** "No — it should expose **Server Startup Selection** and **Capability Readiness**, including optional diarization status."
@@ -590,6 +594,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "ASR model default" was unspecified — resolved: the default **ASR Model Selection** is `openai/whisper-medium`.
 - "model name" was used to imply short aliases — resolved: **ASR Model Selection** and **Diarization Model Selection** use Hugging Face-style full model identifiers.
 - "diarization model default" was unspecified — resolved: enabled NeMo diarization defaults to `nvidia/diar_streaming_sortformer_4spk-v2`.
+- "Sortformer" was used as if it named one interchangeable model — resolved: the family spans the batch `nvidia/diar_sortformer_4spk-v1` (CC-BY-NC-4.0) and the streaming `nvidia/diar_streaming_sortformer_4spk-v2` (CC-BY-4.0); only the permissively licensed streaming model is a default, recommendation, or example **Diarization Model Selection**.
 - "health backend" was used to imply one backend status — resolved: `/health` reports **Server Startup Selection** and **Capability Readiness** separately.
 - "route code" was used to include transcription orchestration — resolved: orchestration belongs in a **Pipeline Module**.
 - "Pydantic models" was used to imply request parsing, response serialization, and response cleanup — resolved: use **Boundary Response Schema** models for successful and error JSON while preserving multipart form parsing and the existing **Transcription API Contract**.
