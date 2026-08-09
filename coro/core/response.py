@@ -6,10 +6,10 @@ Accepts Project-Owned Transcript Model types and produces the enriched
 Key behaviours:
 - Groups tokens into segment runs using the Spanish-aware policy in
   :mod:`coro.core.segmentation`.
-- Assigns a speaker to every *word* from the diarization timeline, corrects
-  punctuation-blind flicker via
-  :func:`coro.core.speakers.realign_speakers_with_punctuation`, then splits a
-  run wherever the (realigned) word-level speaker changes.
+- Assigns a speaker to every *word* from the diarization timeline, absorbs
+  sandwiched flicker islands via
+  :func:`coro.core.realignment.realign_speaker_flicker`, then splits a run
+  wherever the (realigned) word-level speaker changes.
 - Carries each backend's real per-word start, end and confidence through to the
   response instead of interpolating them from the segment span.
 - Flags words and segments whose span contains concurrently active speakers.
@@ -30,12 +30,12 @@ from coro.core.models import (
     TranscriptToken,
     TranscriptWord,
 )
+from coro.core.realignment import realign_speaker_flicker
 from coro.core.segmentation import group_tokens_into_runs
 from coro.core.speakers import (
     SpeakerAttribution,
     attribute_span,
     merge_speaker_timeline,
-    realign_speakers_with_punctuation,
 )
 
 _AttributedToken = tuple[TranscriptToken, SpeakerAttribution]
@@ -123,7 +123,7 @@ def build_response_segments(
     ]
     if not attributed:
         return []
-    attributed = realign_speakers_with_punctuation(attributed)
+    attributed = realign_speaker_flicker(attributed)
 
     segments: list[ResponseSegment] = []
     run: list[_AttributedToken] = []

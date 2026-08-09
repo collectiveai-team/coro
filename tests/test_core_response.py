@@ -162,14 +162,13 @@ def test_missing_probability_defaults_to_one():
 def test_segment_splits_where_the_word_level_speaker_changes():
     """A sentence spanning a speaker turn no longer inherits one label.
 
-    The turn coincides with sentence-final punctuation, so it is a real turn
-    and punctuation-aware realignment (see ``test_core_speakers.py``) leaves
-    it untouched; an unpunctuated speaker change within a single sentence is
-    instead flicker-corrected.
+    The turn is a clean two-way split with no punctuation support at all, and
+    it must still survive flicker correction: it is not sandwiched, so it is
+    not a blip (see ``test_core_realignment.py``).
     """
     tokens = [
         TranscriptToken(start=0.0, end=0.4, text=" hola", probability=1.0),
-        TranscriptToken(start=0.4, end=0.8, text=" mundo.", probability=1.0),
+        TranscriptToken(start=0.4, end=0.8, text=" mundo", probability=1.0),
         TranscriptToken(start=2.0, end=2.4, text=" adios", probability=1.0),
         TranscriptToken(start=2.4, end=2.8, text=" amigo.", probability=1.0),
     ]
@@ -180,7 +179,7 @@ def test_segment_splits_where_the_word_level_speaker_changes():
     result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.0)
 
     assert [s.speaker for s in result.segments] == ["2", "3"]
-    assert [s.text for s in result.segments] == ["hola mundo.", "adios amigo."]
+    assert [s.text for s in result.segments] == ["hola mundo", "adios amigo."]
     assert [w.speaker for w in result.word_segments] == ["2", "2", "3", "3"]
 
 
