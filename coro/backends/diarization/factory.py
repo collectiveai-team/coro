@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from coro.backends.diarization.nemo.postprocessing import DEFAULT_MAX_SPEAKERS
+
 if TYPE_CHECKING:
     from coro.core.protocols import DiarizationAdapter, StreamingDiarizerFactory
 
@@ -32,6 +34,7 @@ def build_diarization_adapter(
     device: str = "auto",
     hf_token: str | None = None,
     postprocessing: str | None = None,
+    postprocessing_max_speakers: int = DEFAULT_MAX_SPEAKERS,
 ) -> DiarizationAdapter:
     """Build a Diarization Adapter for the configured provider.
 
@@ -43,6 +46,8 @@ def build_diarization_adapter(
             that do not require one.
         postprocessing: Diarization Post-Processing Configuration value
             (see ADR 0009); NeMo-specific, ignored by ``pyannote``.
+        postprocessing_max_speakers: Speaker-Count Post-Processing Gate
+            ceiling; NeMo-specific, ignored by ``pyannote``.
 
     Returns:
         A ready-to-use Diarization Adapter.
@@ -55,7 +60,10 @@ def build_diarization_adapter(
         from coro.backends.diarization.nemo.diarization import build_nemo_diarization_adapter
 
         return build_nemo_diarization_adapter(
-            model_diarization, device=device, postprocessing=postprocessing
+            model_diarization,
+            device=device,
+            postprocessing=postprocessing,
+            max_speakers=postprocessing_max_speakers,
         )
 
     if provider == "pyannote":
@@ -101,6 +109,7 @@ def build_streaming_diarizer_factory(
             adapter.model,
             tier=tier,
             postprocessing_yaml=adapter.postprocessing_yaml,
+            max_speakers=adapter.max_speakers,
         )
 
     msg = f"Diarization backend provider {provider!r} does not support streaming."

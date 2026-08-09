@@ -98,12 +98,24 @@ class ServerSettings(BaseSettings):
         description="Diarization Latency Selection tier for streaming Sortformer.",
     )
     diarization_postprocessing: str | None = Field(
-        default=None,
+        default="dihard3-dev",
         description="Diarization Post-Processing Configuration for NeMo Sortformer: "
         "a vendored preset name ('dihard3-dev', 'callhome-part1') or a path to a "
-        "custom YAML in the same schema. None keeps NeMo's own unconfigured baseline "
-        "unchanged. Ignored by the pyannote backend. See ADR 0009 — neither preset is "
-        "a coro recommendation; choosing one is a per-deployment operator decision.",
+        "custom YAML in the same schema. None keeps NeMo's own unconfigured baseline. "
+        "Ignored by the pyannote backend. Defaults to 'dihard3-dev', which measured "
+        "better than the unconfigured baseline on 33 of 34 AMI meetings at the "
+        "benchmark's 0 s scoring collar; see ADR 0009 for the measurement and for why "
+        "the larger-gain 'callhome-part1' set is not the default.",
+    )
+    diarization_postprocessing_max_speakers: int = Field(
+        default=4,
+        ge=1,
+        description="Speaker-Count Post-Processing Gate ceiling. Above this estimated "
+        "speaker count the Diarization Post-Processing Configuration is bypassed in "
+        "favour of NeMo's baseline, because tuned short-segment deletion is reported "
+        "to degrade DER for five or more speakers. Has no observable effect while a "
+        "4-speaker Diarization Model Selection is configured, since the estimate can "
+        "never exceed 4. See ADR 0009.",
     )
 
     # Server Warmup ---------------------------------------------------------

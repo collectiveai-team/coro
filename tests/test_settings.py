@@ -21,7 +21,8 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     assert settings.diarization_device == "auto"
     assert settings.asr_onnx_vad == "disabled"
     assert settings.asr_onnx_vad_threshold is None
-    assert settings.diarization_postprocessing is None
+    assert settings.diarization_postprocessing == "dihard3-dev"
+    assert settings.diarization_postprocessing_max_speakers == 4
 
 
 def test_onnx_vad_settings_read_from_env(monkeypatch):
@@ -100,12 +101,40 @@ def test_transcript_spill_dir_defaults_none_and_reads_env(monkeypatch):
     assert ServerSettings(_env_file=None).transcript_spill_dir == "/var/lib/asr-spill"
 
 
-def test_diarization_postprocessing_defaults_none_and_reads_env(monkeypatch):
+def test_diarization_postprocessing_defaults_tuned_and_reads_env(monkeypatch):
     """Unrestricted like model_diarization: a preset name or a custom path, resolved
-    by the NeMo adapter (see ADR 0009) — settings itself does not validate the value."""
-    assert ServerSettings(_env_file=None).diarization_postprocessing is None
-    monkeypatch.setenv("CORO_DIARIZATION_POSTPROCESSING", "dihard3-dev")
+    by the NeMo adapter (see ADR 0009) — settings itself does not validate the value.
+
+    The default is a tuned set rather than NeMo's unconfigured baseline because
+    it measured better on 33 of 34 AMI meetings at the benchmark's 0 s collar.
+    """
     assert ServerSettings(_env_file=None).diarization_postprocessing == "dihard3-dev"
+    monkeypatch.setenv("CORO_DIARIZATION_POSTPROCESSING", "callhome-part1")
+    assert ServerSettings(_env_file=None).diarization_postprocessing == "callhome-part1"
+
+
+@pytest.mark.parametrize("opt_out", ["none", ""])
+def test_diarization_postprocessing_can_be_returned_to_the_nemo_baseline(monkeypatch, opt_out):
+    """Opting out of the tuned default must work, not fail startup.
+
+    Now that the default is a tuned set, an operator needs a supported way back
+    to NeMo's unconfigured baseline; it must resolve, not raise.
+    """
+    from coro.backends.diarization.nemo.postprocessing import resolve_postprocessing_yaml
+
+    monkeypatch.setenv("CORO_DIARIZATION_POSTPROCESSING", opt_out)
+    value = ServerSettings(_env_file=None).diarization_postprocessing
+    assert resolve_postprocessing_yaml(value) is None
+
+
+def test_diarization_postprocessing_max_speakers_reads_env(monkeypatch):
+    monkeypatch.setenv("CORO_DIARIZATION_POSTPROCESSING_MAX_SPEAKERS", "8")
+    assert ServerSettings(_env_file=None).diarization_postprocessing_max_speakers == 8
+
+
+def test_diarization_postprocessing_max_speakers_rejects_zero():
+    with pytest.raises(ValidationError):
+        ServerSettings(diarization_postprocessing_max_speakers=0, _env_file=None)
 
 
 @pytest.mark.parametrize("pipeline", ["unknown", "v1", "v2", ""])
