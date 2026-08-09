@@ -16,6 +16,7 @@ fix. See ADR 0009.
 from __future__ import annotations
 
 import struct
+from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import pytest
@@ -51,6 +52,13 @@ BATCH_CONFIG = {
 }
 
 
+@dataclass(frozen=True)
+class _FakeStreamingState:
+    """Opaque streaming-state token; the diarizer only passes it through."""
+
+    step: int
+
+
 class _FakeSortformerModules:
     """Plain object (not a MagicMock) so attribute writes are really observable."""
 
@@ -66,8 +74,7 @@ class _FakeSortformerModules:
         self.checked_with.append(_snapshot(self))
 
     def init_streaming_state(self, *, batch_size, async_streaming, device):
-        state = {"step": 0}
-        return state
+        return _FakeStreamingState(step=0)
 
 
 def _snapshot(modules) -> tuple[tuple[str, int], ...]:
@@ -90,7 +97,7 @@ def _make_model():
         # Record what NeMo would actually read during the call.
         model.params_seen_during_call.append(_snapshot(model.sortformer_modules))
         chunk_preds = torch.rand(1, 4, 4) * 0.01
-        return {"step": 1}, torch.cat([total_preds, chunk_preds], dim=1)
+        return _FakeStreamingState(step=1), torch.cat([total_preds, chunk_preds], dim=1)
 
     model.params_seen_during_call = []
     model.forward_streaming_step = MagicMock(side_effect=_forward_streaming_step)
@@ -184,8 +191,9 @@ def test_applied_streaming_params_restores_on_exception():
     modules = _FakeSortformerModules()
     before = _snapshot(modules)
 
-    with pytest.raises(RuntimeError), applied_streaming_params(
-        modules, get_latency_tier_params("ultra-low")
+    with (
+        pytest.raises(RuntimeError),
+        applied_streaming_params(modules, get_latency_tier_params("ultra-low")),
     ):
         raise RuntimeError("model blew up mid-chunk")
 
