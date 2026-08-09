@@ -19,7 +19,7 @@ from coro.bench.performance import (
     write_performance_summary,
 )
 from coro.bench.sampling import Sampler, sample_resource_baseline
-from coro.bench.stm import hyp_segments_to_stm
+from coro.bench.stm import hyp_response_to_stm
 from coro.bench.transport import (
     _is_connection_refused,
     transcribe_audio,
@@ -357,8 +357,7 @@ def _fetch_health(base_url: str) -> Any:
 
 
 def _write_hyp(hyp_dir: Path, item_id: str, result: dict[str, Any]) -> None:
-    segments = result.get("segments", [])
-    stm_text = hyp_segments_to_stm(segments, item_id)
+    stm_text = hyp_response_to_stm(result, item_id)
     if stm_text:
         (hyp_dir / f"{item_id}.hyp.stm").write_text(stm_text)
 
