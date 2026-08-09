@@ -30,6 +30,7 @@ from pathlib import Path
 import torch
 
 from coro.backends.diarization import factory as diarization_factory
+from coro.backends.diarization.nemo.postprocessing import preset_for_collar
 from coro.bench.models.quality import DerStats
 from coro.bench.quality import score_item
 from coro.bench.stm import speaker_timeline_to_stm
@@ -153,6 +154,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--meetings", nargs="+", required=True)
     parser.add_argument("--collar", type=float, default=0.25)
     parser.add_argument(
+        "--postprocessing",
+        default=None,
+        help=(
+            "Diarization Post-Processing Configuration for the nemo backend: a "
+            "vendored preset name, a path to a custom YAML, 'none' for NeMo's "
+            "unconfigured baseline, or 'auto' (the default) to select the "
+            "vendored preset tuned for --collar. See ADR 0009."
+        ),
+    )
+    parser.add_argument(
         "--regions",
         nargs="+",
         default=["all", "nooverlap"],
@@ -164,6 +175,23 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--pyannote-model", default="pyannote/speaker-diarization-community-1")
     parser.add_argument("--backends", nargs="+", default=["nemo", "pyannote"])
     return parser.parse_args()
+
+
+def resolve_postprocessing_selection(value: str | None, *, collar: float) -> str | None:
+    """Pick the Diarization Post-Processing Configuration for this scoring collar.
+
+    Zero-collar scoring rewards boundary precision and near-zero padding, while
+    collar-tolerant scoring rewards generous padding and aggressive
+    short-segment deletion — so a parameter set tuned for one collar is the
+    wrong set for the other. Defaulting to ``auto`` pairs this tool's
+    ``--collar`` with the preset tuned for it instead of inheriting whichever
+    default happens to apply. See ADR 0009.
+    """
+    if value == "none":
+        return None
+    if value is None or value == "auto":
+        return preset_for_collar(collar)
+    return value
 
 
 def _print_tables(
@@ -203,9 +231,11 @@ def main() -> None:
     hf_token = hf_token_secret.get_secret_value() if hf_token_secret else None
 
     region_modes = list(args.regions)
+    postprocessing = resolve_postprocessing_selection(args.postprocessing, collar=args.collar)
     print(
         f"AMI root: {ami_root}\nMeetings: {args.meetings}\n"
         f"Collar: {args.collar}  Regions: {region_modes}\n"
+        f"Post-processing (nemo): {postprocessing or 'baseline (none)'}\n"
     )
 
     models = {"nemo": args.nemo_model, "pyannote": args.pyannote_model}
@@ -216,7 +246,11 @@ def main() -> None:
         print(f"\n=== {name} ({models[name]}) ===", flush=True)
         try:
             adapter = diarization_factory.build_diarization_adapter(
-                name, models[name], device="auto", hf_token=hf_token
+                name,
+                models[name],
+                device="auto",
+                hf_token=hf_token,
+                postprocessing=postprocessing,
             )
             results[name] = _run_backend(
                 name, adapter, args.meetings, ami_root, out_dir, args.collar, region_modes
