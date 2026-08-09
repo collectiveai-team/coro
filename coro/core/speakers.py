@@ -110,9 +110,7 @@ def attribute_span(
     if not merged:
         return SpeakerAttribution(speaker=NO_DIARIZATION_SPEAKER, overlap=False)
 
-    hits = [
-        entry for entry in merged if _overlap_seconds(start, end, entry.start, entry.end) > 0.0
-    ]
+    hits = [entry for entry in merged if _overlap_seconds(start, end, entry.start, entry.end) > 0.0]
     if not hits:
         return SpeakerAttribution(speaker=UNKNOWN_SPEAKER, overlap=False)
 
