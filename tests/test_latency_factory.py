@@ -110,17 +110,43 @@ class TestNemoStreamingDiarizerFactory:
         model.forward_streaming_step = MagicMock(return_value=({"step": 1}, None))
         return model
 
-    def test_factory_applies_tier_params_to_model(self):
+    def test_factory_validates_the_tier_without_retuning_the_shared_model(self):
+        """Construction validates the tier but leaves the shared model as found.
+
+        The tier used to be written onto ``model.sortformer_modules``
+        permanently at construction. That object is shared with the batch
+        Diarization Adapter, so building the streaming factory silently
+        retuned batch diarization. The parameters are now scoped to each model
+        call instead; see tests/test_streaming_factory_shared_state.py and
+        ADR 0009.
+        """
         from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
 
         model = self._make_mock_model()
-        NemoStreamingDiarizerFactory(model, tier="very-high")
-        assert model.sortformer_modules.chunk_len == 340
-        assert model.sortformer_modules.chunk_right_context == 40
-        assert model.sortformer_modules.fifo_len == 40
-        assert model.sortformer_modules.spkcache_update_period == 300
-        assert model.sortformer_modules.spkcache_len == 188
+        before = {
+            "chunk_len": model.sortformer_modules.chunk_len,
+            "chunk_right_context": model.sortformer_modules.chunk_right_context,
+            "fifo_len": model.sortformer_modules.fifo_len,
+            "spkcache_update_period": model.sortformer_modules.spkcache_update_period,
+            "spkcache_len": model.sortformer_modules.spkcache_len,
+        }
+
+        factory = NemoStreamingDiarizerFactory(model, tier="very-high")
+
+        # The tier is held by the factory...
+        assert factory._tier_params.chunk_len == 340
+        assert factory._tier_params.chunk_right_context == 40
+        assert factory._tier_params.fifo_len == 40
+        assert factory._tier_params.spkcache_update_period == 300
+        assert factory._tier_params.spkcache_len == 188
+        # ...validated against NeMo's own constraints...
         model.sortformer_modules._check_streaming_parameters.assert_called_once()
+        # ...and not left written onto the model the batch adapter also uses.
+        assert model.sortformer_modules.chunk_len == before["chunk_len"]
+        assert model.sortformer_modules.chunk_right_context == before["chunk_right_context"]
+        assert model.sortformer_modules.fifo_len == before["fifo_len"]
+        assert model.sortformer_modules.spkcache_update_period == (before["spkcache_update_period"])
+        assert model.sortformer_modules.spkcache_len == before["spkcache_len"]
 
     def test_factory_produces_distinct_instances(self):
         from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
