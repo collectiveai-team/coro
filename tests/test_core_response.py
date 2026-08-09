@@ -160,10 +160,16 @@ def test_missing_probability_defaults_to_one():
 
 
 def test_segment_splits_where_the_word_level_speaker_changes():
-    """A sentence spanning a speaker turn no longer inherits one label."""
+    """A sentence spanning a speaker turn no longer inherits one label.
+
+    The turn coincides with sentence-final punctuation, so it is a real turn
+    and punctuation-aware realignment (see ``test_core_speakers.py``) leaves
+    it untouched; an unpunctuated speaker change within a single sentence is
+    instead flicker-corrected.
+    """
     tokens = [
         TranscriptToken(start=0.0, end=0.4, text=" hola", probability=1.0),
-        TranscriptToken(start=0.4, end=0.8, text=" mundo", probability=1.0),
+        TranscriptToken(start=0.4, end=0.8, text=" mundo.", probability=1.0),
         TranscriptToken(start=2.0, end=2.4, text=" adios", probability=1.0),
         TranscriptToken(start=2.4, end=2.8, text=" amigo.", probability=1.0),
     ]
@@ -174,8 +180,26 @@ def test_segment_splits_where_the_word_level_speaker_changes():
     result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.0)
 
     assert [s.speaker for s in result.segments] == ["2", "3"]
-    assert [s.text for s in result.segments] == ["hola mundo", "adios amigo."]
+    assert [s.text for s in result.segments] == ["hola mundo.", "adios amigo."]
     assert [w.speaker for w in result.word_segments] == ["2", "2", "3", "3"]
+
+
+def test_single_word_flicker_within_a_sentence_does_not_split_the_segment():
+    """Punctuation-aware realignment absorbs a one-word diarization blip."""
+    tokens = [
+        TranscriptToken(start=0.0, end=1.0, text=" esto", probability=1.0),
+        TranscriptToken(start=1.0, end=2.0, text=" es", probability=1.0),
+        TranscriptToken(start=2.0, end=2.2, text=" una", probability=1.0),
+        TranscriptToken(start=2.2, end=3.0, text=" prueba.", probability=1.0),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=2.0, speaker=1),
+        SpeakerSegment(start=2.0, end=2.2, speaker=2),
+        SpeakerSegment(start=2.2, end=3.0, speaker=1),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.0)
+    assert [s.speaker for s in result.segments] == ["1"]
+    assert [w.speaker for w in result.word_segments] == ["1", "1", "1", "1"]
 
 
 def test_word_in_a_diarization_gap_is_marked_unknown():

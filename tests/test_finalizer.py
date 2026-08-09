@@ -133,10 +133,16 @@ def test_finalizer_open_buffer_stays_bounded(tmp_path):
 
 
 def test_finalizer_matches_batch_when_a_speaker_changes_mid_run(tmp_path):
-    """Word-level splitting inside one segment run is identical in both paths."""
+    """Word-level splitting inside one segment run is identical in both paths.
+
+    The turn coincides with sentence-final punctuation (a real turn), so
+    punctuation-aware realignment leaves it untouched; an unpunctuated
+    mid-sentence change is instead flicker-corrected (see
+    ``test_core_speakers.py``).
+    """
     tokens = [
         _tok(0.0, 0.4, " hola"),
-        _tok(0.4, 0.8, " mundo"),
+        _tok(0.4, 0.8, " mundo."),
         _tok(2.0, 2.4, " adios"),
         _tok(2.4, 2.8, " amigo."),
     ]
@@ -148,7 +154,7 @@ def test_finalizer_matches_batch_when_a_speaker_changes_mid_run(tmp_path):
         finalizer = StreamingTranscriptFinalizer(store)
         finalizer.add_tokens(tokens)
         finalizer.finish()
-        assert store.segment_count == 1  # one punctuation-bounded run
+        assert store.segment_count == 2  # two punctuation-bounded runs
         streamed = build_streaming_response(store, timeline)
 
     batch = build_transcription_response(tokens, timeline, duration=3.0)
