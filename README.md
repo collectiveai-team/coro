@@ -355,27 +355,62 @@ labels back. Sortformer handles **≤ 4 speakers**; for more, use pyannote below
 #### Sortformer post-processing (optional, see ADR 0009)
 
 Sortformer's raw speaker-activity predictions go through a threshold-based
-post-processing step (onset/offset/padding/min-duration). Left unset, coro
-uses NeMo's own unconfigured baseline — no smoothing, no padding. Set
-`CORO_DIARIZATION_POSTPROCESSING` to one of NeMo's own published presets, or
-to a path to a custom YAML in the same schema, to override it:
+post-processing step (onset/offset/padding/min-duration). Coro defaults to the
+vendored `dihard3-dev` preset, which measured better than NeMo's unconfigured
+baseline on **33 of 34 AMI meetings** at the benchmark's 0 s scoring collar
+(-3.0% relative DER). Point `CORO_DIARIZATION_POSTPROCESSING` at the other
+published preset, at a custom YAML in the same schema, or at `none` to return
+to NeMo's raw baseline:
 
 ```bash
-coro --backend-diarization nemo --diarization-postprocessing dihard3-dev
+coro --backend-diarization nemo --diarization-postprocessing callhome-part1
+coro --backend-diarization nemo --diarization-postprocessing none  # opt out
 ```
 
-| Preset | Optimized on | NVIDIA's domain description |
-|---|---|---|
-| `dihard3-dev` | DIHARD III dev split | Diverse, challenging recordings across many conditions |
-| `callhome-part1` | CALLHOME (NIST SRE 2000 Disc8) | Telephone conversations |
+| Preset | Optimized on | Target scoring collar | NVIDIA's domain description |
+|---|---|---|---|
+| `dihard3-dev` | DIHARD III dev split | 0 s | Diverse, challenging recordings across many conditions |
+| `callhome-part1` | CALLHOME (NIST SRE 2000 Disc8) | 0.25 s | Telephone conversations |
 
-**Neither preset is a coro recommendation.** They are NVIDIA's own published
-values for two specific domains; whether either is a good fit for *your*
-deployment's audio depends on how close your traffic is to one of those
-domains — coro does not know that, and does not compute or tune numbers
-against any benchmark on your behalf. If you have a representative sample of
-your own traffic to validate against, supply your own YAML in the same
-`parameters:` schema instead.
+**The target collar is part of the parameter set, not a footnote.** Zero-collar
+scoring rewards boundary precision and near-zero padding; collar-tolerant
+scoring rewards generous padding and aggressive short-segment deletion. Scoring
+a set against the collar it was not tuned for measures the mismatch, not the
+model. `coro-bench-diar` therefore defaults to `--postprocessing auto`, which
+picks the preset matching its `--collar`; pass an explicit preset name to
+override, or `none` for NeMo's baseline.
+
+**Why `dihard3-dev` and not `callhome-part1`.** `callhome-part1` actually
+scored *better* on AMI (-8.9% at collar 0.0, -19.9% at 0.25), but it gets there
+by padding aggressively — recovering 1.8 s of missed speech per 1 s of added
+false alarm, versus 12:1 for `dihard3-dev`. That trade only pays while the
+model is substantially under-detecting, and its worst single meeting regressed
+by 6.8 DER points against 1.5 for `dihard3-dev`. The default is the small,
+structurally robust gain rather than the large domain-dependent one. If your
+audio resembles telephony, `callhome-part1` is one setting away.
+
+**Both presets are NVIDIA's own published values, measured here on one
+corpus.** AMI is English business meetings on close-talking mics; transfer to
+other domains is not measured, and coro does not compute thresholds of its own.
+If you have a representative sample of your own traffic to validate against,
+supply your own YAML in the same `parameters:` schema instead. Full measurement
+and reasoning: ADR 0009.
+
+##### Speaker-count gate
+
+When post-processing is enabled it is applied only when the estimated speaker
+count is at or below `CORO_DIARIZATION_POSTPROCESSING_MAX_SPEAKERS` (default
+`4`); above it, that recording falls back to NeMo's baseline. NVIDIA's own v2
+results show these thresholds improve DER for four or fewer speakers and
+consistently *degrade* it at five or more, because short-segment deletion
+removes the brief, fragmentary evidence the model has for the extra speakers —
+so applying them unconditionally makes the worst case worse.
+
+**This gate cannot fire on any currently shipped Sortformer revision.** They
+are all 4-speaker models emitting a `T x 4` activity matrix, so the estimate
+can never exceed 4. It is implemented now so the behaviour is already correct
+if a >4-speaker Diarization Model Selection is configured later, and the
+ceiling is a setting rather than a constant for the same reason.
 
 ### pyannote setup (gated model + token)
 
@@ -429,7 +464,8 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 | `CORO_MODEL_DIARIZATION` | `--model-diarization` | _(unset)_ | Diarization model; defaults to `nvidia/diar_streaming_sortformer_4spk-v2` (`nemo`) or `pyannote/speaker-diarization-community-1` (`pyannote`). |
 | `CORO_DIARIZATION_DEVICE` | `--diarization-device` | `auto` | Diarization device (`auto` \| `cuda` \| `cpu`). |
 | `CORO_DIARIZATION_LATENCY` | `--diarization-latency` | `very-high` | Streaming Sortformer latency tier (`very-high` \| `high` \| `low` \| `ultra-low`); `nemo` streaming only. |
-| `CORO_DIARIZATION_POSTPROCESSING` | `--diarization-postprocessing` | _(unset)_ | Sortformer post-processing preset (`dihard3-dev` \| `callhome-part1`) or a path to a custom YAML; `nemo` only, see below. |
+| `CORO_DIARIZATION_POSTPROCESSING` | `--diarization-postprocessing` | `dihard3-dev` | Sortformer post-processing preset (`dihard3-dev` \| `callhome-part1`), a path to a custom YAML, or `none` to opt out; `nemo` only, see below. |
+| `CORO_DIARIZATION_POSTPROCESSING_MAX_SPEAKERS` | `--diarization-postprocessing-max-speakers` | `4` | Speaker-count ceiling above which post-processing is bypassed; `nemo` only, see above. No effect on 4-speaker models. |
 | `CORO_HF_TOKEN` | `--CORO-HF-TOKEN` | _(unset)_ | Hugging Face token for gated diarization models (e.g. pyannote community-1). Also read from `HF_TOKEN` / `HUGGING_FACE_HUB_TOKEN` (and matching `--HF-TOKEN` flags) and `.env`; masked in logs. |
 | `CORO_TRANSCRIPT_SPILL_DIR` | `--transcript-spill-dir` | _(system temp)_ | Streaming transcript spill dir; must be real disk (non-tmpfs) for flat RAM. |
 | `CORO_WARMUP` | `--warmup` | `enabled` | Run warmup against the warmup audio asset at startup (`enabled` \| `disabled`). |

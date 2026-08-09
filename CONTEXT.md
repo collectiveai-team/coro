@@ -309,8 +309,16 @@ The adapter-owned choice of batch or incremental speaker timeline generation for
 _Avoid_: Pipeline-owned diarization algorithm, forced batch diarization
 
 **Diarization Post-Processing Configuration**:
-The threshold source a NeMo Diarization Adapter applies to raw Sortformer speaker-activity predictions before emitting segments: `none` (the default) keeps NeMo's own unconfigured baseline, a named preset or a custom YAML path overrides it. Coro vendors NVIDIA's own published presets without computing or recommending threshold values itself; see ADR 0009.
-_Avoid_: A coro-tuned default, a benchmark-optimized threshold set
+The threshold source a NeMo Diarization Adapter applies to raw Sortformer speaker-activity predictions before emitting segments: a named preset (default `dihard3-dev`), a custom YAML path, or `none` for NeMo's own unconfigured baseline. Coro vendors NVIDIA's published presets verbatim and selects between them on measured DER rather than computing its own thresholds; see ADR 0009.
+_Avoid_: A coro-computed threshold set, an unmeasured default
+
+**Target Scoring Collar**:
+The DER scoring collar a vendored post-processing parameter set was optimised against, recorded alongside the set itself. Zero-collar scoring rewards boundary precision and near-zero padding; collar-tolerant scoring rewards generous padding and aggressive short-segment deletion. Pairing a parameter set with a different collar is a measurement error, not a preference.
+_Avoid_: One universal parameter set, collar-agnostic thresholds
+
+**Speaker-Count Post-Processing Gate**:
+The rule that suppresses the **Diarization Post-Processing Configuration** when the estimated speaker count exceeds a configured ceiling, falling back to NeMo's baseline for that recording only. NVIDIA reports the tuned thresholds improve DER at four or fewer speakers and degrade it at five or more, because short-segment deletion destroys the fragmentary evidence for the additional speakers. Unobservable while a 4-speaker **Diarization Model Selection** is configured, since the estimate can never exceed 4.
+_Avoid_: Unconditional post-processing, a gate on reference speaker count
 
 **ASR-Only Server**:
 A valid server configuration with an ASR adapter and no diarization adapter.
@@ -390,6 +398,9 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - **ML Model Integration** modules use a **Capability-First Backend Layout**.
 - **ASR Model Selection** and **Diarization Model Selection** are configured independently, even when they use the same **Backend Provider**.
 - The batch and streaming NeMo **Diarization Flows** apply the identical resolved **Diarization Post-Processing Configuration** for the same setting, resolved once and shared between them.
+- Every vendored **Diarization Post-Processing Configuration** preset records its **Target Scoring Collar**; a benchmark lane selects the preset matching the collar it scores at.
+- Both NeMo **Diarization Flows** apply the same **Speaker-Count Post-Processing Gate** before emitting segments.
+- Building the streaming **Diarization Flow** does not mutate the Sortformer model state the batch **Diarization Flow** reads; latency-tier parameters are scoped to each model call.
 
 ## Example Dialogue
 
@@ -567,8 +578,11 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Dev:** "Should pipelines force diarization to be batch or streaming?"
 > **Domain expert:** "No — the **Diarization Adapter** owns the **Diarization Flow** and returns the same speaker timeline shape either way."
 
-> **Dev:** "We measured Sortformer's diarization error on one benchmark — should we tune its post-processing thresholds on that benchmark and ship the tuned numbers as coro's new default?"
-> **Domain expert:** "No — NVIDIA's own two published presets differ substantially from each other because different acoustic domains want different thresholds; tuning on one benchmark and shipping it as a general default would launder a single-domain overfit. Expose the **Diarization Post-Processing Configuration** as an operator setting instead, vendor NVIDIA's presets verbatim, and leave choosing (or supplying a custom one) to whoever has data representative of their own deployment."
+> **Dev:** "We measured Sortformer's diarization error on one benchmark — should we tune our own post-processing thresholds on it and ship those numbers as coro's default?"
+> **Domain expert:** "No — do not compute your own thresholds from one corpus. But do not leave the default unconfigured either: NeMo's raw baseline measured worse than both published presets at both collars, so 'no default' is a measured-worse choice, not a neutral one. Ship a vendored preset chosen on measured DER, and prefer the one whose gain is structurally robust over the one with the bigger single-corpus number."
+
+> **Dev:** "`callhome-part1` scores better on our benchmark — should it be the default?"
+> **Domain expert:** "No. It buys its gain at 1.8 s of recovered miss per 1 s of added false alarm, which only pays while the model is under-detecting; `dihard3-dev` trades at 12:1 and regresses far less in its worst case. Pick the **Diarization Post-Processing Configuration** whose advantage does not depend on one corpus' failure mode."
 
 ## Flagged Ambiguities
 
@@ -619,4 +633,6 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "ASR lock" was used to imply a pipeline-level concern — resolved: concurrency is an **Adapter Concurrency Policy**.
 - "diarization backend" was used to imply a required server dependency — resolved: diarization is optional, and an **ASR-Only Server** is valid.
 - "diarization chunks" was used to imply pipeline-owned diarization behavior — resolved: **Diarization Flow** belongs to the **Diarization Adapter**.
-- "tune the diarizer" was used to imply coro should pick and ship numbers — resolved: coro exposes the **Diarization Post-Processing Configuration** capability and vendors NVIDIA's own presets verbatim; choosing or supplying a value is a per-deployment operator decision, per ADR 0009.
+- "tune the diarizer" was used to imply coro should compute and ship its own numbers — resolved: coro vendors NVIDIA's presets verbatim and selects a default between them on measured DER, per ADR 0009; it does not compute thresholds.
+- "leave the default unset" was treated as the conservative option — resolved: the unconfigured baseline measured worse than both presets at both collars, so shipping no **Diarization Post-Processing Configuration** was an unmeasured choice rather than a neutral one.
+- "collar-matched preset" was used to imply the collar predicts which preset scores best — resolved: the **Target Scoring Collar** is provenance governing *selection*, not a performance prediction; on AMI the collar-tolerant set won at both collars.
