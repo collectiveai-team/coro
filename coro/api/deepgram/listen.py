@@ -25,7 +25,7 @@ from fastapi.responses import JSONResponse
 
 from coro.api.dependencies import get_pipeline, get_settings
 from coro.api.schemas import TranscriptionResponse
-from coro.api.vendor.deepgram import DeepgramErrorResponse, deepgram_response
+from coro.api.deepgram.schemas import DeepgramErrorResponse, deepgram_response
 from coro.audio import AudioConversionError, AudioInput
 from coro.settings import ServerSettings
 
@@ -39,28 +39,32 @@ URL_INGEST_MESSAGE = "Remote URL ingest is not supported. Submit the audio as th
 _BAD_REQUEST = "Bad Request"
 _INTERNAL_ERROR = "INTERNAL_SERVER_ERROR"
 
-# Parameters that change the *contract* rather than transcription quality:
-# they alter the interaction model, add response keys coro cannot produce, or
-# carry a compliance guarantee. Accepting these silently would return a body
-# that does not answer the request the client actually made, so they are
-# refused. Quality-only knobs (punctuate, numerals, smart_format, ...) stay
-# accepted-and-ignored. See ADR 0010.
+_IGNORED_DOC = "Accepted but ignored; the configured backend does not expose this control."
+_NO_FEATURE_DOC = (
+    "Accepted but ignored. coro does not compute this, so the corresponding response "
+    "key is absent rather than empty."
+)
+
+# Almost every unhonoured parameter is accepted and ignored, so a client's
+# standard parameter bundle still works and a future Deepgram flag does not
+# break the endpoint. Features coro cannot compute simply produce no key, which
+# a client reads as absent — recoverable, and documented in the OpenAPI schema
+# rather than enforced at runtime.
+#
+# Two are refused, because ignoring them fails *silently and harmfully* rather
+# than producing missing data:
+#
+# - ``redact`` promises PII was removed. Returning 200 without redacting is a
+#   compliance failure wearing a success code; the client cannot detect it.
+# - ``callback`` promises delivery to a webhook. The client is built to receive
+#   ``{request_id}`` and then wait, so ignoring it hangs that workflow forever
+#   rather than handing back data it can inspect.
+#
+# See ADR 0010.
 _UNSUPPORTED_PARAMS: dict[str, str] = {
-    "callback": "asynchronous callback delivery is not supported",
+    "callback": "asynchronous callback delivery is not supported; results are returned inline",
     "callback_method": "asynchronous callback delivery is not supported",
-    "summarize": "summarization is not supported",
-    "sentiment": "sentiment analysis is not supported",
-    "topics": "topic detection is not supported",
-    "custom_topic": "topic detection is not supported",
-    "intents": "intent recognition is not supported",
-    "custom_intent": "intent recognition is not supported",
-    "detect_entities": "entity detection is not supported",
-    "paragraphs": "paragraph segmentation is not supported",
-    "search": "term search is not supported",
-    "measurements": "measurement formatting is not supported",
-    "redact": "PII redaction is not supported",
-    "replace": "term replacement is not supported",
-    "detect_language": "language detection is not supported",
+    "redact": "PII redaction is not performed; refusing rather than returning unredacted audio",
 }
 
 _DISABLED_VALUES = {"false", "0", "no"}
@@ -78,20 +82,15 @@ def _is_requested(value: str) -> bool:
 
 
 def _unsupported_parameter(params: Mapping[str, str]) -> tuple[str, str] | None:
-    """Return the first requested parameter coro cannot honour, if any.
+    """Return the first requested parameter coro must refuse, if any.
 
-    Deepgram's defaults are all off, so ``summarize=false`` asks for nothing
-    and is not refused.
+    Deepgram's defaults are all off, so ``redact=false`` asks for nothing and
+    is not refused.
     """
     for name, reason in _UNSUPPORTED_PARAMS.items():
         value = params.get(name)
         if value is not None and _is_requested(value):
             return name, reason
-    # multichannel is separate: audio is downmixed to mono, so honouring it
-    # would silently return one channel where the client expects several.
-    multichannel = params.get("multichannel")
-    if multichannel is not None and _is_requested(multichannel):
-        return "multichannel", "audio is converted to mono; multichannel is not supported"
     return None
 
 
@@ -139,11 +138,39 @@ async def listen(
     language: str | None = Query(default=None, description="Optional BCP-47 language hint."),
     diarize: bool = Query(default=False, description="Return per-word speaker labels."),
     utterances: bool = Query(default=False, description="Return the speaker-turn view."),
-    punctuate: bool = Query(default=False, description="Accepted but ignored."),
-    smart_format: bool = Query(default=False, description="Accepted but ignored."),
-    multichannel: bool = Query(default=False, description="Accepted but ignored; audio is mono."),
-    numerals: bool = Query(default=False, description="Accepted but ignored."),
-    profanity_filter: bool = Query(default=False, description="Accepted but ignored."),
+    punctuate: bool = Query(default=False, description=_IGNORED_DOC),
+    smart_format: bool = Query(default=False, description=_IGNORED_DOC),
+    numerals: bool = Query(default=False, description=_IGNORED_DOC),
+    profanity_filter: bool = Query(default=False, description=_IGNORED_DOC),
+    filler_words: bool = Query(default=False, description=_IGNORED_DOC),
+    dictation: bool = Query(default=False, description=_IGNORED_DOC),
+    multichannel: bool = Query(
+        default=False,
+        description="Accepted but ignored. Audio is downmixed to mono, so one channel is returned.",
+    ),
+    detect_language: bool = Query(
+        default=False,
+        description="Accepted but ignored. `detected_language` is not returned; pass `language`.",
+    ),
+    summarize: str | None = Query(default=None, description=_NO_FEATURE_DOC),
+    sentiment: bool = Query(default=False, description=_NO_FEATURE_DOC),
+    topics: bool = Query(default=False, description=_NO_FEATURE_DOC),
+    intents: bool = Query(default=False, description=_NO_FEATURE_DOC),
+    detect_entities: bool = Query(default=False, description=_NO_FEATURE_DOC),
+    paragraphs: bool = Query(default=False, description=_NO_FEATURE_DOC),
+    search: list[str] | None = Query(default=None, description=_NO_FEATURE_DOC),
+    measurements: bool = Query(default=False, description=_NO_FEATURE_DOC),
+    replace: list[str] | None = Query(default=None, description=_NO_FEATURE_DOC),
+    redact: list[str] | None = Query(
+        default=None,
+        description="**Refused with 400.** No redaction is performed, and returning "
+        "unredacted text under a redaction request would be a silent compliance failure.",
+    ),
+    callback: str | None = Query(
+        default=None,
+        description="**Refused with 400.** Results are returned inline; no webhook is ever "
+        "delivered, so a client awaiting one would wait forever.",
+    ),
     authorization: str | None = Header(default=None, description="Accepted but not validated."),
     pipeline=Depends(get_pipeline),
     settings: ServerSettings = Depends(get_settings),
@@ -153,11 +180,13 @@ async def listen(
     ``diarize`` and ``utterances`` default to ``false``, as they do at
     Deepgram, so per-word speakers require ``?diarize=true&utterances=true``.
 
-    Quality-only parameters coro cannot honour (``punctuate``, ``numerals``,
-    ``smart_format``, ...) are accepted and ignored. Parameters that would
-    change the response contract — asynchronous ``callback`` delivery, the
-    analysis features, ``redact``, ``multichannel`` — are refused instead, so a
-    client never receives a body that silently fails to answer its request.
+    Unhonoured parameters are accepted and ignored, so a client's standard
+    parameter bundle still works and a future Deepgram flag does not break the
+    endpoint. Each is documented above with what its absence means.
+
+    ``redact`` and ``callback`` are the exceptions and are refused with a 400:
+    ignoring them fails silently and harmfully rather than merely omitting a
+    response key. See ADR 0010.
     """
     request_id = uuid4().hex[:8]
     started = time.perf_counter()

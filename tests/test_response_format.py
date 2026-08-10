@@ -13,7 +13,7 @@ import wave
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from coro.api.v1.transcriptions import ResponseFormat
+from coro.api.openai.transcriptions import ResponseFormat
 from coro.app import create_app
 from coro.core.models import (
     ResponseSegment,
@@ -64,7 +64,7 @@ def test_response_format_carries_only_values_openai_defines():
 
 def test_response_format_enum_json_like_is_iterable():
     """JSON-like formats can be determined from the Enum without a hard-coded set."""
-    from coro.api.v1.transcriptions import _JSON_LIKE_FORMATS
+    from coro.api.openai.transcriptions import _JSON_LIKE_FORMATS
 
     assert ResponseFormat.JSON in _JSON_LIKE_FORMATS
     assert ResponseFormat.VERBOSE_JSON in _JSON_LIKE_FORMATS

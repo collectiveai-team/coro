@@ -718,25 +718,58 @@ pre-recorded parameters — 3 honoured, 16 refused, 18 ignored:
 | | parameters |
 |---|---|
 | **honoured** (3) | `diarize`, `utterances`, `language` |
-| **refused** with a `400` (16) | `callback`, `callback_method`, `summarize`, `sentiment`, `topics`, `custom_topic`, `intents`, `custom_intent`, `detect_entities`, `paragraphs`, `search`, `measurements`, `redact`, `replace`, `detect_language`, `multichannel` |
-| **accepted and ignored** (18) | `model`, `version`, `punctuate`, `smart_format`, `numerals`, `profanity_filter`, `filler_words`, `dictation`, `keywords`, `keyterm`, `diarize_model`, `utt_split`, `tag`, `extra`, `mip_opt_out`, `encoding`, `custom_topic_mode`, `custom_intent_mode` |
+| **refused** with a `400` (3) | `redact`, `callback`, `callback_method` |
+| **accepted and ignored** (31) | everything else — `summarize`, `sentiment`, `topics`, `intents`, `detect_entities`, `paragraphs`, `search`, `multichannel`, `punctuate`, `smart_format`, `model`, … |
 
-Features Coro cannot compute are **refused, not silently dropped**. Ignoring
-`redact=pii` would return a 200 implying PII was removed when it was not;
-ignoring `callback` would leave a client waiting for a webhook that never
-fires. Quality-only knobs like `punctuate` are ignored, because you still get a
-transcript — just not tuned the way you asked.
+Unhonoured parameters are **ignored**, each documented in the OpenAPI schema
+with what its absence means, so a standard parameter bundle still works and a
+future Deepgram flag will not break the endpoint. Features Coro does not
+compute simply produce no response key.
+
+Two are **refused**, because ignoring them fails silently instead of visibly:
+`redact` would return unredacted text under a redaction request (a compliance
+failure wearing a 200), and `callback` would leave a client waiting forever for
+a webhook that never fires. A missing `summary` key you can see; those two you
+cannot.
 
 Also not implemented:
 
-- **Streaming.** Deepgram's live contract is a WebSocket with its own message
-  types, and covers both `listen/v1`'s `connect` and the whole of `listen/v2`
-  (which is WebSocket-only — real-time recognition with contextual turn
-  detection, not a newer pre-recorded API). Coro streams only in OpenAI's SSE
-  framing (`/v1/audio/transcriptions?stream=true`), which a Deepgram client
-  cannot consume.
 - **URL ingest.** `{"url": "..."}` bodies are refused with a clear message;
   submit audio as the raw request body.
+- **`listen/v2`** — WebSocket-only, and its distinguishing feature is
+  contextual turn detection, which Coro has no equivalent of.
+- **`interim_results`, `vad_events`, `utterance_end_ms`** — Coro emits only
+  tokens it has already accepted, so every frame is final.
+
+## Live streaming: `WebSocket /v1/listen`
+
+Deepgram's streaming contract is a WebSocket, so Coro implements one. This is
+genuine live transcription — `Results` frames are pushed as windows complete,
+not after the client stops sending.
+
+```python
+import json, websockets
+
+async with websockets.connect(
+    "ws://localhost:8000/v1/listen?encoding=linear16&sample_rate=16000&diarize=true"
+) as ws:
+    await ws.send(pcm_chunk)                       # binary frames: raw samples
+    await ws.send(json.dumps({"type": "KeepAlive"}))
+    print(json.loads(await ws.recv()))             # {"type": "Results", ...}
+    await ws.send(json.dumps({"type": "CloseStream"}))
+```
+
+- **Audio is declared, not sniffed.** A socket has no container, so
+  `encoding=linear16` is required; other encodings are refused at connect time
+  with an `Error` frame rather than after a minute of noise. Non-16 kHz rates
+  are resampled.
+- **Control frames:** `KeepAlive`, `Finalize`, `CloseStream`.
+- **Interim frames carry no speaker.** The diarization timeline is incomplete
+  while audio is arriving, so a mid-stream label would be a guess later frames
+  contradict. With `diarize=true` a final attributed frame is sent once the
+  timeline is complete — a deliberate deviation from Deepgram, which labels
+  interim words.
+- The stream always ends with a `Metadata` frame.
 
 See `docs/adr/0010-vendor-native-endpoints.md` for the fidelity policy.
 `/v1/audio/transcriptions` is byte-unchanged, asserted in

@@ -10,7 +10,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from coro.api.exceptions import TranscriptionError
-from coro.api.schemas import OpenAIErrorResponse
+from coro.api.openai.schemas import OpenAIErrorResponse
 
 
 def openai_error(

@@ -124,11 +124,34 @@ class TestDeepgramErrors:
 
 
 @pytest.mark.asyncio
-class TestUnsupportedParametersAreRefused:
+class TestSilentlyHarmfulParametersAreRefused:
     @pytest.mark.parametrize(
         "query",
         [
+            "?redact=pii",
             "?callback=https://example.test/hook",
+            "?callback_method=post",
+        ],
+    )
+    async def test_refused(self, query: str):
+        # These two cannot be ignored safely. Unredacted text under a
+        # redaction request is a compliance failure the client cannot see, and
+        # a client awaiting a callback waits forever. Both are invisible
+        # failures, unlike a merely absent response key.
+        response = await _listen(query)
+        assert response.status_code == 400
+        assert set(response.json()) == {"err_code", "err_msg", "request_id"}
+
+    @pytest.mark.parametrize("query", ["?redact=false", "?callback=false"])
+    async def test_explicitly_disabled_is_not_a_request(self, query: str):
+        assert (await _listen(query)).status_code == 200
+
+
+@pytest.mark.asyncio
+class TestUnhonouredParametersAreIgnored:
+    @pytest.mark.parametrize(
+        "query",
+        [
             "?summarize=true",
             "?sentiment=true",
             "?topics=true",
@@ -136,32 +159,23 @@ class TestUnsupportedParametersAreRefused:
             "?detect_entities=true",
             "?paragraphs=true",
             "?search=hello",
-            "?redact=pii",
+            "?measurements=true",
             "?replace=a:b",
             "?multichannel=true",
             "?detect_language=true",
+            "?punctuate=true&smart_format=true&numerals=true&filler_words=true",
         ],
     )
-    async def test_contract_shaping_parameters_are_refused(self, query: str):
-        # Silently ignoring these returns a body that does not answer the
-        # request: no callback fires, no summary key appears, no PII is
-        # redacted. A refusal is honest; a 200 is not.
-        response = await _listen(query)
-        assert response.status_code == 400
-        assert set(response.json()) == {"err_code", "err_msg", "request_id"}
-
-    @pytest.mark.parametrize(
-        "query",
-        ["?summarize=false", "?multichannel=false", "?redact=false", "?detect_entities=false"],
-    )
-    async def test_explicitly_disabled_features_are_not_refused(self, query: str):
-        # Deepgram's defaults are all off, so asking for `false` asks for
-        # nothing coro cannot do.
+    async def test_accepted_so_a_standard_parameter_bundle_still_works(self, query: str):
+        # Coro cannot compute these, so the corresponding response key is
+        # simply absent — visible to the client, and documented in OpenAPI.
         assert (await _listen(query)).status_code == 200
 
-    async def test_quality_only_parameters_are_still_accepted(self):
-        query = "?punctuate=true&smart_format=true&numerals=true&filler_words=true&dictation=true"
-        assert (await _listen(query)).status_code == 200
+    async def test_unrequested_features_produce_no_response_key(self):
+        body = (await _listen("?summarize=true&sentiment=true&paragraphs=true")).json()
+        alternative = body["results"]["channels"][0]["alternatives"][0]
+        for absent in ("summaries", "paragraphs", "entities", "topics"):
+            assert absent not in alternative
 
     async def test_url_ingest_is_refused_with_a_clear_message(self):
         app = make_app(FakePipeline())

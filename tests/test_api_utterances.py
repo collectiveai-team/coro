@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from coro.api.schemas import WhisperWord
-from coro.api.vendor.utterances import group_words_into_utterances, mean_confidence
+from coro.api.utterances import group_words_into_utterances, mean_confidence
 
 
 def _word(text: str, speaker: str, score: float = 1.0) -> WhisperWord:

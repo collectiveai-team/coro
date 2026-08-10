@@ -368,10 +368,13 @@ dependencies = [
     { name = "lightning" },
     { name = "nemo-toolkit", extra = ["asr"] },
     { name = "numba" },
+    { name = "numpy" },
     { name = "onnx-asr", extra = ["hub"] },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
+    { name = "soxr" },
     { name = "uvicorn" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -422,6 +425,7 @@ requires-dist = [
     { name = "lightning", specifier = "==2.4.0" },
     { name = "nemo-toolkit", extras = ["asr"], specifier = ">=2.7.0,<2.8.0" },
     { name = "numba", specifier = ">=0.61" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "nvidia-cublas-cu12", marker = "extra == 'cuda'", specifier = ">=12.0.0.0" },
     { name = "nvidia-cudnn-cu12", marker = "extra == 'cuda'", specifier = ">=9.0.0.0" },
     { name = "onnx-asr", extras = ["hub"], specifier = ">=0.11.0" },
@@ -432,11 +436,13 @@ requires-dist = [
     { name = "pyannote-audio", marker = "extra == 'diar-pyannote'", specifier = ">=4.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "python-multipart", specifier = ">=0.0.27" },
+    { name = "soxr", specifier = ">=0.5" },
     { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.12.1,<4.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "coro-asr", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cuda'", specifier = ">=2.12.1,<4.0" },
     { name = "torchaudio", marker = "extra == 'cpu'", specifier = ">=2.1.0,<4.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "coro-asr", extra = "cpu" } },
     { name = "torchaudio", marker = "extra == 'cuda'", specifier = ">=2.1.0,<4.0" },
     { name = "uvicorn", specifier = ">=0.30.0" },
+    { name = "websockets", specifier = ">=13" },
 ]
 provides-extras = ["cpu", "cuda", "diar-pyannote"]
 

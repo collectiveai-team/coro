@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from coro.api.schemas import OpenAIErrorResponse, TranscriptionResponse
+from coro.api.schemas import TranscriptionResponse
+from coro.api.openai.schemas import OpenAIErrorResponse
 
 
 def test_transcription_response_rejects_backend_native_extras():

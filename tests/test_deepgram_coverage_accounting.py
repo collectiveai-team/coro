@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 from deepgram.listen.v1.media.client import MediaClient
 
-from coro.api.v1.listen import _UNSUPPORTED_PARAMS
+from coro.api.deepgram.listen import _UNSUPPORTED_PARAMS
 
 _ADR = Path(__file__).resolve().parents[1] / "docs/adr/0010-vendor-native-endpoints.md"
 
@@ -29,7 +29,7 @@ VENDOR_PARAMS = {
     for name in inspect.signature(MediaClient.transcribe_file).parameters
     if name not in ("self", "request_options", "request")
 }
-REFUSED = set(_UNSUPPORTED_PARAMS) | {"multichannel"}
+REFUSED = set(_UNSUPPORTED_PARAMS)
 HONOURED = {"diarize", "utterances", "language"}
 IGNORED = VENDOR_PARAMS - REFUSED - HONOURED
 
@@ -37,29 +37,26 @@ IGNORED = VENDOR_PARAMS - REFUSED - HONOURED
 class TestRefusalListIsCoherent:
     def test_every_refused_parameter_is_a_real_vendor_parameter(self):
         # Catches a typo that would silently never match a request.
-        assert REFUSED - VENDOR_PARAMS == set()
+        assert set() == REFUSED - VENDOR_PARAMS
 
     def test_refused_and_honoured_do_not_overlap(self):
-        assert REFUSED & HONOURED == set()
+        assert set() == REFUSED & HONOURED
 
     def test_every_vendor_parameter_is_accounted_for(self):
         assert REFUSED | HONOURED | IGNORED == VENDOR_PARAMS
 
-    def test_feature_modifiers_are_covered_by_their_head_parameter(self):
-        # `custom_topic_mode` alone is meaningless; refusing `custom_topic`
-        # is what makes ignoring the modifier safe.
-        for head, modifier in [
-            ("custom_topic", "custom_topic_mode"),
-            ("custom_intent", "custom_intent_mode"),
-        ]:
-            assert head in REFUSED
-            assert modifier in IGNORED
+    def test_only_silently_harmful_parameters_are_refused(self):
+        # Everything else is accepted and ignored so a client's standard
+        # parameter bundle still works. These two cannot be ignored safely:
+        # `redact` would return unredacted text under a redaction request, and
+        # `callback` would leave a client awaiting a webhook that never fires.
+        assert {"redact", "callback", "callback_method"} == REFUSED
 
 
 class TestDocumentedCountsMatchTheCode:
     @pytest.mark.parametrize(
         "label,expected",
-        [("honoured", 3), ("refused", 16), ("ignored", 18)],
+        [("honoured", 3), ("refused", 3), ("ignored", 31)],
     )
     def test_computed_counts(self, label: str, expected: int):
         computed = {"honoured": HONOURED, "refused": REFUSED, "ignored": IGNORED}[label]

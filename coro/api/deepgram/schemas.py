@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from coro.api.schemas import TranscriptionResponse, WhisperWord
-from coro.api.vendor.utterances import (
+from coro.api.utterances import (
     UNKNOWN_SPEAKER_LABEL,
     group_words_into_utterances,
     mean_confidence,

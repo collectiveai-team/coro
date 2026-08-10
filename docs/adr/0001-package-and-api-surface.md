@@ -1,6 +1,6 @@
 # Package and API Surface
 
-> **Status:** The provider-first backend layout decided here is **superseded by ADR 0007 (Capability-First Backend Layout)**. The Supported Endpoint Set is **amended by ADR 0010 (Vendor-Native Endpoints)**, which adds `/v1/listen` as a deliberately implemented, SDK-conformant Deepgram endpoint; the exclusion below was written against an inherited *prototype* route and still holds for every other route it names. The rest of this ADR (package shape, core-owned protocols) still stands.
+> **Status:** The provider-first backend layout decided here is **superseded by ADR 0007 (Capability-First Backend Layout)**. The Supported Endpoint Set is **amended by ADR 0010 (Vendor-Native Endpoints)**, which adds `POST /v1/listen` and `WebSocket /v1/listen` as deliberately implemented, SDK-conformant Deepgram endpoints; the exclusions below — including the WebSocket one — were written against inherited *prototype* routes and still hold for every other route they name. The rest of this ADR (package shape, core-owned protocols) still stands.
 
 The packaged server uses a root-level `coro` package, exposes a lightweight module-level `coro.app:app`, and exposes one public transcription route: `/v1/audio/transcriptions`. Full-memory and chunked-file behavior are not public API versions; they are startup-selected transcription pipeline implementations chosen by `CORO_PIPELINE`.
 
