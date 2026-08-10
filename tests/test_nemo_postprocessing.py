@@ -69,8 +69,7 @@ def test_nonexistent_custom_path_raises(tmp_path):
 
 
 _UPSTREAM_SOURCE = (
-    "NVIDIA-NeMo/Speech (Apache-2.0), "
-    "examples/speaker_tasks/diarization/conf/post_processing/"
+    "NVIDIA-NeMo/Speech (Apache-2.0), examples/speaker_tasks/diarization/conf/post_processing/"
 )
 
 
