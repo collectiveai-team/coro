@@ -22,6 +22,30 @@ METADATA = "Metadata"
 PRIMARY_CHANNEL_INDEX = [0, 1]
 """Deepgram reports ``[channel, total_channels]``; coro is always mono."""
 
+TRANSACTION_KEY_DEPRECATED = "deprecated"
+"""Deepgram's own value for this field. Required by the schema, so it cannot be
+omitted the way it is on the pre-recorded response, where it is optional."""
+
+
+class DeepgramLiveModelInfo(BaseModel):
+    """Model identity carried on every live frame. All three fields required."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    version: str
+    arch: str
+
+
+class DeepgramLiveResultsMetadata(BaseModel):
+    """Per-frame metadata. Required by ``ListenV1Results``, unlike on REST."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    model_uuid: str
+    model_info: DeepgramLiveModelInfo
+
 
 class DeepgramLiveAlternative(BaseModel):
     """One hypothesis inside a live ``Results`` frame."""
@@ -59,15 +83,24 @@ class DeepgramLiveResults(BaseModel):
     is_final: bool
     speech_final: bool
     channel: DeepgramLiveChannel
+    metadata: DeepgramLiveResultsMetadata
 
 
 class DeepgramLiveMetadata(BaseModel):
-    """The closing ``Metadata`` frame."""
+    """The closing ``Metadata`` frame.
+
+    ``sha256`` is the digest of the audio actually received, accumulated as it
+    streamed — there is no complete payload to hash up front. ``transaction_key``
+    is required here (it is optional on the pre-recorded response, where coro
+    omits it) so it carries Deepgram's own ``deprecated`` value.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     type: str = METADATA
+    transaction_key: str = TRANSACTION_KEY_DEPRECATED
     request_id: str
+    sha256: str
     created: str
     duration: float
     channels: int
@@ -89,6 +122,7 @@ def live_results(
     *,
     start: float,
     duration: float,
+    metadata: DeepgramLiveResultsMetadata,
     is_final: bool = True,
     speech_final: bool = True,
 ) -> DeepgramLiveResults:
@@ -105,4 +139,5 @@ def live_results(
                 DeepgramLiveAlternative(transcript=transcript, confidence=confidence, words=words)
             ]
         ),
+        metadata=metadata,
     )

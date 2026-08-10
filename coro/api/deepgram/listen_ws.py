@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
@@ -30,6 +31,8 @@ from coro.audio import SAMPLE_RATE
 from coro.api.deepgram.live_schemas import (
     DeepgramLiveError,
     DeepgramLiveMetadata,
+    DeepgramLiveModelInfo,
+    DeepgramLiveResultsMetadata,
     live_results,
 )
 from coro.core.models import TranscriptToken
@@ -163,20 +166,42 @@ async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | Non
 
 
 async def _pump_audio(
-    websocket: WebSocket, source: LiveAudioSource, converter: PcmStreamConverter
+    websocket: WebSocket,
+    source: LiveAudioSource,
+    converter: PcmStreamConverter,
+    digest: hashlib._Hash,
 ) -> None:
-    """Forward inbound frames until the client ends the stream."""
+    """Forward inbound frames until the client ends the stream.
+
+    The digest accumulates as audio arrives: a live stream has no complete
+    payload to hash up front, but ``Metadata`` must still report one.
+    """
     while True:
         message = await websocket.receive()
         if message["type"] == "websocket.disconnect":
             return
         if (payload := message.get("bytes")) is not None:
+            digest.update(payload)
             await source.push(converter.push(payload))
             continue
         text = message.get("text")
         if text is not None and _control_type(text) in {CLOSE_STREAM, FINALIZE}:
             return
         # KeepAlive and unrecognised control frames hold the socket open.
+
+
+def _frame_metadata(request_id: str, settings: Any) -> DeepgramLiveResultsMetadata:
+    """Model identity carried on every ``Results`` frame, as Deepgram requires."""
+    model = getattr(settings, "model_asr", "") if settings else ""
+    return DeepgramLiveResultsMetadata(
+        request_id=request_id,
+        model_uuid=model,
+        model_info=DeepgramLiveModelInfo(
+            name=model,
+            version=getattr(settings, "backend_asr", "") if settings else "",
+            arch=getattr(settings, "backend_asr", "") if settings else "",
+        ),
+    )
 
 
 # MARK: Deepgram Live Endpoint
@@ -215,6 +240,9 @@ async def listen_ws(websocket: WebSocket) -> None:
     )
 
     collected: list[TranscriptToken] = []
+    digest = hashlib.sha256()
+    settings = getattr(websocket.app.state, "settings", None)
+    frame_metadata = _frame_metadata(request_id, settings)
 
     async def _emit_results() -> None:
         async for tokens in session.run(source):
@@ -231,12 +259,13 @@ async def listen_ws(websocket: WebSocket) -> None:
                         ),
                         2,
                     ),
+                    metadata=frame_metadata,
                 ),
             )
 
     consumer = asyncio.create_task(_emit_results())
     try:
-        await _pump_audio(websocket, source, converter)
+        await _pump_audio(websocket, source, converter, digest)
     except WebSocketDisconnect:
         logger.info("listen_ws[%s] client disconnected", request_id)
     finally:
@@ -246,7 +275,15 @@ async def listen_ws(websocket: WebSocket) -> None:
         with contextlib.suppress(Exception):
             await consumer
 
-    await _close_out(websocket, request_id, session, collected, diarize=negotiated.diarize)
+    await _close_out(
+        websocket,
+        request_id,
+        session,
+        collected,
+        diarize=negotiated.diarize,
+        audio_sha256=digest.hexdigest(),
+        frame_metadata=frame_metadata,
+    )
 
 
 async def _close_out(
@@ -256,6 +293,8 @@ async def _close_out(
     collected: list[TranscriptToken],
     *,
     diarize: bool,
+    audio_sha256: str,
+    frame_metadata: DeepgramLiveResultsMetadata,
 ) -> None:
     """Emit the attributed final frame (if any) and the closing Metadata."""
     timeline = session.finalize()
@@ -266,6 +305,7 @@ async def _close_out(
                 _attributed_words(collected, timeline),
                 start=0.0,
                 duration=round(session.audio_seconds, 2),
+                metadata=frame_metadata,
             ),
         )
     settings = getattr(websocket.app.state, "settings", None)
@@ -273,6 +313,7 @@ async def _close_out(
         websocket,
         DeepgramLiveMetadata(
             request_id=request_id,
+            sha256=audio_sha256,
             created=datetime.now(tz=UTC).isoformat(),
             duration=round(session.audio_seconds, 2),
             channels=1,

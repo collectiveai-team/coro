@@ -1,15 +1,16 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/collectiveai-team/coro/main/assets/coro-logo.png" alt="Coro — OpenAI-compatible ASR + speaker diarization" style="width:600px; max-width:100%; height:auto;" />
+  <img src="https://raw.githubusercontent.com/collectiveai-team/coro/main/assets/coro-logo.png" alt="Coro — OpenAI- and Deepgram-compatible ASR + speaker diarization" style="width:600px; max-width:100%; height:auto;" />
 </p>
 
 <p align="center">
-  <em>Self-hosted, OpenAI-compatible speech-to-text that knows who said what.</em>
+  <em>Self-hosted speech-to-text that knows who said what — speaks both the OpenAI and Deepgram API contracts.</em>
 </p>
 
 <p align="center">
   <a href="https://github.com/collectiveai-team/coro/releases"><img alt="Release" src="https://img.shields.io/github/v/release/collectiveai-team/coro?logo=github" /></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white" alt="Python 3.12"></a>
   <a href="https://platform.openai.com/docs/api-reference/audio"><img src="https://img.shields.io/badge/API-OpenAI--compatible-412991?logo=openai&logoColor=white" alt="OpenAI-compatible API"></a>
+  <a href="https://developers.deepgram.com/reference/speech-to-text-api/listen"><img src="https://img.shields.io/badge/API-Deepgram--compatible-13EF93?logo=deepgram&logoColor=black" alt="Deepgram-compatible API"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
 
@@ -19,20 +20,35 @@
 
 ---
 
-Coro is an embedded ASR + speaker-diarization server that speaks the OpenAI
-transcription contract — point the official `openai` SDK at it and get back
-typed transcripts that know *who* said *what*, no custom schema package needed.
+Coro is an embedded ASR + speaker-diarization server that speaks **two industry
+API contracts natively** — OpenAI's and Deepgram's. Point the official `openai`
+SDK *or* the official `deepgram-sdk` at it and get back typed transcripts that
+know *who* said *what*, no custom schema package needed.
+
+Each provider gets its own endpoint implementing that provider's own contract.
+Coro never bolts one vendor's data onto another vendor's format:
+
+| you already use | point it at | and you get |
+|---|---|---|
+| `openai` SDK | `POST /v1/audio/transcriptions` | `Transcription` / `TranscriptionVerbose` / `TranscriptionDiarized`, plus OpenAI-exact SSE |
+| `deepgram-sdk` | `POST /v1/listen` | `ListenV1Response` — **a speaker on every word** |
+| `deepgram-sdk` | `WebSocket /v1/listen` | live `Results` / `Metadata` frames |
+
+Responses are validated against both vendors' own published SDK types in CI, so
+"compatible" is asserted rather than asserted-in-prose.
 
 The name nods to *coro* (Spanish for "chorus") — many voices, transcribed and
 attributed to who spoke them.
 
 The key features are:
+- **Two native API contracts** — OpenAI *and* Deepgram, each on its own endpoint with its own request shape, defaults and error format; neither is an approximation of the other
 - **OpenAI-compatible API** — drop-in `/v1/audio/transcriptions`; clients reuse the official `openai` SDK types (`Transcription` / `TranscriptionVerbose` / `TranscriptionDiarized`) with no custom schema
+- **Deepgram-compatible API** — drop-in `POST /v1/listen` and `WebSocket /v1/listen`; the only way to get **per-word speaker labels**, since no OpenAI type has a slot for one
 - **Audio *and* video input** — uploads are decoded through ffmpeg, so any container it supports works: audio (`.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`, …) and video (`.mp4`, `.mkv`, `.mov`, `.webm`, …); the audio track is extracted to 16 kHz mono PCM automatically — same endpoint, same response shapes
 - **Pluggable diarization backends** — pick per deployment: NVIDIA NeMo Sortformer (streaming-capable, **≤ 4 speakers**) or pyannote community-1 (batch/whole-file, **handles > 4 speakers**); both attribute every segment to a speaker (`diarized_json`), so you get *who spoke, when, and what*
 - **Pluggable ASR backends** — pick per deployment: Faster-Whisper (best accuracy, multilingual), onnx-asr Parakeet (highest GPU throughput), or onnx-genai Nemotron (real-time streaming)
 - **Two transcription pipelines** — `full-memory` (default) decodes and holds the whole recording in RAM for lowest latency on short/medium clips; `streaming` streams 1 s PCM chunks off disk and spills the growing transcript to a per-request on-disk store, trading a little latency for **flat host RAM on arbitrarily long audio**. Select with `CORO_PIPELINE` / `--pipeline` — see [the pipeline comparison](#two-transcription-pipelines-full-memory-vs-streaming)
-- **Streaming over SSE** — OpenAI-exact `transcript.text.delta` / `transcript.text.done` / `[DONE]` events with `stream=true`
+- **Streaming both ways** — OpenAI-exact SSE (`transcript.text.delta` / `transcript.text.done` / `[DONE]`) with `stream=true`, *and* a Deepgram-compatible WebSocket at `/v1/listen` that pushes `Results` frames as audio arrives
 - **Flat-memory long audio** — the streaming pipeline spills the transcript to disk so host RSS stays flat from 11 s to multi-hour recordings
 - **CPU & GPU** — mutually-exclusive `cpu` / `cuda` extras carry the matching `onnxruntime` wheels; multilingual on either
 - **Run it your way** — ephemeral `uvx`, a standalone `uv tool install` command, or a full `uv sync` dev checkout
@@ -53,7 +69,8 @@ uvx --from "coro-asr[cuda]" coro --port 8000
 
 `uvx` builds a throwaway isolated environment and launches the `coro` command —
 no `uv sync`/`uv run` and nothing added to your current project. The server now
-speaks the OpenAI transcription contract at `http://127.0.0.1:8000/v1`.
+speaks both the OpenAI and Deepgram transcription contracts at
+`http://127.0.0.1:8000/v1`.
 
 Then write a tiny client with the official `openai` SDK, pointing `base_url` at
 your Coro server (`api_key` is required by the SDK but ignored by Coro):
