@@ -70,7 +70,11 @@ class DiarizationSanity:
 
 @dataclass
 class NormalizedMetrics:
-    """WER metrics after punctuation/whitespace normalization."""
+    """Normalized Metric Lane WER metrics.
+
+    Scored after applying the Basic Text Normalizer identically to the
+    Reference STM and the Hypothesis STM. Comparable to published WER.
+    """
 
     cpwer: WerStats | None = None
     orcwer: WerStats | None = None
@@ -80,7 +84,12 @@ class NormalizedMetrics:
 
 @dataclass
 class ScoreMetrics:
-    """Per-item metric block produced by :func:`score_item`."""
+    """Per-item metric block produced by :func:`score_item`.
+
+    The bare ``cpwer``/``orcwer``/``dicpwer`` fields are the Raw Metric Lane;
+    ``normalized`` carries the Normalized Metric Lane. ``der`` is
+    lane-independent.
+    """
 
     cpwer: WerStats | None = None
     orcwer: WerStats | None = None
@@ -115,7 +124,11 @@ class ScoreResult:
 
 @dataclass
 class CombinedMetrics:
-    """Workload-level combined metrics across all succeeded items."""
+    """Workload-level combined metrics across all succeeded items.
+
+    Carries both metric lanes: the bare fields are the Raw Metric Lane and
+    ``normalized`` is the Normalized Metric Lane.
+    """
 
     cpwer: WerStats | None = None
     orcwer: WerStats | None = None
@@ -127,7 +140,11 @@ class CombinedMetrics:
 
 @dataclass
 class PerItemEntry:
-    """Flattened per-item summary row (WER values, not full breakdowns)."""
+    """Flattened per-item summary row (WER values, not full breakdowns).
+
+    ``cpwer``/``orcwer``/``dicpwer`` are the Raw Metric Lane; the
+    ``normalized_*`` fields are the Normalized Metric Lane.
+    """
 
     session_id: str = ""
     audio_seconds: float | None = None

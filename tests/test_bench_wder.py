@@ -53,6 +53,17 @@ def _score(ref: Path, hyp: Path) -> WderStats:
     return compute_wder(ref, hyp, meeteval.wer.cpwer(ref, hyp))
 
 
+def _markdown_table(markdown: str, heading_fragment: str) -> list[str]:
+    """Return the pipe-table lines under the heading containing ``heading_fragment``."""
+    lines = markdown.splitlines()
+    start = next(
+        i for i, line in enumerate(lines) if line.startswith("#") and heading_fragment in line
+    )
+    tail = lines[start + 1 :]
+    end = next((i for i, line in enumerate(tail) if line.startswith("#")), len(tail))
+    return [line for line in tail[:end] if line.startswith("|")]
+
+
 # Reference used by most cases: two speakers alternating word by word.
 REF: list[Line] = [
     ("A", 0.0, 1.0, "alpha"),
@@ -321,6 +332,73 @@ class TestBenchmarkIntegration:
         assert metrics.orcwer is not None
         assert metrics.dicpwer is not None
         assert metrics.der is not None
+
+    def test_normalized_lane_carries_its_own_wder_through_to_its_table(self, stm_pair, tmp_path):
+        """The Normalized Metric Lane scores its own WDER and renders it.
+
+        The two lanes score different word sets, so the normalized lane needs a
+        WDER of its own. Losing it is silent — the raw lane still reports one —
+        and it would leave the normalized table's declared columns and its
+        populated cells disagreeing.
+        """
+        import dataclasses
+        import json
+
+        from coro.bench.quality import combine_items, score_item
+        from coro.bench.report import build_report, render_markdown
+
+        ref, hyp = stm_pair(
+            REF,
+            [
+                ("S1", 0.0, 1.0, "Alpha,"),
+                ("S2", 1.0, 2.0, "bravo."),
+                ("S1", 2.0, 3.0, "Charlie!"),
+                ("S2", 3.0, 4.0, "delta"),
+            ],
+        )
+        result = score_item(ref, hyp)
+        result.session_id = "sess"
+        result.audio_seconds = 4.0
+
+        assert result.metrics is not None
+        assert result.metrics.normalized is not None
+        assert result.metrics.normalized.wder is not None
+
+        summary = combine_items([result])
+        assert summary.per_item[0].normalized_wder is not None
+        assert summary.combined is not None
+        assert summary.combined.normalized is not None
+        assert summary.combined.normalized.wder is not None
+
+        out_dir = tmp_path / "out"
+        (out_dir / "quality").mkdir(parents=True)
+        (out_dir / "quality" / "summary.json").write_text(json.dumps(dataclasses.asdict(summary)))
+
+        table = _markdown_table(render_markdown(build_report(out_dir)), "Normalized Metric Lane")
+        header, separator, *rows = table
+        assert "WDER" in header
+        # One scored session plus the combined row, every one as wide as the header.
+        cells = len(header.split("|"))
+        assert len(separator.split("|")) == cells
+        assert [len(row.split("|")) for row in rows] == [cells, cells]
+
+    def test_skipped_normalized_lane_leaves_the_raw_lane_wder_intact(self, stm_pair):
+        """A normalized lane with nothing left to score must not void raw-lane WDER."""
+        from coro.bench.quality import combine_items, score_item
+
+        ref, hyp = stm_pair(REF, [("S1", 0.0, 4.0, "[tos]")])
+        result = score_item(ref, hyp)
+        result.session_id = "sess"
+
+        assert result.metrics is not None
+        assert result.metrics.normalized is None
+        assert result.metrics.wder is not None
+
+        summary = combine_items([result])
+        assert summary.combined is not None
+        assert summary.combined.wder is not None
+        assert summary.combined.normalized is not None
+        assert summary.combined.normalized.wder is None
 
 
 def _with_assignment(template, assignment):

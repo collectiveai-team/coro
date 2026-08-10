@@ -1,4 +1,9 @@
-"""Benchmark report model, builder, and renderers (stdout + GFM markdown)."""
+"""Benchmark report model, builder, and renderers (stdout + GFM markdown).
+
+Quality figures are always rendered as two separately labelled tables, one per
+metric lane, so no figure is readable without knowing which protocol produced
+it. See ADR 0011.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,25 @@ from pathlib import Path
 from typing import Any
 
 from coro.bench.models.report import BenchReport, PerformanceRow, QualityRow
+
+RAW_LANE_LABEL = "Raw Metric Lane"
+"""Heading suffix for the un-normalized quality table."""
+
+NORMALIZED_LANE_LABEL = "Normalized Metric Lane"
+"""Heading suffix for the normalized quality table."""
+
+RAW_LANE_CAPTION = (
+    "Reference STM and Hypothesis STM text scored verbatim — punctuation, "
+    "casing and diacritics all count. Catches regressions the normalizer hides; "
+    "not comparable to published WER. DER is lane-independent and reported here only."
+)
+
+NORMALIZED_LANE_CAPTION = (
+    "Scored after applying the Basic Text Normalizer identically to the Reference "
+    "STM and the Hypothesis STM: bracketed and parenthesised content removed, "
+    "lowercased, symbols and punctuation mapped to spaces, whitespace collapsed, "
+    "diacritics preserved. This is the lane comparable to published WER."
+)
 
 
 def build_report(out_dir: Path) -> BenchReport:
@@ -330,7 +354,9 @@ def render_markdown(report: BenchReport) -> str:
 
 def _quality_table_md(report: BenchReport) -> list[str]:
     lines: list[str] = []
-    lines.append("## Quality Results")
+    lines.append(f"## Quality Results — {RAW_LANE_LABEL}")
+    lines.append("")
+    lines.append(RAW_LANE_CAPTION)
     lines.append("")
     lines.append("| session | duration | cpWER | ORC-WER | DI-cpWER | DER |")
     lines.append("|---------|----------|-------|---------|----------|-----|")
@@ -380,7 +406,7 @@ def _has_wder(report: BenchReport) -> bool:
 
 def _wder_table_md(report: BenchReport) -> list[str]:
     lines: list[str] = []
-    lines.append("## Speaker Attribution (WDER)")
+    lines.append(f"## Speaker Attribution (WDER) — {RAW_LANE_LABEL}")
     lines.append("")
     lines.append(
         "Word Diarization Error Rate — speaker errors over the words that exist "
@@ -388,7 +414,9 @@ def _wder_table_md(report: BenchReport) -> list[str]:
         "are excluded, so this is blind to segmentation and undiluted by the ASR "
         "error floor. `WDER-claimed` is precision where a real speaker was "
         "committed to; `abstention` is the share of scored words left unknown. "
-        "`WDER = WDER-claimed x (1 - abstention) + abstention`."
+        "`WDER = WDER-claimed x (1 - abstention) + abstention`. Normalization "
+        "changes which words are scored, so the Normalized Metric Lane's WDER is "
+        "reported in that lane's own table."
     )
     lines.append("")
     lines.append("| session | WDER | WDER-claimed | abstention |")
@@ -408,9 +436,9 @@ def _wder_table_md(report: BenchReport) -> list[str]:
 
 def _normalized_quality_table_md(report: BenchReport) -> list[str]:
     lines: list[str] = []
-    lines.append("## Normalized Quality Results")
+    lines.append(f"## Quality Results — {NORMALIZED_LANE_LABEL}")
     lines.append("")
-    lines.append("WER metrics after removing punctuation and collapsing whitespace.")
+    lines.append(NORMALIZED_LANE_CAPTION)
     lines.append("")
     lines.append("| session | duration | cpWER | ORC-WER | DI-cpWER | WDER |")
     lines.append("|---------|----------|-------|---------|----------|------|")
@@ -550,7 +578,11 @@ def _rich_quality_table(console: object, report: BenchReport) -> None:
         return
     from rich.table import Table
 
-    qt = Table(title="Quality Results", show_lines=True)
+    qt = Table(
+        title=f"Quality Results — {RAW_LANE_LABEL}",
+        caption=RAW_LANE_CAPTION,
+        show_lines=True,
+    )
     for col in ("session", "duration", "cpWER", "ORC-WER", "DI-cpWER", "DER"):
         qt.add_column(col)
     for row in report.quality_rows:
@@ -593,7 +625,7 @@ def _rich_wder_table(console: object, report: BenchReport) -> None:
         return
     from rich.table import Table
 
-    wt = Table(title="Speaker Attribution (WDER)", show_lines=True)
+    wt = Table(title=f"Speaker Attribution (WDER) — {RAW_LANE_LABEL}", show_lines=True)
     for col in ("session", "WDER", "WDER-claimed", "abstention"):
         wt.add_column(col)
     for row in rows:
@@ -614,7 +646,11 @@ def _rich_normalized_quality_table(console: object, report: BenchReport) -> None
         return
     from rich.table import Table
 
-    qt = Table(title="Normalized Quality Results", show_lines=True)
+    qt = Table(
+        title=f"Quality Results — {NORMALIZED_LANE_LABEL}",
+        caption=NORMALIZED_LANE_CAPTION,
+        show_lines=True,
+    )
     for col in ("session", "duration", "cpWER", "ORC-WER", "DI-cpWER", "WDER"):
         qt.add_column(col)
     for row in report.normalized_quality_rows:
