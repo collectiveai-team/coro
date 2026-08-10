@@ -788,7 +788,7 @@ async with websockets.connect(
   interim words.
 - The stream always ends with a `Metadata` frame.
 
-See `docs/adr/0010-vendor-native-endpoints.md` for the fidelity policy.
+See `docs/adr/0015-vendor-native-endpoints.md` for the fidelity policy.
 `/v1/audio/transcriptions` is byte-unchanged, asserted in
 `tests/test_openai_formats_unchanged.py`.
 

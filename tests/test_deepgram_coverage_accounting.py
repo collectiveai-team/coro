@@ -1,6 +1,6 @@
 """The documented Deepgram coverage matches the code.
 
-ADR 0010 and the README state how much of Deepgram's pre-recorded contract is
+ADR 0015 and the README state how much of Deepgram's pre-recorded contract is
 implemented. Those numbers were wrong once already, and prose cannot be
 type-checked — so the counts are asserted against the vendor SDK's own
 signature and against the refusal list the endpoint actually uses.
@@ -21,7 +21,7 @@ from deepgram.listen.v1.media.client import MediaClient
 
 from coro.api.deepgram.listen import _UNSUPPORTED_PARAMS
 
-_ADR = Path(__file__).resolve().parents[1] / "docs/adr/0010-vendor-native-endpoints.md"
+_ADR = Path(__file__).resolve().parents[1] / "docs/adr/0015-vendor-native-endpoints.md"
 
 # `request` is the audio body itself, not a query parameter.
 VENDOR_PARAMS = {
@@ -69,7 +69,7 @@ class TestDocumentedCountsMatchTheCode:
             r"(\d+) honoured, (\d+) refused, (\d+) accepted",
             text,
         )
-        assert match is not None, "ADR 0010 coverage table row not found"
+        assert match is not None, "ADR 0015 coverage table row not found"
         total, honoured, refused, ignored = (int(g) for g in match.groups())
         assert (total, honoured, refused, ignored) == (
             len(VENDOR_PARAMS),

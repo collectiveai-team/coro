@@ -6,7 +6,7 @@ transcribed, then a closing ``Metadata`` frame. Each frame carries one
 channel's alternatives, and per-word speakers ride on the words exactly as
 they do in the REST shape.
 
-The same fidelity policy applies as for the REST endpoint — see ADR 0010.
+The same fidelity policy applies as for the REST endpoint — see ADR 0015.
 Fields coro cannot measure are omitted, never stubbed.
 """
 

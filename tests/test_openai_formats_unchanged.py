@@ -3,7 +3,7 @@
 ``diarized_json`` is a byte-exact clone of OpenAI's ``TranscriptionDiarized``,
 and that exactness is a compatibility asset: an OpenAI SDK client can point at
 this server and parse the typed object. Adding vendor-shaped formats must not
-spend it (ADR 0010).
+spend it (ADR 0015).
 
 These are golden-byte assertions rather than shape assertions on purpose. A
 field added to the internal ``TranscriptionResult`` — ``overlap`` was the most

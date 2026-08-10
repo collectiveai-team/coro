@@ -237,7 +237,7 @@ A supported `response_format` value that maps to the same strict transcription J
 _Avoid_: Separate output contract, OpenAI response-format clone
 
 **Vendor-Native Endpoint**:
-An endpoint implementing another provider's own documented contract end to end — its route, request shape, parameter defaults, response schema and error body (`POST /v1/listen` for Deepgram). Each provider owns its own contract, so no provider's format is ever extended to carry another's data. A documented subset validated against that vendor's published SDK types, never a partial clone passed off as complete. See ADR 0010.
+An endpoint implementing another provider's own documented contract end to end — its route, request shape, parameter defaults, response schema and error body (`POST /v1/listen` for Deepgram). Each provider owns its own contract, so no provider's format is ever extended to carry another's data. A documented subset validated against that vendor's published SDK types, never a partial clone passed off as complete. See ADR 0015.
 _Avoid_: Vendor values added to `response_format`, vendor fields added to an OpenAI schema, OpenAI-style errors on a vendor route
 
 **Per-Word Speaker Attribution**:
@@ -586,7 +586,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "v1" and "v2" were used to mean both public API versions and internal pipeline behavior — resolved: the public API has one **Transcription Endpoint**, while behavior lives in the **Configured Transcription Pipeline**.
 - "pipeline dependency" was used ambiguously — resolved: it means a FastAPI **Pipeline Dependency**, not direct route app-state lookup or per-request construction.
 - "dependency" was used to imply object construction — resolved: settings can be cached, but loaded adapters and pipelines live in the **Singleton Runtime**.
-- "current server" was used to imply all prototype routes — resolved: the **Supported Endpoint Set** is `/health`, `/v1/audio/transcriptions` and `/v1/listen`, and excludes `/`, `/asr`, `/v1/models`, `/v2/audio/transcriptions`, WebSocket, and behavior-specific transcription routes. The inherited *prototype* `/v1/listen` remains excluded; the route in the Supported Endpoint Set is the deliberately implemented **Vendor-Native Endpoint** of ADR 0010.
+- "current server" was used to imply all prototype routes — resolved: the **Supported Endpoint Set** is `/health`, `/v1/audio/transcriptions` and `/v1/listen`, and excludes `/`, `/asr`, `/v1/models`, `/v2/audio/transcriptions`, WebSocket, and behavior-specific transcription routes. The inherited *prototype* `/v1/listen` remains excluded; the route in the Supported Endpoint Set is the deliberately implemented **Vendor-Native Endpoint** of ADR 0015.
 - "vendor support" was used to mean a response shape bolted onto the OpenAI endpoint — resolved: each provider gets a **Vendor-Native Endpoint** implementing its own contract. `response_format` is OpenAI's parameter and carries only values OpenAI defines.
 - "refactor" was used to imply one pipeline implementation — resolved: full-memory and disk-backed behavior remain distinct **Transcription Pipeline** implementations selected by startup configuration.
 - "v1 pipeline" and "v2 pipeline" were used for processing strategies — resolved: use **Full-Memory Pipeline** and **Streaming Pipeline**.

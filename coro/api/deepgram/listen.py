@@ -7,7 +7,7 @@ Token`` header, and Deepgram's ``err_code``/``err_msg`` error body.
 
 The route handler stays thin; transcription delegates to the configured
 pipeline, exactly as the OpenAI endpoint does. Only the request and response
-contracts differ. See ADR 0010.
+contracts differ. See ADR 0015.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ _NO_FEATURE_DOC = (
 #   ``{request_id}`` and then wait, so ignoring it hangs that workflow forever
 #   rather than handing back data it can inspect.
 #
-# See ADR 0010.
+# See ADR 0015.
 _UNSUPPORTED_PARAMS: dict[str, str] = {
     "callback": "asynchronous callback delivery is not supported; results are returned inline",
     "callback_method": "asynchronous callback delivery is not supported",
@@ -186,7 +186,7 @@ async def listen(
 
     ``redact`` and ``callback`` are the exceptions and are refused with a 400:
     ignoring them fails silently and harmfully rather than merely omitting a
-    response key. See ADR 0010.
+    response key. See ADR 0015.
     """
     request_id = uuid4().hex[:8]
     started = time.perf_counter()

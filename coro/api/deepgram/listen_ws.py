@@ -8,7 +8,7 @@ frames (``KeepAlive``, ``Finalize``, ``CloseStream``).
 
 This is genuine live transcription, not a buffer-then-transcribe imitation:
 audio flows into the same ``ASRWindowing`` the Streaming Pipeline uses, and
-results are emitted as each window completes. See ADR 0010.
+results are emitted as each window completes. See ADR 0015.
 """
 
 from __future__ import annotations

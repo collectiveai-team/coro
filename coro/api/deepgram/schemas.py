@@ -1,6 +1,6 @@
 """Deepgram-shaped transcription response for the ``POST /v1/listen`` endpoint.
 
-A documented subset of Deepgram's pre-recorded response (see ADR 0010),
+A documented subset of Deepgram's pre-recorded response (see ADR 0015),
 carrying per-word speaker labels. Served from Deepgram's own endpoint rather
 than from a ``response_format`` value, so the OpenAI-compatible surface is
 never extended with values OpenAI does not define.
@@ -10,7 +10,7 @@ Timestamps are floating-point seconds, which is Deepgram's unit.
 ``speaker_confidence`` is deliberately **omitted** — coro's diarization
 adapters binarize their per-frame posteriors into a speaker timeline before it
 reaches the Core Boundary, so the quantity Deepgram names is not available.
-See ADR 0010.
+See ADR 0015.
 """
 
 from __future__ import annotations

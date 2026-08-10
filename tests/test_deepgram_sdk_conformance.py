@@ -1,7 +1,7 @@
 """Deepgram SDK conformance: /v1/listen validates against Deepgram's own types.
 
 A vendor-named endpoint whose responses that vendor's SDK cannot parse is a
-liability, since clients will point their SDK at it (ADR 0010). These tests are
+liability, since clients will point their SDK at it (ADR 0015). These tests are
 the mechanical check, mirroring ``test_openai_sdk_conformance`` for the OpenAI
 endpoint: they parse with the real published SDK types, not a local copy.
 """

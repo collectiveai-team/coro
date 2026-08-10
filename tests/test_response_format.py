@@ -46,7 +46,7 @@ def test_response_format_carries_only_values_openai_defines():
     """`response_format` is OpenAI's parameter; its values are OpenAI's to define.
 
     An exact-membership assertion, not a spot check: a vendor value added here
-    would extend a format a third party owns, which is what ADR 0010 rules out.
+    would extend a format a third party owns, which is what ADR 0015 rules out.
     Vendor contracts get their own endpoint instead.
     """
     assert {member.value for member in ResponseFormat} == {

@@ -1,7 +1,7 @@
 """Utterance grouping: maximal same-speaker runs over the per-word truth.
 
 Grouping reads ``word_segments`` rather than ``segments`` so the speaker-turn
-view stays correct regardless of what shape segments take (ADR 0010).
+view stays correct regardless of what shape segments take (ADR 0015).
 """
 
 from __future__ import annotations
