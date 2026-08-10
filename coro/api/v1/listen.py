@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -33,14 +34,68 @@ logger = logging.getLogger(__name__)
 
 UNDECODABLE_AUDIO_MESSAGE = "Could not decode the submitted audio."
 EMPTY_BODY_MESSAGE = "No audio was submitted in the request body."
+URL_INGEST_MESSAGE = "Remote URL ingest is not supported. Submit the audio as the raw request body."
 
 _BAD_REQUEST = "Bad Request"
 _INTERNAL_ERROR = "INTERNAL_SERVER_ERROR"
 
+# Parameters that change the *contract* rather than transcription quality:
+# they alter the interaction model, add response keys coro cannot produce, or
+# carry a compliance guarantee. Accepting these silently would return a body
+# that does not answer the request the client actually made, so they are
+# refused. Quality-only knobs (punctuate, numerals, smart_format, ...) stay
+# accepted-and-ignored. See ADR 0010.
+_UNSUPPORTED_PARAMS: dict[str, str] = {
+    "callback": "asynchronous callback delivery is not supported",
+    "callback_method": "asynchronous callback delivery is not supported",
+    "summarize": "summarization is not supported",
+    "sentiment": "sentiment analysis is not supported",
+    "topics": "topic detection is not supported",
+    "custom_topic": "topic detection is not supported",
+    "intents": "intent recognition is not supported",
+    "custom_intent": "intent recognition is not supported",
+    "detect_entities": "entity detection is not supported",
+    "paragraphs": "paragraph segmentation is not supported",
+    "search": "term search is not supported",
+    "measurements": "measurement formatting is not supported",
+    "redact": "PII redaction is not supported",
+    "replace": "term replacement is not supported",
+    "detect_language": "language detection is not supported",
+}
 
-def _error(
-    *, err_code: str, err_msg: str, request_id: str, status_code: int
-) -> JSONResponse:
+_DISABLED_VALUES = {"false", "0", "no"}
+
+
+def _is_requested(value: str) -> bool:
+    """Return True when a query value asks for the feature.
+
+    Anything that is not an explicit disable counts, because several of these
+    parameters carry a payload rather than a boolean — ``callback`` takes a
+    URL, ``search`` a term, ``redact`` a policy, and ``summarize`` accepts
+    ``v2`` as well as ``true``. A bare flag with no value is a request too.
+    """
+    return value.strip().lower() not in _DISABLED_VALUES
+
+
+def _unsupported_parameter(params: Mapping[str, str]) -> tuple[str, str] | None:
+    """Return the first requested parameter coro cannot honour, if any.
+
+    Deepgram's defaults are all off, so ``summarize=false`` asks for nothing
+    and is not refused.
+    """
+    for name, reason in _UNSUPPORTED_PARAMS.items():
+        value = params.get(name)
+        if value is not None and _is_requested(value):
+            return name, reason
+    # multichannel is separate: audio is downmixed to mono, so honouring it
+    # would silently return one channel where the client expects several.
+    multichannel = params.get("multichannel")
+    if multichannel is not None and _is_requested(multichannel):
+        return "multichannel", "audio is converted to mono; multichannel is not supported"
+    return None
+
+
+def _error(*, err_code: str, err_msg: str, request_id: str, status_code: int) -> JSONResponse:
     """Return a Deepgram-shaped error body.
 
     The app-wide handler emits OpenAI-style ``{"error": {...}}`` objects, which
@@ -97,11 +152,38 @@ async def listen(
 
     ``diarize`` and ``utterances`` default to ``false``, as they do at
     Deepgram, so per-word speakers require ``?diarize=true&utterances=true``.
-    Parameters the configured pipeline cannot honour are accepted and ignored
-    rather than rejected, matching how the OpenAI endpoint treats ``model``.
+
+    Quality-only parameters coro cannot honour (``punctuate``, ``numerals``,
+    ``smart_format``, ...) are accepted and ignored. Parameters that would
+    change the response contract — asynchronous ``callback`` delivery, the
+    analysis features, ``redact``, ``multichannel`` — are refused instead, so a
+    client never receives a body that silently fails to answer its request.
     """
     request_id = uuid4().hex[:8]
     started = time.perf_counter()
+
+    unsupported = _unsupported_parameter(request.query_params)
+    if unsupported is not None:
+        name, reason = unsupported
+        logger.info("listen[%s] refused unsupported parameter %s", request_id, name)
+        return _error(
+            err_code=_BAD_REQUEST,
+            err_msg=f"Unsupported parameter '{name}': {reason}.",
+            request_id=request_id,
+            status_code=400,
+        )
+
+    content_type = (request.headers.get("content-type") or "").split(";")[0].strip()
+    if content_type == "application/json":
+        # Deepgram's URL-ingest mode. Refused explicitly rather than handed to
+        # the decoder, which would fail with a misleading "undecodable audio".
+        return _error(
+            err_code=_BAD_REQUEST,
+            err_msg=URL_INGEST_MESSAGE,
+            request_id=request_id,
+            status_code=400,
+        )
+
     audio_bytes = await request.body()
     logger.info(
         "listen[%s] request start bytes=%d content_type=%s diarize=%s utterances=%s language=%s",

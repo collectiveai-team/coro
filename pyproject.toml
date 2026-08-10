@@ -222,8 +222,10 @@ max-complexity = 10
 # Tests assert/lack docstrings, use fixed /tmp paths for deterministic fixtures,
 # and pass dummy tokens (S106) to gated-model settings/adapters.
 "tests/**" = ["S101", "D", "S108", "S106"]
-# FastAPI routes use the idiomatic `= File(...)` / `= Form(...)` default style.
+# FastAPI routes use the idiomatic `= File(...)` / `= Form(...)` / `= Query(...)`
+# default style.
 "coro/api/v1/transcriptions.py" = ["FAST002", "B008"]
+"coro/api/v1/listen.py" = ["FAST002", "B008"]
 "coro/audio.py" = ["C901"]
 # Best-effort NVML telemetry: failures are intentionally swallowed per-device.
 "coro/bench/gpu.py" = ["S112", "S110", "SIM105"]

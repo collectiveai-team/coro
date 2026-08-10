@@ -73,11 +73,82 @@ point that vendor's SDK at it. The standard:
    Summarization, sentiment, entities, topics, intents, paragraphs and search
    are omitted rather than emitted as empty containers, which would imply the
    feature ran and found nothing.
-5. **Request parameters are accepted, never rejected for being unhonoured.**
-   `punctuate`, `smart_format`, `numerals`, `model` and unknown future flags
-   are accepted and ignored, matching how the OpenAI endpoint already treats
-   `model` and `temperature`. Rejecting them would break clients for
-   parameters that do not change what `coro` can produce.
+5. **Quality parameters are ignored; contract parameters are refused.** This
+   distinction is load-bearing and an earlier draft of this ADR got it wrong by
+   ignoring everything.
+
+   A *quality* parameter changes how good the transcript is. `punctuate`,
+   `smart_format`, `numerals`, `filler_words`, `dictation`, `model` and unknown
+   future flags are accepted and ignored, matching how the OpenAI endpoint
+   already treats `model` and `temperature`. The client still gets a
+   transcript; it is merely not tuned the way it asked.
+
+   A *contract* parameter changes what the response **is**. Ignoring it returns
+   a body that does not answer the request that was made:
+
+   | parameter | what silence would mean |
+   |---|---|
+   | `callback`, `callback_method` | client is told to expect `{request_id}` and a later POST; gets a full synchronous body and no callback ever fires |
+   | `summarize`, `sentiment`, `topics`, `intents`, `detect_entities`, `paragraphs`, `search`, `measurements` | client reads a response key that is simply absent |
+   | `redact` | client believes PII was removed; it was not |
+   | `replace` | client believes terms were substituted; they were not |
+   | `multichannel` | client expects N channels; gets one |
+   | `detect_language` | client reads `detected_language`; it is absent |
+
+   These are refused with a Deepgram-shaped 400 naming the parameter. A refusal
+   is a contract; silence is a lie with the vendor's name on it, which rule 1
+   exists to prevent. `redact` is the clearest case: silently not redacting is
+   a compliance failure disguised as a success.
+
+   Refusal triggers on any value that is not an explicit disable, because
+   several of these carry a payload rather than a boolean (`callback` a URL,
+   `search` a term, `summarize` accepts `v2`). `summarize=false` asks for
+   nothing and is not refused.
+
+### Coverage: what of Deepgram's contract is implemented
+
+This is a documented subset, and "documented" means the boundary is written
+down rather than discovered by a client at runtime.
+
+| surface | status |
+|---|---|
+| `POST /v1/listen`, raw audio body | **implemented** |
+| `POST /v1/listen`, `application/json` `{"url": ...}` ingest | **refused** with an explicit 400 |
+| `wss://…/v1/listen` streaming (WebSocket) | **not implemented** |
+| `listen/v2` | **not implemented** |
+| 38 pre-recorded parameters | 2 honoured, 15 refused, remainder accepted and ignored |
+
+**Honoured:** `diarize`, `utterances`, plus `language` as a hint.
+
+**Refused** (rule 5): `callback`, `callback_method`, `summarize`, `sentiment`,
+`topics`, `custom_topic`, `intents`, `custom_intent`, `detect_entities`,
+`paragraphs`, `search`, `measurements`, `redact`, `replace`,
+`detect_language`, `multichannel`.
+
+**Accepted and ignored:** `model`, `version`, `punctuate`, `smart_format`,
+`numerals`, `profanity_filter`, `filler_words`, `dictation`, `keywords`,
+`keyterm`, `diarize_model`, `utt_split`, `tag`, `extra`, `mip_opt_out`,
+`encoding`, `sample_rate`, and any parameter Deepgram adds later.
+
+`encoding` and `sample_rate` deserve a note: they describe headerless PCM.
+`coro` decodes with ffmpeg, which sniffs the container, so a headerless upload
+fails with the ordinary undecodable-audio 400 rather than being interpreted.
+That is a real gap for raw-PCM clients, left open rather than papered over.
+
+### Streaming is not implemented, and `coro` streams
+
+`coro` has a Streaming Pipeline and serves SSE on
+`/v1/audio/transcriptions?stream=true`, but in OpenAI's event framing
+(`transcript.text.delta` / `.done`). Deepgram's streaming contract is a
+different transport entirely — a WebSocket carrying `Results`, `Metadata`,
+`SpeechStarted` and `UtteranceEnd` messages, with `interim_results`,
+`vad_events` and `utterance_end_ms`. A Deepgram client cannot consume the SSE
+stream, and none of the streaming parameters appear on the pre-recorded
+endpoint, so there is no silent-ignore hazard here — the capability is simply
+absent.
+
+ADR 0001 excludes WebSocket routes, so implementing it would require amending
+that exclusion a second time, on its own evidence. Recorded as a known gap.
 
 ### Required fields and their sources
 
@@ -184,8 +255,11 @@ and is ~0.2% of pipeline time (ADR 0008).
 - Authorization is accepted and never validated. Both vendors' SDKs always send
   a token, and rejecting requests without one would add authentication `coro`
   does not otherwise have.
-- Streaming is unaffected. `/v1/listen` is the pre-recorded contract only;
-  Deepgram's streaming contract is a WebSocket, which ADR 0001 excludes.
+- Streaming is unaffected, and Deepgram streaming is absent rather than
+  approximated — see the coverage section above.
+- `coro/api/vendor/__init__.py` re-exports nothing. Consumers import the
+  submodule they need, so the package cannot accumulate a re-export shim that
+  nothing reads.
 - **AssemblyAI is not implemented here.** Its contract is asynchronous —
   `POST /v2/upload`, `POST /v2/transcript` returning `queued`, then polling
   `GET /v2/transcript/{id}` — which needs a job-state subsystem `coro` does not

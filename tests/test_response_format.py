@@ -42,6 +42,26 @@ def test_response_format_enum_has_unsupported_members():
     assert ResponseFormat.TSV.value == "tsv"
 
 
+def test_response_format_carries_only_values_openai_defines():
+    """`response_format` is OpenAI's parameter; its values are OpenAI's to define.
+
+    An exact-membership assertion, not a spot check: a vendor value added here
+    would extend a format a third party owns, which is what ADR 0010 rules out.
+    Vendor contracts get their own endpoint instead.
+    """
+    assert {member.value for member in ResponseFormat} == {
+        "json",
+        "verbose_json",
+        "json_verbose",
+        "diarized_json",
+        "dirized_json",
+        "text",
+        "srt",
+        "vtt",
+        "tsv",
+    }
+
+
 def test_response_format_enum_json_like_is_iterable():
     """JSON-like formats can be determined from the Enum without a hard-coded set."""
     from coro.api.v1.transcriptions import _JSON_LIKE_FORMATS

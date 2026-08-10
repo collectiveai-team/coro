@@ -124,14 +124,52 @@ class TestDeepgramErrors:
 
 
 @pytest.mark.asyncio
-class TestOpenAIEndpointIsUntouched:
-    async def test_openai_endpoint_rejects_vendor_response_formats(self):
-        # The OpenAI surface must not grow values OpenAI does not define.
+class TestUnsupportedParametersAreRefused:
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "?callback=https://example.test/hook",
+            "?summarize=true",
+            "?sentiment=true",
+            "?topics=true",
+            "?intents=true",
+            "?detect_entities=true",
+            "?paragraphs=true",
+            "?search=hello",
+            "?redact=pii",
+            "?replace=a:b",
+            "?multichannel=true",
+            "?detect_language=true",
+        ],
+    )
+    async def test_contract_shaping_parameters_are_refused(self, query: str):
+        # Silently ignoring these returns a body that does not answer the
+        # request: no callback fires, no summary key appears, no PII is
+        # redacted. A refusal is honest; a 200 is not.
+        response = await _listen(query)
+        assert response.status_code == 400
+        assert set(response.json()) == {"err_code", "err_msg", "request_id"}
+
+    @pytest.mark.parametrize(
+        "query",
+        ["?summarize=false", "?multichannel=false", "?redact=false", "?detect_entities=false"],
+    )
+    async def test_explicitly_disabled_features_are_not_refused(self, query: str):
+        # Deepgram's defaults are all off, so asking for `false` asks for
+        # nothing coro cannot do.
+        assert (await _listen(query)).status_code == 200
+
+    async def test_quality_only_parameters_are_still_accepted(self):
+        query = "?punctuate=true&smart_format=true&numerals=true&filler_words=true&dictation=true"
+        assert (await _listen(query)).status_code == 200
+
+    async def test_url_ingest_is_refused_with_a_clear_message(self):
         app = make_app(FakePipeline())
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
-                "/v1/audio/transcriptions",
-                files={"file": ("t.wav", make_wav(), "audio/wav")},
-                data={"response_format": "deepgram_json"},
+                "/v1/listen",
+                json={"url": "https://example.test/audio.wav"},
             )
-        assert response.status_code == 422
+        assert response.status_code == 400
+        # Not the misleading "could not decode the submitted audio".
+        assert "url" in response.json()["err_msg"].lower()

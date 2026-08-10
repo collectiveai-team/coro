@@ -707,16 +707,38 @@ Behaviour worth knowing:
 - `speaker_confidence` is **omitted**: Coro's diarizers binarize their
   per-frame posteriors, so the value does not exist to report.
 - `Authorization` is accepted and never validated. Coro has no auth.
-- Unhonoured parameters (`punctuate`, `smart_format`, `model`, …) are accepted
-  and ignored rather than rejected.
 - `?utterances=true` roughly doubles the body, because the shape carries every
   word twice (flat and nested per utterance) — as the real API does.
 
-This is a **documented subset**, not a full clone: features Coro does not
-compute (summarization, sentiment, entities, topics, paragraphs, search) are
-absent rather than empty. See
-`docs/adr/0010-vendor-native-endpoints.md` for the fidelity policy.
-`/v1/audio/transcriptions` is byte-unchanged by this addition, asserted in
+### What is and isn't supported
+
+This is a **documented subset**, not a full clone. Of Deepgram's 38
+pre-recorded parameters:
+
+| | parameters |
+|---|---|
+| **honoured** | `diarize`, `utterances`, `language` |
+| **refused** with a `400` | `callback`, `callback_method`, `summarize`, `sentiment`, `topics`, `intents`, `detect_entities`, `paragraphs`, `search`, `measurements`, `redact`, `replace`, `detect_language`, `multichannel` |
+| **accepted and ignored** | `model`, `punctuate`, `smart_format`, `numerals`, `filler_words`, `dictation`, `keywords`, `profanity_filter`, … |
+
+Features Coro cannot compute are **refused, not silently dropped**. Ignoring
+`redact=pii` would return a 200 implying PII was removed when it was not;
+ignoring `callback` would leave a client waiting for a webhook that never
+fires. Quality-only knobs like `punctuate` are ignored, because you still get a
+transcript — just not tuned the way you asked.
+
+Also not implemented:
+
+- **Streaming.** Deepgram's live contract is a WebSocket with its own message
+  types. Coro streams only in OpenAI's SSE framing
+  (`/v1/audio/transcriptions?stream=true`), which a Deepgram client cannot
+  consume.
+- **URL ingest.** `{"url": "..."}` bodies are refused with a clear message;
+  submit audio as the raw request body.
+- **`listen/v2`.**
+
+See `docs/adr/0010-vendor-native-endpoints.md` for the fidelity policy.
+`/v1/audio/transcriptions` is byte-unchanged, asserted in
 `tests/test_openai_formats_unchanged.py`.
 
 > AssemblyAI is not yet available. Its contract is asynchronous
