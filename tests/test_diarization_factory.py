@@ -96,7 +96,7 @@ def test_build_streaming_diarizer_factory_reuses_resolved_postprocessing():
     """The streaming factory reuses the batch adapter's already-resolved value.
 
     Resolved once by the batch adapter's construction, never re-resolved or
-    re-validated for the streaming path. See ADR 0009.
+    re-validated for the streaming path. See ADR 0010.
     """
     from coro.backends.diarization.nemo.diarization import NemoDiarizationAdapter
 

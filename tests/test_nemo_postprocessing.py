@@ -1,4 +1,4 @@
-"""Diarization Post-Processing Configuration resolution. See ADR 0009."""
+"""Diarization Post-Processing Configuration resolution. See ADR 0010."""
 
 from __future__ import annotations
 
@@ -24,8 +24,9 @@ from coro.backends.diarization.nemo.postprocessing import (
 def test_baseline_selectors_resolve_to_no_override(value):
     """None, empty and the explicit 'none' selector all keep NeMo's baseline.
 
-    The explicit spellings matter because the shipped default is a tuned set:
-    opting out must resolve, not fail Strict Startup Validation.
+    The explicit spellings matter because an operator templating the env var can
+    only unset it by writing something: it must resolve, not fail Strict Startup
+    Validation.
     """
     assert resolve_postprocessing_yaml(value) is None
 
@@ -67,13 +68,24 @@ def test_nonexistent_custom_path_raises(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("preset_name", sorted(_PRESETS))
-def test_every_preset_records_its_provenance_and_target_collar(preset_name):
-    """A parameter set is only usable if you know what it was tuned against."""
-    preset = _PRESETS[preset_name]
-    assert preset.optimized_on
-    assert preset.source
-    assert preset.target_collar_s >= 0.0
+_UPSTREAM_SOURCE = (
+    "NVIDIA-NeMo/Speech (Apache-2.0), "
+    "examples/speaker_tasks/diarization/conf/post_processing/"
+)
+
+
+def test_every_preset_records_its_provenance_and_target_collar():
+    """A parameter set is only usable if you know what it was tuned against.
+
+    Pinned by value rather than by presence: provenance that drifts silently is
+    the same as no provenance, and the collar is what selection keys on.
+    """
+    assert {
+        name: (p.optimized_on, p.target_collar_s, p.source) for name, p in _PRESETS.items()
+    } == {
+        "dihard3-dev": ("DIHARD III dev split", 0.0, _UPSTREAM_SOURCE),
+        "callhome-part1": ("CALLHOME (NIST SRE 2000 Disc8), part1", 0.25, _UPSTREAM_SOURCE),
+    }
 
 
 @pytest.mark.parametrize("preset_name", sorted(_PRESETS))
@@ -163,7 +175,7 @@ def test_gate_cannot_close_on_a_four_speaker_model():
     """Documented limitation: a T x 4 matrix can never estimate above 4.
 
     This is why the gate is unobservable on every currently shipped Sortformer
-    revision, and why it is built anyway. See ADR 0009.
+    revision, and why it is built anyway. See ADR 0010.
     """
     all_four_active = _preds(4, n_spk=4)
     assert postprocessing_gate_open(all_four_active, max_speakers=4)[0] is True

@@ -45,7 +45,7 @@ def build_diarization_adapter(
         hf_token: HuggingFace token for gated models; ignored by providers
             that do not require one.
         postprocessing: Diarization Post-Processing Configuration value
-            (see ADR 0009); NeMo-specific, ignored by ``pyannote``.
+            (see ADR 0010); NeMo-specific, ignored by ``pyannote``.
         postprocessing_max_speakers: Speaker-Count Post-Processing Gate
             ceiling; NeMo-specific, ignored by ``pyannote``.
 

@@ -4,7 +4,7 @@ Verifies the batch adapter passes its resolved Diarization Post-Processing
 Configuration value straight through to the real NeMo ``diarize(...,
 postprocessing_yaml=...)`` kwarg, and that the Speaker-Count Post-Processing
 Gate reverts to NeMo's baseline when the estimated speaker count exceeds the
-ceiling. See ADR 0009. No real NeMo model is loaded — the model handle is a
+ceiling. See ADR 0010. No real NeMo model is loaded — the model handle is a
 fake exposing only ``.diarize``.
 """
 
@@ -78,7 +78,9 @@ async def test_diarize_pcm_passes_resolved_postprocessing_yaml():
 def test_postprocessing_yaml_property_exposes_resolved_value():
     """The Backend Adapter Factory reads this to build a matching streaming factory."""
     adapter = NemoDiarizationAdapter(_FakeSortformerModel(), postprocessing_yaml="/some/path.yaml")
-    assert adapter.postprocessing_yaml == "/some/path.yaml"
+    # Round-tripping the constructor argument unchanged is the whole contract of
+    # this accessor, so the "self-confirming literal" is the assertion's point.
+    assert adapter.postprocessing_yaml == "/some/path.yaml"  # falsegreen: ignore
 
 
 def test_postprocessing_yaml_property_defaults_to_none():

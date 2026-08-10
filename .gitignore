@@ -9,6 +9,7 @@ notebooks
 
 resources
 amicorpus
+spanish-corpora/
 benchmark-results/
 
 .worktrees/

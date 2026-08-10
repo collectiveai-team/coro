@@ -121,10 +121,15 @@ def _write_stm_pair(tmp_path: Path, name: str, ref: str, hyp: str) -> tuple[Path
 
 
 class TestScoreItem:
-    def test_normalize_transcript_text_removes_punctuation_and_extra_spaces(self):
-        from coro.bench.quality import _normalize_transcript_text
+    def test_normalize_transcript_text_applies_basic_normalizer(self):
+        from coro.bench.quality import normalize_transcript_text
 
-        assert _normalize_transcript_text("Hello,   world!!") == "Hello world"
+        assert normalize_transcript_text("Hello,   world!! [cough]") == "hello world"
+
+    def test_normalize_transcript_text_preserves_spanish_diacritics(self):
+        from coro.bench.quality import normalize_transcript_text
+
+        assert normalize_transcript_text("¿Está el señor Ibáñez?") == "está el señor ibáñez"
 
     def test_write_normalized_stm_preserves_metadata_and_normalizes_text(
         self,
@@ -138,7 +143,111 @@ class TestScoreItem:
 
         _write_normalized_stm(src, dst)
 
-        assert dst.read_text() == "meeting 1 A 0.000 1.500 Hello world\n"
+        assert dst.read_text() == "meeting 1 A 0.000 1.500 hello world\n"
+
+    def test_write_normalized_stm_keeps_diacritics_in_text_field(self, tmp_path: Path):
+        from coro.bench.quality import _write_normalized_stm
+
+        src = tmp_path / "in.stm"
+        dst = tmp_path / "out.stm"
+        src.write_text("sesion 1 A 0.000 1.500 ¿Cuántos años más?\n")
+
+        _write_normalized_stm(src, dst)
+
+        assert dst.read_text() == "sesion 1 A 0.000 1.500 cuántos años más\n"
+
+    def test_write_normalized_stm_leaves_source_untouched(self, tmp_path: Path):
+        """Normalization happens at scoring time; STM artifacts stay intact."""
+        from coro.bench.quality import _write_normalized_stm
+
+        src = tmp_path / "in.stm"
+        dst = tmp_path / "out.stm"
+        original = "meeting 1 A 0.000 1.500 Hello,   world!!\n"
+        src.write_text(original)
+
+        _write_normalized_stm(src, dst)
+
+        assert src.read_text() == original
+
+    def test_normalized_lane_applies_identically_to_ref_and_hyp(self, tmp_path: Path):
+        """Casing/punctuation-only differences vanish in the Normalized Metric Lane."""
+        from coro.bench.quality import score_item
+
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "sesion",
+            "sesion 1 A 0.000 1.500 ¿Está el señor Ibáñez?\n",
+            "sesion 1 A 0.000 1.500 Está el señor Ibáñez\n",
+        )
+
+        result = score_item(ref_stm, hyp_stm)
+
+        assert result.metrics is not None
+        assert result.metrics.normalized is not None
+        assert result.metrics.normalized.cpwer is not None
+        assert result.metrics.normalized.cpwer.wer == 0.0
+
+    def test_dropped_diacritic_still_counts_as_an_error(self, tmp_path: Path):
+        """The whole point of preserving diacritics: `esta` != `está`."""
+        from coro.bench.quality import score_item
+
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "sesion",
+            "sesion 1 A 0.000 1.500 está el año pasado\n",
+            "sesion 1 A 0.000 1.500 esta el ano pasado\n",
+        )
+
+        result = score_item(ref_stm, hyp_stm)
+
+        assert result.metrics is not None
+        assert result.metrics.normalized is not None
+        assert result.metrics.normalized.cpwer is not None
+        assert result.metrics.normalized.cpwer.wer > 0.0
+
+    def test_normalized_lane_skipped_when_nothing_survives_normalization(
+        self,
+        tmp_path: Path,
+        capsys,
+    ):
+        """A degenerate normalized lane must not take the Raw Metric Lane down."""
+        from coro.bench.quality import score_item
+
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "sesion",
+            "sesion 1 A 0.000 1.500 hola mundo\n",
+            "sesion 1 A 0.000 1.500 [tos]\n",
+        )
+
+        result = score_item(ref_stm, hyp_stm)
+
+        assert result.metrics is not None
+        assert result.metrics.cpwer is not None
+        assert result.metrics.der is not None
+        assert result.metrics.normalized is None
+        assert "normalized lane skipped" in capsys.readouterr().err
+
+    def test_both_lanes_reported_per_item(self, tmp_path: Path):
+        from coro.bench.quality import score_item
+
+        ref_stm, hyp_stm = _write_stm_pair(
+            tmp_path,
+            "sesion",
+            "sesion 1 A 0.000 1.500 Hola, mundo.\n",
+            "sesion 1 A 0.000 1.500 hola mundo\n",
+        )
+
+        result = score_item(ref_stm, hyp_stm)
+
+        assert result.metrics is not None
+        # Raw Metric Lane sees the punctuation/casing difference...
+        assert result.metrics.cpwer is not None
+        assert result.metrics.cpwer.wer > 0.0
+        # ...the Normalized Metric Lane does not.
+        assert result.metrics.normalized is not None
+        assert result.metrics.normalized.cpwer is not None
+        assert result.metrics.normalized.cpwer.wer == 0.0
 
     def test_score_item_returns_all_wer_and_der_metrics(self, tmp_path: Path):
         ref_stm, hyp_stm = _write_stm_pair(
@@ -299,6 +408,47 @@ class TestCombineItems:
         assert summary.combined is not None and summary.combined.der is not None
         assert summary.combined.der.der > 0.0
         assert summary.n_degenerate_diarization == 1
+
+    def test_combine_items_reports_both_lanes_in_the_aggregate(self, tmp_path: Path):
+        """Run-level aggregate carries the Raw and Normalized Metric Lanes."""
+        from coro.bench.quality import combine_items
+
+        item_results = [
+            _scored(
+                tmp_path,
+                "A",
+                "A 1 X 0.0 2.0 Hola, mundo.\n",
+                "A 1 X 0.0 2.0 hola mundo\n",
+                2.0,
+            ),
+            _scored(
+                tmp_path,
+                "B",
+                "B 1 X 0.0 2.0 ¿Está el señor?\n",
+                "B 1 X 0.0 2.0 Está el señor\n",
+                2.0,
+            ),
+        ]
+
+        summary = combine_items(item_results)
+
+        assert summary.combined is not None
+        combined = summary.combined
+        # Raw Metric Lane sees the punctuation and casing differences.
+        assert combined.cpwer is not None
+        assert combined.cpwer.wer > 0.0
+        assert combined.orcwer is not None
+        assert combined.dicpwer is not None
+        # Normalized Metric Lane does not.
+        assert combined.normalized is not None
+        assert combined.normalized.cpwer is not None
+        assert combined.normalized.cpwer.wer == 0.0
+        assert combined.normalized.orcwer is not None
+        assert combined.normalized.dicpwer is not None
+        # ...and both lanes are present on every per-item row.
+        assert [entry.session_id for entry in summary.per_item] == ["A", "B"]
+        assert [entry.cpwer is not None for entry in summary.per_item] == [True, True]
+        assert [entry.normalized_cpwer is not None for entry in summary.per_item] == [True, True]
 
     def test_combine_items_counts_failures(self, tmp_path: Path):
         from coro.bench.quality import combine_items
@@ -515,3 +665,33 @@ class TestQualityRun:
         summary = json.loads((quality_dir / "summary.json").read_text())
         assert summary["n_succeeded"] == 1
         assert summary["n_failed"] == 1
+
+
+class TestMeetevalInstallHint:
+    """The printed install hint must be a command that actually works."""
+
+    def _hint(self) -> str:
+        from coro.bench import quality as quality_mod
+
+        with (
+            patch.dict(sys.modules, {"meeteval": None}),
+            patch("builtins.__import__", side_effect=ImportError("no meeteval")),
+            patch("sys.stderr") as mock_stderr,
+            pytest.raises(SystemExit),
+        ):
+            quality_mod._require_meeteval()
+        return "".join(call.args[0] for call in mock_stderr.write.call_args_list)
+
+    def test_hint_uses_the_dependency_group_command(self):
+        assert "uv sync --group bench" in self._hint()
+
+    def test_hint_does_not_claim_an_installable_extra(self):
+        assert "coro[bench]" not in self._hint()
+
+    def test_bench_is_a_dependency_group_not_an_extra(self):
+        """Guards the hint against the packaging metadata drifting back."""
+        import tomllib
+
+        pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+        assert "bench" in pyproject["dependency-groups"]
+        assert "bench" not in pyproject["project"].get("optional-dependencies", {})

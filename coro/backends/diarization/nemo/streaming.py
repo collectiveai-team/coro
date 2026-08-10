@@ -278,7 +278,7 @@ class StreamingDiarizer:
         Delegates to the shared Diarization Post-Processing Configuration
         helper so the Streaming Pipeline and the Full-Memory Pipeline cannot
         drift apart in how identical predictions become segments, and so both
-        honour the same Speaker-Count Post-Processing Gate. See ADR 0009.
+        honour the same Speaker-Count Post-Processing Gate. See ADR 0010.
         """
         started = time.perf_counter()
 

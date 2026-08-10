@@ -1,6 +1,6 @@
 """Diarization Post-Processing Configuration resolution for NeMo Sortformer.
 
-See ADR 0009. NeMo's own model card ships two dataset-optimized
+See ADR 0010. NeMo's own model card ships two dataset-optimized
 post-processing presets (``dihard3-dev``, ``callhome-part1``); coro vendors
 them verbatim and lets an operator select one, or supply a custom YAML in
 the same schema, without coro computing or recommending any threshold
@@ -88,7 +88,7 @@ _PRESETS: dict[str, PostProcessingPreset] = {
 # Sortformer revision) emits a T x 4 activity matrix, so the estimate can
 # never exceed 4 and this gate can never close. The mechanism exists so the
 # behaviour is already correct when a >4-speaker model is selected; it is
-# deliberately not dead code removal. See ADR 0009.
+# deliberately not dead code removal. See ADR 0010.
 DEFAULT_MAX_SPEAKERS = 4
 
 # Speaker-presence rule for the gate's estimate. Deliberately fixed rather

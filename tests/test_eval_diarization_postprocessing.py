@@ -3,7 +3,7 @@
 The main Quality Benchmark scores DER at collar 0.0 while this standalone
 comparison tool defaults to 0.25. A parameter set tuned for one collar is the
 wrong set for the other, so the pairing is made explicitly rather than
-inherited. See ADR 0009.
+inherited. See ADR 0010.
 """
 
 from __future__ import annotations

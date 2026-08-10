@@ -160,7 +160,7 @@ def _parse_args() -> argparse.Namespace:
             "Diarization Post-Processing Configuration for the nemo backend: a "
             "vendored preset name, a path to a custom YAML, 'none' for NeMo's "
             "unconfigured baseline, or 'auto' (the default) to select the "
-            "vendored preset tuned for --collar. See ADR 0009."
+            "vendored preset tuned for --collar. See ADR 0010."
         ),
     )
     parser.add_argument(
@@ -185,7 +185,7 @@ def resolve_postprocessing_selection(value: str | None, *, collar: float) -> str
     short-segment deletion — so a parameter set tuned for one collar is the
     wrong set for the other. Defaulting to ``auto`` pairs this tool's
     ``--collar`` with the preset tuned for it instead of inheriting whichever
-    default happens to apply. See ADR 0009.
+    default happens to apply. See ADR 0010.
     """
     if value == "none":
         return None

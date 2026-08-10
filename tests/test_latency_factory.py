@@ -85,7 +85,9 @@ class TestLatencyTierMapping:
         )
 
         p1 = get_latency_tier_params("very-high")
-        with pytest.raises(dataclasses.FrozenInstanceError):
+        # C51 looks for a call inside the block; the raise here comes from an
+        # attribute assignment on a frozen dataclass, which it does not model.
+        with pytest.raises(dataclasses.FrozenInstanceError):  # falsegreen: ignore
             p1.chunk_len = 999  # type: ignore[misc]
         assert LATENCY_TIER_PARAMS["very-high"].chunk_len == 340
 
@@ -118,7 +120,7 @@ class TestNemoStreamingDiarizerFactory:
         Diarization Adapter, so building the streaming factory silently
         retuned batch diarization. The parameters are now scoped to each model
         call instead; see tests/test_streaming_factory_shared_state.py and
-        ADR 0009.
+        ADR 0010.
         """
         from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
 

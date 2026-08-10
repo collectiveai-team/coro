@@ -10,7 +10,7 @@ through ``forward_streaming``.
 Writing the streaming latency tier onto that shared object permanently, as
 construction used to, silently changed what batch diarization did. Any
 batch-vs-streaming comparison in one process was invalid. These tests pin the
-fix. See ADR 0009.
+fix. See ADR 0010.
 """
 
 from __future__ import annotations
@@ -180,7 +180,7 @@ def test_tier_params_are_applied_during_the_model_call_and_restored_after():
 
     diarizer.ingest_pcm_chunk(_pcm(chunk_bytes + rc_bytes))
 
-    assert model.params_seen_during_call, "model was never called"
+    assert len(model.params_seen_during_call) == 1
     assert model.params_seen_during_call[0] == _pairs(vars(tier_params))
     # Restored the moment the call returned.
     assert _snapshot(model.sortformer_modules) == _pairs(BATCH_CONFIG)

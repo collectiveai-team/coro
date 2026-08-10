@@ -1,6 +1,6 @@
 # Vendored from NVIDIA-NeMo/Speech (Apache-2.0), examples/speaker_tasks/
 # diarization/conf/post_processing/diar_streaming_sortformer_4spk-v2_dihard3-dev.yaml
-# See docs/adr/0009-diarization-postprocessing-configuration.md.
+# See docs/adr/0010-diarization-postprocessing-configuration.md.
 #
 # Postprocessing parameters for timestamp outputs from speaker diarization models.
 # This speaker diarization postprocessing scheme is inspired by the postprocessing procedure in the following paper:
