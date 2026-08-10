@@ -553,7 +553,7 @@ Three subcommands share the same flags:
 
 | Subcommand | Measures |
 |---|---|
-| `quality` | transcription/diarization scores (cpWER, ORC-WER, DI-cpWER, DER) against a reference STM, via MeetEval |
+| `quality` | transcription/diarization scores (cpWER, ORC-WER, DI-cpWER, DER, WDER) against a reference STM, via MeetEval |
 | `performance` | resource + timing of the server process tree (PSS/USS, VRAM, CPU/GPU %, throughput) |
 | `all` | both in a single run |
 

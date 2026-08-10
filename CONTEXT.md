@@ -44,6 +44,14 @@ _Avoid_: Hypothesis Diarization, response JSON
 The fixed set of MeetEval scores reported for each workload item: siWER, cpWER, ORC-WER (greedy), DI-cpWER (greedy), and DER.
 _Avoid_: WER alone, custom metric mix
 
+**WDER**:
+Word Diarization Error Rate — speaker errors over the words present in both transcripts (correct + substituted), under MeetEval's cpWER speaker assignment. Reported as three numbers: `wder`, `wder_claimed` and `abstention_rate`. The primary metric for per-word speaker attribution; blind to segmentation and undiluted by the ASR error floor. See ADR 0009.
+_Avoid_: DER for word-label changes, `cpWER − DI-cpWER` as an attribution KPI
+
+**Unknown Speaker Sentinel**:
+The `-1` hypothesis speaker label meaning "no diarization support for this word". Counted as an error in `wder` and excluded from `wder_claimed`, so abstention is measured as a coverage cost rather than credited or hidden.
+_Avoid_: dropping `-1` lines, relabelling `-1` to a real speaker
+
 **Server Warmup**:
 A pipeline execution against a fixed warmup audio at server startup, completed before the server reports ready, so the first transcription endpoint request does not pay cold-model costs.
 _Avoid_: Lazy first-request warmup, client-driven warmup
@@ -421,6 +429,9 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 
 > **Dev:** "Should we report only WER for the **Quality Benchmark**?"
 > **Domain expert:** "No — report the **MeetEval Metric Set** (siWER, cpWER, ORC-WER, DI-cpWER, DER) because each captures a different speaker-attribution assumption."
+
+> **Dev:** "Did per-word speaker attribution improve? `cpWER − DI-cpWER` barely moved."
+> **Domain expert:** "That KPI reads hypothesis stream count, not attribution — use **WDER**, and read `wder_claimed` against `abstention_rate` rather than the headline alone."
 
 > **Dev:** "Should the sampled metrics file still be called `memory_N.csv`?"
 > **Domain expert:** "No — use a **Resource CSV** because the file contains memory, IO, CPU, and GPU observations."

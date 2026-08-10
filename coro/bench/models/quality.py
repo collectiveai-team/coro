@@ -35,6 +35,31 @@ class DerStats:
 
 
 @dataclass
+class WderStats:
+    """Word Diarization Error Rate breakdown (Shafey, Soltau & Shafran 2019).
+
+    ``WDER = (S_IS + C_IS) / (S + C)`` — speaker errors over the ASR words that
+    actually exist in both transcripts. Insertions and deletions are excluded
+    from the denominator, so the metric is not diluted by the ASR error floor
+    and is blind to segmentation.
+
+    Counts are additive across sessions, so a workload-level value is obtained
+    by summing them rather than by averaging rates.
+    """
+
+    wder: float | None
+    wder_claimed: float | None
+    abstention_rate: float | None
+    scored: int
+    speaker_errors: int
+    claimed: int
+    claimed_speaker_errors: int
+    abstentions: int
+    correct: int
+    substitutions: int
+
+
+@dataclass
 class DiarizationSanity:
     """Degenerate-diarization check for one item."""
 
@@ -50,6 +75,7 @@ class NormalizedMetrics:
     cpwer: WerStats | None = None
     orcwer: WerStats | None = None
     dicpwer: WerStats | None = None
+    wder: WderStats | None = None
 
 
 @dataclass
@@ -59,6 +85,7 @@ class ScoreMetrics:
     cpwer: WerStats | None = None
     orcwer: WerStats | None = None
     dicpwer: WerStats | None = None
+    wder: WderStats | None = None
     normalized: NormalizedMetrics | None = None
     der: DerStats | None = None
 
@@ -93,6 +120,7 @@ class CombinedMetrics:
     cpwer: WerStats | None = None
     orcwer: WerStats | None = None
     dicpwer: WerStats | None = None
+    wder: WderStats | None = None
     normalized: NormalizedMetrics | None = None
     der: DerStats | None = None
 
@@ -109,9 +137,13 @@ class PerItemEntry:
     orcwer: float | None = None
     dicpwer: float | None = None
     der: float | None = None
+    wder: float | None = None
+    wder_claimed: float | None = None
+    abstention_rate: float | None = None
     normalized_cpwer: float | None = None
     normalized_orcwer: float | None = None
     normalized_dicpwer: float | None = None
+    normalized_wder: float | None = None
 
 
 @dataclass
