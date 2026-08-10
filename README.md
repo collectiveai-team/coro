@@ -579,22 +579,55 @@ only. Each is materialized into a `--clips-dir` of `(<stem>.wav,
 
 | Dataset | License | Metrics | Materialize with |
 |---|---|---|---|
-| **AMI** (English meetings) | CC-BY | WER + DER | `utils.make_ami_clip` |
+| **AMI** (English meetings) | CC-BY | WER + DER | `utils.make_ami_clip` / `--ami-preset` |
 | **VoxConverse** (multi-speaker, in-the-wild) | CC-BY-4.0 | DER only (no transcript) | `utils.make_rttm_clip` |
-| **Common Voice** (single-speaker read speech, any language incl. `es`) | CC0 | WER only (single speaker) | `utils.make_common_voice_clips` |
+| **VoxPopuli** (Spanish parliamentary speech) | CC0-1.0 | WER only (single speaker) | `--spanish-preset voxpopuli` |
+| **FLEURS** (`es_419`, read speech) | CC-BY-4.0 | WER only (single speaker) | `--spanish-preset fleurs` |
+| **Multilingual LibriSpeech** (Spanish) | CC-BY-4.0 | WER only (single speaker) | `--spanish-preset mls` |
 
 Diarization-only references (e.g. VoxConverse) carry speaker turns but no
 words; the report shows their DER and leaves WER blank rather than emitting a
 meaningless score.
 
-> **TODO — apply for Albayzín-RTVE2020.** It is the strongest Spanish target
-> (real peninsular broadcast, *fully human-revised* transcripts **and** speaker
-> labels → trustworthy WER **and** DER), but it is gated: an accredited
-> researcher/company must request access via the RTVE archive
-> (<http://catedrartve.unizar.es/rtvedatabase.html>) and it cannot be
-> redistributed/vendored. Once obtained locally, its RTTM diarization refs feed
-> straight into `utils.make_rttm_clip`. (Avoid the RTVE2018 subtitle-only
-> partitions — those captions are not verbatim.)
+> **Spanish is WER-only.** Every public Spanish corpus above is single-speaker,
+> so the Spanish workload set validates ASR quality and yields no meaningful
+> DER. **Diarization quality is measured on AMI.**
+
+> **Common Voice is no longer supported.** It moved off its previous free
+> distribution channel in late 2025 and is no longer reproducibly fetchable, so
+> the `make_common_voice_clips` utility was removed. Use `--spanish-preset` for
+> Spanish WER.
+
+> **Note — Albayzín-RTVE2020 (out of scope).** It is the strongest Spanish
+> *diarization* target (human-revised transcripts **and** speaker labels), but it
+> is gated behind an RTVE licence and cannot be redistributed, so it is not part
+> of the reproducible workload set. Spanish diarization decisions stay
+> AMI-driven. (Avoid the RTVE2018 subtitle-only partitions — those captions are
+> not verbatim.)
+
+#### Spanish workload set + published-WER calibration
+
+```bash
+# Print the one-time download footprint before committing to a fetch:
+uv run --group bench coro-bench quality --spanish-preset calibration --spanish-fetch-plan
+
+# Materialize + score (audio and Reference STM files land under --spanish-root):
+uv run --group bench coro-bench quality \
+  --spanish-preset calibration --server-url http://127.0.0.1:8123 --out-dir run
+```
+
+Corpora are fetched from the Hugging Face Parquet index one row group at a time,
+so only the rows the preset asks for are downloaded, and the result is cached.
+Each materialised directory ships a `LICENCES.md` and `corpora.json` recording
+the licence, source and item provenance of every corpus.
+
+The `fleurs` and `mls` presets are **calibration sets**: their scored normalized
+ORC-WER is compared against the published figure for the configured ASR Model
+Selection, and a deviation beyond `--calibration-margin` (default `0.10` WER
+points, two-sided) **fails the run with exit code 3**. Matching an external
+figure is the only end-to-end proof the harness is free of systematic error, so
+a large deviation is a harness bug until proven otherwise. Results are written to
+`<out-dir>/quality/calibration.json`.
 
 ### Running benchmarks
 
@@ -652,10 +685,13 @@ plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
 
 - `--clips-dir DIR` — a directory of `(<stem>.wav, <stem>.ref.stm)` pairs, e.g.
   produced by the dataset materializers (`utils.make_ami_clip`,
-  `utils.make_common_voice_clips`, `utils.make_rttm_clip`).
+  `utils.make_rttm_clip`).
 - `--ami-preset sample|eval|full` (or `--ami-groups` / `--ami-meetings`) — pull
   AMI meetings into `--ami-root` (default `./amicorpus/`); add `--no-download` to
   use only what is already present.
+- `--spanish-preset voxpopuli|fleurs|mls|calibration|all` — materialize a Spanish
+  workload set from public CC0/CC-BY corpora into `--spanish-root` (default
+  `./spanish-corpora/`) and score it. Mutually exclusive with `--clips-dir`.
 
 #### Useful flags
 

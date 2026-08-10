@@ -12,8 +12,14 @@ from coro.bench.ami import (
     resolve_workload_set,
 )
 from coro.bench.cli_args import _SAMPLING_SUBCOMMANDS, parse_args
+from coro.bench.cli_spanish import (
+    prepare_spanish_workload,
+    print_spanish_fetch_plan,
+    run_calibration,
+)
 from coro.bench.errors import ServerPidUnresolvedError, ServerUnreachableError
 from coro.bench.process_lookup import DEFAULT_SERVER_MATCH
+from coro.bench.quarantine import CircularReferenceError
 from coro.bench.server_lifecycle import (
     BenchAttachedServer,
     BenchManagedServer,
@@ -225,6 +231,15 @@ def resolve_meetings(args: argparse.Namespace) -> list[str]:
 def main() -> None:
     args = parse_args()
 
+    if args.spanish_fetch_plan:
+        print_spanish_fetch_plan(args)
+        return
+
+    # Materialising the preset sets args.clips_dir, which is what suppresses the
+    # implicit AMI default inside resolve_meetings — so it has to happen first.
+    if args.spanish_preset is not None:
+        prepare_spanish_workload(args)
+
     try:
         meetings = resolve_meetings(args)
         with build_server_handle(args) as server:
@@ -237,6 +252,12 @@ def main() -> None:
     except (ServerUnreachableError, ServerPidUnresolvedError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(2)
+    except CircularReferenceError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(4)
+
+    if args.subcommand in ("quality", "all") and run_calibration(args):
+        sys.exit(3)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ own data before trusting absolute numbers.
 > **Read the caveats.** These runs are a **small AMI English sample** on one
 > laptop GPU. They are a *relative* signal, not an absolute quality verdict —
 > reproduce on data that matches your domain/language (the bench ships loaders
-> for AMI, VoxConverse and Common Voice; see *Reproduce* below).
+> for AMI, VoxConverse, and a public Spanish set; see *Reproduce* below).
 
 ## Hardware & setup
 
@@ -234,10 +234,83 @@ coro-bench all --clips-dir clips --server-url http://127.0.0.1:8123 \
 python -m coro.bench.utils.visualize_quality run --alignment tcp cp
 ```
 
-Other dataset loaders: `make_rttm_clip` (VoxConverse / diarization-only DER),
-`make_common_voice_clips` (Common Voice WER). A trustworthy **Spanish** DER+WER
-target (Albayzín-RTVE2020) is gated behind an RTVE licence — see the README
-*Benchmark datasets* note; apply for access if you need Spanish numbers.
+Other dataset loaders: `make_rttm_clip` (VoxConverse / diarization-only DER).
+
+## Spanish workload set
+
+The Spanish **Workload Set** is built entirely from freely-licensed public
+corpora and is wired in as a named preset, the same way the AMI presets are:
+
+| Corpus | Config / split | Licence | Role |
+|---|---|---|---|
+| [VoxPopuli](https://huggingface.co/datasets/facebook/voxpopuli) | `es` / `test` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | primary |
+| [FLEURS](https://huggingface.co/datasets/google/fleurs) | `es_419` / `test` | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) | calibration |
+| [Multilingual LibriSpeech](https://huggingface.co/datasets/facebook/multilingual_librispeech) | `spanish` / `test` | [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) | calibration |
+
+```bash
+coro-bench quality --spanish-preset calibration --spanish-fetch-plan   # cost first
+coro-bench quality --spanish-preset all --server-url http://127.0.0.1:8123 --out-dir run
+```
+
+Fetching reads the Hugging Face Parquet index and downloads whole row groups
+only until the requested item count is met, so a clean checkout reproduces the
+same items in the same order. Each materialised preset directory carries a
+`LICENCES.md` and a `corpora.json` recording the licence, source dataset and
+per-item provenance.
+
+Row group size is the fetch granularity, and it differs sharply per corpus:
+MLS ships ~100-row groups (~6 MB), while VoxPopuli and FLEURS ship one very
+large group each. Expect roughly **655 MB** (VoxPopuli), **703 MB** (FLEURS) and
+**6 MB** (MLS) on first fetch, regardless of item count; everything is cached
+afterwards. Always run `--spanish-fetch-plan` first — it reads footers only.
+
+> **Spanish measures WER only.** All three corpora are single-speaker, so the
+> Spanish workload set yields **no meaningful DER**. Diarization quality is
+> measured on **AMI**, and all diarization decisions remain AMI-driven.
+
+> **Common Voice was removed.** It moved off its previous free distribution
+> channel in late 2025 and is no longer reproducibly fetchable; the
+> `make_common_voice_clips` utility has been deleted rather than left as a dead
+> end.
+
+> **Self-generated references are quarantined.** A **Reference STM** that lives
+> under a `benchmark/groundtruth/` tree, or that is named like a **Hypothesis
+> STM** (`*.hyp.stm`), is rejected by `coro-bench` (exit code 4). Earlier Spanish
+> figures were scored against the system's own output and are void; delete any
+> such local tree.
+
+### Published-WER calibration
+
+`fleurs` and `mls` are calibration sets: their aggregate **normalized ORC-WER**
+is compared against the published figure for the configured **ASR Model
+Selection**. Registered figures:
+
+| Model | FLEURS `es` | MLS `es` | Source |
+|---|---:|---:|---|
+| `openai/whisper-small` | 5.6% | 7.8% | [Whisper paper](https://arxiv.org/abs/2212.04356), Tables 13 / 10 |
+| `openai/whisper-medium` | 3.6% | 5.3% | same |
+| `openai/whisper-large` | 3.5% | 5.4% | same |
+| `openai/whisper-large-v2` | 3.0% | 4.2% | same |
+| `nvidia/parakeet-tdt-0.6b-v3` | 3.45% | 4.39% | [model card](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) |
+
+(`tiny`/`base` are registered too.) A deviation beyond `--calibration-margin`
+— default **0.10 absolute WER points, two-sided** — fails the run with exit
+code 3, because matching an external figure is the only end-to-end proof that
+decoding, ASR windowing, STM conversion, normalization and scoring are free of
+systematic error. Treat a large deviation as a harness bug until proven
+otherwise. Pass `--no-calibration` to report without failing.
+
+The margin is wide, and **not yet recalibrated**. It was set against a
+normalized lane that only stripped ASCII punctuation, so casing and Spanish
+punctuation (`¿`, `¡`, `—`) inflated the measured figure. ADR 0011 has since
+replaced that lane with the Basic Text Normalizer, which lowercases and maps
+every symbol and punctuation category to spaces — so the band can only need to
+shrink, but nobody has measured by how much. Tighten it from a real run against
+the calibration corpora, not by estimate. Models with no registered figure
+report `unregistered` and do not fail the run — inventing a target would defeat
+the purpose of the check.
+
+Results are written to `<out-dir>/quality/calibration.json`.
 
 ### Reproducing *Measured defaults (CPU)*
 
@@ -250,7 +323,7 @@ Same four steps, with these conditions per row:
 - **Spanish lane** — 60 utterances from the FLEURS `es_419` **test** split
   (CC-BY-4.0), each transcoded to 16 kHz mono WAV with its
   `raw_transcription` as a single-speaker reference STM — the same
-  `(<stem>.wav, <stem>.ref.stm)` shape `make_common_voice_clips` produces.
+  `(<stem>.wav, <stem>.ref.stm)` shape `--spanish-preset fleurs` produces.
 - **Server** — `CORO_ASR_DEVICE=cpu`, `CORO_PIPELINE=full-memory`,
   `CORO_BACKEND_DIARIZATION=none` except in the diarization A/B, where it is
   `nemo` with `CORO_DIARIZATION_DEVICE=cpu` and `CORO_MODEL_DIARIZATION` set to

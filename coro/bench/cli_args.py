@@ -12,7 +12,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from coro.bench.calibration import DEFAULT_CALIBRATION_MARGIN
 from coro.bench.process_lookup import DEFAULT_SERVER_MATCH
+from coro.bench.quarantine import CircularReferenceError, assert_scorable_reference
+from coro.bench.spanish import SPANISH_PRESETS
 
 _MANAGED_FLAGS = {
     "server_asr_backend",
@@ -108,6 +111,42 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--der-regions", choices=["all", "nooverlap", "single"], default="all")
     parser.add_argument("--stream", action="store_true", default=False)
 
+    spanish = parser.add_argument_group("Spanish workload set (public corpora)")
+    spanish.add_argument(
+        "--spanish-preset",
+        choices=sorted(SPANISH_PRESETS),
+        default=None,
+        help="Materialise a Spanish Workload Set from freely-licensed public "
+        "corpora and benchmark it as a --clips-dir workload. Single-speaker: "
+        "WER only, no meaningful DER.",
+    )
+    spanish.add_argument("--spanish-root", type=Path, default=Path("./spanish-corpora/"))
+    spanish.add_argument(
+        "--spanish-limit",
+        type=int,
+        default=None,
+        help="Override the preset's items-per-corpus count.",
+    )
+    spanish.add_argument(
+        "--spanish-fetch-plan",
+        action="store_true",
+        default=False,
+        help="Print the download footprint of --spanish-preset and exit.",
+    )
+    spanish.add_argument(
+        "--calibration-margin",
+        type=float,
+        default=DEFAULT_CALIBRATION_MARGIN,
+        help="Two-sided absolute WER band against published figures "
+        f"(default {DEFAULT_CALIBRATION_MARGIN}). Exceeding it fails the run.",
+    )
+    spanish.add_argument(
+        "--no-calibration",
+        action="store_true",
+        default=False,
+        help="Report calibration without failing the run on a deviation.",
+    )
+
 
 def _apply_defaults(args: argparse.Namespace) -> None:
     defaults = {
@@ -122,6 +161,24 @@ def _apply_defaults(args: argparse.Namespace) -> None:
     for flag, default in defaults.items():
         if getattr(args, flag) is None:
             setattr(args, flag, default)
+
+
+def _validate_reference_args(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Reject quarantined references and conflicting workload-set selectors."""
+    if args.reference_stm is not None:
+        try:
+            assert_scorable_reference(args.reference_stm)
+        except CircularReferenceError as exc:
+            parser.error(str(exc))
+
+    if args.spanish_preset is not None and args.clips_dir is not None:
+        parser.error("--spanish-preset is mutually exclusive with --clips-dir.")
+
+    if args.spanish_fetch_plan and args.spanish_preset is None:
+        parser.error("--spanish-fetch-plan requires --spanish-preset.")
 
 
 def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
@@ -160,6 +217,8 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
 
     if args.audio is not None and args.reference_stm is None and args.subcommand == "quality":
         parser.error("--audio without --reference-stm is not allowed for the 'quality' subcommand.")
+
+    _validate_reference_args(args, parser)
 
 
 def parse_args(argv=None) -> argparse.Namespace:
