@@ -28,14 +28,19 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _pgrep_children(parent_pid: int) -> set[int]:
+    """Reference implementation: the *direct* children of one PID, via ``pgrep -P``."""
+    result = subprocess.run(
+        ["pgrep", "-P", str(parent_pid)], capture_output=True, text=True, check=False
+    )
+    return {int(line) for line in result.stdout.strip().splitlines()}
+
+
 def _pgrep_tree(root_pid: int) -> set[int]:
     """Reference implementation: recursive ``pgrep -P``, one fork per PID."""
     pids = {root_pid}
-    result = subprocess.run(
-        ["pgrep", "-P", str(root_pid)], capture_output=True, text=True, check=False
-    )
-    for line in result.stdout.strip().splitlines():
-        pids |= _pgrep_tree(int(line))
+    for child in _pgrep_children(root_pid):
+        pids |= _pgrep_tree(child)
     return pids
 
 
@@ -96,7 +101,9 @@ class TestProcStatParsing:
         shutil.copy(sys.executable, weird)
         proc = subprocess.Popen([str(weird), "-c", "import time; time.sleep(30)"])
         try:
-            time.sleep(1.0)
+            # Waiting on the kernel to publish a real PID in /proc; there is no
+            # clock to freeze here, so the sleep is the synchronisation.
+            time.sleep(1.0)  # falsegreen: ignore
             raw = Path(f"/proc/{proc.pid}/stat").read_text()
             assert " " in raw[raw.index("(") : raw.rindex(")")]
 
@@ -121,12 +128,26 @@ class TestProcStatParsing:
 
 class TestChildPidMap:
     def test_maps_a_known_parent_to_its_child(self, nested_tree):
-        assert _read_child_pid_map().children_of(nested_tree.pid)
+        """The /proc scan must agree with ``pgrep -P`` on the direct children."""
+        children = _read_child_pid_map().children_of(nested_tree.pid)
+        assert set(children) == _pgrep_children(nested_tree.pid)
+        assert len(children) == len(set(children))
+
+    def test_indexes_this_process_under_its_real_parent(self):
+        """The scan must place the running test under its own parent PID."""
+        assert os.getpid() in _read_child_pid_map().children_of(os.getppid())
 
     def test_every_key_and_pid_is_an_int(self):
-        for parent, children in _read_child_pid_map().children.items():
-            assert isinstance(parent, int)
-            assert all(isinstance(child, int) for child in children)
+        index = _read_child_pid_map()
+        non_int_parents = [p for p in index.children if not isinstance(p, int)]
+        non_int_children = [
+            child
+            for children in index.children.values()
+            for child in children
+            if not isinstance(child, int)
+        ]
+        assert non_int_parents == []
+        assert non_int_children == []
 
     def test_unknown_parent_has_no_children(self):
         assert _read_child_pid_map().children_of(-1) == []
