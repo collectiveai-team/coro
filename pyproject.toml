@@ -245,6 +245,9 @@ max-complexity = 10
     "C901",
 ]
 "coro/bench/cli.py" = ["S108", "DTZ005"]
+# Mirrors coro/bench/run.py: the sampler's tests must spawn a real process tree
+# (`sh`, and `pgrep` as the reference implementation) to have anything to walk.
+"tests/test_bench_run.py" = ["S603", "S607"]
 "coro/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
 # Clip utilities shell out to the system ffmpeg binary by name.
 "coro/bench/utils/make_ami_clip.py" = ["S603", "S607"]

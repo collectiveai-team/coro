@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -23,7 +24,7 @@ from coro.bench.run import (
 )
 
 pytestmark = pytest.mark.skipif(
-    not os.path.isdir("/proc/self"), reason="requires a Linux /proc filesystem"
+    not Path("/proc/self").is_dir(), reason="requires a Linux /proc filesystem"
 )
 
 
@@ -96,7 +97,7 @@ class TestProcStatParsing:
         proc = subprocess.Popen([str(weird), "-c", "import time; time.sleep(30)"])
         try:
             time.sleep(1.0)
-            raw = open(f"/proc/{proc.pid}/stat").read()
+            raw = Path(f"/proc/{proc.pid}/stat").read_text()
             assert " " in raw[raw.index("(") : raw.rindex(")")]
 
             stat = _read_proc_stat(proc.pid)
