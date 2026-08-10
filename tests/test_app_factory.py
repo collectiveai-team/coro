@@ -123,7 +123,11 @@ def test_warmup_failure_fails_server_startup():
         settings = ServerSettings(warmup="enabled")
         application = create_app(settings)
 
-        with (
+        # C51 reads the empty body as "nothing can raise", but
+        # TestClient.__enter__ runs startup (and therefore warmup) inside the
+        # pytest.raises scope, so the assertion is real: drop the side_effect
+        # and this test fails with DID NOT RAISE.
+        with (  # falsegreen: ignore
             patch(
                 "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
                 new_callable=AsyncMock,
