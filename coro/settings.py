@@ -45,9 +45,9 @@ class ServerSettings(BaseSettings):
         default="full-memory", description="Configured Transcription Pipeline selector."
     )
     backend_asr: ASRBackendProvider = Field(
-        default="faster-whisper", description="ASR Backend Provider selector."
+        default="onnx-asr", description="ASR Backend Provider selector."
     )
-    model_asr: str = Field(default="openai/whisper-medium", description="ASR Model Selection.")
+    model_asr: str = Field(default="nemo-parakeet-tdt-0.6b-v3", description="ASR Model Selection.")
     asr_device: ASRDevice = Field(default="auto", description="Faster Whisper device selection.")
     asr_compute_type: str = Field(
         default="default",
@@ -56,7 +56,9 @@ class ServerSettings(BaseSettings):
     asr_quantization: str | None = Field(
         default=None,
         description="onnx-asr model quantization selector (e.g. 'int8'); ignored by "
-        "the faster-whisper backend.",
+        "the faster-whisper backend. Left unset on purpose: int8 is a memory-fitting "
+        "tool for the default transducer ASR Model Selection, not a speed tool "
+        "(measured: no throughput gain, small WER cost). See docs/benchmark.md.",
     )
     asr_onnx_vad: OnnxVadSelector = Field(
         default="disabled",
@@ -71,7 +73,12 @@ class ServerSettings(BaseSettings):
     )
     backend_diarization: DiarizationBackendProvider = Field(
         default="none",
-        description="Diarization Backend Provider selector.",
+        description="Diarization Backend Provider selector. Defaults to 'none' as an "
+        "explicit product decision, not by omission: an ASR-Only Server is a valid "
+        "configuration, and enabling streaming Sortformer by default would cost ~24% "
+        "Transcription Throughput, ~1 GB peak Process-Tree PSS and a ~500 MB model "
+        "download on first start, while capping the server at 4 speakers. "
+        "See docs/benchmark.md.",
     )
     model_diarization: str | None = Field(default=None, description="Diarization Model Selection.")
     diarization_device: DiarizationDevice = Field(

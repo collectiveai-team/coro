@@ -301,8 +301,11 @@ A `backends/` package structure organized by capability first — `backends/asr/
 _Avoid_: Provider-first backend tree, duplicated provider setup, capability code split across unrelated directories
 
 **ASR Model Selection**:
-The Hugging Face-style model identifier passed to the configured ASR backend provider.
-_Avoid_: ASR backend, provider name
+The model identifier passed to the configured ASR backend provider — Hugging Face-style
+(`openai/whisper-medium`) unless the provider defines its own catalogue handle, as
+`onnx-asr` does for the models it curates (`nemo-parakeet-tdt-0.6b-v3`). The rule is that
+the identifier is whatever the provider resolves, never a package-invented short alias.
+_Avoid_: ASR backend, provider name, package-invented short alias
 
 **Diarization Model Selection**:
 The Hugging Face-style model identifier passed to the configured diarization backend provider. The package is distributed under MIT, so a selection that is named as a default, a recommendation, or an example must be permissively licensed; a non-commercial selection may only be named as a comparative reference and must be labelled with its license.
@@ -362,9 +365,12 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - The **Streaming Pipeline** is selected with the startup value `streaming`; the **Full-Memory Pipeline** is selected with `full-memory`. There is no `chunked-file` selector — it was removed, and **Strict Startup Validation** rejects it.
 - **Server Startup Selection** uses the `CORO_` environment prefix for pipeline, backend provider, and model selection settings.
 - **Server Startup Selection** uses **Strict Startup Validation** for selector values.
-- The default ASR **Backend Provider** is `faster-whisper`.
-- The default diarization **Backend Provider** is `none`.
-- The default **ASR Model Selection** is `openai/whisper-medium`.
+- The default ASR **Backend Provider** is `onnx-asr`.
+- The default diarization **Backend Provider** is `none`; an **ASR-Only Server** is the
+  out-of-the-box configuration by explicit decision, not by omission.
+- The default **ASR Model Selection** is `nemo-parakeet-tdt-0.6b-v3`.
+- The default **ASR Model Selection** runs unquantized; `int8` is a memory-fitting
+  option for it, never a throughput one.
 - When NeMo diarization is enabled without an explicit **Diarization Model Selection**, the default is `nvidia/diar_streaming_sortformer_4spk-v2` (CC-BY-4.0).
 - Every **Diarization Model Selection** the project names carries a documented license; a non-commercially licensed model — such as the batch Sortformer `nvidia/diar_sortformer_4spk-v1` (CC-BY-NC-4.0) — is never a default, a recommendation, or an unannotated example.
 - A diarization **Backend Provider** other than `none` combined with an empty **Diarization Model Selection** fails **Strict Startup Validation**; it never degrades silently to an **ASR-Only Server**.
@@ -500,13 +506,28 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "No — **Strict Startup Validation** rejects unknown selector values before the server starts."
 
 > **Dev:** "What ASR model should be used when no ASR model environment variable is set?"
-> **Domain expert:** "Use `openai/whisper-medium` as the default **ASR Model Selection**."
+> **Domain expert:** "Use `nemo-parakeet-tdt-0.6b-v3` as the default **ASR Model Selection**.
+> It was measured faster and no worse than `openai/whisper-medium` on English meetings, and
+> materially better on Spanish."
 
 > **Dev:** "What backend providers should be used with no environment variables?"
-> **Domain expert:** "Use `faster-whisper` for ASR and `none` for diarization."
+> **Domain expert:** "Use `onnx-asr` for ASR and `none` for diarization."
+
+> **Dev:** "Should we set `int8` quantization by default so the CPU path is faster?"
+> **Domain expert:** "No — for the default transducer **ASR Model Selection** int8 measured
+> no throughput gain and a small WER cost. It is a memory-fitting tool only."
+
+> **Dev:** "The Sortformer v2.1 model card reports much better AMI DER — should it be the
+> default **Diarization Model Selection**?"
+> **Domain expert:** "Not on our evidence. The A/B on AMI did not reproduce that gain, so the
+> default stays `nvidia/diar_streaming_sortformer_4spk-v2`. Defaults follow measurements taken
+> on this pipeline, not model-card claims."
 
 > **Dev:** "Should model selections use short names like `whisper-medium` or full names?"
-> **Domain expert:** "Use Hugging Face-style full names such as `openai/whisper-medium` and `nvidia/diar_streaming_sortformer_4spk-v2`."
+> **Domain expert:** "Never a package-invented short alias. Use the identifier the **Backend
+> Provider** itself resolves — Hugging Face-style full names such as `openai/whisper-medium`
+> and `nvidia/diar_streaming_sortformer_4spk-v2`, or a provider's own catalogue handle where
+> it has one, as `onnx-asr` does with `nemo-parakeet-tdt-0.6b-v3`."
 
 > **Dev:** "If NeMo diarization is enabled without a model setting, what should load?"
 > **Domain expert:** "Use `nvidia/diar_streaming_sortformer_4spk-v2` as the default **Diarization Model Selection**."
@@ -607,9 +628,11 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "full-memory" was used to imply whole-file ASR — resolved: both pipeline implementations use **ASR Windowing**.
 - "environment variable" was used without namespacing — resolved: **Server Startup Selection** uses `CORO_PIPELINE`, `CORO_BACKEND_ASR`, `CORO_MODEL_ASR`, `CORO_BACKEND_DIARIZATION`, and `CORO_MODEL_DIARIZATION`.
 - "default pipeline" was used to imply fallback behavior — resolved: defaults apply only when unset; invalid values fail **Strict Startup Validation**.
-- "backend provider default" was unspecified — resolved: ASR defaults to `faster-whisper` and diarization defaults to `none`.
-- "ASR model default" was unspecified — resolved: the default **ASR Model Selection** is `openai/whisper-medium`.
-- "model name" was used to imply short aliases — resolved: **ASR Model Selection** and **Diarization Model Selection** use Hugging Face-style full model identifiers.
+- "backend provider default" was unspecified — resolved: ASR defaults to `onnx-asr` and diarization defaults to `none`.
+- "ASR model default" was unspecified — resolved: the default **ASR Model Selection** is `nemo-parakeet-tdt-0.6b-v3`.
+- "quantization" was used as a speed setting — resolved: for the default transducer **ASR Model Selection**, `int8` is a memory-fitting option with no measured throughput gain.
+- "better model card DER" was treated as sufficient to move a default — resolved: a **Diarization Model Selection** default changes only when an A/B on this pipeline shows the gain; Sortformer v2.1 did not, so the default stays v2.
+- "model name" was used to imply short aliases — resolved: **ASR Model Selection** and **Diarization Model Selection** use the identifier the **Backend Provider** resolves — Hugging Face-style full ids, or a provider's own catalogue handle (e.g. onnx-asr's `nemo-parakeet-tdt-0.6b-v3`) — never a package-invented alias.
 - "diarization model default" was unspecified — resolved: enabled NeMo diarization defaults to `nvidia/diar_streaming_sortformer_4spk-v2`.
 - "Sortformer" was used as if it named one interchangeable model — resolved: the family spans the batch `nvidia/diar_sortformer_4spk-v1` (CC-BY-NC-4.0) and the streaming `nvidia/diar_streaming_sortformer_4spk-v2` (CC-BY-4.0); only the permissively licensed streaming model is a default, recommendation, or example **Diarization Model Selection**.
 - "health backend" was used to imply one backend status — resolved: `/health` reports **Server Startup Selection** and **Capability Readiness** separately.
