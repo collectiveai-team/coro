@@ -62,7 +62,9 @@ async def test_diarize_pcm_passes_resolved_postprocessing_yaml():
 def test_postprocessing_yaml_property_exposes_resolved_value():
     """The Backend Adapter Factory reads this to build a matching streaming factory."""
     adapter = NemoDiarizationAdapter(_FakeSortformerModel(), postprocessing_yaml="/some/path.yaml")
-    assert adapter.postprocessing_yaml == "/some/path.yaml"
+    # Round-tripping the constructor argument unchanged is the whole contract of
+    # this accessor, so the "self-confirming literal" is the assertion's point.
+    assert adapter.postprocessing_yaml == "/some/path.yaml"  # falsegreen: ignore
 
 
 def test_postprocessing_yaml_property_defaults_to_none():
