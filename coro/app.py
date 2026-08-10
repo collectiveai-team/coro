@@ -134,12 +134,14 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     # Register routers
     from coro.api.health import router as health_router
+    from coro.api.v1.listen import router as listen_router
     from coro.api.v1.transcriptions import router as v1_router
 
     application.state.settings = settings
     application.state.runtime = runtime
     application.include_router(health_router)
     application.include_router(v1_router)
+    application.include_router(listen_router)
 
     return application
 

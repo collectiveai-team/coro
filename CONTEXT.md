@@ -236,12 +236,12 @@ _Avoid_: Full OpenAI API clone
 A supported `response_format` value that maps to the same strict transcription JSON response.
 _Avoid_: Separate output contract, OpenAI response-format clone
 
-**Vendor-Shaped Response Format**:
-An opt-in `response_format` value that projects the transcription response onto a shape another speech vendor already documents (`assemblyai_json`, `deepgram_json`), so that per-word speaker labels have a native slot. A documented subset validated against that vendor's published SDK types, never a partial clone passed off as complete, and never a change to the OpenAI-compatible formats. See ADR 0010.
-_Avoid_: Vendor endpoint clone, vendor auth or request parameters, package-invented word schema
+**Vendor-Native Endpoint**:
+An endpoint implementing another provider's own documented contract end to end — its route, request shape, parameter defaults, response schema and error body (`POST /v1/listen` for Deepgram). Each provider owns its own contract, so no provider's format is ever extended to carry another's data. A documented subset validated against that vendor's published SDK types, never a partial clone passed off as complete. See ADR 0010.
+_Avoid_: Vendor values added to `response_format`, vendor fields added to an OpenAI schema, OpenAI-style errors on a vendor route
 
 **Per-Word Speaker Attribution**:
-The speaker label assigned to each individual word by maximum overlap against the diarization timeline, carried in `word_segments` alongside the word's real ASR timing and confidence. Reachable at the HTTP boundary only through a Vendor-Shaped Response Format. See ADR 0008.
+The speaker label assigned to each individual word by maximum overlap against the diarization timeline, carried in `word_segments` alongside the word's real ASR timing and confidence. Reachable at the HTTP boundary only through a Vendor-Native Endpoint, because no OpenAI type has a slot for it. See ADR 0008.
 _Avoid_: Segment speaker broadcast onto words, interpolated word timings
 
 **Compatibility Model Field**:
@@ -586,8 +586,8 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "v1" and "v2" were used to mean both public API versions and internal pipeline behavior — resolved: the public API has one **Transcription Endpoint**, while behavior lives in the **Configured Transcription Pipeline**.
 - "pipeline dependency" was used ambiguously — resolved: it means a FastAPI **Pipeline Dependency**, not direct route app-state lookup or per-request construction.
 - "dependency" was used to imply object construction — resolved: settings can be cached, but loaded adapters and pipelines live in the **Singleton Runtime**.
-- "current server" was used to imply all prototype routes — resolved: the **Supported Endpoint Set** excludes `/`, `/asr`, Deepgram-compatible `/v1/listen`, `/v1/models`, `/v2/audio/transcriptions`, and behavior-specific transcription routes.
-- "Deepgram support" was used to mean both a compatible route and a response shape — resolved: a **Vendor-Shaped Response Format** is a `response_format` value on the existing **Transcription Endpoint**; it adds no route, so the **Supported Endpoint Set** and ADR 0001 are unchanged.
+- "current server" was used to imply all prototype routes — resolved: the **Supported Endpoint Set** is `/health`, `/v1/audio/transcriptions` and `/v1/listen`, and excludes `/`, `/asr`, `/v1/models`, `/v2/audio/transcriptions`, WebSocket, and behavior-specific transcription routes. The inherited *prototype* `/v1/listen` remains excluded; the route in the Supported Endpoint Set is the deliberately implemented **Vendor-Native Endpoint** of ADR 0010.
+- "vendor support" was used to mean a response shape bolted onto the OpenAI endpoint — resolved: each provider gets a **Vendor-Native Endpoint** implementing its own contract. `response_format` is OpenAI's parameter and carries only values OpenAI defines.
 - "refactor" was used to imply one pipeline implementation — resolved: full-memory and disk-backed behavior remain distinct **Transcription Pipeline** implementations selected by startup configuration.
 - "v1 pipeline" and "v2 pipeline" were used for processing strategies — resolved: use **Full-Memory Pipeline** and **Streaming Pipeline**.
 - "audio file" was used to imply both in-memory bytes and filesystem paths — resolved: pipelines receive **Audio Input** and choose the access mode they require.

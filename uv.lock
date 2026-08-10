@@ -171,21 +171,6 @@ wheels = [
 ]
 
 [[package]]
-name = "assemblyai"
-version = "0.64.33"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "typing-extensions" },
-    { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/48/bd/ff64326de607d6dbfc692dd8d99cb45c3c27bb40a45708d1b21072c02690/assemblyai-0.64.33.tar.gz", hash = "sha256:806418d6e40437d5962089d7d7cce0e6b57d1ba7065a82bc4d70141ffae50292", size = 100871, upload-time = "2026-08-07T16:31:47.782Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/02/dd489998663dfc68683d154181f883ffce229d9f5722ac72f678f14973fb/assemblyai-0.64.33-py3-none-any.whl", hash = "sha256:5eb40c1daba060f39e25a45318e76cdca9b124c10f9cc021f13bf3a1ca38fa25", size = 88445, upload-time = "2026-08-07T16:31:46.7Z" },
-]
-
-[[package]]
 name = "asteroid-filterbanks"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -419,7 +404,6 @@ bench = [
 ]
 dev = [
     { name = "anyio" },
-    { name = "assemblyai" },
     { name = "deepgram-sdk" },
     { name = "httpx" },
     { name = "matplotlib" },
@@ -465,7 +449,6 @@ bench = [
 ]
 dev = [
     { name = "anyio", specifier = ">=4.0.0" },
-    { name = "assemblyai", specifier = ">=0.64.33" },
     { name = "deepgram-sdk", specifier = ">=7.6.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "matplotlib", specifier = ">=3.11.0" },

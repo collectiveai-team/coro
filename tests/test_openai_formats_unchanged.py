@@ -99,6 +99,8 @@ async def test_openai_formats_carry_no_per_word_speaker(fmt: str):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("alias,canonical", [("json_verbose", "verbose_json"), ("dirized_json", "diarized_json")])
+@pytest.mark.parametrize(
+    "alias,canonical", [("json_verbose", "verbose_json"), ("dirized_json", "diarized_json")]
+)
 async def test_typo_aliases_stay_byte_identical_to_their_canonical_format(alias, canonical):
     assert await _raw_body(alias) == _GOLDEN[canonical]

@@ -8,12 +8,10 @@ to the configured pipeline.
 from __future__ import annotations
 
 import re
-import hashlib
 import math
 import logging
 import time
-from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from dataclasses import asdict
 from uuid import uuid4
 from enum import StrEnum
 from typing import Literal, overload
@@ -21,7 +19,7 @@ from typing import Literal, overload
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import Response
 
-from coro.api.dependencies import get_pipeline, get_settings
+from coro.api.dependencies import get_pipeline
 from coro.api.exceptions import (
     UNDECODABLE_MEDIA_MESSAGE,
     TranscriptionProcessingError,
@@ -39,14 +37,7 @@ from coro.api.schemas import (
     VerboseJsonWord,
 )
 from coro.api.sse import streaming_response
-from coro.api.vendor import (
-    AssemblyAIResponse,
-    DeepgramResponse,
-    assemblyai_response,
-    deepgram_response,
-)
 from coro.audio import AudioConversionError, AudioInput
-from coro.settings import ServerSettings
 
 
 # MARK: Router Configuration
@@ -90,18 +81,12 @@ def _validate_language(language: str | None) -> str | None:
 
 # MARK: Response
 class ResponseFormat(StrEnum):
-    """Every response_format value this server recognises.
+    """All OpenAI response_format values this server recognises.
 
     JSON-like formats are implemented; ``json_verbose``/``dirized_json`` are
     typo-tolerant aliases of ``verbose_json``/``diarized_json``. The text output
     formats are recognised so they fail with an OpenAI-style 400 (param
     ``response_format``) rather than a generic validation error.
-
-    ``assemblyai_json`` and ``deepgram_json`` are vendor-shaped formats that
-    expose per-word speaker labels, for which the OpenAI formats have no slot.
-    They are opt-in because they are large — roughly 7x a ``diarized_json``
-    body, since both shapes carry every word twice — and they leave the OpenAI
-    projections byte-unchanged (ADR 0010).
     """
 
     JSON = "json"
@@ -109,10 +94,6 @@ class ResponseFormat(StrEnum):
     JSON_VERBOSE = "json_verbose"
     DIARIZED_JSON = "diarized_json"
     DIRIZED_JSON = "dirized_json"
-
-    # Vendor-shaped formats carrying per-word speakers
-    ASSEMBLYAI_JSON = "assemblyai_json"
-    DEEPGRAM_JSON = "deepgram_json"
 
     # Unsupported OpenAI formats (recognised but not implemented → 400)
     TEXT = "text"
@@ -130,52 +111,8 @@ _JSON_LIKE_FORMATS = frozenset(
         ResponseFormat.JSON_VERBOSE,
         ResponseFormat.DIARIZED_JSON,
         ResponseFormat.DIRIZED_JSON,
-        ResponseFormat.ASSEMBLYAI_JSON,
-        ResponseFormat.DEEPGRAM_JSON,
     }
 )
-
-# Formats whose per-word speaker labels require the vendor request context.
-_VENDOR_FORMATS = frozenset(
-    {
-        ResponseFormat.ASSEMBLYAI_JSON,
-        ResponseFormat.DEEPGRAM_JSON,
-    }
-)
-
-
-@dataclass(frozen=True)
-class VendorContext:
-    """Request-scoped values the vendor-shaped projections need.
-
-    The OpenAI projections are pure functions of the transcription result; the
-    vendor shapes additionally carry provenance (request id, audio digest,
-    model identity), so it is threaded in rather than reached for globally.
-    """
-
-    request_id: str
-    audio_bytes: bytes
-    filename: str
-    asr_model: str
-    asr_backend: str
-
-    def audio_sha256(self) -> str:
-        """Hex SHA-256 of the uploaded audio bytes."""
-        return hashlib.sha256(self.audio_bytes).hexdigest()
-
-    def created(self) -> str:
-        """ISO 8601 UTC completion timestamp."""
-        return datetime.now(tz=UTC).isoformat()
-
-
-TranscriptionApiResponse = (
-    JsonResponse
-    | VerboseJsonResponse
-    | DiarizadJsonResponse
-    | AssemblyAIResponse
-    | DeepgramResponse
-)
-"""Every non-streaming body the Transcription Endpoint can return."""
 
 
 def _text_from_result(result: TranscriptionResponse) -> str:
@@ -266,41 +203,12 @@ def _diarized_json_response(result: TranscriptionResponse) -> DiarizadJsonRespon
     )
 
 
-def _assemblyai_response(
-    result: TranscriptionResponse, *, language: str | None, context: VendorContext
-) -> AssemblyAIResponse:
-    return assemblyai_response(
-        result,
-        text=_text_from_result(result),
-        duration=_duration_from_result(result),
-        language=language,
-        request_id=context.request_id,
-        audio_url=context.filename,
-    )
-
-
-def _deepgram_response(
-    result: TranscriptionResponse, *, context: VendorContext
-) -> DeepgramResponse:
-    return deepgram_response(
-        result,
-        text=_text_from_result(result),
-        duration=_duration_from_result(result),
-        request_id=context.request_id,
-        audio_sha256=context.audio_sha256(),
-        created=context.created(),
-        asr_model=context.asr_model,
-        asr_backend=context.asr_backend,
-    )
-
-
 @overload
 def _response_for_format(
     response_format: Literal[ResponseFormat.JSON],
     result: TranscriptionResponse,
     *,
     language: str | None,
-    context: VendorContext | None = None,
 ) -> JsonResponse: ...
 
 
@@ -310,7 +218,6 @@ def _response_for_format(
     result: TranscriptionResponse,
     *,
     language: str | None,
-    context: VendorContext | None = None,
 ) -> VerboseJsonResponse: ...
 
 
@@ -320,38 +227,16 @@ def _response_for_format(
     result: TranscriptionResponse,
     *,
     language: str | None,
-    context: VendorContext | None = None,
 ) -> DiarizadJsonResponse: ...
 
 
 @overload
 def _response_for_format(
-    response_format: Literal[ResponseFormat.ASSEMBLYAI_JSON],
-    result: TranscriptionResponse,
-    *,
-    language: str | None,
-    context: VendorContext | None = None,
-) -> AssemblyAIResponse: ...
-
-
-@overload
-def _response_for_format(
-    response_format: Literal[ResponseFormat.DEEPGRAM_JSON],
-    result: TranscriptionResponse,
-    *,
-    language: str | None,
-    context: VendorContext | None = None,
-) -> DeepgramResponse: ...
-
-
-@overload
-def _response_for_format(
     response_format: ResponseFormat,
     result: TranscriptionResponse,
     *,
     language: str | None,
-    context: VendorContext | None = None,
-) -> TranscriptionApiResponse: ...
+) -> JsonResponse | VerboseJsonResponse | DiarizadJsonResponse: ...
 
 
 def _response_for_format(
@@ -359,13 +244,7 @@ def _response_for_format(
     result: TranscriptionResponse,
     *,
     language: str | None,
-    context: VendorContext | None = None,
-) -> TranscriptionApiResponse:
-    if response_format in _VENDOR_FORMATS and context is None:
-        raise TranscriptionProcessingError(
-            f"Response format '{response_format}' requires request context."
-        )
-
+) -> JsonResponse | VerboseJsonResponse | DiarizadJsonResponse:
     match response_format:
         case ResponseFormat.JSON:
             return _json_response(result)
@@ -373,10 +252,6 @@ def _response_for_format(
             return _verbose_json_response(result, language=language)
         case ResponseFormat.DIARIZED_JSON | ResponseFormat.DIRIZED_JSON:
             return _diarized_json_response(result)
-        case ResponseFormat.ASSEMBLYAI_JSON if context is not None:
-            return _assemblyai_response(result, language=language, context=context)
-        case ResponseFormat.DEEPGRAM_JSON if context is not None:
-            return _deepgram_response(result, context=context)
 
     raise TranscriptionValidationError(
         f"Unsupported response_format '{response_format}'.",
@@ -422,14 +297,12 @@ async def create_transcription(
         description="Accepted but ignored.",
     ),
     pipeline=Depends(get_pipeline),
-    settings: ServerSettings = Depends(get_settings),
-) -> Response | TranscriptionApiResponse:
-    """Accept audio and return an OpenAI-shaped or vendor-shaped response.
+) -> Response | JsonResponse | VerboseJsonResponse | DiarizadJsonResponse:
+    """Accept audio and return an OpenAI-shaped response.
 
     Supported response formats: json, verbose_json/json_verbose,
-    diarized_json/dirized_json (and empty), plus assemblyai_json and
-    deepgram_json, which additionally carry per-word speaker labels. Other
-    OpenAI text output formats are recognised but not implemented.
+    diarized_json/dirized_json (and empty). Other OpenAI text output formats
+    are recognised but not implemented.
     """
     # Request Validation ----------------------------------------------------
     request_id = uuid4().hex[:8]
@@ -490,11 +363,4 @@ async def create_transcription(
         len(validated.diarization),
     )
 
-    context = VendorContext(
-        request_id=request_id,
-        audio_bytes=audio_bytes,
-        filename=file.filename or "",
-        asr_model=settings.model_asr,
-        asr_backend=settings.backend_asr,
-    )
-    return _response_for_format(response_format, validated, language=language, context=context)
+    return _response_for_format(response_format, validated, language=language)

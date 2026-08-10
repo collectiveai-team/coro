@@ -202,11 +202,14 @@ ASR-only server, or swap `nemo` → `pyannote` (`--pipeline full-memory`, needs
 |--------|------|-------------|
 | `GET`  | `/health` | Readiness / capability status. |
 | `POST` | `/v1/audio/transcriptions` | OpenAI-compatible transcription (multipart). |
+| `POST` | `/v1/listen` | Deepgram-compatible transcription (raw body); per-word speakers. |
 
-`response_format` accepts `json`, `verbose_json`, and `diarized_json`, plus the
-vendor-shaped `assemblyai_json` and `deepgram_json`, which additionally carry a
-**speaker on every word**. With `stream=true` the endpoint emits OpenAI-exact
-SSE (`transcript.text.delta` / `transcript.text.done` / `[DONE]`).
+`response_format` accepts `json`, `verbose_json`, and `diarized_json`. With
+`stream=true` the endpoint emits OpenAI-exact SSE
+(`transcript.text.delta` / `transcript.text.done` / `[DONE]`).
+
+For a **speaker on every word**, use the Deepgram-native `POST /v1/listen`
+below — no OpenAI type has a slot for one.
 
 ## Two transcription pipelines (full-memory vs streaming)
 
@@ -351,7 +354,7 @@ coro --port 8000 \
 ```
 
 Either way, request `response_format=diarized_json` to get per-segment speaker
-labels back, or `assemblyai_json` / `deepgram_json` for per-*word* labels.
+labels back, or `POST /v1/listen?diarize=true` for per-*word* labels.
 Sortformer handles **≤ 4 speakers**; for more, use pyannote below.
 
 ### pyannote setup (gated model + token)
@@ -652,54 +655,74 @@ Conformance is enforced by `tests/test_openai_sdk_conformance.py`, which validat
 every server response against the SDK types.
 
 > Note: standard OpenAI types carry **segment-level** speaker labels only —
-> there is no OpenAI-compatible slot for a per-word speaker. Use a vendor-shaped
-> format below to get one.
+> there is no OpenAI-compatible slot for a per-word speaker. Use the
+> Deepgram-native endpoint below to get one.
 
-### Per-word speakers: vendor-shaped formats
+## Per-word speakers: `POST /v1/listen` (Deepgram-compatible)
 
 Coro assigns a speaker to every word and keeps each word's real ASR timing and
-confidence. Because no OpenAI type can carry that, two opt-in formats expose it
-using shapes those vendors already document:
-
-| `response_format` | Vendor SDK type | Per-word speaker |
-|-------------------|-----------------|------------------|
-| `assemblyai_json` | `assemblyai.types.TranscriptResponse` | `words[].speaker`, `utterances[].words[].speaker` |
-| `deepgram_json`   | `deepgram.types.ListenV1Response` | `results.channels[].alternatives[].words[].speaker`, `results.utterances[].words[].speaker` |
+confidence. No OpenAI type can carry that, so rather than bending OpenAI's
+format, Coro implements **Deepgram's own endpoint contract**: raw audio body
+(not multipart), Deepgram's query parameters and defaults, and Deepgram's error
+shape.
 
 ```bash
-curl -s http://localhost:8000/v1/audio/transcriptions \
-  -F file=@audio.wav \
-  -F response_format=assemblyai_json
+curl -s "http://localhost:8000/v1/listen?diarize=true&utterances=true" \
+  -H "Authorization: Token any-value" \
+  -H "Content-Type: audio/wav" \
+  --data-binary @audio.wav
 ```
 
 ```json
 {
-  "utterances": [
-    { "speaker": "1", "text": "hola mundo", "start": 0, "end": 1000, "confidence": 0.87,
-      "words": [ { "text": "hola", "speaker": "1", "start": 0, "end": 500, "confidence": 0.91 } ] }
-  ]
+  "results": {
+    "channels": [ { "alternatives": [ { "transcript": "hola mundo si",
+      "words": [ { "word": "hola", "start": 0.0, "end": 0.5,
+                   "confidence": 0.91, "speaker": 1 } ] } ] } ],
+    "utterances": [ { "speaker": 1, "transcript": "hola mundo",
+                      "start": 0.0, "end": 1.0, "confidence": 0.87,
+                      "words": [ ... ] } ]
+  }
 }
 ```
 
-Both are **documented subsets** validated against the vendors' own published
-SDK types (`tests/test_vendor_sdk_conformance.py`), not full clones. Only the
-response *shape* is adopted — vendor endpoints, auth and request parameters are
-out of scope. Notable specifics:
+Responses parse with the official SDK, enforced by
+`tests/test_deepgram_sdk_conformance.py`:
 
-- AssemblyAI timestamps are integer **milliseconds**; Deepgram's are float
-  **seconds**.
-- A word the diarizer does not cover has speaker `null`, not a made-up label.
-- Speaker numbering is Coro's (1-based), passed through rather than renumbered,
-  so labels stay comparable with `diarized_json`.
-- Deepgram's `speaker_confidence` is **omitted** — Coro's diarizers binarize
-  their per-frame posteriors, so that value does not exist to report.
-- These are opt-in because they are large: roughly **7×** a `diarized_json`
-  body, since both shapes carry every word twice (flat and nested per
-  utterance).
+```python
+from deepgram.types.listen_v1response import ListenV1Response
+ListenV1Response.model_validate(response.json())
+```
 
-See `docs/adr/0010-vendor-shaped-response-formats.md` for the fidelity policy.
-`json`, `verbose_json` and `diarized_json` are byte-unchanged by this addition,
-asserted in `tests/test_openai_formats_unchanged.py`.
+Behaviour worth knowing:
+
+- **`diarize` and `utterances` default to `false`**, exactly as at Deepgram, so
+  per-word speakers need `?diarize=true`. Coro does not override vendor
+  defaults to be more helpful.
+- Timestamps are float **seconds**; speaker numbering is Coro's (1-based),
+  passed through rather than renumbered, so labels stay comparable with
+  `diarized_json`.
+- A word the diarizer does not cover has **no `speaker` key** — Deepgram never
+  emits a null speaker, and inventing a label would be a guess.
+- `speaker_confidence` is **omitted**: Coro's diarizers binarize their
+  per-frame posteriors, so the value does not exist to report.
+- `Authorization` is accepted and never validated. Coro has no auth.
+- Unhonoured parameters (`punctuate`, `smart_format`, `model`, …) are accepted
+  and ignored rather than rejected.
+- `?utterances=true` roughly doubles the body, because the shape carries every
+  word twice (flat and nested per utterance) — as the real API does.
+
+This is a **documented subset**, not a full clone: features Coro does not
+compute (summarization, sentiment, entities, topics, paragraphs, search) are
+absent rather than empty. See
+`docs/adr/0010-vendor-native-endpoints.md` for the fidelity policy.
+`/v1/audio/transcriptions` is byte-unchanged by this addition, asserted in
+`tests/test_openai_formats_unchanged.py`.
+
+> AssemblyAI is not yet available. Its contract is asynchronous
+> (`POST /v2/upload` → `POST /v2/transcript` → poll `GET /v2/transcript/{id}`),
+> which needs job state Coro does not have; a synchronous approximation would
+> be a partial clone. Tracked separately.
 
 ## Development
 

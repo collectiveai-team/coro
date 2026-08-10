@@ -1,8 +1,8 @@
-"""Utterance grouping shared by the vendor-shaped response projections.
+"""Utterance grouping shared by the vendor-native response projections.
 
-Both AssemblyAI and Deepgram carry a *speaker-turn* view (``utterances``)
-alongside a per-word view. An utterance is a maximal run of consecutive words
-sharing one speaker.
+Speech vendors carry a *speaker-turn* view (``utterances``) alongside a
+per-word view. An utterance is a maximal run of consecutive words sharing one
+speaker.
 
 The grouping deliberately reads ``word_segments`` rather than ``segments``.
 Per-word speakers are the truth the vendor formats exist to expose, and
@@ -82,12 +82,3 @@ def mean_confidence(words: Sequence[WhisperWord]) -> float:
     if not words:
         return 0.0
     return sum(word.score for word in words) / len(words)
-
-
-def seconds_to_milliseconds(seconds: float) -> int:
-    """Convert a second-based timestamp to integer milliseconds.
-
-    AssemblyAI timestamps are integer milliseconds; the pipeline works in
-    seconds throughout.
-    """
-    return int(round(seconds * 1000))

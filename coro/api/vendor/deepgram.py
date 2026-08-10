@@ -1,8 +1,9 @@
-"""Deepgram-shaped transcription response.
+"""Deepgram-shaped transcription response for the ``POST /v1/listen`` endpoint.
 
-A documented subset of Deepgram's ``/v1/listen`` pre-recorded response (see
-ADR 0010), carrying per-word speaker labels. Emitted only for
-``response_format=deepgram_json``; the OpenAI formats are untouched.
+A documented subset of Deepgram's pre-recorded response (see ADR 0010),
+carrying per-word speaker labels. Served from Deepgram's own endpoint rather
+than from a ``response_format`` value, so the OpenAI-compatible surface is
+never extended with values OpenAI does not define.
 
 Timestamps are floating-point seconds, which is Deepgram's unit.
 
@@ -93,12 +94,16 @@ class DeepgramUtterance(BaseModel):
 
 
 class DeepgramResults(BaseModel):
-    """The ``results`` object of a Deepgram-shaped response."""
+    """The ``results`` object of a Deepgram-shaped response.
+
+    ``utterances`` is present only when the request asked for it, matching
+    Deepgram, which gates the speaker-turn view behind ``utterances=true``.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     channels: list[DeepgramChannel]
-    utterances: list[DeepgramUtterance]
+    utterances: list[DeepgramUtterance] | None = None
 
 
 class DeepgramMetadata(BaseModel):
@@ -124,13 +129,28 @@ class DeepgramResponse(BaseModel):
     results: DeepgramResults
 
 
-def _word(word: WhisperWord) -> DeepgramWord:
+class DeepgramErrorResponse(BaseModel):
+    """Deepgram-shaped error body.
+
+    Deepgram's endpoint reports failures as ``err_code``/``err_msg``, not as an
+    OpenAI ``error`` object, so ``/v1/listen`` must not reuse the app-wide
+    OpenAI-style handler.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    err_code: str
+    err_msg: str
+    request_id: str
+
+
+def _word(word: WhisperWord, *, diarize: bool) -> DeepgramWord:
     return DeepgramWord(
         word=word.word,
         start=word.start,
         end=word.end,
         confidence=word.score,
-        speaker=_speaker_label(word.speaker),
+        speaker=_speaker_label(word.speaker) if diarize else None,
     )
 
 
@@ -144,6 +164,8 @@ def deepgram_response(
     created: str,
     asr_model: str,
     asr_backend: str,
+    diarize: bool = True,
+    utterances: bool = True,
 ) -> DeepgramResponse:
     """Project the internal result onto Deepgram's pre-recorded response shape.
 
@@ -156,24 +178,33 @@ def deepgram_response(
         created: ISO 8601 completion timestamp.
         asr_model: The configured ASR Model Selection.
         asr_backend: The configured ASR Backend Provider.
+        diarize: Whether the request asked for speaker labels. When false, no
+            word carries a speaker, matching Deepgram's default.
+        utterances: Whether the request asked for the speaker-turn view.
 
     Returns:
-        The Deepgram-shaped response.
+        The Deepgram-shaped response. Fields left as ``None`` are omitted at
+        serialization, so an undiarized response has no ``speaker`` keys rather
+        than null ones — Deepgram never emits a null speaker.
 
     """
-    words = [_word(word) for word in result.word_segments]
-    utterances = [
-        DeepgramUtterance(
-            start=utterance.start,
-            end=utterance.end,
-            confidence=utterance.confidence,
-            channel=PRIMARY_CHANNEL,
-            transcript=utterance.text,
-            words=[_word(word) for word in utterance.words],
-            speaker=_speaker_label(utterance.speaker),
-        )
-        for utterance in group_words_into_utterances(result.word_segments)
-    ]
+    words = [_word(word, diarize=diarize) for word in result.word_segments]
+    turns = (
+        [
+            DeepgramUtterance(
+                start=utterance.start,
+                end=utterance.end,
+                confidence=utterance.confidence,
+                channel=PRIMARY_CHANNEL,
+                transcript=utterance.text,
+                words=[_word(word, diarize=diarize) for word in utterance.words],
+                speaker=_speaker_label(utterance.speaker) if diarize else None,
+            )
+            for utterance in group_words_into_utterances(result.word_segments)
+        ]
+        if utterances
+        else None
+    )
     return DeepgramResponse(
         metadata=DeepgramMetadata(
             request_id=request_id,
@@ -196,6 +227,6 @@ def deepgram_response(
                     ]
                 )
             ],
-            utterances=utterances,
+            utterances=turns,
         ),
     )
