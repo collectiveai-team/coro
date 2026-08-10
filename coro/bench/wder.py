@@ -50,7 +50,7 @@ class SpeakerMap:
     pairs: dict[str, str] = field(default_factory=dict)
 
     def matches(self, hyp_speaker: str, ref_speaker: str) -> bool:
-        """True when this hypothesis speaker maps onto that reference speaker.
+        """Report whether this hypothesis speaker maps onto that reference speaker.
 
         A hypothesis speaker absent from the mapping is unmatched — a surplus
         stream or the unknown sentinel — so it can never match.

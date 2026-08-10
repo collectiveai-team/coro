@@ -264,9 +264,7 @@ class TestDecomposition:
         stats = _score(ref, hyp)
         assert stats.wder_claimed is not None
         assert stats.abstention_rate is not None
-        reconstructed = (
-            stats.wder_claimed * (1 - stats.abstention_rate) + stats.abstention_rate
-        )
+        reconstructed = stats.wder_claimed * (1 - stats.abstention_rate) + stats.abstention_rate
         assert stats.wder == pytest.approx(reconstructed)
 
 
@@ -307,9 +305,7 @@ class TestBenchmarkIntegration:
 
         out_dir = tmp_path / "out"
         (out_dir / "quality").mkdir(parents=True)
-        (out_dir / "quality" / "summary.json").write_text(
-            json.dumps(dataclasses.asdict(summary))
-        )
+        (out_dir / "quality" / "summary.json").write_text(json.dumps(dataclasses.asdict(summary)))
         markdown = render_markdown(build_report(out_dir))
         assert "Speaker Attribution (WDER)" in markdown
         assert "WDER-claimed" in markdown
