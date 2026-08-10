@@ -18,10 +18,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import threading
 
 import numpy as np
 
+from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
+from coro.backends.asr.onnx_session import build_asr_session_options
 from coro.core.models import TranscriptToken
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,9 @@ _SP_SPACE = "\u2581"
 # Synthesised duration (seconds) for the final word, which has no following token.
 _LAST_WORD_PAD = 0.2
 _SAMPLE_RATE = 16000
+# Admission queue depth used when an adapter is built without explicit settings
+# (direct construction in tests and tooling); the factory always passes one.
+_DEFAULT_QUEUE_DEPTH = 32
 
 
 def _group_subwords(
@@ -176,12 +180,39 @@ def convert_onnx_asr_segments(segments) -> list[TranscriptToken]:
 
 
 class OnnxAsrASRAdapter:
-    """ASRAdapter that wraps an onnx-asr timestamped model."""
+    """ASRAdapter that wraps an onnx-asr timestamped model.
 
-    def __init__(self, model, *, vad_enabled: bool = False) -> None:
+    Adapter Concurrency Policy: **concurrent**. This adapter holds no lock.
+    ``onnxruntime.InferenceSession.run`` is documented thread-safe, and every
+    piece of onnx-asr state this adapter touches — the encoder/decoder sessions,
+    the resampler's per-rate sessions, the vocabulary maps and the Silero VAD
+    session — is built during ``load_model``/``load_vad`` and only read
+    afterwards (Silero's LSTM state is a call-local variable, not instance
+    state). Serialising here would therefore buy nothing and would cap
+    throughput at one request.
+
+    Load is bounded instead by an :class:`AdmissionController`, so total backend
+    thread demand stays near the core count and overload is rejected with a
+    retry hint rather than queued without limit.
+    """
+
+    def __init__(
+        self,
+        model,
+        *,
+        vad_enabled: bool = False,
+        admission: AdmissionController | None = None,
+    ) -> None:
         self._model = model
-        self._lock = threading.Lock()
         self._vad_enabled = vad_enabled
+        self._admission = admission or build_admission_controller(
+            max_concurrency=0, max_queue_depth=_DEFAULT_QUEUE_DEPTH
+        )
+
+    @property
+    def admission(self) -> AdmissionController:
+        """Admission controller implementing this adapter's concurrency policy."""
+        return self._admission
 
     async def transcribe_pcm(
         self,
@@ -197,17 +228,20 @@ class OnnxAsrASRAdapter:
             ``recognize`` has no ``initial_prompt`` equivalent, so cross-window prompt
             carry does not apply to this backend.
 
+        Raises:
+            AsrCapacityError: If the admission queue is full.
+
         """
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
 
         def _recognize():
-            with self._lock:
-                kwargs: dict = {"sample_rate": _SAMPLE_RATE}
-                if language:
-                    kwargs["language"] = language
-                return self._model.recognize(audio, **kwargs)
+            kwargs: dict = {"sample_rate": _SAMPLE_RATE}
+            if language:
+                kwargs["language"] = language
+            return self._model.recognize(audio, **kwargs)
 
-        result = await asyncio.to_thread(_recognize)
+        async with self._admission.admit():
+            result = await asyncio.to_thread(_recognize)
         if self._vad_enabled:
             # VAD adapter yields an iterator of per-speech-segment results.
             return convert_onnx_asr_segments(result)
@@ -242,6 +276,8 @@ def build_onnx_asr_adapter(
     providers=None,
     vad_enabled: bool = False,
     vad_threshold: float | None = None,
+    max_concurrency: int = 0,
+    max_queue_depth: int = _DEFAULT_QUEUE_DEPTH,
 ) -> OnnxAsrASRAdapter:
     """Construct and return an OnnxAsrASRAdapter.
 
@@ -256,6 +292,9 @@ def build_onnx_asr_adapter(
             result per detected speech segment.
         vad_threshold: Optional Silero VAD speech-probability threshold; only applied
             when ``vad_enabled`` is True. ``None`` keeps onnx-asr's default.
+        max_concurrency: Adapter Concurrency Policy permit count; 0 auto-sizes
+            from the host core count.
+        max_queue_depth: Calls allowed to wait for a permit before rejection.
 
     Returns:
         Initialised adapter ready for use.
@@ -264,8 +303,9 @@ def build_onnx_asr_adapter(
     import onnx_asr
 
     resolved_providers = providers if providers is not None else _providers_for_device(device)
+    session_options = build_asr_session_options()
     logger.info(
-        "Loading onnx-asr model '%s' (quantization=%s, providers=%s, vad=%s).",
+        "Loading onnx-asr model '%s' (quantization=%s, providers=%s, vad=%s, tuned sess_options).",
         model_asr,
         quantization,
         resolved_providers,
@@ -274,10 +314,13 @@ def build_onnx_asr_adapter(
     model = onnx_asr.load_model(
         model_asr,
         quantization=quantization,
+        sess_options=session_options,
         providers=resolved_providers,
     )
     if vad_enabled:
-        vad = onnx_asr.load_vad("silero", providers=resolved_providers)
+        vad = onnx_asr.load_vad(
+            "silero", sess_options=session_options, providers=resolved_providers
+        )
         vad_options: dict = {}
         if vad_threshold is not None:
             vad_options["threshold"] = vad_threshold
@@ -285,4 +328,10 @@ def build_onnx_asr_adapter(
     else:
         model = model.with_timestamps()
     logger.info("onnx-asr model loaded.")
-    return OnnxAsrASRAdapter(model, vad_enabled=vad_enabled)
+    return OnnxAsrASRAdapter(
+        model,
+        vad_enabled=vad_enabled,
+        admission=build_admission_controller(
+            max_concurrency=max_concurrency, max_queue_depth=max_queue_depth
+        ),
+    )

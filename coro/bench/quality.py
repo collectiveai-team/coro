@@ -20,8 +20,10 @@ from coro.bench.models.quality import (
     ScoreError,
     ScoreMetrics,
     ScoreResult,
+    WderStats,
     WerStats,
 )
+from coro.bench.wder import combine_wder, compute_wder
 
 
 def _require_meeteval():
@@ -32,7 +34,10 @@ def _require_meeteval():
     except ImportError:
         print(
             "Error: meeteval is required for quality scoring.\n"
-            "Install with: pip install coro[bench]",
+            "The bench tooling is a PEP 735 dependency group, not an installable "
+            "extra.\n"
+            "Install with: uv sync --group bench\n"
+            "Then run the bench with: uv run --group bench coro-bench ...",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -171,10 +176,13 @@ def score_item(
         diarization_only = is_diarization_only_stm(ref_stm_path)
 
         if not diarization_only:
-            raw["cpwer"] = _combine_multifile(
-                meeteval, meeteval.wer.cpwer(ref_stm_path, hyp_stm_path)
-            )
+            # Keep the per-session dict: its CPErrorRate.assignment is the
+            # optimal speaker mapping WDER needs, and combining discards it.
+            cpwer_per_session = meeteval.wer.cpwer(ref_stm_path, hyp_stm_path)
+            raw["cpwer"] = _combine_multifile(meeteval, cpwer_per_session)
             metrics.cpwer = _wer_to_dict(raw["cpwer"])
+
+            metrics.wder = compute_wder(ref_stm_path, hyp_stm_path, cpwer_per_session)
 
             raw["orcwer"] = _combine_multifile(
                 meeteval, meeteval.wer.greedy_orcwer(ref_stm_path, hyp_stm_path)
@@ -193,9 +201,8 @@ def score_item(
                 _write_normalized_stm(ref_stm_path, normalized_ref)
                 _write_normalized_stm(hyp_stm_path, normalized_hyp)
 
-                raw["normalized_cpwer"] = _combine_multifile(
-                    meeteval, meeteval.wer.cpwer(normalized_ref, normalized_hyp)
-                )
+                normalized_cpwer_per_session = meeteval.wer.cpwer(normalized_ref, normalized_hyp)
+                raw["normalized_cpwer"] = _combine_multifile(meeteval, normalized_cpwer_per_session)
                 raw["normalized_orcwer"] = _combine_multifile(
                     meeteval, meeteval.wer.greedy_orcwer(normalized_ref, normalized_hyp)
                 )
@@ -206,6 +213,7 @@ def score_item(
                     cpwer=_wer_to_dict(raw["normalized_cpwer"]),
                     orcwer=_wer_to_dict(raw["normalized_orcwer"]),
                     dicpwer=_wer_to_dict(raw["normalized_dicpwer"]),
+                    wder=compute_wder(normalized_ref, normalized_hyp, normalized_cpwer_per_session),
                 )
 
         der_results = meeteval.der.md_eval_22(
@@ -252,19 +260,51 @@ def _combine_raw_key(meeteval, succeeded: list[ScoreResult], raw_key: str) -> An
     return converter(combined)
 
 
+def _collect_wder(succeeded: list[ScoreResult], *, normalized: bool) -> WderStats | None:
+    """Pool the per-item WDER counts across items, skipping items without one."""
+    stats: list[WderStats] = []
+    for result in succeeded:
+        metrics = result.metrics
+        if metrics is None:
+            continue
+        block = metrics.normalized if normalized else metrics
+        candidate = block.wder if block is not None else None
+        if candidate is not None:
+            stats.append(candidate)
+    return combine_wder(stats)
+
+
 def _combined_metrics(meeteval, succeeded: list[ScoreResult]) -> CombinedMetrics:
     """Build the workload-level combined metric block from succeeded items."""
     return CombinedMetrics(
         cpwer=_combine_raw_key(meeteval, succeeded, "cpwer"),
         orcwer=_combine_raw_key(meeteval, succeeded, "orcwer"),
         dicpwer=_combine_raw_key(meeteval, succeeded, "dicpwer"),
+        wder=_collect_wder(succeeded, normalized=False),
         normalized=NormalizedMetrics(
             cpwer=_combine_raw_key(meeteval, succeeded, "normalized_cpwer"),
             orcwer=_combine_raw_key(meeteval, succeeded, "normalized_orcwer"),
             dicpwer=_combine_raw_key(meeteval, succeeded, "normalized_dicpwer"),
+            wder=_collect_wder(succeeded, normalized=True),
         ),
         der=_combine_raw_key(meeteval, succeeded, "der"),
     )
+
+
+def _rate(stats: WerStats | None) -> float | None:
+    """Pull the headline rate out of an optional WER breakdown."""
+    return stats.wer if stats is not None else None
+
+
+def _fill_normalized(entry: PerItemEntry, normalized: NormalizedMetrics | None) -> None:
+    """Copy the punctuation-normalized rates onto a summary row."""
+    if normalized is None:
+        return
+    entry.normalized_cpwer = _rate(normalized.cpwer)
+    entry.normalized_orcwer = _rate(normalized.orcwer)
+    entry.normalized_dicpwer = _rate(normalized.dicpwer)
+    if normalized.wder is not None:
+        entry.normalized_wder = normalized.wder.wder
 
 
 def _per_item_entry(result: ScoreResult) -> PerItemEntry:
@@ -276,23 +316,19 @@ def _per_item_entry(result: ScoreResult) -> PerItemEntry:
         diarization=result.diarization,
     )
     metrics = result.metrics
-    if metrics is not None:
-        if metrics.cpwer is not None:
-            entry.cpwer = metrics.cpwer.wer
-        if metrics.orcwer is not None:
-            entry.orcwer = metrics.orcwer.wer
-        if metrics.dicpwer is not None:
-            entry.dicpwer = metrics.dicpwer.wer
-        if metrics.der is not None:
-            entry.der = metrics.der.der
-        normalized = metrics.normalized
-        if normalized is not None:
-            if normalized.cpwer is not None:
-                entry.normalized_cpwer = normalized.cpwer.wer
-            if normalized.orcwer is not None:
-                entry.normalized_orcwer = normalized.orcwer.wer
-            if normalized.dicpwer is not None:
-                entry.normalized_dicpwer = normalized.dicpwer.wer
+    if metrics is None:
+        return entry
+
+    entry.cpwer = _rate(metrics.cpwer)
+    entry.orcwer = _rate(metrics.orcwer)
+    entry.dicpwer = _rate(metrics.dicpwer)
+    if metrics.der is not None:
+        entry.der = metrics.der.der
+    if metrics.wder is not None:
+        entry.wder = metrics.wder.wder
+        entry.wder_claimed = metrics.wder.wder_claimed
+        entry.abstention_rate = metrics.wder.abstention_rate
+    _fill_normalized(entry, metrics.normalized)
     return entry
 
 

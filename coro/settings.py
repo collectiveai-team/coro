@@ -45,9 +45,9 @@ class ServerSettings(BaseSettings):
         default="full-memory", description="Configured Transcription Pipeline selector."
     )
     backend_asr: ASRBackendProvider = Field(
-        default="faster-whisper", description="ASR Backend Provider selector."
+        default="onnx-asr", description="ASR Backend Provider selector."
     )
-    model_asr: str = Field(default="openai/whisper-medium", description="ASR Model Selection.")
+    model_asr: str = Field(default="nemo-parakeet-tdt-0.6b-v3", description="ASR Model Selection.")
     asr_device: ASRDevice = Field(default="auto", description="Faster Whisper device selection.")
     asr_compute_type: str = Field(
         default="default",
@@ -56,7 +56,9 @@ class ServerSettings(BaseSettings):
     asr_quantization: str | None = Field(
         default=None,
         description="onnx-asr model quantization selector (e.g. 'int8'); ignored by "
-        "the faster-whisper backend.",
+        "the faster-whisper backend. Left unset on purpose: int8 is a memory-fitting "
+        "tool for the default transducer ASR Model Selection, not a speed tool "
+        "(measured: no throughput gain, small WER cost). See docs/benchmark.md.",
     )
     asr_onnx_vad: OnnxVadSelector = Field(
         default="disabled",
@@ -71,7 +73,12 @@ class ServerSettings(BaseSettings):
     )
     backend_diarization: DiarizationBackendProvider = Field(
         default="none",
-        description="Diarization Backend Provider selector.",
+        description="Diarization Backend Provider selector. Defaults to 'none' as an "
+        "explicit product decision, not by omission: an ASR-Only Server is a valid "
+        "configuration, and enabling streaming Sortformer by default would cost ~24% "
+        "Transcription Throughput, ~1 GB peak Process-Tree PSS and a ~500 MB model "
+        "download on first start, while capping the server at 4 speakers. "
+        "See docs/benchmark.md.",
     )
     model_diarization: str | None = Field(default=None, description="Diarization Model Selection.")
     diarization_device: DiarizationDevice = Field(
@@ -103,6 +110,23 @@ class ServerSettings(BaseSettings):
         default="enabled",
         description="Server Warmup runs the Configured Transcription Pipeline against "
         "the Warmup Audio Asset at startup. Set to 'disabled' to skip warmup.",
+    )
+
+    # Adapter Concurrency Policy --------------------------------------------
+    asr_max_concurrency: int = Field(
+        default=0,
+        ge=0,
+        description="Maximum ASR inference calls allowed to run at once. 0 (default) "
+        "auto-sizes from the host core count so total backend thread demand stays "
+        "near it. Ignored by the onnx-genai backend, whose Adapter Concurrency "
+        "Policy fixes the permit count at 1.",
+    )
+    asr_max_queue_depth: int = Field(
+        default=32,
+        ge=0,
+        description="Maximum ASR inference calls allowed to wait for a concurrency "
+        "permit. Requests beyond this cap are rejected with an OpenAI-Style Error "
+        "(HTTP 429) carrying a Retry-After hint instead of being queued indefinitely.",
     )
 
     # TLS ------------------------------------------------------------------
@@ -146,4 +170,23 @@ class ServerSettings(BaseSettings):
         from coro.pipelines.spill import resolve_spill_dir
 
         self.transcript_spill_dir = resolve_spill_dir(self.transcript_spill_dir)
+        return self
+
+    @model_validator(mode="after")
+    def reject_enabled_diarization_without_model(self) -> ServerSettings:
+        """Reject an enabled diarization Backend Provider with no Diarization Model Selection.
+
+        Runs after ``default_enabled_diarization_model``, so a model is only
+        missing here when it was explicitly set to an empty value. Without this
+        check the server silently degrades to an ASR-Only Server, producing
+        single-speaker hypotheses that look like a diarization quality
+        regression rather than a configuration error.
+        """
+        if self.backend_diarization != "none" and not (self.model_diarization or "").strip():
+            msg = (
+                f"Diarization Backend Provider '{self.backend_diarization}' is selected but "
+                "the Diarization Model Selection is empty. Set CORO_MODEL_DIARIZATION to a "
+                "model id, or set CORO_BACKEND_DIARIZATION=none for an ASR-Only Server."
+            )
+            raise ValueError(msg)
         return self
