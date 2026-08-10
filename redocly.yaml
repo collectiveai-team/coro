@@ -1,0 +1,25 @@
+# Lint config for the two generated API contracts (openapi.json, asyncapi.json).
+#
+# Both documents are build artifacts exported from the running app in CI; they
+# are never committed. This file only tunes severities, so a real spec defect
+# still fails the build while known-structural findings do not make the gate
+# vacuous.
+
+extends:
+  - recommended
+
+rules:
+  # coro ships no authentication: it is an unauthenticated inference server that
+  # is expected to run behind whatever the deployment terminates auth with. The
+  # rule is therefore reporting a true fact about the API, not a defect in the
+  # document. Promote back to `error` if an auth scheme is ever added.
+  security-defined: warn
+
+  # /health cannot fail with a 4xx — it takes no input. The transcription route
+  # does document its error responses, so this is not blanket relief.
+  operation-4xx-response: warn
+
+# Same reasoning for the event-driven document: operations carry no security
+# scheme because the server has none.
+async3Rules:
+  security-defined: warn

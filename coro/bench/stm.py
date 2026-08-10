@@ -383,6 +383,28 @@ def ami_meeting_to_stm(ami_root: Path, meeting_id: str) -> str:
     Walks the AMI annotation XML files under *ami_root*, extracts per-speaker
     word timing, groups words into segments, and returns STM text sorted by
     (start_time, speaker).
+
+    Two known limitations of this reference, measured, neither fixed here:
+
+    - **Dropped segments (has a fix in flight).** :func:`_read_segments` resolves a
+      segment's word-id range against an index built from ``<w>`` alone, but AMI
+      interleaves ``<disfmarker>``, ``<vocalsound>`` and ``<gap>`` into the same id
+      sequence, so a range terminating on one resolves to nothing and the whole
+      segment is silently discarded — 18-31% of the annotated words, depending on
+      the meeting. PR #32 repairs this by indexing every identified element; until
+      it lands, every AMI WER and DER figure is scored against an incomplete
+      reference.
+    - **Loose boundaries (survives that fix).** Each emitted line spans
+      ``min(word.start)..max(word.end)`` of one AMI segment, so intra-turn pauses
+      are marked as speech. That matches the community setup
+      (``BUTSpeechFIT/AMI-diarization-setup``) in speech volume but not the
+      forced-alignment references model cards score AMI against, which are ~24%
+      tighter. The residual disagreement is ~29% DER, almost entirely boundaries
+      rather than speaker identity.
+
+    The second limitation is not cosmetic: the two references disagree on whether
+    the diarizer over- or under-detects speech, so an error decomposition taken
+    against this reference can select the wrong post-processing parameters.
     """
     lines: list[str] = []
 

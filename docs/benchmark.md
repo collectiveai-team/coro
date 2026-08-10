@@ -27,9 +27,37 @@ own data before trusting absolute numbers.
 - **ORC-WER** — speaker-agnostic word error (meeteval greedy ORC-WER); *norm* =
   punctuation stripped + whitespace collapsed. **Lower is better.** This is the
   headline ASR-quality number.
-- **DER** — Diarization Error Rate (meeteval `md_eval_22`, collar 0). **Lower is
-  better.** Only meaningful when diarization is on and the reference is
-  multi-speaker.
+- **DER** — Diarization Error Rate (meeteval `md_eval_22`, i.e. NIST
+  `md-eval-22.pl`). **Lower is better.** Only meaningful when diarization is on and
+  the reference is multi-speaker. Full scoring protocol:
+
+  | | value |
+  |---|---|
+  | collar | **0 s** |
+  | overlapping speech | **scored** (`regions="all"`) |
+  | UEM | none — the whole recording is scored |
+  | reference | AMI manual annotation XML, rebased per clip |
+  | hypothesis | the **ASR response segments**, speaker-stamped |
+  | audio | `{meeting}.Mix-Headset.wav` (the AMI *IHM* condition) |
+
+  **This number is not comparable to published diarization DER**, for two reasons,
+  both being tracked. First, the hypothesis timeline comes from ASR segment spans
+  rather than from the diarizer, and those spans tile the audio with no silence and
+  no overlap — so missed-speech and false-alarm are dominated by ASR segmentation
+  and barely move when the diarization model changes. Second, the reference is
+  derived from AMI's manual annotation, whose segment boundaries are looser than
+  the forced-alignment RTTMs that model cards score against. To compare a
+  diarization model against a published figure, score the diarizer's own timeline
+  (`coro-bench-diar`, with `--collar 0` for AMI) against a forced-alignment
+  reference instead.
+
+  **Do not read the miss / false-alarm split as a property of the model.** Measured
+  on identical Sortformer timelines, the same 8 AMI clips give
+  false-alarm ÷ missed-detection = 0.26 against this reference and 2.33 against a
+  forced-alignment reference. The two disagree about whether the diarizer
+  over-detects or under-detects speech. Post-processing parameters — padding,
+  minimum durations — are selected from exactly that ratio, so a decomposition
+  taken here can select a parameter set that is wrong in sign.
 - **RTFx** — audio seconds ÷ processing wall seconds. **Higher is faster**
   (10× = 10 s of audio per 1 s of compute).
 - **Peak VRAM / host RAM** — peak resident during inference (per server process).
