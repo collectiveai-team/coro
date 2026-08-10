@@ -319,6 +319,10 @@ _Avoid_: ASR backend, speaker helper
 The adapter-owned choice of batch or incremental speaker timeline generation for a transcription pipeline.
 _Avoid_: Pipeline-owned diarization algorithm, forced batch diarization
 
+**Diarization Post-Processing Configuration**:
+The threshold source a NeMo Diarization Adapter applies to raw Sortformer speaker-activity predictions before emitting segments: `none` (the default) keeps NeMo's own unconfigured baseline, a named preset or a custom YAML path overrides it. Coro vendors NVIDIA's own published presets without computing or recommending threshold values itself; see ADR 0009.
+_Avoid_: A coro-tuned default, a benchmark-optimized threshold set
+
 **ASR-Only Server**:
 A valid server configuration with an ASR adapter and no diarization adapter.
 _Avoid_: Not-ready server, failed diarization server
@@ -403,6 +407,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Backend Provider** may provide ASR, diarization, or both capabilities.
 - **ML Model Integration** modules use a **Capability-First Backend Layout**.
 - **ASR Model Selection** and **Diarization Model Selection** are configured independently, even when they use the same **Backend Provider**.
+- The batch and streaming NeMo **Diarization Flows** apply the identical resolved **Diarization Post-Processing Configuration** for the same setting, resolved once and shared between them.
 
 ## Example Dialogue
 
@@ -604,6 +609,9 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Dev:** "Should pipelines force diarization to be batch or streaming?"
 > **Domain expert:** "No — the **Diarization Adapter** owns the **Diarization Flow** and returns the same speaker timeline shape either way."
 
+> **Dev:** "We measured Sortformer's diarization error on one benchmark — should we tune its post-processing thresholds on that benchmark and ship the tuned numbers as coro's new default?"
+> **Domain expert:** "No — NVIDIA's own two published presets differ substantially from each other because different acoustic domains want different thresholds; tuning on one benchmark and shipping it as a general default would launder a single-domain overfit. Expose the **Diarization Post-Processing Configuration** as an operator setting instead, vendor NVIDIA's presets verbatim, and leave choosing (or supplying a custom one) to whoever has data representative of their own deployment."
+
 ## Flagged Ambiguities
 
 - "server PID" was used to mean both the root process and the full resource footprint — resolved: benchmark metrics target the **Server Process Tree**.
@@ -656,3 +664,4 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "ASR lock" was used to imply a pipeline-level concern — resolved: concurrency is an **Adapter Concurrency Policy**.
 - "diarization backend" was used to imply a required server dependency — resolved: diarization is optional, and an **ASR-Only Server** is valid.
 - "diarization chunks" was used to imply pipeline-owned diarization behavior — resolved: **Diarization Flow** belongs to the **Diarization Adapter**.
+- "tune the diarizer" was used to imply coro should pick and ship numbers — resolved: coro exposes the **Diarization Post-Processing Configuration** capability and vendors NVIDIA's own presets verbatim; choosing or supplying a value is a per-deployment operator decision, per ADR 0009.

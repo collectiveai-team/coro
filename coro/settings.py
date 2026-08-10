@@ -104,6 +104,14 @@ class ServerSettings(BaseSettings):
         default="very-high",
         description="Diarization Latency Selection tier for streaming Sortformer.",
     )
+    diarization_postprocessing: str | None = Field(
+        default=None,
+        description="Diarization Post-Processing Configuration for NeMo Sortformer: "
+        "a vendored preset name ('dihard3-dev', 'callhome-part1') or a path to a "
+        "custom YAML in the same schema. None keeps NeMo's own unconfigured baseline "
+        "unchanged. Ignored by the pyannote backend. See ADR 0009 — neither preset is "
+        "a coro recommendation; choosing one is a per-deployment operator decision.",
+    )
 
     # Server Warmup ---------------------------------------------------------
     warmup: Literal["enabled", "disabled"] = Field(
