@@ -207,6 +207,22 @@ ASR-only server, or swap `nemo` → `pyannote` (`--pipeline full-memory`, needs
 `stream=true` the endpoint emits OpenAI-exact SSE
 (`transcript.text.delta` / `transcript.text.done` / `[DONE]`).
 
+### API docs and contracts
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/docs` | Scalar API reference — both contracts behind one document picker. |
+| `GET`  | `/openapi.json` | OpenAPI 3.1 contract for the request/response surface. |
+| `GET`  | `/asyncapi.json` | AsyncAPI 3.0 contract for the SSE event stream. |
+
+Both documents are generated from the code — OpenAPI by FastAPI from the routes,
+AsyncAPI from the same dataclasses the SSE writer serialises — so neither is
+hand-maintained and neither is committed to the repo. CI exports both, lints
+them with `redocly`, and fails a PR that breaks the REST contract. Swagger UI
+and ReDoc are switched off: Scalar is the only renderer that can show the
+event-driven contract alongside the REST one. See
+[ADR 0013](docs/adr/0013-published-api-contracts.md).
+
 ## Two transcription pipelines (full-memory vs streaming)
 
 Coro ships two interchangeable pipelines behind the same OpenAI endpoint and
