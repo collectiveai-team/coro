@@ -1,0 +1,58 @@
+id: api-docs-scalar-hardened
+language: python
+severity: error
+message: "Scalar reference left on a hostile default. Pass scalar_js_url=<self-hosted or version-pinned bundle>, telemetry=False and agent=AgentScalarConfig(disabled=True). get_scalar_api_reference() defaults scalar_js_url to an unversioned https://cdn.jsdelivr.net/npm/@scalar/api-reference URL (re-resolved on every page load, no SRI), telemetry to True, and agent to Scalar's hosted AI chat — which is on by default on localhost and uploads the served OpenAPI document to api.scalar.com on first message. See coro/api/docs.py for the hardened call."
+rule:
+  kind: call
+  all:
+    # matches both `get_scalar_api_reference(...)` and `scalar_fastapi.get_scalar_api_reference(...)`
+    - has:
+        field: function
+        regex: '(?:^|\.)get_scalar_api_reference$'
+    # a **kwargs splat may carry the hardening; the rule cannot see through it, so stay quiet
+    - not:
+        has:
+          field: arguments
+          has:
+            kind: dictionary_splat
+    - any:
+        # scalar_js_url not passed -> unpinned CDN default
+        - not:
+            has:
+              field: arguments
+              has:
+                kind: keyword_argument
+                has:
+                  field: name
+                  regex: '^scalar_js_url$'
+        # telemetry not passed -> defaults to True
+        - not:
+            has:
+              field: arguments
+              has:
+                kind: keyword_argument
+                has:
+                  field: name
+                  regex: '^telemetry$'
+        # agent not passed -> Scalar's hosted AI chat, on by default on
+        # localhost, uploads the document on first message
+        - not:
+            has:
+              field: arguments
+              has:
+                kind: keyword_argument
+                has:
+                  field: name
+                  regex: '^agent$'
+        # telemetry explicitly enabled
+        - has:
+            field: arguments
+            has:
+              kind: keyword_argument
+              all:
+                - has:
+                    field: name
+                    regex: '^telemetry$'
+                - has:
+                    field: value
+                    regex: '^True$'

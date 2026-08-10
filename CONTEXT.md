@@ -157,8 +157,12 @@ The `/v1/audio/transcriptions` HTTP route that accepts audio transcription reque
 _Avoid_: Pipeline endpoint, behavior-specific endpoint
 
 **Supported Endpoint Set**:
-The intentionally exposed server endpoints for the packaged ASR diarization service.
+The intentionally exposed *product* endpoints for the packaged ASR diarization service: `/health` and `/v1/audio/transcriptions`. Distinct from the **Contract Surface**.
 _Avoid_: Every route from the prototype scripts
+
+**Contract Surface**:
+The endpoints that publish coro's own machine-readable contracts rather than serving transcription: `/openapi.json` (request/response), `/asyncapi.json` (SSE events) and `/docs` (one Scalar reference over both). Generated from the code, never authored. See ADR 0013.
+_Avoid_: Calling these part of the Supported Endpoint Set; API docs endpoints
 
 **Transcription Pipeline**:
 The end-to-end processing path that turns an uploaded audio file into transcript, diarization, and raw-word response data.

@@ -42,3 +42,84 @@ jobs:
 
       - name: Run tests
         run: uv run pytest
+
+      # MARK: api-contract
+      # Both contracts are generated, never authored, so there is nothing
+      # tracked for a prek hook to run against — the gate has to export them
+      # from the app first. The exports are build artifacts: gitignored, never
+      # committed (an openapi.json in git is a merge conflict on every schema
+      # edit, paid for a benefit only external consumers need).
+      - name: Export API contracts
+        run: uv run python scripts/export_contracts.py .
+
+      # One MIT tool lints both OpenAPI and AsyncAPI. Severities are tuned in
+      # redocly.yaml so a real spec defect still fails the build.
+      - name: Lint API contracts
+        run: npx --yes @redocly/cli@2 lint openapi.json asyncapi.json
+
+      - name: Upload API contracts
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-contracts
+          path: |
+            openapi.json
+            asyncapi.json
+
+  # Breaking-change gate. Separate job because it needs the base ref's document,
+  # which means exporting the contract twice from two different checkouts.
+  # OpenAPI only: the AsyncAPI equivalent (@asyncapi/diff) has been unreleased
+  # since 2024-12, so events are covered by lint but not yet by a diff.
+  contract-diff:
+    name: openapi breaking-change gate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.12"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # Exporting a contract needs only the web layer, so --only-group contracts
+      # skips the project and the ML stack: ~11 MB instead of ~2 GB of CUDA
+      # wheels to serialise two JSON documents. uv resolves the group from
+      # uv.lock, so the versions still match what the app ships.
+      - name: Install contract export dependencies
+        run: uv sync --frozen --only-group contracts
+
+      # With no project installed, PYTHONPATH is what makes `coro` importable,
+      # which is also what lets the *same* venv export the base ref's source
+      # after an in-place checkout — no second dependency install.
+      #
+      # The exporter is copied out first because the base ref may predate it —
+      # the PR that introduced this gate is exactly that case. Exports land in
+      # .tmp/ (gitignored) so the ref switch stays clean.
+      #
+      # Both documents come from the same environment, which is what makes the
+      # diff meaningful; neither carries a version or license, because an
+      # uninstalled source tree has no distribution metadata. That is fine here —
+      # the artifacts CI publishes come from the fully-installed `test` job.
+      - name: Export head and base contracts
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          cp scripts/export_contracts.py "${RUNNER_TEMP}/export_contracts.py"
+          uv run --no-sync python "${RUNNER_TEMP}/export_contracts.py" .tmp/head --openapi-only
+          git checkout --detach "${{ github.event.pull_request.base.sha }}"
+          uv run --no-sync python "${RUNNER_TEMP}/export_contracts.py" .tmp/base --openapi-only
+          git checkout --detach "${{ github.event.pull_request.head.sha }}"
+
+      - name: Diff for breaking changes
+        uses: oasdiff/oasdiff-action/breaking@main
+        with:
+          base: .tmp/base/openapi.json
+          revision: .tmp/head/openapi.json
+          fail-on: ERR

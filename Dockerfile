@@ -113,6 +113,19 @@ COPY coro ./coro
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --extra ${EXTRA}
 
+# Self-host the Scalar docs bundle inside the installed package, so it travels
+# with the venv into the runtime stage and /docs makes no third-party request at
+# runtime. The pinned URL is read from coro.api.docs rather than restated here,
+# so the version lives in exactly one place. Failing the build is deliberate: a
+# silent skip would ship an image that quietly falls back to the CDN.
+RUN /app/.venv/bin/python -c "\
+import urllib.request; \
+from coro.api.docs import SCALAR_CDN_URL, bundle_path; \
+target = bundle_path(); \
+target.parent.mkdir(parents=True, exist_ok=True); \
+urllib.request.urlretrieve(SCALAR_CDN_URL, target); \
+print('scalar bundle', target, target.stat().st_size, 'bytes')"
+
 # ---------------------------------------------------------------------------
 # runtime — the shipped image: interpreter + ffmpeg + the prebuilt venv only.
 # ---------------------------------------------------------------------------
