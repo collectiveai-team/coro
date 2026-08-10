@@ -61,7 +61,7 @@ def test_items_from_clips_dir_refuses_a_clip_without_a_reference(tmp_path: Path)
 
 
 def test_items_from_clips_dir_refuses_an_empty_directory(tmp_path: Path):
-    with pytest.raises(FileNotFoundError, match="No .wav clips"):
+    with pytest.raises(FileNotFoundError, match=r"No \.wav clips"):
         items_from_clips_dir(tmp_path)
 
 
@@ -82,9 +82,7 @@ def test_materialize_rttm_references_windows_and_rebases_per_clip(tmp_path: Path
     rttm_dir.mkdir()
     (rttm_dir / "m1.rttm").write_text(RTTM)
 
-    (item,) = materialize_rttm_references(
-        items_from_clips_dir(clips), rttm_dir, tmp_path / "out"
-    )
+    (item,) = materialize_rttm_references(items_from_clips_dir(clips), rttm_dir, tmp_path / "out")
 
     lines = item.ref_stm_path.read_text().splitlines()
     # The 10 s turn falls before the window and the 950 s turn after it.
