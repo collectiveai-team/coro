@@ -127,11 +127,11 @@ class TestDiscrimination:
                 ("S2", 3.0, 4.0, "delta"),
             ],
         )
-        assert _score(ref, hyp).wder == pytest.approx(0.25)
+        assert _score(ref, hyp).wder == pytest.approx(0.25, abs=1e-12)
 
     def test_collapsing_every_word_onto_one_speaker_is_penalised(self, stm_pair):
         ref, hyp = stm_pair(REF, [("S1", 0.0, 4.0, "alpha bravo charlie delta")])
-        assert _score(ref, hyp).wder == pytest.approx(0.5)
+        assert _score(ref, hyp).wder == pytest.approx(0.5, abs=1e-12)
 
     def test_speaker_relabelling_is_free_by_design(self, stm_pair):
         """A consistent permutation of speaker names scores 0, not 1.
@@ -201,7 +201,7 @@ class TestSpeakerMapping:
         """Guards against silently reintroducing a local Hungarian solve."""
         ref, hyp = stm_pair(REF, [("S1", 0.0, 4.0, "alpha bravo charlie delta")])
         cp_results = meeteval.wer.cpwer(ref, hyp)
-        with patch("scipy.optimize.linear_sum_assignment") as solver:
+        with patch("scipy.optimize.linear_sum_assignment", autospec=True) as solver:
             compute_wder(ref, hyp, cp_results)
         solver.assert_not_called()
 
@@ -209,8 +209,8 @@ class TestSpeakerMapping:
         cp_result = _with_assignment(None, (("A", "S1"), ("B", None), (None, "S2")))
         speakers = hyp_to_ref_speaker_map(cp_result)
         assert speakers.pairs == {"S1": "A"}
-        assert speakers.matches("S1", "A")
-        assert not speakers.matches("S2", "B")
+        assert speakers.matches("S1", "A") is True
+        assert speakers.matches("S2", "B") is False
 
 
 class TestCombine:
@@ -242,7 +242,7 @@ class TestCombine:
         combined = combine_wder([small, large])
         assert combined is not None
         # Averaging the rates would give 0.5; pooling the counts gives 0.01.
-        assert combined.wder == pytest.approx(0.01)
+        assert combined.wder == pytest.approx(0.01, abs=1e-12)
         assert combined.scored == 100
 
     def test_no_results_yields_none(self):
@@ -265,7 +265,7 @@ class TestDecomposition:
         assert stats.wder_claimed is not None
         assert stats.abstention_rate is not None
         reconstructed = stats.wder_claimed * (1 - stats.abstention_rate) + stats.abstention_rate
-        assert stats.wder == pytest.approx(reconstructed)
+        assert stats.wder == pytest.approx(reconstructed, abs=1e-12)
 
 
 class TestBenchmarkIntegration:
@@ -298,7 +298,7 @@ class TestBenchmarkIntegration:
         summary = combine_items([result])
         entry = summary.per_item[0]
         assert entry.wder is not None
-        assert entry.abstention_rate == pytest.approx(0.25)
+        assert entry.abstention_rate == pytest.approx(0.25, abs=1e-12)
         assert summary.combined is not None
         assert summary.combined.wder is not None
         assert summary.combined.wder.scored == result.metrics.wder.scored
