@@ -112,6 +112,23 @@ class ServerSettings(BaseSettings):
         "the Warmup Audio Asset at startup. Set to 'disabled' to skip warmup.",
     )
 
+    # Adapter Concurrency Policy --------------------------------------------
+    asr_max_concurrency: int = Field(
+        default=0,
+        ge=0,
+        description="Maximum ASR inference calls allowed to run at once. 0 (default) "
+        "auto-sizes from the host core count so total backend thread demand stays "
+        "near it. Ignored by the onnx-genai backend, whose Adapter Concurrency "
+        "Policy fixes the permit count at 1.",
+    )
+    asr_max_queue_depth: int = Field(
+        default=32,
+        ge=0,
+        description="Maximum ASR inference calls allowed to wait for a concurrency "
+        "permit. Requests beyond this cap are rejected with an OpenAI-Style Error "
+        "(HTTP 429) carrying a Retry-After hint instead of being queued indefinitely.",
+    )
+
     # TLS ------------------------------------------------------------------
     ssl_certfile: str | None = Field(default=None, description="TLS certificate file path.")
     ssl_keyfile: str | None = Field(default=None, description="TLS private key file path.")
