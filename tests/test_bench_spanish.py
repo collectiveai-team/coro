@@ -13,20 +13,38 @@ from coro.bench.clips import resolve_clip_items
 
 class TestRegistry:
     def test_every_corpus_records_a_licence(self):
-        for corpus in spanish.SPANISH_CORPORA.values():
-            assert corpus.licence
-            assert corpus.licence_url.startswith("https://")
-            assert corpus.homepage.startswith("https://")
+        """Pinned by name: a new corpus must have its licence reviewed, not inferred."""
+        assert {key: c.licence for key, c in spanish.SPANISH_CORPORA.items()} == {
+            "voxpopuli": "CC0-1.0",
+            "fleurs": "CC-BY-4.0",
+            "mls": "CC-BY-4.0",
+        }
+        assert [
+            key
+            for key, c in spanish.SPANISH_CORPORA.items()
+            if not (c.licence_url.startswith("https://") and c.homepage.startswith("https://"))
+        ] == []
 
     def test_corpus_keys_are_item_id_prefix_safe(self):
-        for key in spanish.SPANISH_CORPORA:
-            assert "-" not in key
+        assert [key for key in spanish.SPANISH_CORPORA if "-" in key] == []
 
     def test_presets_only_reference_known_corpora(self):
-        for preset in spanish.SPANISH_PRESETS.values():
-            assert preset.corpora
-            for key in preset.corpora:
-                assert key in spanish.SPANISH_CORPORA
+        known = set(spanish.SPANISH_CORPORA)
+        assert (
+            sorted(
+                key
+                for preset in spanish.SPANISH_PRESETS.values()
+                for key in set(preset.corpora) - known
+            )
+            == []
+        )
+        assert {name: list(p.corpora) for name, p in spanish.SPANISH_PRESETS.items()} == {
+            "voxpopuli": ["voxpopuli"],
+            "fleurs": ["fleurs"],
+            "mls": ["mls"],
+            "calibration": ["fleurs", "mls"],
+            "all": ["voxpopuli", "fleurs", "mls"],
+        }
 
     def test_voxpopuli_is_the_primary_corpus(self):
         assert spanish.SPANISH_CORPORA["voxpopuli"].role == "primary"

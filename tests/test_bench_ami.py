@@ -201,7 +201,22 @@ class TestMaterializeReferenceStms:
         assert stm_path.exists()
         assert stm_path.read_text() == "STM_CONTENT"
 
-    def test_skips_existing_stm(self, tmp_path: Path):
+    def test_regenerates_existing_stm_by_default(self, tmp_path: Path):
+        """A stale Reference STM is rebuilt, not silently trusted."""
+        from coro.bench.ami import materialize_reference_stms
+
+        stm_dir = tmp_path / "stm"
+        stm_dir.mkdir()
+        stm_path = stm_dir / "IB4001.ref.stm"
+        stm_path.write_text("STALE")
+
+        with patch("coro.bench.ami.ami_meeting_to_stm", return_value="FRESH") as mock_stm:
+            materialize_reference_stms(["IB4001"], tmp_path)
+            mock_stm.assert_called_once()
+
+        assert stm_path.read_text() == "FRESH"
+
+    def test_reuses_existing_stm_with_explicit_opt_in(self, tmp_path: Path):
         from coro.bench.ami import materialize_reference_stms
 
         stm_dir = tmp_path / "stm"
@@ -210,10 +225,18 @@ class TestMaterializeReferenceStms:
         stm_path.write_text("EXISTING")
 
         with patch("coro.bench.ami.ami_meeting_to_stm") as mock_stm:
-            materialize_reference_stms(["IB4001"], tmp_path)
+            materialize_reference_stms(["IB4001"], tmp_path, reuse_existing=True)
             mock_stm.assert_not_called()
 
         assert stm_path.read_text() == "EXISTING"
+
+    def test_opt_in_reuse_still_writes_a_missing_stm(self, tmp_path: Path):
+        from coro.bench.ami import materialize_reference_stms
+
+        with patch("coro.bench.ami.ami_meeting_to_stm", return_value="STM_CONTENT"):
+            materialize_reference_stms(["IB4001"], tmp_path, reuse_existing=True)
+
+        assert (tmp_path / "stm" / "IB4001.ref.stm").read_text() == "STM_CONTENT"
 
     def test_writes_multiple_stm_files(self, tmp_path: Path):
         from coro.bench.ami import materialize_reference_stms
@@ -229,7 +252,7 @@ class TestMaterializeReferenceStms:
 
 
 class TestMainIntegration:
-    def test_main_quality_resolves_and_stms(self, capsys, tmp_path: Path):
+    def test_main_quality_resolves_and_stms(self, tmp_path: Path, stub_server_handle):
         from coro.bench.cli import main
 
         zip_path = tmp_path / "ami_public_manual_1.6.2.zip"
@@ -252,12 +275,68 @@ class TestMainIntegration:
             patch("coro.bench.ami.download_meeting_audio"),
             patch("coro.bench.ami.download_annotations", return_value=zip_path),
             patch("coro.bench.ami.ami_meeting_to_stm", return_value="STM"),
+            patch("coro.bench.cli.build_server_handle", return_value=stub_server_handle),
             patch("coro.bench.cli._run_quality") as mock_quality,
         ):
             main()
             mock_quality.assert_called_once()
 
         assert (tmp_path / "stm" / "IB4001.ref.stm").exists()
+
+    def test_main_passes_reuse_opt_in_through_to_materialization(
+        self, tmp_path: Path, stub_server_handle
+    ):
+        from coro.bench.cli import main
+
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "coro-bench",
+                    "quality",
+                    "--ami-meetings",
+                    "IB4001",
+                    "--ami-root",
+                    str(tmp_path),
+                    "--no-download",
+                    "--reuse-reference-stms",
+                ],
+            ),
+            patch("coro.bench.cli.ensure_audio_and_annotations"),
+            patch("coro.bench.cli.materialize_reference_stms") as mock_materialize,
+            patch("coro.bench.cli.build_server_handle", return_value=stub_server_handle),
+            patch("coro.bench.cli._run_quality"),
+        ):
+            main()
+
+        assert mock_materialize.call_args.kwargs["reuse_existing"] is True
+
+    def test_main_regenerates_reference_stms_by_default(self, tmp_path: Path, stub_server_handle):
+        from coro.bench.cli import main
+
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "coro-bench",
+                    "quality",
+                    "--ami-meetings",
+                    "IB4001",
+                    "--ami-root",
+                    str(tmp_path),
+                    "--no-download",
+                ],
+            ),
+            patch("coro.bench.cli.ensure_audio_and_annotations"),
+            patch("coro.bench.cli.materialize_reference_stms") as mock_materialize,
+            patch("coro.bench.cli.build_server_handle", return_value=stub_server_handle),
+            patch("coro.bench.cli._run_quality"),
+        ):
+            main()
+
+        assert mock_materialize.call_args.kwargs["reuse_existing"] is False
 
     def test_main_no_download_error(self, tmp_path: Path):
         from coro.bench.cli import main

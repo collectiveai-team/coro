@@ -1,4 +1,4 @@
-# ADR 0008 — Public Spanish Workload Set, calibrated against published WER
+# ADR 0012 — Public Spanish Workload Set, calibrated against published WER
 
 Status: accepted
 
@@ -74,9 +74,10 @@ Reference material under a `benchmark/groundtruth/` tree, or named like a
   accepted program limitation, not an oversight.
 - The Common Voice clip utility is removed rather than left as a dead end.
 - Every previously recorded Spanish figure is void and must be re-measured.
-- The calibration margin starts wide because the normalized lane currently only
-  strips punctuation; it tightens once a diacritic-preserving basic normalizer
-  lands.
+- The calibration margin starts wide because it was set against a normalized
+  lane that only stripped ASCII punctuation. ADR 0011 has since replaced that
+  lane, removing both inflators (casing and Spanish punctuation), so the margin
+  can only need to shrink — but it stays at `0.10` until a run measures how far.
 
 ## Alternatives considered
 

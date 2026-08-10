@@ -12,8 +12,8 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     settings = ServerSettings(_env_file=None)
 
     assert settings.pipeline == "full-memory"
-    assert settings.backend_asr == "faster-whisper"
-    assert settings.model_asr == "openai/whisper-medium"
+    assert settings.backend_asr == "onnx-asr"
+    assert settings.model_asr == "nemo-parakeet-tdt-0.6b-v3"
     assert settings.asr_device == "auto"
     assert settings.asr_compute_type == "default"
     assert settings.backend_diarization == "none"
@@ -21,6 +21,10 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     assert settings.diarization_device == "auto"
     assert settings.asr_onnx_vad == "disabled"
     assert settings.asr_onnx_vad_threshold is None
+    assert settings.diarization_postprocessing is None
+    # int8 is a memory-fitting tool, not a speed tool, for the default transducer
+    # ASR Model Selection — quantization stays off unless explicitly opted into.
+    assert settings.asr_quantization is None
 
 
 def test_onnx_vad_settings_read_from_env(monkeypatch):
@@ -77,6 +81,37 @@ def test_pyannote_full_memory_pipeline_is_allowed():
     assert settings.pipeline == "full-memory"
 
 
+@pytest.mark.parametrize("backend", ["nemo", "pyannote"])
+@pytest.mark.parametrize("model", ["", "   "])
+def test_enabled_diarization_with_empty_model_is_rejected(backend: str, model: str):
+    """An empty Diarization Model Selection must fail loudly, not degrade to ASR-only."""
+    with pytest.raises(ValidationError, match="Diarization Model Selection is empty"):
+        ServerSettings(
+            backend_diarization=backend,  # pyrefly: ignore[bad-argument-type]
+            model_diarization=model,
+            _env_file=None,
+        )
+
+
+def test_enabled_diarization_with_empty_model_from_env_is_rejected(monkeypatch):
+    monkeypatch.setenv("CORO_BACKEND_DIARIZATION", "nemo")
+    monkeypatch.setenv("CORO_MODEL_DIARIZATION", "")
+
+    with pytest.raises(ValidationError, match="Diarization Model Selection is empty"):
+        ServerSettings(_env_file=None)
+
+
+def test_disabled_diarization_with_empty_model_is_allowed():
+    """An ASR-Only Server is a valid configuration and stays valid."""
+    settings = ServerSettings(
+        backend_diarization="none",
+        model_diarization="",
+        _env_file=None,
+    )
+
+    assert settings.backend_diarization == "none"
+
+
 @pytest.mark.parametrize("env_name", ["CORO_HF_TOKEN", "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"])
 def test_hf_token_read_from_standard_env_names(monkeypatch, env_name: str):
     monkeypatch.setenv(env_name, "secret-token")
@@ -97,6 +132,14 @@ def test_transcript_spill_dir_defaults_none_and_reads_env(monkeypatch):
     assert ServerSettings(_env_file=None).transcript_spill_dir is None
     monkeypatch.setenv("CORO_TRANSCRIPT_SPILL_DIR", "/var/lib/asr-spill")
     assert ServerSettings(_env_file=None).transcript_spill_dir == "/var/lib/asr-spill"
+
+
+def test_diarization_postprocessing_defaults_none_and_reads_env(monkeypatch):
+    """Unrestricted like model_diarization: a preset name or a custom path, resolved
+    by the NeMo adapter (see ADR 0010) — settings itself does not validate the value."""
+    assert ServerSettings(_env_file=None).diarization_postprocessing is None
+    monkeypatch.setenv("CORO_DIARIZATION_POSTPROCESSING", "dihard3-dev")
+    assert ServerSettings(_env_file=None).diarization_postprocessing == "dihard3-dev"
 
 
 @pytest.mark.parametrize("pipeline", ["unknown", "v1", "v2", ""])

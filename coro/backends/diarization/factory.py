@@ -31,6 +31,7 @@ def build_diarization_adapter(
     *,
     device: str = "auto",
     hf_token: str | None = None,
+    postprocessing: str | None = None,
 ) -> DiarizationAdapter:
     """Build a Diarization Adapter for the configured provider.
 
@@ -40,6 +41,8 @@ def build_diarization_adapter(
         device: ``auto``/``cuda``/``cpu`` device selector.
         hf_token: HuggingFace token for gated models; ignored by providers
             that do not require one.
+        postprocessing: Diarization Post-Processing Configuration value
+            (see ADR 0010); NeMo-specific, ignored by ``pyannote``.
 
     Returns:
         A ready-to-use Diarization Adapter.
@@ -51,7 +54,9 @@ def build_diarization_adapter(
     if provider == "nemo":
         from coro.backends.diarization.nemo.diarization import build_nemo_diarization_adapter
 
-        return build_nemo_diarization_adapter(model_diarization, device=device)
+        return build_nemo_diarization_adapter(
+            model_diarization, device=device, postprocessing=postprocessing
+        )
 
     if provider == "pyannote":
         from coro.backends.diarization.pyannote import build_pyannote_diarization_adapter
@@ -92,7 +97,11 @@ def build_streaming_diarizer_factory(
         if not isinstance(adapter, NemoDiarizationAdapter):
             msg = "Streaming diarizer factory for 'nemo' requires a NemoDiarizationAdapter."
             raise TypeError(msg)
-        return NemoStreamingDiarizerFactory(adapter.model, tier=tier)
+        return NemoStreamingDiarizerFactory(
+            adapter.model,
+            tier=tier,
+            postprocessing_yaml=adapter.postprocessing_yaml,
+        )
 
     msg = f"Diarization backend provider {provider!r} does not support streaming."
     raise ValueError(msg)

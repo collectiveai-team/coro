@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import wave
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -73,3 +74,18 @@ def fake_spanish_corpus(monkeypatch):
         "transcode_bytes_to_wav",
         lambda data, dst: write_silent_wav(dst),
     )
+
+
+@pytest.fixture
+def stub_server_handle() -> MagicMock:
+    """Stand in for a Bench-Managed / Bench-Attached Server handle.
+
+    Patch ``coro.bench.cli.build_server_handle`` with this so exercising
+    ``coro.bench.cli.main`` never spawns a real server subprocess or blocks on
+    ``/health`` polling.
+    """
+    handle = MagicMock()
+    handle.__enter__.return_value = handle
+    handle.base_url = "http://127.0.0.1:9999"
+    handle.server_pid = 4242
+    return handle

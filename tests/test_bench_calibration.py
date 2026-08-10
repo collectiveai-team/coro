@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from coro.bench import calibration
 
 
@@ -50,7 +52,7 @@ class TestFindTarget:
         target = calibration.find_target("nvidia/parakeet-tdt-0.6b-v3", "fleurs")
 
         assert target is not None
-        assert target.published_wer == 0.0345
+        assert target.published_wer == pytest.approx(0.0345, abs=1e-12)
 
     def test_lookup_is_case_insensitive(self):
         assert calibration.find_target("OpenAI/Whisper-Medium", "mls") is not None
@@ -73,8 +75,8 @@ class TestCalibrateRun:
         outcome = report.outcomes[0]
         assert outcome.corpus == "fleurs"
         assert outcome.status == "pass"
-        assert outcome.scored_wer == 0.05
-        assert outcome.published_wer == 0.036
+        assert outcome.scored_wer == pytest.approx(0.05, abs=1e-12)
+        assert outcome.published_wer == pytest.approx(0.036, abs=1e-12)
 
     def test_fails_loudly_beyond_the_margin(self, tmp_path: Path):
         _write_item(tmp_path / "quality", "fleurs-1", errors=60, length=100)
@@ -105,7 +107,7 @@ class TestCalibrateRun:
         report = calibration.calibrate_run(tmp_path, model_id="openai/whisper-medium")
 
         assert report.outcomes[0].n_items == 2
-        assert report.outcomes[0].scored_wer == 0.1
+        assert report.outcomes[0].scored_wer == pytest.approx(0.1, abs=1e-12)
 
     def test_unregistered_model_does_not_fail_the_run(self, tmp_path: Path):
         _write_item(tmp_path / "quality", "fleurs-1", errors=90, length=100)

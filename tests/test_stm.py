@@ -36,6 +36,84 @@ class TestWarmupAudioAsset:
             assert duration > 0, "Duration must be positive"
 
 
+class TestHypResponseToStm:
+    """hyp_response_to_stm prefers per-word speakers over segment speakers."""
+
+    @staticmethod
+    def _words(*specs):
+        """Build word_segments from (word, start, end, speaker) tuples."""
+        return [
+            {"word": word, "start": start, "end": end, "speaker": speaker}
+            for word, start, end, speaker in specs
+        ]
+
+    def test_word_segments_group_into_maximal_same_speaker_runs(self):
+        from coro.bench.stm import hyp_response_to_stm
+
+        response = {
+            "segments": [{"start": 0.0, "end": 4.0, "text": "a b c d", "speaker": "A"}],
+            "word_segments": self._words(
+                ("a", 0.0, 1.0, "A"),
+                ("b", 1.0, 2.0, "A"),
+                ("c", 2.0, 3.0, "B"),
+                ("d", 3.0, 4.0, "A"),
+            ),
+        }
+        lines = hyp_response_to_stm(response, "rec01").strip().split("\n")
+        assert lines == [
+            "rec01 1 A 0.000 2.000 a b",
+            "rec01 1 B 2.000 3.000 c",
+            "rec01 1 A 3.000 4.000 d",
+        ]
+
+    def test_word_speakers_win_over_a_disagreeing_segment_summary(self):
+        """The guard against scoring a majority summary instead of the truth."""
+        from coro.bench.stm import hyp_response_to_stm
+
+        response = {
+            "segments": [{"start": 0.0, "end": 2.0, "text": "a b", "speaker": "A"}],
+            "word_segments": self._words(("a", 0.0, 1.0, "A"), ("b", 1.0, 2.0, "-1")),
+        }
+        result = hyp_response_to_stm(response, "rec01")
+        assert "-1" in result
+
+    def test_falls_back_to_segments_when_no_word_speakers(self):
+        """diarized_json carries no word field today, so this is the live path."""
+        from coro.bench.stm import hyp_response_to_stm
+
+        response = {"segments": [{"start": 0.0, "end": 1.5, "text": "hello", "speaker": "A"}]}
+        assert hyp_response_to_stm(response, "rec01") == "rec01 1 A 0.000 1.500 hello\n"
+
+    def test_word_list_without_speakers_is_not_used(self):
+        """verbose_json `words` have no speaker; they must not displace segments."""
+        from coro.bench.stm import hyp_response_to_stm
+
+        response = {
+            "segments": [{"start": 0.0, "end": 1.5, "text": "hello", "speaker": "A"}],
+            "words": [{"word": "hello", "start": 0.0, "end": 1.5}],
+        }
+        assert hyp_response_to_stm(response, "rec01") == "rec01 1 A 0.000 1.500 hello\n"
+
+    def test_homogeneous_segments_give_the_same_stm_either_way(self):
+        """Why the four on-disk arms stay valid: both sources agree pre-issue-12."""
+        from coro.bench.stm import hyp_response_to_stm, hyp_segments_to_stm
+
+        segments = [
+            {"start": 0.0, "end": 2.0, "text": "a b", "speaker": "A"},
+            {"start": 2.0, "end": 4.0, "text": "c d", "speaker": "B"},
+        ]
+        response = {
+            "segments": segments,
+            "word_segments": self._words(
+                ("a", 0.0, 1.0, "A"),
+                ("b", 1.0, 2.0, "A"),
+                ("c", 2.0, 3.0, "B"),
+                ("d", 3.0, 4.0, "B"),
+            ),
+        }
+        assert hyp_response_to_stm(response, "rec01") == hyp_segments_to_stm(segments, "rec01")
+
+
 class TestHypSegmentsToStm:
     """hyp_segments_to_stm converts diarized_json segments to STM text."""
 

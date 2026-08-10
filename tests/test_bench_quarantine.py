@@ -39,7 +39,16 @@ class TestAssertScorableReference:
         with pytest.raises(CircularReferenceError) as excinfo:
             assert_scorable_reference(Path("out/hyp/x.hyp.stm"))
 
-        assert "Refusing to score" in str(excinfo.value)
+        # The message has to name the offending path and the way out, not just
+        # refuse: an operator hitting this needs to know which file and what next.
+        assert str(excinfo.value) == (
+            "Refusing to score against quarantined reference out/hyp/x.hyp.stm: "
+            f"{excinfo.value.reason}. A Reference STM must come from a human or "
+            "corpus annotation, never from this system's own output. Use "
+            "--spanish-preset for a public Spanish Workload Set, or --ami-preset "
+            "for English."
+        )
+        assert excinfo.value.path == Path("out/hyp/x.hyp.stm")
 
     def test_passes_for_public_corpus_reference(self, tmp_path: Path):
         assert_scorable_reference(tmp_path / "fleurs-1.ref.stm")

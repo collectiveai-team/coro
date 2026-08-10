@@ -29,11 +29,16 @@ from coro.bench.spanish import SPANISH_CORPORA, corpus_of_item
 DEFAULT_CALIBRATION_MARGIN = 0.10
 """Two-sided absolute WER band, in WER points expressed as a fraction.
 
-Provisionally wide: the normalized lane currently only strips punctuation and
-collapses whitespace, so casing differences still inflate it against published
-figures. Tighten to ~0.05 once the diacritic-preserving basic normalizer lands
-(perf-roadmap issue 06). The band is deliberately two-sided — a score far *below*
-the published figure is as strong a harness-fault signal as one far above it.
+Still provisionally wide, and **not yet recalibrated by measurement**. The band
+was set when the normalized lane only stripped ASCII punctuation and collapsed
+whitespace, so casing and Spanish punctuation (``¿``, ``¡``, ``—``) inflated it
+against published figures. ADR 0011 has since replaced that lane with the Basic
+Text Normalizer, which lowercases and maps every symbol and punctuation
+category to spaces — both inflators are gone, so the band this needs can only
+have shrunk. By how much is unmeasured: narrowing it requires a real run
+against the calibration corpora, which nobody has done since ADR 0011 landed.
+The band is deliberately two-sided — a score far *below* the published figure
+is as strong a harness-fault signal as one far above it.
 """
 
 CALIBRATION_METRIC = "normalized_orcwer"

@@ -261,13 +261,23 @@ def clip_reference_stm(
 def materialize_reference_stms(
     meetings: list[str],
     ami_root: Path,
+    *,
+    reuse_existing: bool = False,
 ) -> None:
+    """Write one Reference STM per meeting under ``<ami_root>/stm``.
+
+    Regenerates by default. A Reference STM is a derived artifact of the STM
+    builder, so silently reusing an existing file freezes the reference against
+    whatever the builder looked like when it was first written and makes every
+    later quality score incomparable. ``reuse_existing`` is the explicit opt-in
+    for callers that deliberately want the frozen files.
+    """
     stm_dir = ami_root / "stm"
     stm_dir.mkdir(parents=True, exist_ok=True)
 
     for meeting_id in meetings:
         stm_path = stm_dir / f"{meeting_id}.ref.stm"
-        if stm_path.exists():
+        if reuse_existing and stm_path.exists():
             continue
         stm_text = ami_meeting_to_stm(ami_root, meeting_id)
         stm_path.write_text(stm_text)

@@ -163,7 +163,7 @@ class TestSpanishQualityRun:
         assert report["model_id"] == "openai/whisper-medium"
         assert report["metric"] == "normalized_orcwer"
         assert report["outcomes"][0]["corpus"] == "fleurs"
-        assert report["outcomes"][0]["published_wer"] == 0.036
+        assert report["outcomes"][0]["published_wer"] == pytest.approx(0.036, abs=1e-12)
 
     def test_deviation_beyond_the_margin_fails_the_run(
         self, spanish_server, tmp_path: Path, fake_spanish_corpus, monkeypatch
