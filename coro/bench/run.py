@@ -8,8 +8,7 @@ kept out so importing coro.bench.cli stays lightweight.
 from __future__ import annotations
 
 import os
-import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from coro.bench.models.resource import ProcessTreeSample
 
@@ -53,20 +52,73 @@ class ProcStatus:
     vmsize: int = 0
 
 
+def _stat_fields_after_comm(pid: int) -> list[str] | None:
+    """Return ``/proc/<pid>/stat`` fields from ``state`` onward, or None.
+
+    A process's ``comm`` is parenthesised and may itself contain spaces and
+    parentheses, so splitting the whole line shifts every field after it.
+    Slicing at the *last* ``)`` is the documented way to parse this — see
+    proc(5). The returned list is 0-indexed from field 3, so proc(5) field N
+    is at index ``N - 3``.
+    """
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            line = f.read()
+        return line[line.rindex(")") + 1 :].split()
+    except (OSError, ValueError):
+        return None
+
+
+@dataclass(frozen=True)
+class ProcessTreeIndex:
+    """Parent-to-children index over every process visible in /proc."""
+
+    children: dict[int, list[int]] = field(default_factory=dict)
+
+    def children_of(self, pid: int) -> list[int]:
+        return self.children.get(pid, [])
+
+
+def _read_child_pid_map() -> ProcessTreeIndex:
+    """Index parent PID to child PIDs with a single scan of /proc.
+
+    The previous implementation shelled out to ``pgrep -P`` once per PID,
+    recursively, on *every* sample. At the 0.25 s sampling interval that is a
+    fork storm proportional to the tree size — measured at 1176 subprocesses
+    and 34 s in a single benchmark test — and the sampler's own forks perturb
+    the CPU utilisation it exists to measure. One /proc scan costs no forks.
+    """
+    children: dict[int, list[int]] = {}
+    try:
+        entries = list(os.scandir("/proc"))
+    except OSError:
+        return ProcessTreeIndex(children)
+
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        fields = _stat_fields_after_comm(int(entry.name))
+        # index 1 == proc(5) field 4 == ppid
+        if fields is None or len(fields) < 2:
+            continue
+        try:
+            ppid = int(fields[1])
+        except ValueError:
+            continue
+        children.setdefault(ppid, []).append(int(entry.name))
+    return ProcessTreeIndex(children)
+
+
 def _get_process_tree_pids(root_pid: int) -> set[int]:
     """Return all PIDs in the process tree rooted at root_pid."""
+    index = _read_child_pid_map()
     pids = {root_pid}
-    try:
-        result = subprocess.run(
-            ["pgrep", "-P", str(root_pid)],
-            capture_output=True,
-            text=True,
-        )
-        for line in result.stdout.strip().splitlines():
-            child = int(line)
-            pids |= _get_process_tree_pids(child)
-    except Exception:
-        pass
+    pending = [root_pid]
+    while pending:
+        for child in index.children_of(pending.pop()):
+            if child not in pids:
+                pids.add(child)
+                pending.append(child)
     return pids
 
 
@@ -114,15 +166,17 @@ def _read_proc_io(pid: int) -> ProcIo:
 
 
 def _read_proc_stat(pid: int) -> ProcStat:
+    fields = _stat_fields_after_comm(pid)
+    if fields is None:
+        return ProcStat()
     try:
-        with open(f"/proc/{pid}/stat") as f:
-            fields = f.read().split()
+        # proc(5) fields 14, 15 and 20, offset by the 3 that precede `state`.
         return ProcStat(
-            utime=int(fields[13]),
-            stime=int(fields[14]),
-            num_threads=int(fields[19]),
+            utime=int(fields[11]),
+            stime=int(fields[12]),
+            num_threads=int(fields[17]),
         )
-    except Exception:
+    except (IndexError, ValueError):
         return ProcStat()
 
 

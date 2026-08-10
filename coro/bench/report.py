@@ -2,7 +2,7 @@
 
 Quality figures are always rendered as two separately labelled tables, one per
 metric lane, so no figure is readable without knowing which protocol produced
-it. See ADR 0008.
+it. See ADR 0011.
 """
 
 from __future__ import annotations
@@ -147,6 +147,9 @@ def _load_quality(
                     orcwer=_wer_val(item.get("orcwer")),
                     dicpwer=_wer_val(item.get("dicpwer")),
                     der=_wer_val(item.get("der")),
+                    wder=_wer_val(item.get("wder")),
+                    wder_claimed=_wer_val(item.get("wder_claimed")),
+                    abstention_rate=_wer_val(item.get("abstention_rate")),
                 )
             )
             if item.get("normalized_cpwer") is not None:
@@ -158,6 +161,7 @@ def _load_quality(
                         orcwer=_wer_val(item.get("normalized_orcwer")),
                         dicpwer=_wer_val(item.get("normalized_dicpwer")),
                         der=None,
+                        wder=_wer_val(item.get("normalized_wder")),
                     )
                 )
 
@@ -170,6 +174,9 @@ def _load_quality(
             orcwer=_nested_wer(combined_data, "orcwer"),
             dicpwer=_nested_wer(combined_data, "dicpwer"),
             der=_nested_der(combined_data),
+            wder=_nested_field(combined_data, "wder", "wder"),
+            wder_claimed=_nested_field(combined_data, "wder", "wder_claimed"),
+            abstention_rate=_nested_field(combined_data, "wder", "abstention_rate"),
         )
 
     normalized_combined: QualityRow | None = None
@@ -182,6 +189,7 @@ def _load_quality(
             orcwer=_nested_wer(normalized_combined_data, "orcwer"),
             dicpwer=_nested_wer(normalized_combined_data, "dicpwer"),
             der=None,
+            wder=_nested_field(normalized_combined_data, "wder", "wder"),
         )
 
     return rows, combined, normalized_rows, normalized_combined, footnotes
@@ -203,6 +211,14 @@ def _nested_wer(data: dict, key: str) -> float | None:
     if isinstance(val, dict):
         return _wer_val(val.get("wer"))
     return _wer_val(val)
+
+
+def _nested_field(data: dict, block: str, key: str) -> float | None:
+    """Read one float out of a nested metric block, tolerating absent blocks."""
+    val = data.get(block)
+    if not isinstance(val, dict):
+        return None
+    return _wer_val(val.get(key))
 
 
 def _nested_der(data: dict) -> float | None:
@@ -303,6 +319,10 @@ def render_markdown(report: BenchReport) -> str:
         lines.append("")
         lines += _quality_table_md(report)
 
+    if _has_wder(report):
+        lines.append("")
+        lines += _wder_table_md(report)
+
     if report.normalized_quality_rows or report.normalized_quality_combined:
         lines.append("")
         lines += _normalized_quality_table_md(report)
@@ -371,26 +391,71 @@ def _quality_table_md(report: BenchReport) -> list[str]:
     return lines
 
 
+def _wder_rows(report: BenchReport) -> list[QualityRow]:
+    """Quality rows that carry a WDER value, combined row appended last."""
+    rows = [r for r in report.quality_rows if r.wder is not None]
+    combined = report.quality_combined
+    if combined is not None and combined.wder is not None:
+        rows.append(combined)
+    return rows
+
+
+def _has_wder(report: BenchReport) -> bool:
+    return bool(_wder_rows(report))
+
+
+def _wder_table_md(report: BenchReport) -> list[str]:
+    lines: list[str] = []
+    lines.append(f"## Speaker Attribution (WDER) — {RAW_LANE_LABEL}")
+    lines.append("")
+    lines.append(
+        "Word Diarization Error Rate — speaker errors over the words that exist "
+        "in both transcripts (correct + substituted). Insertions and deletions "
+        "are excluded, so this is blind to segmentation and undiluted by the ASR "
+        "error floor. `WDER-claimed` is precision where a real speaker was "
+        "committed to; `abstention` is the share of scored words left unknown. "
+        "`WDER = WDER-claimed x (1 - abstention) + abstention`. Normalization "
+        "changes which words are scored, so the Normalized Metric Lane's WDER is "
+        "reported in that lane's own table."
+    )
+    lines.append("")
+    lines.append("| session | WDER | WDER-claimed | abstention |")
+    lines.append("|---------|------|--------------|------------|")
+
+    for row in _wder_rows(report):
+        label = row.session_id
+        if row is report.quality_combined:
+            label = f"**{label}**"
+        lines.append(
+            f"| {label} | {_fmt(row.wder)} "
+            f"| {_fmt(row.wder_claimed)} | {_fmt(row.abstention_rate)} |"
+        )
+
+    return lines
+
+
 def _normalized_quality_table_md(report: BenchReport) -> list[str]:
     lines: list[str] = []
     lines.append(f"## Quality Results — {NORMALIZED_LANE_LABEL}")
     lines.append("")
     lines.append(NORMALIZED_LANE_CAPTION)
     lines.append("")
-    lines.append("| session | duration | cpWER | ORC-WER | DI-cpWER |")
-    lines.append("|---------|----------|-------|---------|----------|")
+    lines.append("| session | duration | cpWER | ORC-WER | DI-cpWER | WDER |")
+    lines.append("|---------|----------|-------|---------|----------|------|")
 
     for row in report.normalized_quality_rows:
         lines.append(
             f"| {row.session_id} | {row.duration:.1f} "
-            f"| {_fmt(row.cpwer)} | {_fmt(row.orcwer)} | {_fmt(row.dicpwer)} |"
+            f"| {_fmt(row.cpwer)} | {_fmt(row.orcwer)} | {_fmt(row.dicpwer)} "
+            f"| {_fmt(row.wder)} |"
         )
 
     if report.normalized_quality_combined is not None:
         c = report.normalized_quality_combined
         lines.append(
             f"| **{c.session_id}** | {c.duration:.1f} "
-            f"| {_fmt(c.cpwer)} | {_fmt(c.orcwer)} | {_fmt(c.dicpwer)} |"
+            f"| {_fmt(c.cpwer)} | {_fmt(c.orcwer)} | {_fmt(c.dicpwer)} "
+            f"| {_fmt(c.wder)} |"
         )
 
     return lines
@@ -486,6 +551,7 @@ def _render_stdout_rich(report: BenchReport) -> None:
     console = Console()
     console.print(Panel(_rich_header(report), title="Benchmark Report"))
     _rich_quality_table(console, report)
+    _rich_wder_table(console, report)
     _rich_normalized_quality_table(console, report)
     _rich_performance_table(console, report)
 
@@ -553,6 +619,28 @@ def _rich_quality_table(console: object, report: BenchReport) -> None:
         console.print(f"  * {note}")  # type: ignore[attr-defined]
 
 
+def _rich_wder_table(console: object, report: BenchReport) -> None:
+    rows = _wder_rows(report)
+    if not rows:
+        return
+    from rich.table import Table
+
+    wt = Table(title=f"Speaker Attribution (WDER) — {RAW_LANE_LABEL}", show_lines=True)
+    for col in ("session", "WDER", "WDER-claimed", "abstention"):
+        wt.add_column(col)
+    for row in rows:
+        label = row.session_id
+        if row is report.quality_combined:
+            label = f"[bold]{label}[/bold]"
+        wt.add_row(
+            label,
+            _fmt(row.wder),
+            _fmt(row.wder_claimed),
+            _fmt(row.abstention_rate),
+        )
+    console.print(wt)  # type: ignore[attr-defined]
+
+
 def _rich_normalized_quality_table(console: object, report: BenchReport) -> None:
     if not (report.normalized_quality_rows or report.normalized_quality_combined):
         return
@@ -563,7 +651,7 @@ def _rich_normalized_quality_table(console: object, report: BenchReport) -> None
         caption=NORMALIZED_LANE_CAPTION,
         show_lines=True,
     )
-    for col in ("session", "duration", "cpWER", "ORC-WER", "DI-cpWER"):
+    for col in ("session", "duration", "cpWER", "ORC-WER", "DI-cpWER", "WDER"):
         qt.add_column(col)
     for row in report.normalized_quality_rows:
         qt.add_row(
@@ -572,6 +660,7 @@ def _rich_normalized_quality_table(console: object, report: BenchReport) -> None
             _fmt(row.cpwer),
             _fmt(row.orcwer),
             _fmt(row.dicpwer),
+            _fmt(row.wder),
         )
     if report.normalized_quality_combined is not None:
         c = report.normalized_quality_combined
@@ -581,6 +670,7 @@ def _rich_normalized_quality_table(console: object, report: BenchReport) -> None
             _fmt(c.cpwer),
             _fmt(c.orcwer),
             _fmt(c.dicpwer),
+            _fmt(c.wder),
         )
     console.print(qt)  # type: ignore[attr-defined]
 

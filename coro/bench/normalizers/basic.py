@@ -2,7 +2,7 @@
 
 Source: ``whisper/normalizers/basic.py`` from https://github.com/openai/whisper
 (MIT License, Copyright (c) 2022 OpenAI). Vendored verbatim in behaviour rather
-than added as a dependency, per ADR 0008: it is ~60 lines of permissively
+than added as a dependency, per ADR 0011: it is ~60 lines of permissively
 licensed code and Whisper ships it inside a package that also pulls in Torch.
 
 This is the normalizer OpenAI applied to every non-English language when
@@ -15,7 +15,7 @@ sets it: for Spanish, stripping diacritics collapses distinct words
 
 The English-specific ``EnglishTextNormalizer`` is deliberately not vendored --
 its spelling and contraction maps are English-only and would corrupt Spanish
-reference and hypothesis text. See ADR 0008.
+reference and hypothesis text. See ADR 0011.
 """
 
 from __future__ import annotations

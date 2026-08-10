@@ -20,6 +20,9 @@ class QualityRow:
     dicpwer: float | None
     der: float | None
     error: str | None = None
+    wder: float | None = None
+    wder_claimed: float | None = None
+    abstention_rate: float | None = None
 
 
 @dataclass

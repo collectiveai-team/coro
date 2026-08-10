@@ -18,11 +18,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import threading
 from types import SimpleNamespace
 
 import numpy as np
 
+from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
 from coro.backends.asr.onnx_asr import convert_onnx_asr_result
 from coro.core.models import TranscriptToken
 
@@ -63,6 +63,10 @@ _DEFAULT_LANG_ID = 0
 # Strips inline language-tag tokens like "<en>" or "<en-US>" the model emits.
 _LANG_TAG_RE = re.compile(r"<[a-z]{2}(?:-[A-Z]{2})?>")
 
+# Admission queue depth used when an adapter is built without explicit settings
+# (direct construction in tests and tooling); the factory always passes one.
+_DEFAULT_QUEUE_DEPTH = 32
+
 
 def _lang_id_for(language: str | None) -> int:
     """Map a language/locale code to the model's lang_id (default English)."""
@@ -72,14 +76,46 @@ def _lang_id_for(language: str | None) -> int:
 
 
 class OnnxGenaiASRAdapter:
-    """ASRAdapter that wraps an onnxruntime-genai nemotron_speech streaming model."""
+    """ASRAdapter that wraps an onnxruntime-genai nemotron_speech streaming model.
 
-    def __init__(self, model, *, chunk_samples: int, sample_rate: int) -> None:
+    Adapter Concurrency Policy: **serialised**. Unlike the other two ASR
+    adapters, this one still runs one model call at a time. onnxruntime-genai
+    ships as a compiled extension with no published thread-safety guarantee for
+    driving several ``Generator`` / ``StreamingProcessor`` sessions against one
+    shared ``Model``, and these are cache-aware *streaming* sessions carrying
+    per-session state through the encoder. Absent a guarantee, serialising is the
+    correct call: an unverified assumption here corrupts transcripts rather than
+    merely slowing them down.
+
+    Serialisation is expressed as a one-permit :class:`AdmissionController`
+    rather than a ``threading.Lock``, so waiting happens on the event loop
+    instead of pinning a worker thread, and overload past the queue-depth cap is
+    rejected with a retry hint instead of blocking without limit.
+
+    Revisit if onnxruntime-genai documents concurrent generators on a shared
+    model; nothing else in this adapter requires the restriction.
+    """
+
+    def __init__(
+        self,
+        model,
+        *,
+        chunk_samples: int,
+        sample_rate: int,
+        admission: AdmissionController | None = None,
+    ) -> None:
         self._model = model
         self._chunk_samples = chunk_samples
         self._sample_rate = sample_rate
         self._chunk_seconds = chunk_samples / sample_rate
-        self._lock = threading.Lock()
+        self._admission = admission or build_admission_controller(
+            max_concurrency=0, max_queue_depth=_DEFAULT_QUEUE_DEPTH, serialized=True
+        )
+
+    @property
+    def admission(self) -> AdmissionController:
+        """Admission controller implementing this adapter's concurrency policy."""
+        return self._admission
 
     async def transcribe_pcm(
         self,
@@ -94,15 +130,15 @@ class OnnxGenaiASRAdapter:
             ``prompt`` is ignored (no equivalent in the GenAI streaming API). Token
             timestamps have 560 ms resolution (one streaming chunk).
 
+        Raises:
+            AsrCapacityError: If the admission queue is full.
+
         """
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
         lang_id = _lang_id_for(language)
 
-        def _recognize() -> list[TranscriptToken]:
-            with self._lock:
-                return self._stream(audio, lang_id)
-
-        return await asyncio.to_thread(_recognize)
+        async with self._admission.admit():
+            return await asyncio.to_thread(self._stream, audio, lang_id)
 
     def _stream(self, audio: np.ndarray, lang_id: int) -> list[TranscriptToken]:
         """Drive one streaming session over ``audio`` and return reconstructed tokens."""
@@ -165,6 +201,7 @@ def build_onnx_genai_adapter(
     *,
     device: str = "auto",
     quantization: str | None = None,
+    max_queue_depth: int = _DEFAULT_QUEUE_DEPTH,
 ) -> OnnxGenaiASRAdapter:
     """Construct and return an OnnxGenaiASRAdapter.
 
@@ -173,6 +210,9 @@ def build_onnx_genai_adapter(
         device: Device selector (``"auto"``, ``"cuda"``, ``"cpu"``); selects the EP.
         quantization: Unused (the GenAI export already encodes its precision); accepted for
             interface symmetry with the other ASR backends.
+        max_queue_depth: Calls allowed to wait for the single permit before
+            rejection. The permit count is fixed at 1 by this backend's Adapter
+            Concurrency Policy, so ``asr_max_concurrency`` does not apply.
 
     Returns:
         Initialised adapter ready for use.
@@ -205,4 +245,11 @@ def build_onnx_genai_adapter(
     _apply_device(config, device)
     model = og.Model(config)
     logger.info("onnx-genai model loaded.")
-    return OnnxGenaiASRAdapter(model, chunk_samples=chunk_samples, sample_rate=sample_rate)
+    return OnnxGenaiASRAdapter(
+        model,
+        chunk_samples=chunk_samples,
+        sample_rate=sample_rate,
+        admission=build_admission_controller(
+            max_concurrency=1, max_queue_depth=max_queue_depth, serialized=True
+        ),
+    )

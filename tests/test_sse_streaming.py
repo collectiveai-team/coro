@@ -23,6 +23,7 @@ from httpx import ASGITransport, AsyncClient
 from coro.api.exceptions import UNDECODABLE_MEDIA_MESSAGE
 from coro.app import create_app
 from coro.audio import AudioConversionError
+from coro.backends.asr.concurrency import AsrCapacityError
 from coro.core.models import TranscriptDeltaEvent, TranscriptDoneEvent, TranscriptionResult
 from coro.runtime import RuntimeState
 from coro.settings import ServerSettings
@@ -180,4 +181,49 @@ async def test_streaming_undecodable_media_emits_invalid_request_error():
     assert err["type"] == "invalid_request_error"
     assert err["message"] == UNDECODABLE_MEDIA_MESSAGE
     assert "moov atom" not in err["message"]  # ffmpeg detail not leaked
+    assert events[-1] == "[DONE]"
+
+
+class _AtCapacityStreamingPipeline:
+    async def transcribe(self, audio, *, language=None, prompt=None):
+        return TranscriptionResult()
+
+    async def stream(self, audio, *, language=None, prompt=None):
+        for _ in ():  # empty loop makes this an async generator that yields nothing
+            yield _
+        raise AsrCapacityError(
+            "Server is at ASR capacity (2 concurrent transcriptions, 0 queued). Retry in 5s.",
+            retry_after_seconds=5.0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_streaming_capacity_rejection_emits_rate_limit_error():
+    """Admission rejection mid-stream emits a rate_limit_exceeded event carrying the hint.
+
+    The 200 SSE headers are already on the wire, so the retry hint travels in the
+    error message rather than as a Retry-After header.
+    """
+    from fastapi import FastAPI
+
+    application: FastAPI = create_app(ServerSettings())
+    runtime = RuntimeState(asr_adapter=object())
+    runtime.pipeline = _AtCapacityStreamingPipeline()
+    application.state.runtime = runtime
+
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
+            data={"model": "whisper-1", "stream": "true"},
+        )
+
+    events = _parse_sse_events(response.text)
+    error_events = [e for e in events if isinstance(e, dict) and "error" in e]
+    assert len(error_events) == 1
+    err = error_events[0]["error"]
+    assert err["type"] == "rate_limit_exceeded"
+    assert "Retry in 5s" in err["message"]
     assert events[-1] == "[DONE]"

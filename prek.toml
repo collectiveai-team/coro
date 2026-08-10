@@ -101,6 +101,27 @@ types = ["python"]
 pass_filenames = false
 priority = 2
 
+# MARK: falsegreen
+# False-green test scanner: flags tests that pass without protecting anything
+# (assertion-free, tautological, swallowed exception, mock typos, dead-code
+# asserts). Pinned so a new upstream release cannot fail the build unannounced.
+#
+# Deliberately a local hook rather than the upstream remote one: upstream's
+# entry hardcodes `falsegreen --staged`, which scans only git-staged files and
+# therefore finds nothing in a clean CI checkout, making the gate silently
+# vacuous. Scanning tests/ explicitly keeps `prek run --all-files` honest.
+#
+# --baseline records the findings that predate adoption, so only NEW findings
+# fail. Config (severity tiers) lives in pyproject.toml [tool.falsegreen].
+[[repos.hooks]]
+id = "falsegreen"
+name = "falsegreen"
+entry = "uvx falsegreen==0.9.2 tests/ --baseline .falsegreen-baseline.json --summary"
+language = "system"
+types = ["python"]
+pass_filenames = false
+priority = 2
+
 # MARK: docker-check
 # Lint the runtime Dockerfile with buildx's built-in checker (BuildKit rules).
 # Uses the default cpu/ubuntu:noble build args; --check only parses, it does

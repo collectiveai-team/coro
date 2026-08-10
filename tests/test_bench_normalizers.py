@@ -1,4 +1,4 @@
-"""Vendored Basic Text Normalizer: the Normalized Metric Lane protocol (ADR 0008)."""
+"""Vendored Basic Text Normalizer: the Normalized Metric Lane protocol (ADR 0011)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import pytest
 
 from coro.bench.normalizers import BasicTextNormalizer
 from coro.bench.normalizers.basic import remove_symbols, remove_symbols_and_diacritics
+
+_DIACRITICS = ("á", "é", "í", "ó", "ú", "ñ", "ü")
 
 
 @pytest.fixture
@@ -21,25 +23,27 @@ class TestDiacriticPreservation:
     """Diacritic preservation is the load-bearing property for Spanish scoring."""
 
     @pytest.mark.parametrize(
-        "text",
+        ("text", "expected"),
         [
-            "está",
-            "año",
-            "canción",
-            "¿Qué más dijo él?",
-            "Perdón, señor Ibáñez.",
-            "aún ratifiqué la petición",
+            ("está", {"á"}),
+            ("año", {"ñ"}),
+            ("canción", {"ó"}),
+            ("¿Qué más dijo él?", {"á", "é"}),
+            ("Perdón, señor Ibáñez.", {"á", "ñ", "ó"}),
+            ("aún ratifiqué la petición", {"é", "ó", "ú"}),
         ],
     )
     def test_spanish_diacritics_survive_normalization(
         self,
         normalizer: BasicTextNormalizer,
         text: str,
+        expected: set[str],
     ):
+        # Asserted on the input too, so a sample that carries no diacritic
+        # cannot make this case pass vacuously.
+        assert {mark for mark in _DIACRITICS if mark in text.lower()} == expected
         normalized = normalizer(text)
-        for mark in ("á", "é", "í", "ó", "ú", "ñ", "ü"):
-            if mark in text.lower():
-                assert mark in normalized, f"{mark!r} lost from {text!r} -> {normalized!r}"
+        assert {mark for mark in _DIACRITICS if mark in normalized} == expected
 
     def test_normalizer_does_not_collapse_esta_and_estar_accented(
         self,

@@ -72,10 +72,17 @@ class NemoStreamingDiarizerFactory:
     the concrete implementation does not collide with that protocol.
     """
 
-    def __init__(self, model, *, tier: str = "very-high") -> None:
+    def __init__(
+        self,
+        model,
+        *,
+        tier: str = "very-high",
+        postprocessing_yaml: str | None = None,
+    ) -> None:
         self._model = model
         self._tier = tier
         self._tier_params = get_latency_tier_params(tier)
+        self._postprocessing_yaml = postprocessing_yaml
         subsampling_factor = getattr(model.sortformer_modules, "subsampling_factor", 8)
         n_spk = getattr(model.sortformer_modules, "n_spk", 4)
         model.sortformer_modules.chunk_len = self._tier_params.chunk_len
@@ -94,6 +101,7 @@ class NemoStreamingDiarizerFactory:
             chunk_right_context=self._tier_params.chunk_right_context,
             subsampling_factor=self._subsampling_factor,
             n_spk=self._n_spk,
+            postprocessing_yaml=self._postprocessing_yaml,
         )
 
 
@@ -110,6 +118,7 @@ class StreamingDiarizer:
         n_spk: int = 4,
         preprocessor=None,
         post_processor: Callable | None = None,
+        postprocessing_yaml: str | None = None,
     ):
         self._model = model
         self._device = model.device
@@ -119,6 +128,7 @@ class StreamingDiarizer:
         self._n_spk = n_spk
         self._preprocessor = preprocessor
         self._post_processor = post_processor
+        self._postprocessing_yaml = postprocessing_yaml
 
         chunk_audio_seconds = chunk_len * subsampling_factor * 0.01
         self._chunk_audio_bytes = int(chunk_audio_seconds * SAMPLE_RATE * BYTES_PER_SAMPLE)
@@ -214,8 +224,12 @@ class StreamingDiarizer:
         from nemo.collections.asr.models.sortformer_diar_models import ts_vad_post_processing
         from nemo.collections.asr.parts.mixins.diarization import load_postprocessing_from_yaml
 
+        # None keeps NeMo's own unconfigured baseline; a resolved Diarization
+        # Post-Processing Configuration path overrides it. See ADR 0010.
         # NeMo accepts None to load default post-processing params; stub types str.
-        cfg_vad_params = load_postprocessing_from_yaml(None)  # pyrefly: ignore[bad-argument-type]
+        cfg_vad_params = load_postprocessing_from_yaml(
+            postprocessing_yaml=self._postprocessing_yaml,  # pyrefly: ignore[bad-argument-type]
+        )
         # total_preds: (1, n_frames, n_spk) — process each speaker independently
         preds_cpu = (
             (total_preds if total_preds is not None else self._combined_preds()).squeeze(0).cpu()

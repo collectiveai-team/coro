@@ -446,9 +446,9 @@ class TestCombineItems:
         assert combined.normalized.orcwer is not None
         assert combined.normalized.dicpwer is not None
         # ...and both lanes are present on every per-item row.
-        for entry in summary.per_item:
-            assert entry.cpwer is not None
-            assert entry.normalized_cpwer is not None
+        assert [entry.session_id for entry in summary.per_item] == ["A", "B"]
+        assert [entry.cpwer is not None for entry in summary.per_item] == [True, True]
+        assert [entry.normalized_cpwer is not None for entry in summary.per_item] == [True, True]
 
     def test_combine_items_counts_failures(self, tmp_path: Path):
         from coro.bench.quality import combine_items
@@ -665,3 +665,33 @@ class TestQualityRun:
         summary = json.loads((quality_dir / "summary.json").read_text())
         assert summary["n_succeeded"] == 1
         assert summary["n_failed"] == 1
+
+
+class TestMeetevalInstallHint:
+    """The printed install hint must be a command that actually works."""
+
+    def _hint(self) -> str:
+        from coro.bench import quality as quality_mod
+
+        with (
+            patch.dict(sys.modules, {"meeteval": None}),
+            patch("builtins.__import__", side_effect=ImportError("no meeteval")),
+            patch("sys.stderr") as mock_stderr,
+            pytest.raises(SystemExit),
+        ):
+            quality_mod._require_meeteval()
+        return "".join(call.args[0] for call in mock_stderr.write.call_args_list)
+
+    def test_hint_uses_the_dependency_group_command(self):
+        assert "uv sync --group bench" in self._hint()
+
+    def test_hint_does_not_claim_an_installable_extra(self):
+        assert "coro[bench]" not in self._hint()
+
+    def test_bench_is_a_dependency_group_not_an_extra(self):
+        """Guards the hint against the packaging metadata drifting back."""
+        import tomllib
+
+        pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+        assert "bench" in pyproject["dependency-groups"]
+        assert "bench" not in pyproject["project"].get("optional-dependencies", {})
