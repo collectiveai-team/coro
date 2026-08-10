@@ -15,7 +15,7 @@ from httpx import ASGITransport, AsyncClient
 
 from coro.api.asyncapi import ASYNCAPI_VERSION, STREAM_CHANNEL_ADDRESS, build_asyncapi_document
 from coro.api.sse import SSE_TERMINATOR
-from coro.app import create_app
+from coro.app import api_metadata, create_app
 from coro.core.models.events import TranscriptDeltaEvent, TranscriptDoneEvent
 from coro.settings import ServerSettings
 
@@ -82,6 +82,28 @@ async def test_each_contract_points_at_the_other(app):
 
     assert "/asyncapi.json" in openapi["info"]["description"]
     assert "/openapi.json" in asyncapi["info"]["description"]
+
+
+# MARK: Metadata without a distribution install
+def test_installed_metadata_is_published_in_the_contract():
+    """With distribution metadata available, summary and license reach the document."""
+    description, license_info = api_metadata("Coro does ASR.", "MIT")
+
+    assert description.startswith("Coro does ASR.")
+    assert license_info == {"name": "MIT", "identifier": "MIT"}
+
+
+def test_missing_metadata_omits_the_license_rather_than_publishing_it_blank():
+    """The CI contract gate exports from an uninstalled tree, so this path is live.
+
+    An empty SPDX identifier is not a valid OpenAPI license object, and a
+    description opening on a blank line is noise.
+    """
+    description, license_info = api_metadata("", "")
+
+    assert license_info is None
+    assert description == description.strip()
+    assert "/asyncapi.json" in description
 
 
 # MARK: The two contracts describe the same endpoint

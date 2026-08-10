@@ -404,6 +404,12 @@ bench = [
     { name = "rich" },
     { name = "simplejson" },
 ]
+contracts = [
+    { name = "fastapi" },
+    { name = "pydantic-settings" },
+    { name = "python-multipart" },
+    { name = "scalar-fastapi" },
+]
 dev = [
     { name = "anyio" },
     { name = "httpx" },
@@ -449,6 +455,12 @@ bench = [
     { name = "pyarrow", specifier = ">=17.0.0" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "simplejson", specifier = ">=3.0.0" },
+]
+contracts = [
+    { name = "fastapi" },
+    { name = "pydantic-settings" },
+    { name = "python-multipart" },
+    { name = "scalar-fastapi" },
 ]
 dev = [
     { name = "anyio", specifier = ">=4.0.0" },

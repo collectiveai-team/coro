@@ -87,24 +87,34 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
-      - name: Install dependencies
-        run: uv sync --frozen --extra cpu --no-dev
+      # Exporting a contract needs only the web layer, so --only-group contracts
+      # skips the project and the ML stack: ~11 MB instead of ~2 GB of CUDA
+      # wheels to serialise two JSON documents. uv resolves the group from
+      # uv.lock, so the versions still match what the app ships.
+      - name: Install contract export dependencies
+        run: uv sync --frozen --only-group contracts
 
-      # The venv installs the project from the working tree, so checking out the
-      # base ref in place re-points it without a second dependency install. Both
-      # documents are therefore produced by the *head* dependency set; a PR that
-      # changes a FastAPI major version needs its diff read with that in mind.
+      # With no project installed, PYTHONPATH is what makes `coro` importable,
+      # which is also what lets the *same* venv export the base ref's source
+      # after an in-place checkout — no second dependency install.
       #
       # The exporter is copied out first because the base ref may predate it —
-      # the PR that introduces this gate is exactly that case. Exports land in
+      # the PR that introduced this gate is exactly that case. Exports land in
       # .tmp/ (gitignored) so the ref switch stays clean.
+      #
+      # Both documents come from the same environment, which is what makes the
+      # diff meaningful; neither carries a version or license, because an
+      # uninstalled source tree has no distribution metadata. That is fine here —
+      # the artifacts CI publishes come from the fully-installed `test` job.
       - name: Export head and base contracts
+        env:
+          PYTHONPATH: .
         run: |
           set -euo pipefail
           cp scripts/export_contracts.py "${RUNNER_TEMP}/export_contracts.py"
-          uv run python "${RUNNER_TEMP}/export_contracts.py" .tmp/head --openapi-only
+          uv run --no-sync python "${RUNNER_TEMP}/export_contracts.py" .tmp/head --openapi-only
           git checkout --detach "${{ github.event.pull_request.base.sha }}"
-          uv run python "${RUNNER_TEMP}/export_contracts.py" .tmp/base --openapi-only
+          uv run --no-sync python "${RUNNER_TEMP}/export_contracts.py" .tmp/base --openapi-only
           git checkout --detach "${{ github.event.pull_request.head.sha }}"
 
       - name: Diff for breaking changes

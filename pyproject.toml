@@ -129,6 +129,22 @@ bench = [
     "rich>=15.0.0",
     "simplejson>=3.0.0",
 ]
+# Everything needed to import coro.app and export the generated API contracts,
+# and nothing else. `uv sync --only-group contracts` skips the project and the ML
+# stack, so the CI breaking-change gate does not download ~2 GB of CUDA wheels
+# just to serialise two JSON documents.
+#
+# Versions are deliberately unconstrained: uv resolves them from uv.lock, so the
+# export runs against the same versions the app ships, while
+# [project].dependencies stays the single place constraints are declared. If the
+# app's module-import path ever grows a new dependency, the export fails loudly
+# here with ModuleNotFoundError rather than drifting silently.
+contracts = [
+    "fastapi",
+    "pydantic-settings",
+    "python-multipart",
+    "scalar-fastapi",
+]
 
 [tool.uv]
 conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]

@@ -35,12 +35,41 @@ API_TITLE = "ASR Diarization Server"
 # Each contract names the other, so a consumer that only ever fetches one
 # document still learns the other half exists. This is contract metadata, not UI
 # copy: the pointer is just as useful to a codegen tool as to a reader.
-API_DESCRIPTION = (
-    f"{coro.__summary__}\n\n"
+_CONTRACT_CROSS_REFERENCE = (
     "This is the request/response half of coro's contract. The server-sent "
     "event stream returned when `stream=true` is published separately as "
     "AsyncAPI at `/asyncapi.json`; `/docs` renders both."
 )
+
+
+def api_metadata(summary: str, license_expression: str) -> tuple[str, dict[str, str] | None]:
+    """Compose the OpenAPI ``info`` description and license from package metadata.
+
+    A source tree with no install has no distribution metadata, so both inputs
+    are empty. Each is dropped rather than published blank: an empty SPDX
+    identifier is not a valid OpenAPI license object, and a description opening
+    with a blank line is just noise. The CI contract gate runs in exactly that
+    environment (``uv sync --only-group contracts`` installs no project), so this
+    is a live path, not a defensive one.
+
+    Args:
+        summary: Distribution summary, or empty when metadata is unavailable.
+        license_expression: SPDX expression, or empty when unavailable.
+
+    Returns:
+        The description, and the license object or ``None`` when unknown.
+
+    """
+    description = "\n\n".join(part for part in (summary, _CONTRACT_CROSS_REFERENCE) if part)
+    license_info = (
+        {"name": license_expression, "identifier": license_expression}
+        if license_expression
+        else None
+    )
+    return description, license_info
+
+
+API_DESCRIPTION, API_LICENSE_INFO = api_metadata(coro.__summary__, coro.__license__)
 
 
 def create_app(settings: ServerSettings | None = None) -> FastAPI:
@@ -152,7 +181,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         title=API_TITLE,
         version=coro.__version__,
         description=API_DESCRIPTION,
-        license_info={"name": coro.__license__, "identifier": coro.__license__},
+        license_info=API_LICENSE_INFO,
         # A relative server keeps the published contract correct behind any
         # host, port or reverse proxy, and is what redocly's no-empty-servers
         # rule asks for.
