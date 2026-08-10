@@ -9,6 +9,24 @@
       "detail": ""
     },
     {
+      "fingerprint": "0e00378a70664e76",
+      "code": "C13b",
+      "file": "tests/test_app_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "cd8e1686aead458e",
+      "code": "C13b",
+      "file": "tests/test_app_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "cd8e1686aead458e",
+      "code": "C13b",
+      "file": "tests/test_app_factory.py",
+      "detail": ""
+    },
+    {
       "fingerprint": "40cd0a2cbaa3d57d",
       "code": "C13b",
       "file": "tests/test_app_factory.py",
@@ -81,78 +99,6 @@
       "detail": ""
     },
     {
-      "fingerprint": "dac23cf114ab57e4",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "3a088291f12911ba",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "30c858643e25bf70",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "1d4fb22efda2ae44",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "dd3a0f6fc7972d66",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "3a088291f12911ba",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "30c858643e25bf70",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "d1add893326af09a",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "2dac4c35f26e2752",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "3a088291f12911ba",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "30c858643e25bf70",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "5ae2f3f86da1c330",
-      "code": "C13b",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
       "fingerprint": "be85de3a694e591b",
       "code": "C13b",
       "file": "tests/test_bench_ami.py",
@@ -195,7 +141,19 @@
       "detail": ""
     },
     {
+      "fingerprint": "64fde75066143e92",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
       "fingerprint": "ef33a4a8ada2d626",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "704739ac184bc75c",
       "code": "C13b",
       "file": "tests/test_bench_ami.py",
       "detail": ""
@@ -231,7 +189,73 @@
       "detail": ""
     },
     {
+      "fingerprint": "e4a5f81d24f3bf54",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
       "fingerprint": "6b1e93094773e2b5",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "aa736d289e1eaf8b",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "0922b46b952adfec",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "a3579ed32d8a5f1a",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "e4a5f81d24f3bf54",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "17ab97567b68e758",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "aa736d289e1eaf8b",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "0922b46b952adfec",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "a3579ed32d8a5f1a",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "e4a5f81d24f3bf54",
+      "code": "C13b",
+      "file": "tests/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "17ab97567b68e758",
       "code": "C13b",
       "file": "tests/test_bench_ami.py",
       "detail": ""
@@ -381,6 +405,24 @@
       "detail": ""
     },
     {
+      "fingerprint": "3ac830c68ccbfba3",
+      "code": "C6",
+      "file": "tests/test_bench_lifecycle.py",
+      "detail": "truthiness of a value, not compared to an expected result"
+    },
+    {
+      "fingerprint": "c3fd4726698d7a53",
+      "code": "C13b",
+      "file": "tests/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "6cf07f2defd80991",
+      "code": "C13b",
+      "file": "tests/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
       "fingerprint": "1e053f1310fc42b0",
       "code": "C13b",
       "file": "tests/test_bench_lifecycle.py",
@@ -394,6 +436,36 @@
     },
     {
       "fingerprint": "635d557daeec56db",
+      "code": "C13b",
+      "file": "tests/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "b1e12d3d17f4bfe6",
+      "code": "C13b",
+      "file": "tests/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "fdb8641838b9922b",
+      "code": "C13b",
+      "file": "tests/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "229500ab1e83a200",
+      "code": "C13b",
+      "file": "tests/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "2a847c0dc3145d2b",
+      "code": "C13b",
+      "file": "tests/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "a7b9198718c60fc6",
       "code": "C13b",
       "file": "tests/test_bench_lifecycle.py",
       "detail": ""
@@ -567,6 +639,12 @@
       "detail": "only checks it is not empty"
     },
     {
+      "fingerprint": "9612ea17b6526475",
+      "code": "C6",
+      "file": "tests/test_bench_process_lookup.py",
+      "detail": "substring search in stringified output, not the exact content"
+    },
+    {
       "fingerprint": "25e87ad6c6145dee",
       "code": "C8",
       "file": "tests/test_bench_quality.py",
@@ -587,6 +665,12 @@
     {
       "fingerprint": "a9c6f85b2de33240",
       "code": "C13b",
+      "file": "tests/test_bench_quality.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "405398ab1f867361",
+      "code": "C23",
       "file": "tests/test_bench_quality.py",
       "detail": ""
     },
@@ -892,6 +976,12 @@
     },
     {
       "fingerprint": "93b908c39bd8a289",
+      "code": "C11a",
+      "file": "tests/test_settings.py",
+      "detail": "literal assigned earlier in this test"
+    },
+    {
+      "fingerprint": "fe5985e999b6ddc8",
       "code": "C11a",
       "file": "tests/test_settings.py",
       "detail": "literal assigned earlier in this test"

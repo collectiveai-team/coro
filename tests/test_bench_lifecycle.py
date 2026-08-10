@@ -423,7 +423,9 @@ class TestBenchManagedServerOutput:
         mock_proc.pid = 55555
         popen = "coro.bench.server_lifecycle.subprocess.Popen"
         health = "coro.bench.server_lifecycle.poll_health"
-        with (
+        # The raiser is `managed.__enter__`, not a call in the body, so the block
+        # is legitimately empty.
+        with (  # falsegreen: ignore
             patch(popen, return_value=mock_proc),
             patch(health, side_effect=TimeoutError("never ready")),
             pytest.raises(TimeoutError),
