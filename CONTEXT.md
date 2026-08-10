@@ -236,6 +236,14 @@ _Avoid_: Full OpenAI API clone
 A supported `response_format` value that maps to the same strict transcription JSON response.
 _Avoid_: Separate output contract, OpenAI response-format clone
 
+**Vendor-Shaped Response Format**:
+An opt-in `response_format` value that projects the transcription response onto a shape another speech vendor already documents (`assemblyai_json`, `deepgram_json`), so that per-word speaker labels have a native slot. A documented subset validated against that vendor's published SDK types, never a partial clone passed off as complete, and never a change to the OpenAI-compatible formats. See ADR 0010.
+_Avoid_: Vendor endpoint clone, vendor auth or request parameters, package-invented word schema
+
+**Per-Word Speaker Attribution**:
+The speaker label assigned to each individual word by maximum overlap against the diarization timeline, carried in `word_segments` alongside the word's real ASR timing and confidence. Reachable at the HTTP boundary only through a Vendor-Shaped Response Format. See ADR 0008.
+_Avoid_: Segment speaker broadcast onto words, interpolated word timings
+
 **Compatibility Model Field**:
 The OpenAI-compatible request `model` field accepted by the transcription endpoint but not used for runtime model selection.
 _Avoid_: Per-request model selection, configured model
@@ -579,6 +587,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "pipeline dependency" was used ambiguously — resolved: it means a FastAPI **Pipeline Dependency**, not direct route app-state lookup or per-request construction.
 - "dependency" was used to imply object construction — resolved: settings can be cached, but loaded adapters and pipelines live in the **Singleton Runtime**.
 - "current server" was used to imply all prototype routes — resolved: the **Supported Endpoint Set** excludes `/`, `/asr`, Deepgram-compatible `/v1/listen`, `/v1/models`, `/v2/audio/transcriptions`, and behavior-specific transcription routes.
+- "Deepgram support" was used to mean both a compatible route and a response shape — resolved: a **Vendor-Shaped Response Format** is a `response_format` value on the existing **Transcription Endpoint**; it adds no route, so the **Supported Endpoint Set** and ADR 0001 are unchanged.
 - "refactor" was used to imply one pipeline implementation — resolved: full-memory and disk-backed behavior remain distinct **Transcription Pipeline** implementations selected by startup configuration.
 - "v1 pipeline" and "v2 pipeline" were used for processing strategies — resolved: use **Full-Memory Pipeline** and **Streaming Pipeline**.
 - "audio file" was used to imply both in-memory bytes and filesystem paths — resolved: pipelines receive **Audio Input** and choose the access mode they require.

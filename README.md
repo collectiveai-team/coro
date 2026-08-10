@@ -203,9 +203,10 @@ ASR-only server, or swap `nemo` → `pyannote` (`--pipeline full-memory`, needs
 | `GET`  | `/health` | Readiness / capability status. |
 | `POST` | `/v1/audio/transcriptions` | OpenAI-compatible transcription (multipart). |
 
-`response_format` accepts `json`, `verbose_json`, and `diarized_json`. With
-`stream=true` the endpoint emits OpenAI-exact SSE
-(`transcript.text.delta` / `transcript.text.done` / `[DONE]`).
+`response_format` accepts `json`, `verbose_json`, and `diarized_json`, plus the
+vendor-shaped `assemblyai_json` and `deepgram_json`, which additionally carry a
+**speaker on every word**. With `stream=true` the endpoint emits OpenAI-exact
+SSE (`transcript.text.delta` / `transcript.text.done` / `[DONE]`).
 
 ## Two transcription pipelines (full-memory vs streaming)
 
@@ -350,7 +351,8 @@ coro --port 8000 \
 ```
 
 Either way, request `response_format=diarized_json` to get per-segment speaker
-labels back. Sortformer handles **≤ 4 speakers**; for more, use pyannote below.
+labels back, or `assemblyai_json` / `deepgram_json` for per-*word* labels.
+Sortformer handles **≤ 4 speakers**; for more, use pyannote below.
 
 ### pyannote setup (gated model + token)
 
@@ -649,9 +651,55 @@ curl -N http://<host>:<port>/v1/audio/transcriptions \
 Conformance is enforced by `tests/test_openai_sdk_conformance.py`, which validates
 every server response against the SDK types.
 
-> Note: standard OpenAI types carry **segment-level** speaker labels only.
-> Word-level speaker/confidence is an internal detail and is not exposed at the
-> HTTP boundary.
+> Note: standard OpenAI types carry **segment-level** speaker labels only —
+> there is no OpenAI-compatible slot for a per-word speaker. Use a vendor-shaped
+> format below to get one.
+
+### Per-word speakers: vendor-shaped formats
+
+Coro assigns a speaker to every word and keeps each word's real ASR timing and
+confidence. Because no OpenAI type can carry that, two opt-in formats expose it
+using shapes those vendors already document:
+
+| `response_format` | Vendor SDK type | Per-word speaker |
+|-------------------|-----------------|------------------|
+| `assemblyai_json` | `assemblyai.types.TranscriptResponse` | `words[].speaker`, `utterances[].words[].speaker` |
+| `deepgram_json`   | `deepgram.types.ListenV1Response` | `results.channels[].alternatives[].words[].speaker`, `results.utterances[].words[].speaker` |
+
+```bash
+curl -s http://localhost:8000/v1/audio/transcriptions \
+  -F file=@audio.wav \
+  -F response_format=assemblyai_json
+```
+
+```json
+{
+  "utterances": [
+    { "speaker": "1", "text": "hola mundo", "start": 0, "end": 1000, "confidence": 0.87,
+      "words": [ { "text": "hola", "speaker": "1", "start": 0, "end": 500, "confidence": 0.91 } ] }
+  ]
+}
+```
+
+Both are **documented subsets** validated against the vendors' own published
+SDK types (`tests/test_vendor_sdk_conformance.py`), not full clones. Only the
+response *shape* is adopted — vendor endpoints, auth and request parameters are
+out of scope. Notable specifics:
+
+- AssemblyAI timestamps are integer **milliseconds**; Deepgram's are float
+  **seconds**.
+- A word the diarizer does not cover has speaker `null`, not a made-up label.
+- Speaker numbering is Coro's (1-based), passed through rather than renumbered,
+  so labels stay comparable with `diarized_json`.
+- Deepgram's `speaker_confidence` is **omitted** — Coro's diarizers binarize
+  their per-frame posteriors, so that value does not exist to report.
+- These are opt-in because they are large: roughly **7×** a `diarized_json`
+  body, since both shapes carry every word twice (flat and nested per
+  utterance).
+
+See `docs/adr/0010-vendor-shaped-response-formats.md` for the fidelity policy.
+`json`, `verbose_json` and `diarized_json` are byte-unchanged by this addition,
+asserted in `tests/test_openai_formats_unchanged.py`.
 
 ## Development
 

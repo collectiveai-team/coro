@@ -168,9 +168,7 @@ def test_unknown_words_are_never_relabelled():
 
 
 def test_sentence_that_is_entirely_unknown_is_unchanged():
-    attributed = _attributed(
-        (0.0, 0.5, " a", UNKNOWN_SPEAKER), (0.5, 1.0, " b.", UNKNOWN_SPEAKER)
-    )
+    attributed = _attributed((0.0, 0.5, " a", UNKNOWN_SPEAKER), (0.5, 1.0, " b.", UNKNOWN_SPEAKER))
     assert _speakers(realign_speaker_flicker(attributed)) == [UNKNOWN_SPEAKER] * 2
 
 
