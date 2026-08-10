@@ -36,7 +36,9 @@ def test_build_diarization_adapter_dispatches_to_nemo():
         adapter = factory.build_diarization_adapter("nemo", "some/model", device="cpu")
 
     assert adapter is sentinel
-    mock_build.assert_called_once_with("some/model", device="cpu", postprocessing=None)
+    mock_build.assert_called_once_with(
+        "some/model", device="cpu", postprocessing=None, max_speakers=4
+    )
 
 
 def test_build_diarization_adapter_passes_postprocessing_to_nemo():
@@ -49,7 +51,9 @@ def test_build_diarization_adapter_passes_postprocessing_to_nemo():
             "nemo", "some/model", device="cpu", postprocessing="dihard3-dev"
         )
 
-    mock_build.assert_called_once_with("some/model", device="cpu", postprocessing="dihard3-dev")
+    mock_build.assert_called_once_with(
+        "some/model", device="cpu", postprocessing="dihard3-dev", max_speakers=4
+    )
 
 
 def test_build_diarization_adapter_ignores_postprocessing_for_pyannote():
@@ -83,7 +87,9 @@ def test_build_streaming_diarizer_factory_nemo():
     ) as mock_factory:
         factory.build_streaming_diarizer_factory("nemo", adapter, tier="low")
 
-    mock_factory.assert_called_once_with(fake_model, tier="low", postprocessing_yaml=None)
+    mock_factory.assert_called_once_with(
+        fake_model, tier="low", postprocessing_yaml=None, max_speakers=4
+    )
 
 
 def test_build_streaming_diarizer_factory_reuses_resolved_postprocessing():
@@ -103,7 +109,7 @@ def test_build_streaming_diarizer_factory_reuses_resolved_postprocessing():
         factory.build_streaming_diarizer_factory("nemo", adapter, tier="low")
 
     mock_factory.assert_called_once_with(
-        fake_model, tier="low", postprocessing_yaml="/resolved/path.yaml"
+        fake_model, tier="low", postprocessing_yaml="/resolved/path.yaml", max_speakers=4
     )
 
 

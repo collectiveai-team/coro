@@ -87,3 +87,107 @@ default.
 This decision does not endorse either vendored preset for any specific
 deployment. Choosing one over the other, or supplying a custom YAML, is a
 per-deployment operator decision this ADR deliberately does not make.
+
+## Target scoring collar as preset provenance
+
+Each vendored preset records the DER scoring collar it was optimised against
+(`dihard3-dev` at 0 s, `callhome-part1` at 0.25 s) alongside the parameters
+themselves. Zero-collar scoring rewards boundary precision and near-zero
+padding; collar-tolerant scoring rewards generous padding and aggressive
+short-segment deletion. Scoring a set against a collar it was not tuned for
+measures the mismatch rather than the model, so the pairing governs *selection*
+— `coro-bench-diar` picks the set matching its own `--collar` by default. It is
+recorded as provenance and is explicitly **not** asserted as a prediction of
+which set will score best.
+
+## Speaker-count gate
+
+NVIDIA's v2 results report this post-processing improving DER for four or fewer
+speakers and *degrading* it at five or more (+0.26 to +0.66 absolute):
+short-segment deletion removes the brief, fragmentary evidence the model has
+for the additional speakers, so applying it unconditionally makes the worst
+case worse.
+
+When a post-processing configuration is in force, the gate estimates the
+speaker count from the raw activity matrix — a speaker counts as present when
+it exceeds a fixed onset threshold for at least 0.5 s in total — and bypasses
+the tuned thresholds above the ceiling. The estimate uses fixed thresholds
+rather than the configured ones, so the gate decision does not depend on the
+parameters it is gating.
+
+**The gate cannot fire on any currently shipped Sortformer revision.** They are
+all 4-speaker models emitting a `T x 4` matrix, so the estimate can never
+exceed 4. It is built now, with the ceiling as a setting rather than a
+constant, so the behaviour is already correct when a >4-speaker Diarization
+Model Selection is configured. This is a deliberate acceptance of presently
+unreachable code, not an oversight — and it is why the batch adapter asks NeMo
+for `include_tensor_outputs=True`: the gate must be evaluable without a second
+inference pass.
+
+## Shared-state hazard
+
+`NemoStreamingDiarizerFactory.__init__` used to write the latency tier onto
+`model.sortformer_modules` permanently. That object is shared with the batch
+Diarization Adapter, and the streaming Sortformer revisions set
+`streaming_mode=True`, so batch `diarize()` runs through `forward_streaming`
+and reads exactly those attributes (`chunk_len`, `chunk_right_context`,
+`fifo_len`, `spkcache_update_period`, `spkcache_len`). Constructing the
+streaming factory therefore silently retuned batch diarization, invalidating
+any batch-vs-streaming comparison made in one process.
+
+The parameters cannot simply be dropped — NeMo reads them at call time — so
+they are applied around each model call and restored afterwards, including on
+exception. Tier validation at construction uses the same scoping, so it leaves
+no residue. This makes construction and teardown safe; it does not make one
+model object safe for concurrent use across different latency tiers, which
+remains a pre-existing constraint.
+
+## Measurement — recorded as evidence, not as grounds for a default
+
+An A/B was run: 34 AMI meetings (Mix-Headset, 15.3 h),
+`diar_streaming_sortformer_4spk-v2`, diarization only. One inference pass
+cached the raw activity matrices and each arm was applied offline to those
+cached predictions, so the arms differ only in post-processing. DER via
+MeetEval, `regions=all`, duration-weighted.
+
+| Arm | collar 0.0 | vs baseline | collar 0.25 | vs baseline |
+|---|---|---|---|---|
+| baseline (unconfigured) | 28.97% | — | 25.89% | — |
+| `dihard3-dev` | 28.10% | −3.02% | 25.28% | −2.35% |
+| `callhome-part1` | 26.40% | −8.89% | 20.75% | −19.86% |
+
+| Arm | collar | better | worse | worst single-meeting regression |
+|---|---|---|---|---|
+| `dihard3-dev` | 0.0 | 33 / 34 | 1 | +1.54 pts |
+| `dihard3-dev` | 0.25 | 32 / 34 | 2 | +1.62 pts |
+| `callhome-part1` | 0.0 | 30 / 34 | 4 | +6.82 pts |
+| `callhome-part1` | 0.25 | 31 / 34 | 3 | +0.55 pts |
+
+**This does not change the default, for a reason beyond the original
+single-domain-overfit argument.** Which preset is preferable turns on the
+*decomposition* of the error — how much is missed detection versus false alarm
+— because that is what padding and minimum-duration parameters act on. That
+decomposition is a property of the reference the timelines were scored against,
+not of the model alone. The same Sortformer timelines scored against different
+defensible AMI references produce total DERs within about one point of each
+other while disagreeing about whether the model over-detects or under-detects
+speech. A preset chosen from the total would look validated under either; a
+preset chosen from the decomposition is only as sound as the reference. Until
+that is settled, this measurement is recorded and the default stays unset.
+
+Two further scope limits: it is one corpus, one language and one microphone
+condition, with no measurement of transfer; and the reference speaker-count
+census over those 34 meetings is 33 meetings with exactly 4 speakers and 1 with
+3 — none with 5 or more — so the ≥5-speaker case the gate exists for is
+unmeasured here rather than estimated.
+
+## Further consequences
+
+Both Diarization Flows resolve the setting once and share it, and both apply
+the same gate through one helper, so batch and streaming cannot drift apart in
+how identical predictions become segments.
+
+`None`, the empty string and the literal `none` all resolve to NeMo's
+unconfigured baseline. The default is already the baseline, but an operator
+templating the environment variable can only unset it by writing something, and
+that must resolve rather than fail Strict Startup Validation.

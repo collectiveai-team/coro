@@ -22,6 +22,7 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     assert settings.asr_onnx_vad == "disabled"
     assert settings.asr_onnx_vad_threshold is None
     assert settings.diarization_postprocessing is None
+    assert settings.diarization_postprocessing_max_speakers == 4
     # int8 is a memory-fitting tool, not a speed tool, for the default transducer
     # ASR Model Selection — quantization stays off unless explicitly opted into.
     assert settings.asr_quantization is None
@@ -140,6 +141,31 @@ def test_diarization_postprocessing_defaults_none_and_reads_env(monkeypatch):
     assert ServerSettings(_env_file=None).diarization_postprocessing is None
     monkeypatch.setenv("CORO_DIARIZATION_POSTPROCESSING", "dihard3-dev")
     assert ServerSettings(_env_file=None).diarization_postprocessing == "dihard3-dev"
+
+
+@pytest.mark.parametrize("opt_out", ["none", ""])
+def test_diarization_postprocessing_can_be_returned_to_the_nemo_baseline(monkeypatch, opt_out):
+    """Spelling the baseline explicitly must resolve, not fail startup.
+
+    The default is already the baseline, but an operator templating the variable
+    can only unset it by writing something; '' and 'none' are the two spellings
+    that must not raise.
+    """
+    from coro.backends.diarization.nemo.postprocessing import resolve_postprocessing_yaml
+
+    monkeypatch.setenv("CORO_DIARIZATION_POSTPROCESSING", opt_out)
+    value = ServerSettings(_env_file=None).diarization_postprocessing
+    assert resolve_postprocessing_yaml(value) is None
+
+
+def test_diarization_postprocessing_max_speakers_reads_env(monkeypatch):
+    monkeypatch.setenv("CORO_DIARIZATION_POSTPROCESSING_MAX_SPEAKERS", "8")
+    assert ServerSettings(_env_file=None).diarization_postprocessing_max_speakers == 8
+
+
+def test_diarization_postprocessing_max_speakers_rejects_zero():
+    with pytest.raises(ValidationError):
+        ServerSettings(diarization_postprocessing_max_speakers=0, _env_file=None)
 
 
 @pytest.mark.parametrize("pipeline", ["unknown", "v1", "v2", ""])

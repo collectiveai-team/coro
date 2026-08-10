@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass, fields
 import logging
 import time
 
@@ -11,6 +12,10 @@ import numpy as np
 import torch
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
+from coro.backends.diarization.nemo.postprocessing import (
+    DEFAULT_MAX_SPEAKERS,
+    apply_gated_postprocessing,
+)
 from coro.backends.diarization.segments import convert_diarization_segments
 from coro.core.models import SpeakerSegment
 
@@ -65,6 +70,37 @@ def get_latency_tier_params(tier: str) -> LatencyTierParams:
     return LATENCY_TIER_PARAMS[tier]
 
 
+@contextmanager
+def applied_streaming_params(sortformer_modules, params: LatencyTierParams) -> Iterator[None]:
+    """Apply latency-tier streaming parameters for the duration of the block only.
+
+    ``sortformer_modules`` is owned by the Sortformer model, and that same
+    model object is shared with the batch Diarization Adapter — the batch
+    Diarization Flow reads ``chunk_len``, ``chunk_right_context``,
+    ``fifo_len``, ``spkcache_len`` and ``spkcache_update_period`` off it during
+    ``forward_streaming``/``streaming_update``. Assigning the streaming tier's
+    values permanently therefore silently retunes batch diarization, which
+    invalidates any batch-vs-streaming comparison in one process.
+
+    NeMo reads these attributes at call time, so they cannot simply be left
+    unset; they are applied around each model call and restored afterwards,
+    leaving the shared model exactly as it was found.
+
+    NOTE: this makes construction and teardown safe, not concurrent use. Two
+    streaming requests on different latency tiers sharing one model process
+    would still interleave — the pre-existing single-model concurrency
+    constraint is unchanged by this scoping.
+    """
+    previous = {f.name: getattr(sortformer_modules, f.name) for f in fields(params)}
+    try:
+        for name, value in ((f.name, getattr(params, f.name)) for f in fields(params)):
+            setattr(sortformer_modules, name, value)
+        yield
+    finally:
+        for name, value in previous.items():
+            setattr(sortformer_modules, name, value)
+
+
 class NemoStreamingDiarizerFactory:
     """Produces fresh per-request StreamingDiarizer instances bound to a shared NeMo model.
 
@@ -78,19 +114,20 @@ class NemoStreamingDiarizerFactory:
         *,
         tier: str = "very-high",
         postprocessing_yaml: str | None = None,
+        max_speakers: int = DEFAULT_MAX_SPEAKERS,
     ) -> None:
         self._model = model
         self._tier = tier
         self._tier_params = get_latency_tier_params(tier)
         self._postprocessing_yaml = postprocessing_yaml
+        self._max_speakers = max_speakers
         subsampling_factor = getattr(model.sortformer_modules, "subsampling_factor", 8)
         n_spk = getattr(model.sortformer_modules, "n_spk", 4)
-        model.sortformer_modules.chunk_len = self._tier_params.chunk_len
-        model.sortformer_modules.chunk_right_context = self._tier_params.chunk_right_context
-        model.sortformer_modules.fifo_len = self._tier_params.fifo_len
-        model.sortformer_modules.spkcache_update_period = self._tier_params.spkcache_update_period
-        model.sortformer_modules.spkcache_len = self._tier_params.spkcache_len
-        model.sortformer_modules._check_streaming_parameters()
+        # Validate the tier against NeMo's own constraints without leaving the
+        # shared model retuned: apply, check, restore. Building this factory
+        # must not change what the batch Diarization Adapter does.
+        with applied_streaming_params(model.sortformer_modules, self._tier_params):
+            model.sortformer_modules._check_streaming_parameters()
         self._subsampling_factor = subsampling_factor
         self._n_spk = n_spk
 
@@ -102,6 +139,8 @@ class NemoStreamingDiarizerFactory:
             subsampling_factor=self._subsampling_factor,
             n_spk=self._n_spk,
             postprocessing_yaml=self._postprocessing_yaml,
+            tier_params=self._tier_params,
+            max_speakers=self._max_speakers,
         )
 
 
@@ -119,6 +158,8 @@ class StreamingDiarizer:
         preprocessor=None,
         post_processor: Callable | None = None,
         postprocessing_yaml: str | None = None,
+        tier_params: LatencyTierParams | None = None,
+        max_speakers: int = DEFAULT_MAX_SPEAKERS,
     ):
         self._model = model
         self._device = model.device
@@ -129,6 +170,8 @@ class StreamingDiarizer:
         self._preprocessor = preprocessor
         self._post_processor = post_processor
         self._postprocessing_yaml = postprocessing_yaml
+        self._tier_params = tier_params
+        self._max_speakers = max_speakers
 
         chunk_audio_seconds = chunk_len * subsampling_factor * 0.01
         self._chunk_audio_bytes = int(chunk_audio_seconds * SAMPLE_RATE * BYTES_PER_SAMPLE)
@@ -158,6 +201,17 @@ class StreamingDiarizer:
     @property
     def processed_chunks(self) -> int:
         return self._processed_chunks
+
+    def _streaming_params(self):
+        """Scope the latency-tier parameters to one model call.
+
+        A no-op when no tier params were supplied (the diarizer was built
+        directly rather than through ``NemoStreamingDiarizerFactory``), so the
+        shared model is never touched in that case either.
+        """
+        if self._tier_params is None:
+            return nullcontext()
+        return applied_streaming_params(self._model.sortformer_modules, self._tier_params)
 
     def ingest_pcm_chunk(self, pcm: bytes) -> None:
         self._pcm_buffer += pcm
@@ -219,35 +273,23 @@ class StreamingDiarizer:
         *,
         total_preds: torch.Tensor | None = None,
     ) -> list[SpeakerSegment]:
-        """Run per-speaker VAD post-processing matching the NeMo model's own approach."""
+        """Run per-speaker VAD post-processing matching the NeMo model's own approach.
+
+        Delegates to the shared Diarization Post-Processing Configuration
+        helper so the Streaming Pipeline and the Full-Memory Pipeline cannot
+        drift apart in how identical predictions become segments, and so both
+        honour the same Speaker-Count Post-Processing Gate. See ADR 0010.
+        """
         started = time.perf_counter()
-        from nemo.collections.asr.models.sortformer_diar_models import ts_vad_post_processing
-        from nemo.collections.asr.parts.mixins.diarization import load_postprocessing_from_yaml
 
-        # None keeps NeMo's own unconfigured baseline; a resolved Diarization
-        # Post-Processing Configuration path overrides it. See ADR 0010.
-        # NeMo accepts None to load default post-processing params; stub types str.
-        cfg_vad_params = load_postprocessing_from_yaml(
-            postprocessing_yaml=self._postprocessing_yaml,  # pyrefly: ignore[bad-argument-type]
+        preds = total_preds if total_preds is not None else self._combined_preds()
+        raw_segments = apply_gated_postprocessing(
+            preds,
+            n_spk=self._n_spk,
+            postprocessing_yaml=self._postprocessing_yaml,
+            subsampling_factor=self._subsampling_factor,
+            max_speakers=self._max_speakers,
         )
-        # total_preds: (1, n_frames, n_spk) — process each speaker independently
-        preds_cpu = (
-            (total_preds if total_preds is not None else self._combined_preds()).squeeze(0).cpu()
-        )
-        subsampling_factor = self._subsampling_factor
-
-        raw_segments: list[tuple[float, float, int]] = []
-        for spk_id in range(self._n_spk):
-            spk_preds = preds_cpu[:, spk_id]  # (n_frames,)
-            ts_mat = ts_vad_post_processing(
-                spk_preds,
-                # NeMo consumes the PostProcessingParams dataclass; stub types OmegaConf.
-                cfg_vad_params=cfg_vad_params,  # pyrefly: ignore[bad-argument-type]
-                unit_10ms_frame_count=subsampling_factor,
-                bypass_postprocessing=False,
-            )
-            for start, end in ts_mat.detach().cpu().tolist():
-                raw_segments.append((start, end, spk_id))
 
         segments = convert_diarization_segments(raw_segments, duration=duration)
         logger.info(
@@ -316,14 +358,19 @@ class StreamingDiarizer:
             mel_len = torch.tensor([target_frames], device=self._device)
 
             seed_preds = torch.zeros((1, 0, self._n_spk), device=self._device)
-            self._streaming_state, chunk_preds = self._model.forward_streaming_step(
-                signal_t,
-                mel_len,
-                self._streaming_state,
-                seed_preds,
-                left_offset=0,
-                right_offset=right_offset,
-            )
+            # NeMo reads the latency-tier parameters off the shared
+            # sortformer_modules during this call, so they are applied here and
+            # restored immediately afterwards rather than being written once at
+            # construction — the same model object backs the batch adapter.
+            with self._streaming_params():
+                self._streaming_state, chunk_preds = self._model.forward_streaming_step(
+                    signal_t,
+                    mel_len,
+                    self._streaming_state,
+                    seed_preds,
+                    left_offset=0,
+                    right_offset=right_offset,
+                )
         self._pred_chunks.append(chunk_preds.detach().cpu())
         self._total_preds = seed_preds
 
