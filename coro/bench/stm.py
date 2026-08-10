@@ -384,20 +384,27 @@ def ami_meeting_to_stm(ami_root: Path, meeting_id: str) -> str:
     word timing, groups words into segments, and returns STM text sorted by
     (start_time, speaker).
 
-    Known limitations of this reference, measured and tracked, not fixed here:
+    Two known limitations of this reference, measured, neither fixed here:
 
-    - Each emitted line spans ``min(word.start)..max(word.end)`` of one AMI
-      segment, so intra-turn pauses are marked as speech. The community AMI
-      diarization setup (``BUTSpeechFIT/AMI-diarization-setup``) explicitly does
-      not merge across pauses, and forced-alignment references are tighter still.
-      Scored against forced-alignment RTTMs at a 0 s collar, this reference differs
-      by ~43% DER — almost entirely boundaries, not speaker identity.
-    - :func:`_read_segments` drops any AMI segment whose word-id range starts or
-      ends on a non-``<w>`` element (``<disfmarker>``, ``<vocalsound>``,
-      ``<gap>``), which loses 18-31% of the annotated words.
+    - **Dropped segments (has a fix in flight).** :func:`_read_segments` resolves a
+      segment's word-id range against an index built from ``<w>`` alone, but AMI
+      interleaves ``<disfmarker>``, ``<vocalsound>`` and ``<gap>`` into the same id
+      sequence, so a range terminating on one resolves to nothing and the whole
+      segment is silently discarded — 18-31% of the annotated words, depending on
+      the meeting. PR #32 repairs this by indexing every identified element; until
+      it lands, every AMI WER and DER figure is scored against an incomplete
+      reference.
+    - **Loose boundaries (survives that fix).** Each emitted line spans
+      ``min(word.start)..max(word.end)`` of one AMI segment, so intra-turn pauses
+      are marked as speech. That matches the community setup
+      (``BUTSpeechFIT/AMI-diarization-setup``) in speech volume but not the
+      forced-alignment references model cards score AMI against, which are ~24%
+      tighter. The residual disagreement is ~29% DER, almost entirely boundaries
+      rather than speaker identity.
 
-    Consequently both DER and every WER metric scored against this reference are
-    internally comparable but not comparable to published AMI results.
+    The second limitation is not cosmetic: the two references disagree on whether
+    the diarizer over- or under-detects speech, so an error decomposition taken
+    against this reference can select the wrong post-processing parameters.
     """
     lines: list[str] = []
 

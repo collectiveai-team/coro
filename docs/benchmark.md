@@ -45,11 +45,19 @@ own data before trusting absolute numbers.
   rather than from the diarizer, and those spans tile the audio with no silence and
   no overlap — so missed-speech and false-alarm are dominated by ASR segmentation
   and barely move when the diarization model changes. Second, the reference is
-  derived from AMI's manual annotation, whose segment boundaries are far looser
-  than the forced-alignment RTTMs that model cards score against. To compare a
+  derived from AMI's manual annotation, whose segment boundaries are looser than
+  the forced-alignment RTTMs that model cards score against. To compare a
   diarization model against a published figure, score the diarizer's own timeline
   (`coro-bench-diar`, with `--collar 0` for AMI) against a forced-alignment
   reference instead.
+
+  **Do not read the miss / false-alarm split as a property of the model.** Measured
+  on identical Sortformer timelines, the same 8 AMI clips give
+  false-alarm ÷ missed-detection = 0.26 against this reference and 2.33 against a
+  forced-alignment reference. The two disagree about whether the diarizer
+  over-detects or under-detects speech. Post-processing parameters — padding,
+  minimum durations — are selected from exactly that ratio, so a decomposition
+  taken here can select a parameter set that is wrong in sign.
 - **RTFx** — audio seconds ÷ processing wall seconds. **Higher is faster**
   (10× = 10 s of audio per 1 s of compute).
 - **Peak VRAM / host RAM** — peak resident during inference (per server process).
