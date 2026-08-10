@@ -169,7 +169,7 @@ A transcription pipeline implementation that decodes the entire uploaded audio i
 _Avoid_: v1 pipeline, memory pipeline
 
 **Chunked-File Pipeline** *(removed)*:
-A former transcription pipeline implementation that spooled uploaded audio to a file but still materialized decoded PCM before downstream processing. It and the `chunked-file` startup selector have been removed (not aliased) and replaced by the **Streaming Pipeline**; the term is retained only as historical context. See ADR 0002.
+A former transcription pipeline implementation that spooled uploaded audio to a file but still materialized decoded PCM before downstream processing. It and the `chunked-file` startup selector have been removed (not aliased) and replaced by the **Streaming Pipeline**; the term is retained only as historical context. See ADR 0004.
 _Avoid_: v2 pipeline, disk pipeline, active implementation, compatibility alias
 
 **Streaming Pipeline**:
