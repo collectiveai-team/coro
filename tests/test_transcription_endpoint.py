@@ -16,6 +16,7 @@ from httpx import ASGITransport, AsyncClient
 from coro.api.exceptions import UNDECODABLE_MEDIA_MESSAGE
 from coro.app import create_app
 from coro.audio import AudioConversionError
+from coro.backends.asr.concurrency import AsrCapacityError
 from coro.core.models import (
     DiarizationItem,
     ResponseSegment,
@@ -240,6 +241,30 @@ async def test_transcription_endpoint_internal_valueerror_stays_500():
     body = response.json()
     assert body["error"]["type"] == "server_error"
     assert body["error"]["message"] == "Transcription processing failed."
+
+
+@pytest.mark.asyncio
+async def test_transcription_endpoint_sheds_load_at_asr_capacity():
+    """Admission-control rejection is a 429 with a Retry-After hint, not a 500."""
+
+    class _AtCapacityPipeline:
+        async def transcribe(self, audio, *, language=None, prompt=None):
+            raise AsrCapacityError("Server is at ASR capacity.", retry_after_seconds=5.0)
+
+    app = _app_with_pipeline(_AtCapacityPipeline())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+            data={"model": "whisper-1"},
+        )
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "5"
+    body = response.json()
+    assert body["error"]["type"] == "rate_limit_exceeded"
+    assert body["error"]["code"] == "server_overloaded"
+    assert body["error"]["message"] == "Server is at ASR capacity."
 
 
 @pytest.mark.asyncio
