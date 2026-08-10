@@ -156,6 +156,23 @@ class ServerSettings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def resolve_transcript_spill_dir(self) -> ServerSettings:
+        """Resolve the Streaming Pipeline's transcript spill directory to real disk.
+
+        The spill store exists to keep host memory flat, so a RAM-backed
+        directory (``/tmp`` is ``tmpfs`` on most Linux distributions) silently
+        defeats it. When unset, a real-disk default is chosen; when explicitly
+        set to a RAM-backed path, startup fails loudly. Only the Streaming
+        Pipeline spills, so no other pipeline selector is affected.
+        """
+        if self.pipeline != "streaming":
+            return self
+        from coro.pipelines.spill import resolve_spill_dir
+
+        self.transcript_spill_dir = resolve_spill_dir(self.transcript_spill_dir)
+        return self
+
+    @model_validator(mode="after")
     def reject_enabled_diarization_without_model(self) -> ServerSettings:
         """Reject an enabled diarization Backend Provider with no Diarization Model Selection.
 

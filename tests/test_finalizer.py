@@ -87,7 +87,7 @@ def test_finalizer_emits_three_segments(tmp_path):
 
 
 def test_finalizer_defers_speaker_assignment_to_assembly(tmp_path):
-    """Finalizer spills provisional speaker 1; assembly assigns from timeline."""
+    """Finalizer spills unattributed spans; assembly assigns from the timeline."""
     timeline = [
         SpeakerSegment(start=0.0, end=0.8, speaker=2),
         SpeakerSegment(start=0.8, end=2.4, speaker=3),
@@ -96,8 +96,9 @@ def test_finalizer_defers_speaker_assignment_to_assembly(tmp_path):
         finalizer = StreamingTranscriptFinalizer(store)
         finalizer.add_tokens(_TOKENS)
         finalizer.finish()
-        # Stored provisionally as speaker 1 before assembly.
-        assert [s.speaker for s in store.iter_segments()] == ["1", "1", "1"]
+        # Nothing attributed and no words interpolated before assembly.
+        stored = list(store.iter_segments())
+        assert all(s.speaker == -1 and s.words == [] for s in stored)
         streamed = build_streaming_response(store, timeline)
 
     assert [s.speaker for s in streamed.segments] == ["2", "3", "3"]
@@ -110,10 +111,29 @@ def test_finalizer_flushes_unterminated_tail(tmp_path):
         finalizer.add_tokens([_tok(0.0, 0.4, " sin"), _tok(0.4, 0.8, " punto")])
         assert store.segment_count == 0  # nothing finalized yet
         finalizer.finish()
-        segments = list(store.iter_segments())
+        streamed = build_streaming_response(store)
 
-    assert len(segments) == 1
-    assert segments[0].text == "sin punto"
+    assert len(streamed.segments) == 1
+    assert streamed.segments[0].text == "sin punto"
+
+
+def test_finalizer_word_timings_respect_the_overlap_clamp(tmp_path):
+    """Words are interpolated over the clamped span, matching the batch builder.
+
+    Interpolating before the clamp let a segment's last word end past the
+    segment itself, so the streamed word_segments disagreed with the batch ones.
+    """
+    tokens = [_tok(0.0, 1.5, " uno."), _tok(1.0, 2.0, " dos.")]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(tokens)
+        finalizer.finish()
+        streamed = build_streaming_response(store)
+
+    batch = build_transcription_response(tokens, [], duration=2.0)
+    assert streamed.word_segments == batch.word_segments
+    first = streamed.segments[0]
+    assert first.words[-1].end == first.end
 
 
 def test_finalizer_open_buffer_stays_bounded(tmp_path):
