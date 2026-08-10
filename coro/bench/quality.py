@@ -111,16 +111,30 @@ def normalize_transcript_text(text: str) -> str:
     return _BASIC_NORMALIZER(text)
 
 
+def _stm_lines(path: Path):
+    """Yield STM lines from a file, or from every ``.stm`` in a directory.
+
+    meeteval's multifile API accepts a directory of per-session STMs, so the
+    checks around it have to as well — passing one used to raise
+    ``IsADirectoryError`` from inside :func:`score_item`, which is why
+    ``coro-bench-diar``'s combined-across-sessions DER could never run.
+    """
+    paths = sorted(path.glob("*.stm")) if path.is_dir() else [path]
+    for stm_path in paths:
+        yield from stm_path.read_text().splitlines()
+
+
 def is_diarization_only_stm(path: Path) -> bool:
     """Return True when every STM line's text is the diarization-only sentinel.
 
     Such references (e.g. VoxConverse RTTM converted via rttm_to_stm) carry
-    speaker turns but no transcript, so only DER is meaningful.
+    speaker turns but no transcript, so only DER is meaningful. Accepts either
+    a single STM or a directory of them.
     """
     from coro.bench.stm import DIARIZATION_ONLY_TEXT
 
     saw_line = False
-    for line in path.read_text().splitlines():
+    for line in _stm_lines(path):
         parts = line.strip().split(maxsplit=5)
         if len(parts) < 6:
             continue
@@ -131,9 +145,9 @@ def is_diarization_only_stm(path: Path) -> bool:
 
 
 def _count_stm_speakers(path: Path) -> int:
-    """Count distinct speaker labels (column 3) in an STM file."""
+    """Count distinct speaker labels (column 3) in an STM file or directory."""
     speakers: set[str] = set()
-    for line in path.read_text().splitlines():
+    for line in _stm_lines(path):
         parts = line.strip().split(maxsplit=5)
         if len(parts) >= 3:
             speakers.add(parts[2])
@@ -269,6 +283,20 @@ def score_item(
     siWER (SISO-WER) is omitted because AMI data has multiple speakers
     per session, making (session, speaker) pairs non-unique — a hard
     requirement of siWER.
+
+    DER scoring protocol: NIST ``md-eval-22.pl`` via meeteval, at a **0 s collar**
+    with **overlapping speech scored** (``regions="all"``) and **no UEM**, so the
+    whole recording counts. That matches the convention published diarization
+    results for AMI use.
+
+    What does *not* match: when the caller passes a hypothesis built by
+    :func:`coro.bench.stm.hyp_segments_to_stm`, the hypothesis timeline is the
+    ASR's segmentation, not the diarizer's, and those segments tile the audio with
+    no silence and no overlap. Missed-speech and false-alarm are then properties of
+    ASR segmentation and are near-invariant to the diarization model; only
+    speaker-error responds to it. Use ``coro-bench-diar`` (which scores a real
+    diarizer timeline) for model-vs-model diarization comparisons, and pass
+    ``der_collar=0.0`` there to keep this protocol.
     """
     meeteval = _require_meeteval()
 
