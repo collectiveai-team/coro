@@ -62,6 +62,10 @@ dependencies = [
     "onnx-asr[hub]>=0.11.0",
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.27",
+    # Renders the OpenAPI and AsyncAPI contracts from one /docs URL. Official
+    # MIT integration published from the scalar/scalar org; the JS bundle it
+    # loads is pinned and self-hosted (see coro/api/docs.py).
+    "scalar-fastapi>=1.8.2",
     "uvicorn>=0.30.0",
 ]
 

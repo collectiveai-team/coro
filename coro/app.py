@@ -19,6 +19,7 @@ import coro
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from coro.api.docs import register_docs
 from coro.api.errors import transcription_exception_handler
 from coro.api.exceptions import TranscriptionError
 from coro.runtime import RuntimeState
@@ -28,6 +29,18 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+API_TITLE = "ASR Diarization Server"
+
+# Each contract names the other, so a consumer that only ever fetches one
+# document still learns the other half exists. This is contract metadata, not UI
+# copy: the pointer is just as useful to a codegen tool as to a reader.
+API_DESCRIPTION = (
+    f"{coro.__summary__}\n\n"
+    "This is the request/response half of coro's contract. The server-sent "
+    "event stream returned when `stream=true` is published separately as "
+    "AsyncAPI at `/asyncapi.json`; `/docs` renders both."
+)
 
 
 def create_app(settings: ServerSettings | None = None) -> FastAPI:
@@ -133,8 +146,23 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
         # Cleanup: adapters do not currently expose explicit teardown hooks.
 
-    application = FastAPI(title="ASR Diarization Server", lifespan=lifespan)
+    # docs_url/redoc_url are off because Scalar owns /docs: it is the only
+    # renderer that can show the OpenAPI and AsyncAPI contracts together.
+    application = FastAPI(
+        title=API_TITLE,
+        version=coro.__version__,
+        description=API_DESCRIPTION,
+        license_info={"name": coro.__license__, "identifier": coro.__license__},
+        # A relative server keeps the published contract correct behind any
+        # host, port or reverse proxy, and is what redocly's no-empty-servers
+        # rule asks for.
+        servers=[{"url": "/", "description": "This server."}],
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+    )
     application.add_exception_handler(TranscriptionError, transcription_exception_handler)
+    register_docs(application, title=f"{API_TITLE} API")
 
     application.add_middleware(
         CORSMiddleware,

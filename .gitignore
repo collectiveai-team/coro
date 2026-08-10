@@ -23,6 +23,16 @@ coro/_version.py
 /build/
 *.egg-info/
 
+# Self-hosted Scalar bundle: fetched at image build time, ~3.7 MB of minified
+# JS that has no business in a Python repo's history.
+coro/static/
+
+# Exported API contracts. Generated from the running app by CI, linted and
+# diffed there, never committed — they change on every schema edit and would be
+# a permanent merge-conflict tax.
+/openapi.json
+/asyncapi.json
+
 # secrets (varlock) — ignore all .env* except the committed schema/example
 .env.*
 !.env.schema
