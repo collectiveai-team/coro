@@ -67,6 +67,77 @@ def hyp_segments_to_stm(
     return "\n".join(lines) + "\n" if lines else ""
 
 
+def word_segments_to_stm(
+    word_segments: list[dict[str, Any]],
+    recording_id: str,
+    *,
+    channel: str = "1",
+) -> str:
+    """Convert a response ``word_segments`` list to STM text.
+
+    Consecutive words sharing a speaker are grouped into one maximal
+    same-speaker run per STM line, so the file carries the per-word speaker
+    truth rather than a segment-level summary of it. Words are ordered by start
+    time first; a run ends whenever the speaker changes.
+    """
+    usable = [
+        word
+        for word in word_segments
+        if word.get("start") is not None
+        and word.get("end") is not None
+        and _clean_text(str(word.get("word", "")))
+    ]
+    usable.sort(key=lambda word: float(word["start"]))
+
+    lines: list[str] = []
+    run: list[dict[str, Any]] = []
+
+    def flush() -> None:
+        if not run:
+            return
+        start = min(float(word["start"]) for word in run)
+        end = max(float(word["end"]) for word in run)
+        text = _clean_text(" ".join(str(word.get("word", "")) for word in run))
+        if end > start and text:
+            speaker = str(run[0].get("speaker", "UNKNOWN"))
+            lines.append(f"{recording_id} {channel} {speaker} {start:.3f} {end:.3f} {text}")
+
+    for word in usable:
+        if run and str(word.get("speaker", "UNKNOWN")) != str(run[0].get("speaker", "UNKNOWN")):
+            flush()
+            run = []
+        run.append(word)
+    flush()
+
+    lines.sort(key=lambda line: (float(line.split()[3]), line.split()[2]))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def hyp_response_to_stm(
+    response: dict[str, Any],
+    recording_id: str,
+    *,
+    channel: str = "1",
+) -> str:
+    """Build the Hypothesis STM from the richest speaker source the response has.
+
+    Prefers ``word_segments`` — the per-word speaker labels — and falls back to
+    ``segments``. The preference is what keeps WDER measuring per-word
+    attribution: once a response segment's speaker becomes a duration-weighted
+    majority *summary* of its words (issue ``12``), scoring from ``segments``
+    would measure the summary instead, and abstention would vanish from the
+    hypothesis before it could be counted.
+
+    The fallback is not dead code: the ``diarized_json`` wire format carries no
+    word field today, so every response the benchmark currently receives takes
+    it. Both sources agree while a segment holds exactly one speaker.
+    """
+    word_segments = response.get("word_segments") or response.get("words") or []
+    if word_segments and any(word.get("speaker") is not None for word in word_segments):
+        return word_segments_to_stm(word_segments, recording_id, channel=channel)
+    return hyp_segments_to_stm(response.get("segments", []), recording_id, channel=channel)
+
+
 def slice_stm_window(
     stm_text: str,
     start: float,

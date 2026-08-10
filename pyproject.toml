@@ -245,6 +245,11 @@ max-complexity = 10
     "C901",
 ]
 "coro/bench/cli.py" = ["S108", "DTZ005"]
+# The default --out-dir is a local, non-secret scratch path stamped with local wall time.
+"coro/bench/cli_args.py" = ["S108", "DTZ005"]
+# Mirrors coro/bench/run.py: the sampler's tests must spawn a real process tree
+# (`sh`, and `pgrep` as the reference implementation) to have anything to walk.
+"tests/test_bench_run.py" = ["S603", "S607"]
 "coro/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
 # Clip utilities shell out to the system ffmpeg binary by name.
 "coro/bench/utils/make_ami_clip.py" = ["S603", "S607"]
@@ -302,3 +307,23 @@ replace-imports-with-any = ["onnxruntime_genai", "pyannote.audio"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+
+# MARK: falsegreen
+# False-green test scanner: flags tests that pass without protecting anything.
+# Exit contract is 0 clean / 10 low-only / 20 high. The prek hook runs it
+# against .falsegreen-baseline.json, so the findings that already existed when
+# the tool was adopted are recorded debt and only NEW findings fail the build.
+# Regenerate the baseline deliberately, never to silence a fresh finding:
+#   uvx falsegreen==0.9.2 tests/ --write-baseline .falsegreen-baseline.json
+[tool.falsegreen]
+
+# The diagnostic tier is off by default upstream; opt in only where the signal
+# is worth the noise. "info" findings never affect the exit code.
+# D1 (Assertion Roulette, 182 hits) and D5 (Inline Setup Excess, 51 hits) are
+# deliberately left off: both are readability nits rather than ways a test stays
+# green while broken, and at that volume they bury the findings that matter.
+[tool.falsegreen.severity]
+D3 = "info" # Duplicate Assert
+D6 = "info" # Debug Print left in a test
+M2 = "info" # Long Test Method

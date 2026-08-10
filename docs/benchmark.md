@@ -12,7 +12,8 @@ own data before trusting absolute numbers.
 ## Hardware & setup
 
 - GPU: **RTX 3070 Laptop (8 GB)**, CPU: loaded laptop CPU.
-- Diarization: **NeMo Sortformer** (`nvidia/diar_streaming_sortformer_4spk-v2`).
+- Diarization: **NeMo Sortformer** (`nvidia/diar_streaming_sortformer_4spk-v2`,
+  CC-BY-4.0 — see the README *Model licensing* table).
 - Pipeline: `full-memory`. ASR precision: **fp16** on GPU, **fp32** on CPU.
 - `--reps 2`; quality scored from rep 1, performance averaged across reps.
 

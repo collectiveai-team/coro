@@ -309,10 +309,10 @@ per-capability Backend Adapter Factory (see ADR 0007). Select it with
 > audio. Enabling it is one setting: `CORO_BACKEND_DIARIZATION=nemo`. Rationale
 > and numbers: [docs/benchmark.md](docs/benchmark.md#diarization-by-default-stays-off).
 
-| Backend (`CORO_BACKEND_DIARIZATION`) | Default model | Speakers | Streaming | Gated / token | Install |
-|---|---|---|---|---|---|
-| `nemo` | `nvidia/diar_streaming_sortformer_4spk-v2` | **≤ 4** (4-speaker Sortformer) | ✅ works with `CORO_PIPELINE=streaming` | no | core install |
-| `pyannote` | `pyannote/speaker-diarization-community-1` | **unbounded** — handles **> 4** | ❌ batch/whole-file only | **yes — Hugging Face token required** | `--extra diar-pyannote` |
+| Backend (`CORO_BACKEND_DIARIZATION`) | Default model | Model licence | Speakers | Streaming | Gated / token | Install |
+|---|---|---|---|---|---|---|
+| `nemo` | `nvidia/diar_streaming_sortformer_4spk-v2` | CC-BY-4.0 | **≤ 4** (4-speaker Sortformer) | ✅ works with `CORO_PIPELINE=streaming` | no | core install |
+| `pyannote` | `pyannote/speaker-diarization-community-1` | CC-BY-4.0 | **unbounded** — handles **> 4** | ❌ batch/whole-file only | **yes — Hugging Face token required** | `--extra diar-pyannote` |
 
 **Which to pick:**
 
@@ -326,6 +326,25 @@ per-capability Backend Adapter Factory (see ADR 0007). Select it with
   and is rejected at startup if you select `CORO_PIPELINE=streaming` (use
   `full-memory`). The model is **gated**: you must accept its conditions on the
   Hugging Face model page and provide a token.
+
+### Model licensing
+
+`coro-asr` itself is MIT (see [`LICENSE`](LICENSE)), but **model weights carry
+their own licences** and you are responsible for complying with them. Every
+diarization model this project names:
+
+| Model | Licence | Commercial use | Used by `coro-asr` |
+|---|---|---|---|
+| [`nvidia/diar_streaming_sortformer_4spk-v2`](https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2) (streaming Sortformer) | **CC-BY-4.0** | ✅ permitted, with attribution | ✅ default for `--backend-diarization nemo` |
+| [`nvidia/diar_sortformer_4spk-v1`](https://huggingface.co/nvidia/diar_sortformer_4spk-v1) (batch Sortformer) | **CC-BY-NC-4.0 — non-commercial only** | ❌ **not permitted** | ❌ never a default; named here only as the earlier, offline-only Sortformer |
+| [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1) | **CC-BY-4.0** (gated — accept conditions + token) | ✅ permitted, with attribution | ✅ default for `--backend-diarization pyannote` |
+
+The NeMo backend accepts any Sortformer checkpoint via `CORO_MODEL_DIARIZATION`,
+so `nvidia/diar_sortformer_4spk-v1` *will* load if you ask for it explicitly —
+but it is **CC-BY-NC-4.0**, so doing so makes your deployment non-commercial.
+Leave `CORO_MODEL_DIARIZATION` unset to get the permissively licensed streaming
+default. When adding a new diarization model to this project, add its licence to
+the table above.
 
 ### NeMo Sortformer setup (default, no token)
 
@@ -546,13 +565,22 @@ meaningless score.
 
 ### Running benchmarks
 
-`coro-bench` scores a **running** server — it attaches over HTTP and does *not*
-start one for you. Install the bench tooling (MeetEval + samplers) and start the
-server you want to measure first:
+By default `coro-bench` **starts and stops the server it measures** (a
+*bench-managed* server): it spawns `coro` on a free port with the `CORO_*` env
+vars implied by the `--server-*` flags, waits for `/health` to report ready and
+warmup-ready, runs the workload, and tears the server down afterwards. Install
+the bench tooling first:
 
 ```bash
 uv sync --group bench                       # meeteval, nvidia-ml-py, rich
+```
+
+To measure a server you started yourself (a *bench-attached* server), pass
+`--server-url`; the `--server-*` flags are then rejected as mutually exclusive:
+
+```bash
 uv run --group bench coro --port 8123 &     # server under test (add --extra cuda for GPU)
+uv run --group bench coro-bench all --server-url http://127.0.0.1:8123 ...
 ```
 
 > Pass `--group bench` (and your hardware `--extra`) on **every** `uv run`
@@ -564,7 +592,7 @@ Three subcommands share the same flags:
 
 | Subcommand | Measures |
 |---|---|
-| `quality` | transcription/diarization scores (cpWER, ORC-WER, DI-cpWER, DER) against a reference STM, via MeetEval |
+| `quality` | transcription/diarization scores (cpWER, ORC-WER, DI-cpWER, DER, WDER) against a reference STM, via MeetEval |
 | `performance` | resource + timing of the server process tree (PSS/USS, VRAM, CPU/GPU %, throughput) |
 | `all` | both in a single run |
 
@@ -578,7 +606,6 @@ is the audio filename stem. The package vendors an 11 s `jfk.wav`:
 echo "jfk 1 JFK 0.000 11.000 and so my fellow americans ask not what your country can do for you ask what you can do for your country" > jfk.ref.stm
 
 uv run --group bench coro-bench all \
-  --server-url http://127.0.0.1:8123 \
   --audio coro/bench/data/jfk.wav \
   --reference-stm jfk.ref.stm \
   --out-dir ./bench-out
@@ -603,7 +630,10 @@ plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
 |---|---|
 | `--reps N` | repetitions per workload item (default 1) |
 | `--stream` | drive the server over SSE; `performance`/`all` only (rejected for `quality`) |
-| `--server-pid PID` / `--server-match STR` | which process tree to sample for `performance` (default match: `coro`) |
+| `--server-asr-backend` / `--server-asr-model` / `--server-diar-backend` / `--server-diar-model` / `--server-pipeline` / `--server-port` / `--no-diarization` | how the bench-managed server is launched |
+| `--server-url URL` | attach to an already-running server instead (excludes all `--server-*` launch flags) |
+| `--server-pid PID` / `--server-match STR` | bench-attached only: which process tree to sample (default match: `coro`). An ambiguous or empty match fails the run rather than sampling an unrelated process |
+| `--reuse-reference-stms` | reuse `<ami-root>/stm/*.ref.stm` instead of regenerating them (they then reflect an older STM builder) |
 | `--der-collar SECONDS` / `--der-regions all\|nooverlap\|single` | DER scoring options |
 
 ## Client integration
