@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from coro.core.response import build_transcription_response
 from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.pipelines.finalizer import (
@@ -114,6 +116,32 @@ def test_finalizer_flushes_unterminated_tail(tmp_path):
 
     assert len(streamed.segments) == 1
     assert streamed.segments[0].text == "sin punto"
+
+
+def test_finalizer_word_timings_match_batch_across_the_overlap_clamp(tmp_path):
+    """Both paths agree on word timings even where the clamp shortens a segment.
+
+    Inherited from the streaming-correctness work, which asserted the last word
+    ended exactly at the clamped segment end because words were *interpolated*
+    over that span. Word timings are now the backend's own (ADR 0008), so a word
+    may legitimately extend past its clamped segment end and the tiling
+    assumption no longer holds. The invariant that still matters — and the one
+    the test existed for — is that batch and streaming do not disagree.
+    """
+    tokens = [_tok(0.0, 1.5, " uno."), _tok(1.0, 2.0, " dos.")]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(tokens)
+        finalizer.finish()
+        streamed = build_streaming_response(store)
+
+    batch = build_transcription_response(tokens, [], duration=2.0)
+    assert streamed.word_segments == batch.word_segments
+    assert streamed.segments == batch.segments
+    # Real timings, not interpolated: the clamp moves the segment, not the word.
+    first = streamed.segments[0]
+    assert first.words[-1].end == pytest.approx(1.5, abs=1e-9)
+    assert first.end == pytest.approx(1.0, abs=1e-9)
 
 
 def test_finalizer_open_buffer_stays_bounded(tmp_path):

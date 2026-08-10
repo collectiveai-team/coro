@@ -30,7 +30,7 @@ The key features are:
 - **OpenAI-compatible API** — drop-in `/v1/audio/transcriptions`; clients reuse the official `openai` SDK types (`Transcription` / `TranscriptionVerbose` / `TranscriptionDiarized`) with no custom schema
 - **Audio *and* video input** — uploads are decoded through ffmpeg, so any container it supports works: audio (`.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`, …) and video (`.mp4`, `.mkv`, `.mov`, `.webm`, …); the audio track is extracted to 16 kHz mono PCM automatically — same endpoint, same response shapes
 - **Pluggable diarization backends** — pick per deployment: NVIDIA NeMo Sortformer (streaming-capable, **≤ 4 speakers**) or pyannote community-1 (batch/whole-file, **handles > 4 speakers**); both attribute every segment to a speaker (`diarized_json`), so you get *who spoke, when, and what*
-- **Pluggable ASR backends** — pick per deployment: Faster-Whisper (best accuracy, multilingual), onnx-asr Parakeet (highest GPU throughput), or onnx-genai Nemotron (real-time streaming)
+- **Pluggable ASR backends** — pick per deployment: onnx-asr Parakeet (the default — fastest on CPU *and* GPU, strongest on Spanish), Faster-Whisper (best English meeting accuracy, multilingual), or onnx-genai Nemotron (real-time streaming)
 - **Two transcription pipelines** — `full-memory` (default) decodes and holds the whole recording in RAM for lowest latency on short/medium clips; `streaming` streams 1 s PCM chunks off disk and spills the growing transcript to a per-request on-disk store, trading a little latency for **flat host RAM on arbitrarily long audio**. Select with `CORO_PIPELINE` / `--pipeline` — see [the pipeline comparison](#two-transcription-pipelines-full-memory-vs-streaming)
 - **Streaming over SSE** — OpenAI-exact `transcript.text.delta` / `transcript.text.done` / `[DONE]` events with `stream=true`
 - **Flat-memory long audio** — the streaming pipeline spills the transcript to disk so host RSS stays flat from 11 s to multi-hour recordings
@@ -239,10 +239,13 @@ held in memory — the wire format you get back is identical.
 | Diarization backends | `nemo` *or* `pyannote` | `nemo` only (Sortformer) |
 | Best for | short/medium clips, > 4-speaker pyannote | long/unbounded audio |
 
-For flat RAM on long audio, point `CORO_TRANSCRIPT_SPILL_DIR` at a persistent
-(non-tmpfs) directory — the default temp dir is RAM-backed on many systems,
-which would defeat the spill. See [Benchmarks](#benchmarks) for the measured
-memory behaviour.
+The spill directory needs to be on real disk, and that is handled for you: at
+startup the server picks the system temp dir when it is real disk, otherwise a
+directory under your cache dir, because `/tmp` is tmpfs (RAM-backed) on most
+Linux distributions and spilling there would defeat the spill. Override it with
+`CORO_TRANSCRIPT_SPILL_DIR`; pointing it at a RAM-backed path fails startup
+rather than silently costing you the flat-RAM property. See
+[Benchmarks](#benchmarks) for the measured memory behaviour.
 
 ## ASR backends
 
@@ -252,8 +255,8 @@ The ASR backend is pluggable behind a single adapter contract. Select it with
 
 | Backend (`CORO_BACKEND_ASR`) | Runtime | Typical model (`CORO_MODEL_ASR`) | Notes |
 |---|---|---|---|
-| `faster-whisper` | CTranslate2 | `openai/whisper-medium` | Default. Best accuracy; multilingual. `CORO_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
-| `onnx-asr` | onnxruntime | `nemo-parakeet-tdt-0.6b-v3` | NeMo Parakeet/Canary; multilingual. Offline (batched) → very high GPU throughput. `CORO_ASR_QUANTIZATION` = `int8` (CPU) or unset = fp32 (GPU). |
+| `onnx-asr` | onnxruntime | `nemo-parakeet-tdt-0.6b-v3` | **Default.** NeMo Parakeet/Canary; multilingual, and strongest of the three on Spanish. Offline (batched) → very high GPU throughput. Leave `CORO_ASR_QUANTIZATION` unset (fp32) — `int8` saves memory but does *not* go faster here. |
+| `faster-whisper` | CTranslate2 | `openai/whisper-medium` | Best English meeting accuracy; multilingual. `CORO_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
 | `onnx-genai` | onnxruntime-genai | `onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4` | NVIDIA Nemotron **cache-aware streaming**; 40 locales. Built for low-latency real-time, not batch throughput. Timestamps are 560 ms-resolution. GPU strongly recommended. |
 
 ### Recommended configuration
@@ -261,35 +264,38 @@ The ASR backend is pluggable behind a single adapter contract. Select it with
 Each setting below is shown as an env var; the equivalent CLI flag is the
 `--kebab-case` form (e.g. `--backend-asr onnx-asr`).
 
+The defaults (`onnx-asr` + `nemo-parakeet-tdt-0.6b-v3`, fp32) are already the
+recommended configuration on both CPU and GPU — you only need the settings below
+if you want to move off them.
+
 **GPU (`--extra cuda`):**
 ```bash
-CORO_BACKEND_ASR=onnx-asr
-CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
 CORO_ASR_DEVICE=cuda           # fp32 (leave CORO_ASR_QUANTIZATION unset)
 ```
-Or as CLI flags:
+Or as a CLI flag:
 ```bash
-coro --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
-  --asr-device cuda --port 8000
+coro --asr-device cuda --port 8000
 ```
 Fastest by a wide margin with near-best accuracy. Use `faster-whisper` +
-`float16` if you want the top accuracy point; use `onnx-genai` only for
-real-time low-latency streaming.
+`float16` if you want the top English-meeting accuracy point; use `onnx-genai`
+only for real-time low-latency streaming.
 
-**CPU (`--extra cpu`):**
-```bash
-CORO_BACKEND_ASR=onnx-asr
-CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3
-CORO_ASR_DEVICE=cpu
-CORO_ASR_QUANTIZATION=int8     # ~4× faster than whisper-medium
-```
-For maximum accuracy on CPU (at ~1.3× realtime) use `faster-whisper` with
-`CORO_ASR_COMPUTE_TYPE=int8`. `onnx-genai` is not recommended on CPU.
+**CPU (`--extra cpu`):** nothing to set — the default selection is the CPU pick.
+Measured against `faster-whisper` + `openai/whisper-medium` on the same host:
+**~8.8× the throughput**, **23% lower Spanish WER**, ~1 GB less resident memory,
+and English meeting WER within noise. `onnx-genai` is not recommended on CPU.
 
-**Streaming on long audio:** set `CORO_PIPELINE=streaming` and point
-`CORO_TRANSCRIPT_SPILL_DIR` at a persistent (non-tmpfs) directory so the
-per-request transcript spills to disk and host RSS stays flat regardless of
-recording length. Consume the result over SSE (`stream=true`).
+> **Do not reach for `int8` for speed.** For this transducer model int8 measured
+> **no throughput gain** (+0.6% / −3.6% across two workload sets — inside noise)
+> and cost 3–6% relative WER. Its real benefit is memory: it drops the resident
+> server from ~2.7 GB to ~1.3–1.7 GB. Set `CORO_ASR_QUANTIZATION=int8` to fit a
+> memory budget, never to go faster. Full numbers:
+> [docs/benchmark.md](docs/benchmark.md#quantization-int8-is-a-memory-tool-not-a-speed-tool).
+
+**Streaming on long audio:** set `CORO_PIPELINE=streaming` so the per-request
+transcript spills to disk and host RSS stays flat regardless of recording
+length; the spill directory defaults to real disk automatically. Consume the
+result over SSE (`stream=true`).
 
 ## Diarization backends
 
@@ -299,10 +305,17 @@ per-capability Backend Adapter Factory (see ADR 0007). Select it with
 `CORO_BACKEND_DIARIZATION` + `CORO_MODEL_DIARIZATION`; pick the device with
 `CORO_DIARIZATION_DEVICE` (`auto` | `cpu` | `cuda`).
 
-| Backend (`CORO_BACKEND_DIARIZATION`) | Default model | Speakers | Streaming | Gated / token | Install |
-|---|---|---|---|---|---|
-| `nemo` | `nvidia/diar_streaming_sortformer_4spk-v2` | **≤ 4** (4-speaker Sortformer) | ✅ works with `CORO_PIPELINE=streaming` | no | core install |
-| `pyannote` | `pyannote/speaker-diarization-community-1` | **unbounded** — handles **> 4** | ❌ batch/whole-file only | **yes — Hugging Face token required** | `--extra diar-pyannote` |
+> **Off by default is a deliberate choice, not an oversight.** Turning
+> Sortformer on costs ~24% throughput and ~1 GB of resident memory, adds a
+> ~500 MB download on first start, and caps the server at 4 speakers — so it is
+> opt-in rather than a default that could silently mis-attribute 5-speaker
+> audio. Enabling it is one setting: `CORO_BACKEND_DIARIZATION=nemo`. Rationale
+> and numbers: [docs/benchmark.md](docs/benchmark.md#diarization-by-default-stays-off).
+
+| Backend (`CORO_BACKEND_DIARIZATION`) | Default model | Model licence | Speakers | Streaming | Gated / token | Install |
+|---|---|---|---|---|---|---|
+| `nemo` | `nvidia/diar_streaming_sortformer_4spk-v2` | CC-BY-4.0 | **≤ 4** (4-speaker Sortformer) | ✅ works with `CORO_PIPELINE=streaming` | no | core install |
+| `pyannote` | `pyannote/speaker-diarization-community-1` | CC-BY-4.0 | **unbounded** — handles **> 4** | ❌ batch/whole-file only | **yes — Hugging Face token required** | `--extra diar-pyannote` |
 
 **Which to pick:**
 
@@ -316,6 +329,25 @@ per-capability Backend Adapter Factory (see ADR 0007). Select it with
   and is rejected at startup if you select `CORO_PIPELINE=streaming` (use
   `full-memory`). The model is **gated**: you must accept its conditions on the
   Hugging Face model page and provide a token.
+
+### Model licensing
+
+`coro-asr` itself is MIT (see [`LICENSE`](LICENSE)), but **model weights carry
+their own licences** and you are responsible for complying with them. Every
+diarization model this project names:
+
+| Model | Licence | Commercial use | Used by `coro-asr` |
+|---|---|---|---|
+| [`nvidia/diar_streaming_sortformer_4spk-v2`](https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2) (streaming Sortformer) | **CC-BY-4.0** | ✅ permitted, with attribution | ✅ default for `--backend-diarization nemo` |
+| [`nvidia/diar_sortformer_4spk-v1`](https://huggingface.co/nvidia/diar_sortformer_4spk-v1) (batch Sortformer) | **CC-BY-NC-4.0 — non-commercial only** | ❌ **not permitted** | ❌ never a default; named here only as the earlier, offline-only Sortformer |
+| [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1) | **CC-BY-4.0** (gated — accept conditions + token) | ✅ permitted, with attribution | ✅ default for `--backend-diarization pyannote` |
+
+The NeMo backend accepts any Sortformer checkpoint via `CORO_MODEL_DIARIZATION`,
+so `nvidia/diar_sortformer_4spk-v1` *will* load if you ask for it explicitly —
+but it is **CC-BY-NC-4.0**, so doing so makes your deployment non-commercial.
+Leave `CORO_MODEL_DIARIZATION` unset to get the permissively licensed streaming
+default. When adding a new diarization model to this project, add its licence to
+the table above.
 
 ### NeMo Sortformer setup (default, no token)
 
@@ -351,6 +383,63 @@ coro --port 8000 \
 
 Either way, request `response_format=diarized_json` to get per-segment speaker
 labels back. Sortformer handles **≤ 4 speakers**; for more, use pyannote below.
+
+#### Sortformer post-processing (optional, see ADR 0010)
+
+Sortformer's raw speaker-activity predictions go through a threshold-based
+post-processing step (onset/offset/padding/min-duration). Left unset, coro
+uses NeMo's own unconfigured baseline — no smoothing, no padding. Set
+`CORO_DIARIZATION_POSTPROCESSING` to one of NeMo's own published presets, or
+to a path to a custom YAML in the same schema, to override it:
+
+```bash
+coro --backend-diarization nemo --diarization-postprocessing dihard3-dev
+coro --backend-diarization nemo --diarization-postprocessing none  # explicit baseline
+```
+
+| Preset | Optimized on | Target scoring collar | NVIDIA's domain description |
+|---|---|---|---|
+| `dihard3-dev` | DIHARD III dev split | 0 s | Diverse, challenging recordings across many conditions |
+| `callhome-part1` | CALLHOME (NIST SRE 2000 Disc8) | 0.25 s | Telephone conversations |
+
+**Neither preset is a coro recommendation.** They are NVIDIA's own published
+values for two specific domains; whether either is a good fit for *your*
+deployment's audio depends on how close your traffic is to one of those
+domains — coro does not know that, and does not compute or tune numbers
+against any benchmark on your behalf. If you have a representative sample of
+your own traffic to validate against, supply your own YAML in the same
+`parameters:` schema instead.
+
+**The target collar is part of the parameter set, not a footnote.** Zero-collar
+scoring rewards boundary precision and near-zero padding; collar-tolerant
+scoring rewards generous padding and aggressive short-segment deletion. Scoring
+a set against the collar it was not tuned for measures the mismatch, not the
+model. `coro-bench-diar` therefore defaults to `--postprocessing auto`, which
+picks the preset matching its `--collar`; pass an explicit preset name to
+override, or `none` for NeMo's baseline.
+
+**If you A/B the presets yourself, record which reference you scored against.**
+Which preset wins depends on whether the model is missing speech or inventing
+it, and that split is a property of the reference as much as of the model — two
+defensible references for the same corpus can agree on total DER while
+disagreeing about the direction of the error. A ranking that holds under only
+one reference is not yet a reason to change a default.
+
+##### Speaker-count gate
+
+When post-processing is enabled it is applied only when the estimated speaker
+count is at or below `CORO_DIARIZATION_POSTPROCESSING_MAX_SPEAKERS` (default
+`4`); above it, that recording falls back to NeMo's baseline. NVIDIA's own v2
+results show these thresholds improve DER for four or fewer speakers and
+consistently *degrade* it at five or more, because short-segment deletion
+removes the brief, fragmentary evidence the model has for the extra speakers —
+so applying them unconditionally makes the worst case worse.
+
+**This gate cannot fire on any currently shipped Sortformer revision.** They
+are all 4-speaker models emitting a `T x 4` activity matrix, so the estimate
+can never exceed 4. It is implemented now so the behaviour is already correct
+if a >4-speaker Diarization Model Selection is configured later, and the
+ceiling is a setting rather than a constant for the same reason.
 
 ### pyannote setup (gated model + token)
 
@@ -393,19 +482,23 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 | `CORO_PORT` | `--port` | `8000` | Bind port. |
 | `CORO_CORS_ORIGINS` | `--cors-origins` | `["*"]` | Allowed CORS origins. |
 | `CORO_PIPELINE` | `--pipeline` | `full-memory` | Transcription pipeline selector (`full-memory` \| `streaming`). |
-| `CORO_BACKEND_ASR` | `--backend-asr` | `faster-whisper` | ASR backend provider (`faster-whisper` \| `onnx-asr` \| `onnx-genai`). |
-| `CORO_MODEL_ASR` | `--model-asr` | `openai/whisper-medium` | ASR model selection. |
+| `CORO_BACKEND_ASR` | `--backend-asr` | `onnx-asr` | ASR backend provider (`faster-whisper` \| `onnx-asr` \| `onnx-genai`). |
+| `CORO_MODEL_ASR` | `--model-asr` | `nemo-parakeet-tdt-0.6b-v3` | ASR model selection. |
 | `CORO_ASR_DEVICE` | `--asr-device` | `auto` | ASR device (`auto` \| `cuda` \| `cpu`). |
 | `CORO_ASR_COMPUTE_TYPE` | `--asr-compute-type` | `default` | Faster-Whisper compute type (ignored by `onnx-asr`). |
-| `CORO_ASR_QUANTIZATION` | `--asr-quantization` | _(unset)_ | onnx-asr quantization (e.g. `int8`); ignored by `faster-whisper`. |
+| `CORO_ASR_QUANTIZATION` | `--asr-quantization` | _(unset)_ | onnx-asr quantization (e.g. `int8`); ignored by `faster-whisper`. Unset = fp32; int8 is a memory-fitting option, not a speed one. |
 | `CORO_ASR_ONNX_VAD` | `--asr-onnx-vad` | `disabled` | Silero VAD segmentation for `onnx-asr` (`enabled` \| `disabled`). |
 | `CORO_ASR_ONNX_VAD_THRESHOLD` | `--asr-onnx-vad-threshold` | _(unset)_ | Silero VAD speech-probability threshold; only when VAD enabled. |
+| `CORO_ASR_MAX_CONCURRENCY` | `--asr-max-concurrency` | `0` _(auto)_ | Max ASR inference calls running at once; `0` auto-sizes from the host core count. Ignored by `onnx-genai`, which always serialises. |
+| `CORO_ASR_MAX_QUEUE_DEPTH` | `--asr-max-queue-depth` | `32` | Max ASR calls allowed to queue for a slot; beyond this the request gets HTTP 429 + `Retry-After` instead of waiting indefinitely. |
 | `CORO_BACKEND_DIARIZATION` | `--backend-diarization` | `none` | Diarization backend provider (`none` \| `nemo` \| `pyannote`). |
 | `CORO_MODEL_DIARIZATION` | `--model-diarization` | _(unset)_ | Diarization model; defaults to `nvidia/diar_streaming_sortformer_4spk-v2` (`nemo`) or `pyannote/speaker-diarization-community-1` (`pyannote`). |
 | `CORO_DIARIZATION_DEVICE` | `--diarization-device` | `auto` | Diarization device (`auto` \| `cuda` \| `cpu`). |
 | `CORO_DIARIZATION_LATENCY` | `--diarization-latency` | `very-high` | Streaming Sortformer latency tier (`very-high` \| `high` \| `low` \| `ultra-low`); `nemo` streaming only. |
+| `CORO_DIARIZATION_POSTPROCESSING` | `--diarization-postprocessing` | _(unset)_ | Sortformer post-processing preset (`dihard3-dev` \| `callhome-part1`), a path to a custom YAML, or `none` for NeMo's baseline; `nemo` only, see below. |
+| `CORO_DIARIZATION_POSTPROCESSING_MAX_SPEAKERS` | `--diarization-postprocessing-max-speakers` | `4` | Speaker-count ceiling above which post-processing is bypassed; `nemo` only, see above. No effect on 4-speaker models. |
 | `CORO_HF_TOKEN` | `--CORO-HF-TOKEN` | _(unset)_ | Hugging Face token for gated diarization models (e.g. pyannote community-1). Also read from `HF_TOKEN` / `HUGGING_FACE_HUB_TOKEN` (and matching `--HF-TOKEN` flags) and `.env`; masked in logs. |
-| `CORO_TRANSCRIPT_SPILL_DIR` | `--transcript-spill-dir` | _(system temp)_ | Streaming transcript spill dir; must be real disk (non-tmpfs) for flat RAM. |
+| `CORO_TRANSCRIPT_SPILL_DIR` | `--transcript-spill-dir` | _(first real-disk default)_ | Streaming transcript spill dir. Unset resolves to the system temp dir, or the cache dir when temp is tmpfs. A RAM-backed value is rejected at startup. |
 | `CORO_WARMUP` | `--warmup` | `enabled` | Run warmup against the warmup audio asset at startup (`enabled` \| `disabled`). |
 | `CORO_LOG_LEVEL` | `--log-level` | `info` | Log level (CLI use only). |
 | `CORO_SSL_CERTFILE` | `--ssl-certfile` | _(unset)_ | TLS certificate file path. |
@@ -415,11 +508,12 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 
 > **Picking a backend?** See the full **[leaderboard →
 > docs/benchmark.md](docs/benchmark.md)** (WER, DER, RTFx, VRAM and RAM across
-> backends, with reproduction commands). TL;DR: **faster-whisper
-> `large-v3-turbo`** is the best GPU default — best WER *and* DER, multilingual,
-> ~3 GB VRAM; **faster-whisper `small`** for max GPU throughput; **onnx-asr
-> `parakeet`** for CPU; **nemotron** for real-time streaming. Don't run Whisper
-> through the onnx-asr backend (slower and less accurate than faster-whisper).
+> backends, with reproduction commands). TL;DR: the **default** (onnx-asr
+> `parakeet`, fp32) is the CPU pick and the Spanish pick; **faster-whisper
+> `large-v3-turbo`** is the best English-meeting GPU option; **faster-whisper
+> `small`** for max GPU throughput; **nemotron** for real-time streaming. Don't
+> run Whisper through the onnx-asr backend (slower and less accurate than
+> faster-whisper).
 
 The table below is a separate, ASR-only view (diarization off).
 
@@ -430,18 +524,34 @@ normalized ORC-WER, lower is better. (Absolute WER is high because AMI
 `Mix-Headset` is a hard far-field/overlap benchmark; treat the numbers as a
 *relative* comparison.)
 
+> **Why this table's RTFx differs from
+> [docs/benchmark.md](docs/benchmark.md#reading-the-throughput-tables).** RTFx is
+> a property of the measurement, not the model, and the two documents measure
+> different things: this table is **long-form (10 min+) audio with diarization
+> off**, the leaderboard's headline tables are **60 s clips with diarization
+> on**. Short clips do not amortise per-request cost and diarization is included
+> in the pipeline timing, which is most of the ~18× gap that used to sit
+> unexplained between the `~120×` below and the leaderboard's `6.7×`.
+
 | Backend / model | precision | RTFx (CPU) | RTFx (GPU) | ORC-WER (norm) |
 |---|---|---:|---:|---:|
-| faster-whisper `whisper-medium` | int8/fp16 | 1.3× | ~20× | **42–53%** |
-| onnx-asr `parakeet-tdt-0.6b-v3` | int8 (CPU) / fp32 (GPU) | 5.0× | **~120×** | 44–57% |
-| onnx-genai `nemotron-…-int4` | int4 streaming | ~0.4× (impractical) | ~10× | 44–57% |
+| **onnx-asr `parakeet-tdt-0.6b-v3`** (default) | fp32 | **5.0×** | **~120×** ‡ | 51–57% |
+| faster-whisper `whisper-medium` | int8/fp16 | 0.6× | ~20× ‡ | 52–53% |
+| onnx-genai `nemotron-…-int4` | int4 streaming | ~0.4× (impractical) | ~10× ‡ | 44–57% |
+
+‡ **GPU figures are historical and were not reproduced** by the current
+benchmark program — no artifacts for them exist in this repo. The CPU column and
+the WER column were re-measured on 40 min of AMI clips plus 12 min of Spanish
+FLEURS; `whisper-medium`'s CPU RTFx was previously listed as `1.3×` and measured
+**0.58×**. See [Measured defaults
+(CPU)](docs/benchmark.md#measured-defaults-cpu).
 
 Memory footprint — **baseline** (peak, model + runtime, short clip):
 
 | Backend / model | CPU RAM | GPU VRAM |
 |---|---|---|
-| faster-whisper `whisper-medium` | ~2.0 GB (int8) | ~2.3 GB (fp16) |
-| onnx-asr `parakeet-tdt-0.6b-v3` | ~1.2 GB (int8) / ~2.7 GB (fp32) | ~3.6 GB (fp32) / ~0.6 GB (int8) |
+| onnx-asr `parakeet-tdt-0.6b-v3` (default) | ~2.7 GB (fp32) / ~1.3–1.7 GB (int8) | ~3.6 GB (fp32) / ~0.6 GB (int8) |
+| faster-whisper `whisper-medium` | ~3.8 GB (default compute type) | ~2.3 GB (fp16) |
 | onnx-genai `nemotron-…-int4` | ~1.0 GB | ~1.4 GB |
 
 **Memory is not just the model on long audio.** The default **full-memory**
@@ -465,9 +575,11 @@ segment/word at a time (never materialised). The wire format is unchanged.
 | full-memory | grows ~linearly with length |
 
 Notes:
-- The on-disk store **must live on real disk** for the flat-RSS property. Set
-  `CORO_TRANSCRIPT_SPILL_DIR` to a persistent path; the default temp dir is
-  tmpfs (RAM-backed) on many systems, which would keep the transcript in memory.
+- The on-disk store **must live on real disk** for the flat-RSS property, and
+  the default now guarantees that: startup picks the system temp dir when it is
+  real disk and a cache directory when it is tmpfs (RAM-backed, as `/tmp` is on
+  most Linux distributions). An explicit RAM-backed `CORO_TRANSCRIPT_SPILL_DIR`
+  fails startup instead of silently keeping the transcript in memory.
 - The **non-streaming** `transcribe()` response inherently returns the whole
   transcript as one object, so its peak is O(length) at assembly time — use SSE
   consumption for unbounded audio.
@@ -478,16 +590,19 @@ Notes:
   ~2.3–2.9 GB.
 
 Takeaways:
-- **Quality** is close across all three on this benchmark; faster-whisper
-  `medium` is marginally the most accurate.
-- **Parakeet on GPU is the throughput winner** (~120× — its offline encoder
-  batches frames). On GPU use **fp32**: int8 is *slower* there (onnxruntime
-  inserts many CPU↔GPU copies), lowers accuracy, and only saves VRAM
-  (~0.6 GB vs ~3.6 GB) — rarely worth it.
+- **English meeting quality** is close across all three on this benchmark
+  (parakeet 51.4% vs `whisper-medium` 51.6% normalized ORC-WER — a wash). On
+  **Spanish** the gap is real: parakeet 5.8% vs `whisper-medium` 7.6% WER on
+  FLEURS `es_419`, a 23% relative reduction.
+- **Parakeet is the throughput winner on both devices** — ~8.8× `whisper-medium`
+  on CPU, and its offline encoder batches frames on GPU.
+- **Use fp32, not int8, on either device.** On GPU int8 inserts many CPU↔GPU
+  copies; on CPU it is compute-bound, so int8 measured *no* speed gain and a
+  3–6% relative WER cost. int8's only real payoff is memory.
 - **Nemotron** is a *streaming* model: ~10× on GPU and impractical on CPU
   (~0.4×). Its value is low-latency real-time transcription, not batch speed.
 - **Memory**: all backends fit comfortably on an 8 GB GPU; nemotron (int4) is
-  the lightest, and parakeet int8 is the smallest CPU footprint (~1.2 GB).
+  the lightest, and parakeet int8 is the smallest CPU footprint.
 
 ### Benchmark datasets
 
@@ -497,32 +612,74 @@ only. Each is materialized into a `--clips-dir` of `(<stem>.wav,
 
 | Dataset | License | Metrics | Materialize with |
 |---|---|---|---|
-| **AMI** (English meetings) | CC-BY | WER + DER | `utils.make_ami_clip` |
+| **AMI** (English meetings) | CC-BY | WER + DER | `utils.make_ami_clip` / `--ami-preset` |
 | **VoxConverse** (multi-speaker, in-the-wild) | CC-BY-4.0 | DER only (no transcript) | `utils.make_rttm_clip` |
-| **Common Voice** (single-speaker read speech, any language incl. `es`) | CC0 | WER only (single speaker) | `utils.make_common_voice_clips` |
+| **VoxPopuli** (Spanish parliamentary speech) | CC0-1.0 | WER only (single speaker) | `--spanish-preset voxpopuli` |
+| **FLEURS** (`es_419`, read speech) | CC-BY-4.0 | WER only (single speaker) | `--spanish-preset fleurs` |
+| **Multilingual LibriSpeech** (Spanish) | CC-BY-4.0 | WER only (single speaker) | `--spanish-preset mls` |
 
 Diarization-only references (e.g. VoxConverse) carry speaker turns but no
 words; the report shows their DER and leaves WER blank rather than emitting a
 meaningless score.
 
-> **TODO — apply for Albayzín-RTVE2020.** It is the strongest Spanish target
-> (real peninsular broadcast, *fully human-revised* transcripts **and** speaker
-> labels → trustworthy WER **and** DER), but it is gated: an accredited
-> researcher/company must request access via the RTVE archive
-> (<http://catedrartve.unizar.es/rtvedatabase.html>) and it cannot be
-> redistributed/vendored. Once obtained locally, its RTTM diarization refs feed
-> straight into `utils.make_rttm_clip`. (Avoid the RTVE2018 subtitle-only
-> partitions — those captions are not verbatim.)
+> **Spanish is WER-only.** Every public Spanish corpus above is single-speaker,
+> so the Spanish workload set validates ASR quality and yields no meaningful
+> DER. **Diarization quality is measured on AMI.**
+
+> **Common Voice is no longer supported.** It moved off its previous free
+> distribution channel in late 2025 and is no longer reproducibly fetchable, so
+> the `make_common_voice_clips` utility was removed. Use `--spanish-preset` for
+> Spanish WER.
+
+> **Note — Albayzín-RTVE2020 (out of scope).** It is the strongest Spanish
+> *diarization* target (human-revised transcripts **and** speaker labels), but it
+> is gated behind an RTVE licence and cannot be redistributed, so it is not part
+> of the reproducible workload set. Spanish diarization decisions stay
+> AMI-driven. (Avoid the RTVE2018 subtitle-only partitions — those captions are
+> not verbatim.)
+
+#### Spanish workload set + published-WER calibration
+
+```bash
+# Print the one-time download footprint before committing to a fetch:
+uv run --group bench coro-bench quality --spanish-preset calibration --spanish-fetch-plan
+
+# Materialize + score (audio and Reference STM files land under --spanish-root):
+uv run --group bench coro-bench quality \
+  --spanish-preset calibration --server-url http://127.0.0.1:8123 --out-dir run
+```
+
+Corpora are fetched from the Hugging Face Parquet index one row group at a time,
+so only the rows the preset asks for are downloaded, and the result is cached.
+Each materialised directory ships a `LICENCES.md` and `corpora.json` recording
+the licence, source and item provenance of every corpus.
+
+The `fleurs` and `mls` presets are **calibration sets**: their scored normalized
+ORC-WER is compared against the published figure for the configured ASR Model
+Selection, and a deviation beyond `--calibration-margin` (default `0.10` WER
+points, two-sided) **fails the run with exit code 3**. Matching an external
+figure is the only end-to-end proof the harness is free of systematic error, so
+a large deviation is a harness bug until proven otherwise. Results are written to
+`<out-dir>/quality/calibration.json`.
 
 ### Running benchmarks
 
-`coro-bench` scores a **running** server — it attaches over HTTP and does *not*
-start one for you. Install the bench tooling (MeetEval + samplers) and start the
-server you want to measure first:
+By default `coro-bench` **starts and stops the server it measures** (a
+*bench-managed* server): it spawns `coro` on a free port with the `CORO_*` env
+vars implied by the `--server-*` flags, waits for `/health` to report ready and
+warmup-ready, runs the workload, and tears the server down afterwards. Install
+the bench tooling first:
 
 ```bash
 uv sync --group bench                       # meeteval, nvidia-ml-py, rich
+```
+
+To measure a server you started yourself (a *bench-attached* server), pass
+`--server-url`; the `--server-*` flags are then rejected as mutually exclusive:
+
+```bash
 uv run --group bench coro --port 8123 &     # server under test (add --extra cuda for GPU)
+uv run --group bench coro-bench all --server-url http://127.0.0.1:8123 ...
 ```
 
 > Pass `--group bench` (and your hardware `--extra`) on **every** `uv run`
@@ -534,7 +691,7 @@ Three subcommands share the same flags:
 
 | Subcommand | Measures |
 |---|---|
-| `quality` | transcription/diarization scores (cpWER, ORC-WER, DI-cpWER, DER) against a reference STM, via MeetEval |
+| `quality` | transcription/diarization scores (cpWER, ORC-WER, DI-cpWER, DER, WDER) against a reference STM, via MeetEval |
 | `performance` | resource + timing of the server process tree (PSS/USS, VRAM, CPU/GPU %, throughput) |
 | `all` | both in a single run |
 
@@ -548,7 +705,6 @@ is the audio filename stem. The package vendors an 11 s `jfk.wav`:
 echo "jfk 1 JFK 0.000 11.000 and so my fellow americans ask not what your country can do for you ask what you can do for your country" > jfk.ref.stm
 
 uv run --group bench coro-bench all \
-  --server-url http://127.0.0.1:8123 \
   --audio coro/bench/data/jfk.wav \
   --reference-stm jfk.ref.stm \
   --out-dir ./bench-out
@@ -562,10 +718,13 @@ plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
 
 - `--clips-dir DIR` — a directory of `(<stem>.wav, <stem>.ref.stm)` pairs, e.g.
   produced by the dataset materializers (`utils.make_ami_clip`,
-  `utils.make_common_voice_clips`, `utils.make_rttm_clip`).
+  `utils.make_rttm_clip`).
 - `--ami-preset sample|eval|full` (or `--ami-groups` / `--ami-meetings`) — pull
   AMI meetings into `--ami-root` (default `./amicorpus/`); add `--no-download` to
   use only what is already present.
+- `--spanish-preset voxpopuli|fleurs|mls|calibration|all` — materialize a Spanish
+  workload set from public CC0/CC-BY corpora into `--spanish-root` (default
+  `./spanish-corpora/`) and score it. Mutually exclusive with `--clips-dir`.
 
 #### Useful flags
 
@@ -573,7 +732,10 @@ plus `responses/ hyp/ ref/ quality/ performance/` under `--out-dir`.
 |---|---|
 | `--reps N` | repetitions per workload item (default 1) |
 | `--stream` | drive the server over SSE; `performance`/`all` only (rejected for `quality`) |
-| `--server-pid PID` / `--server-match STR` | which process tree to sample for `performance` (default match: `coro`) |
+| `--server-asr-backend` / `--server-asr-model` / `--server-diar-backend` / `--server-diar-model` / `--server-pipeline` / `--server-port` / `--no-diarization` | how the bench-managed server is launched |
+| `--server-url URL` | attach to an already-running server instead (excludes all `--server-*` launch flags) |
+| `--server-pid PID` / `--server-match STR` | bench-attached only: which process tree to sample (default match: `coro`). An ambiguous or empty match fails the run rather than sampling an unrelated process |
+| `--reuse-reference-stms` | reuse `<ami-root>/stm/*.ref.stm` instead of regenerating them (they then reflect an older STM builder) |
 | `--der-collar SECONDS` / `--der-regions all\|nooverlap\|single` | DER scoring options |
 
 ## Client integration

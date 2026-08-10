@@ -76,11 +76,12 @@ def test_opening_mark_after_a_terminator_does_not_emit_an_empty_run():
 def test_unpunctuated_run_segments_at_the_maximum_duration():
     tokens = [_tok(i * 2.0, (i + 1) * 2.0, f" w{i}") for i in range(12)]
     runs = group_tokens_into_runs(tokens)
-    assert len(runs) > 1
-    for run in runs[:-1]:
-        span = run_span(run)
-        assert span is not None
-        assert span[1] - span[0] >= MAX_SEGMENT_SECONDS
+    # 12 tokens x 2 s = 24 s, so the 15 s fallback closes exactly one run early:
+    # tokens 0-7 (0.0-16.0, the first span to reach the cap) then the remainder.
+    assert [len(run) for run in runs] == [8, 4]
+    # Compare the closed spans to their expected values, not just their presence.
+    assert [run_span(run)[:2] for run in runs] == [(0.0, 16.0), (16.0, 24.0)]
+    assert runs[0][-1].end - runs[0][0].start >= MAX_SEGMENT_SECONDS
 
 
 def test_maximum_duration_fallback_can_be_disabled():

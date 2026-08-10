@@ -131,9 +131,7 @@ def _speaker_islands(attributed: list[_AttributedToken], lo: int, hi: int) -> li
         token, attribution = attributed[index]
         if attribution.speaker == UNKNOWN_SPEAKER:
             continue
-        current = _Island(
-            speaker=attribution.speaker, indices=(index,), duration=token.duration()
-        )
+        current = _Island(speaker=attribution.speaker, indices=(index,), duration=token.duration())
         if islands and islands[-1].speaker == attribution.speaker:
             islands[-1] = islands[-1].merged_with(current)
         else:
