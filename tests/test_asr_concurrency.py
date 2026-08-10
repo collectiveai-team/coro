@@ -111,7 +111,8 @@ async def test_admission_rejects_past_queue_depth_cap():
     holder = asyncio.create_task(_hold())
     await started.wait()
     waiter = asyncio.create_task(_hold())
-    await asyncio.sleep(0)  # let the waiter reach the semaphore
+    # sleep(0) is a cooperative yield to the event loop, not a timing dependency.
+    await asyncio.sleep(0)  # falsegreen: ignore  — let the waiter reach the semaphore
 
     with pytest.raises(AsrCapacityError) as excinfo:
         async with controller.admit():
@@ -139,7 +140,9 @@ def test_serialized_policy_forces_one_permit():
     """A serialised adapter gets one permit regardless of configuration."""
     controller = build_admission_controller(max_concurrency=8, max_queue_depth=4, serialized=True)
     assert controller.max_concurrency == 1
-    assert controller.max_queue_depth == 4
+    # Asserting the pass-through is the point: serialising must clamp concurrency
+    # to 1 without also clobbering the configured queue depth.
+    assert controller.max_queue_depth == 4  # falsegreen: ignore
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +275,8 @@ async def test_adapter_rejects_beyond_queue_depth_with_retry_hint():
 
     busy = asyncio.create_task(adapter.transcribe_pcm(_PCM))
     while adapter.admission.in_flight == 0:  # wait for the permit to be taken
-        await asyncio.sleep(0)
+        # Polls a condition and yields to the event loop; no fixed delay.
+        await asyncio.sleep(0)  # falsegreen: ignore
 
     with pytest.raises(AsrCapacityError) as excinfo:
         await adapter.transcribe_pcm(_PCM)

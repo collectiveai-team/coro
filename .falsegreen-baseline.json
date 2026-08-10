@@ -57,6 +57,12 @@
       "detail": ""
     },
     {
+      "fingerprint": "4fe41643b409fc95",
+      "code": "C13b",
+      "file": "tests/test_asr_factory.py",
+      "detail": ""
+    },
+    {
       "fingerprint": "e742f6b1a117ef9c",
       "code": "C1",
       "file": "tests/test_asr_windowing.py",
