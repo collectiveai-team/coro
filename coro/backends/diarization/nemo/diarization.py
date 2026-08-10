@@ -44,7 +44,7 @@ class NemoDiarizationAdapter:
 
         Exposed so the Backend Adapter Factory can build the streaming
         diarizer factory from the same resolved value — resolved once, shared
-        by both Diarization Flows. See ADR 0009.
+        by both Diarization Flows. See ADR 0010.
         """
         return self._postprocessing_yaml
 
@@ -89,7 +89,7 @@ def build_nemo_diarization_adapter(
         device: ``auto``/``cuda``/``cpu`` device selector.
         postprocessing: Diarization Post-Processing Configuration value — a
             preset name, a custom YAML path, or ``None`` to keep NeMo's own
-            unconfigured baseline. Resolved once here; see ADR 0009.
+            unconfigured baseline. Resolved once here; see ADR 0010.
 
     """
     from nemo.collections.asr.models import SortformerEncLabelModel

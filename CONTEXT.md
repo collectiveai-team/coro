@@ -320,7 +320,7 @@ The adapter-owned choice of batch or incremental speaker timeline generation for
 _Avoid_: Pipeline-owned diarization algorithm, forced batch diarization
 
 **Diarization Post-Processing Configuration**:
-The threshold source a NeMo Diarization Adapter applies to raw Sortformer speaker-activity predictions before emitting segments: `none` (the default) keeps NeMo's own unconfigured baseline, a named preset or a custom YAML path overrides it. Coro vendors NVIDIA's own published presets without computing or recommending threshold values itself; see ADR 0009.
+The threshold source a NeMo Diarization Adapter applies to raw Sortformer speaker-activity predictions before emitting segments: `none` (the default) keeps NeMo's own unconfigured baseline, a named preset or a custom YAML path overrides it. Coro vendors NVIDIA's own published presets without computing or recommending threshold values itself; see ADR 0010.
 _Avoid_: A coro-tuned default, a benchmark-optimized threshold set
 
 **ASR-Only Server**:
@@ -664,4 +664,4 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "ASR lock" was used to imply a pipeline-level concern — resolved: concurrency is an **Adapter Concurrency Policy**.
 - "diarization backend" was used to imply a required server dependency — resolved: diarization is optional, and an **ASR-Only Server** is valid.
 - "diarization chunks" was used to imply pipeline-owned diarization behavior — resolved: **Diarization Flow** belongs to the **Diarization Adapter**.
-- "tune the diarizer" was used to imply coro should pick and ship numbers — resolved: coro exposes the **Diarization Post-Processing Configuration** capability and vendors NVIDIA's own presets verbatim; choosing or supplying a value is a per-deployment operator decision, per ADR 0009.
+- "tune the diarizer" was used to imply coro should pick and ship numbers — resolved: coro exposes the **Diarization Post-Processing Configuration** capability and vendors NVIDIA's own presets verbatim; choosing or supplying a value is a per-deployment operator decision, per ADR 0010.

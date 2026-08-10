@@ -109,7 +109,7 @@ class ServerSettings(BaseSettings):
         description="Diarization Post-Processing Configuration for NeMo Sortformer: "
         "a vendored preset name ('dihard3-dev', 'callhome-part1') or a path to a "
         "custom YAML in the same schema. None keeps NeMo's own unconfigured baseline "
-        "unchanged. Ignored by the pyannote backend. See ADR 0009 — neither preset is "
+        "unchanged. Ignored by the pyannote backend. See ADR 0010 — neither preset is "
         "a coro recommendation; choosing one is a per-deployment operator decision.",
     )
 

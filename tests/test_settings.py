@@ -136,7 +136,7 @@ def test_transcript_spill_dir_defaults_none_and_reads_env(monkeypatch):
 
 def test_diarization_postprocessing_defaults_none_and_reads_env(monkeypatch):
     """Unrestricted like model_diarization: a preset name or a custom path, resolved
-    by the NeMo adapter (see ADR 0009) — settings itself does not validate the value."""
+    by the NeMo adapter (see ADR 0010) — settings itself does not validate the value."""
     assert ServerSettings(_env_file=None).diarization_postprocessing is None
     monkeypatch.setenv("CORO_DIARIZATION_POSTPROCESSING", "dihard3-dev")
     assert ServerSettings(_env_file=None).diarization_postprocessing == "dihard3-dev"

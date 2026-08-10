@@ -1,4 +1,4 @@
-"""Diarization Post-Processing Configuration resolution. See ADR 0009."""
+"""Diarization Post-Processing Configuration resolution. See ADR 0010."""
 
 from __future__ import annotations
 

@@ -384,7 +384,7 @@ coro --port 8000 \
 Either way, request `response_format=diarized_json` to get per-segment speaker
 labels back. Sortformer handles **≤ 4 speakers**; for more, use pyannote below.
 
-#### Sortformer post-processing (optional, see ADR 0009)
+#### Sortformer post-processing (optional, see ADR 0010)
 
 Sortformer's raw speaker-activity predictions go through a threshold-based
 post-processing step (onset/offset/padding/min-duration). Left unset, coro

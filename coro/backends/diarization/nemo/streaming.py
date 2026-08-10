@@ -225,7 +225,7 @@ class StreamingDiarizer:
         from nemo.collections.asr.parts.mixins.diarization import load_postprocessing_from_yaml
 
         # None keeps NeMo's own unconfigured baseline; a resolved Diarization
-        # Post-Processing Configuration path overrides it. See ADR 0009.
+        # Post-Processing Configuration path overrides it. See ADR 0010.
         # NeMo accepts None to load default post-processing params; stub types str.
         cfg_vad_params = load_postprocessing_from_yaml(
             postprocessing_yaml=self._postprocessing_yaml,  # pyrefly: ignore[bad-argument-type]

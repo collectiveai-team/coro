@@ -1,6 +1,6 @@
 """Diarization Post-Processing Configuration resolution for NeMo Sortformer.
 
-See ADR 0009. NeMo's own model card ships two dataset-optimized
+See ADR 0010. NeMo's own model card ships two dataset-optimized
 post-processing presets (``dihard3-dev``, ``callhome-part1``); coro vendors
 them verbatim and lets an operator select one, or supply a custom YAML in
 the same schema, without coro computing or recommending any threshold

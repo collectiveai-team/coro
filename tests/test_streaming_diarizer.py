@@ -469,7 +469,7 @@ def test_default_post_process_uses_resolved_postprocessing_yaml(mock_model):
     """A resolved Diarization Post-Processing Configuration path changes the
     thresholds ts_vad_post_processing actually uses — not just a stored
     attribute. Compares a vendored preset's segments against the raw
-    baseline (None) on identical predictions. See ADR 0009."""
+    baseline (None) on identical predictions. See ADR 0010."""
     from coro.backends.diarization.nemo.postprocessing import resolve_postprocessing_yaml
     from coro.backends.diarization.nemo.streaming import StreamingDiarizer
 

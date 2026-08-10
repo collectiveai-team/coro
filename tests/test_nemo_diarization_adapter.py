@@ -2,7 +2,7 @@
 
 Verifies the batch adapter passes its resolved Diarization Post-Processing
 Configuration value straight through to the real NeMo ``diarize(...,
-postprocessing_yaml=...)`` kwarg. See ADR 0009. No real NeMo model is
+postprocessing_yaml=...)`` kwarg. See ADR 0010. No real NeMo model is
 loaded — the model handle is a fake exposing only ``.diarize``.
 """
 
