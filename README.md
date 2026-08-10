@@ -712,14 +712,14 @@ Behaviour worth knowing:
 
 ### What is and isn't supported
 
-This is a **documented subset**, not a full clone. Of Deepgram's 38
-pre-recorded parameters:
+This is a **documented subset**, not a full clone. Of Deepgram's 37
+pre-recorded parameters — 3 honoured, 16 refused, 18 ignored:
 
 | | parameters |
 |---|---|
-| **honoured** | `diarize`, `utterances`, `language` |
-| **refused** with a `400` | `callback`, `callback_method`, `summarize`, `sentiment`, `topics`, `intents`, `detect_entities`, `paragraphs`, `search`, `measurements`, `redact`, `replace`, `detect_language`, `multichannel` |
-| **accepted and ignored** | `model`, `punctuate`, `smart_format`, `numerals`, `filler_words`, `dictation`, `keywords`, `profanity_filter`, … |
+| **honoured** (3) | `diarize`, `utterances`, `language` |
+| **refused** with a `400` (16) | `callback`, `callback_method`, `summarize`, `sentiment`, `topics`, `custom_topic`, `intents`, `custom_intent`, `detect_entities`, `paragraphs`, `search`, `measurements`, `redact`, `replace`, `detect_language`, `multichannel` |
+| **accepted and ignored** (18) | `model`, `version`, `punctuate`, `smart_format`, `numerals`, `profanity_filter`, `filler_words`, `dictation`, `keywords`, `keyterm`, `diarize_model`, `utt_split`, `tag`, `extra`, `mip_opt_out`, `encoding`, `custom_topic_mode`, `custom_intent_mode` |
 
 Features Coro cannot compute are **refused, not silently dropped**. Ignoring
 `redact=pii` would return a 200 implying PII was removed when it was not;
@@ -730,12 +730,13 @@ transcript — just not tuned the way you asked.
 Also not implemented:
 
 - **Streaming.** Deepgram's live contract is a WebSocket with its own message
-  types. Coro streams only in OpenAI's SSE framing
-  (`/v1/audio/transcriptions?stream=true`), which a Deepgram client cannot
-  consume.
+  types, and covers both `listen/v1`'s `connect` and the whole of `listen/v2`
+  (which is WebSocket-only — real-time recognition with contextual turn
+  detection, not a newer pre-recorded API). Coro streams only in OpenAI's SSE
+  framing (`/v1/audio/transcriptions?stream=true`), which a Deepgram client
+  cannot consume.
 - **URL ingest.** `{"url": "..."}` bodies are refused with a clear message;
   submit audio as the raw request body.
-- **`listen/v2`.**
 
 See `docs/adr/0010-vendor-native-endpoints.md` for the fidelity policy.
 `/v1/audio/transcriptions` is byte-unchanged, asserted in

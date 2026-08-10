@@ -110,29 +110,47 @@ point that vendor's SDK at it. The standard:
 This is a documented subset, and "documented" means the boundary is written
 down rather than discovered by a client at runtime.
 
-| surface | status |
-|---|---|
-| `POST /v1/listen`, raw audio body | **implemented** |
-| `POST /v1/listen`, `application/json` `{"url": ...}` ingest | **refused** with an explicit 400 |
-| `wss://…/v1/listen` streaming (WebSocket) | **not implemented** |
-| `listen/v2` | **not implemented** |
-| 38 pre-recorded parameters | 2 honoured, 15 refused, remainder accepted and ignored |
+Deepgram's `listen` API has **two transports**, not two API versions of one
+transport:
 
-**Honoured:** `diarize`, `utterances`, plus `language` as a hint.
+| surface | transport | status |
+|---|---|---|
+| `POST /v1/listen`, raw audio body | REST | **implemented** |
+| `POST /v1/listen`, `application/json` `{"url": ...}` ingest | REST | **refused** with an explicit 400 |
+| `wss://…/v1/listen` | WebSocket | **not implemented** |
+| `listen/v2` | WebSocket **only** | **not implemented** |
+| 37 pre-recorded parameters | REST | 3 honoured, 16 refused, 18 accepted and ignored |
 
-**Refused** (rule 5): `callback`, `callback_method`, `summarize`, `sentiment`,
-`topics`, `custom_topic`, `intents`, `custom_intent`, `detect_entities`,
-`paragraphs`, `search`, `measurements`, `redact`, `replace`,
-`detect_language`, `multichannel`.
+`listen/v2` is not a newer pre-recorded API. It exposes only `connect` —
+*"real-time conversational speech recognition with contextual turn detection"*
+— with 13 parameters that are all streaming concerns (`eot_threshold`,
+`eot_timeout_ms`, `eager_eot_threshold`, `encoding`, `sample_rate`,
+`language_hint`). There is no `v2` REST surface at all: the SDK has
+`listen/v1/media/` and no `listen/v2/media/`. So v2 is not a separate gap; it
+is part of the streaming gap below, and nothing about it applies to a
+pre-recorded endpoint.
 
-**Accepted and ignored:** `model`, `version`, `punctuate`, `smart_format`,
-`numerals`, `profanity_filter`, `filler_words`, `dictation`, `keywords`,
-`keyterm`, `diarize_model`, `utt_split`, `tag`, `extra`, `mip_opt_out`,
-`encoding`, `sample_rate`, and any parameter Deepgram adds later.
+**Honoured (3):** `diarize`, `utterances`, and `language` as a hint.
 
-`encoding` and `sample_rate` deserve a note: they describe headerless PCM.
-`coro` decodes with ffmpeg, which sniffs the container, so a headerless upload
-fails with the ordinary undecodable-audio 400 rather than being interpreted.
+**Refused (16)** — rule 5: `callback`, `callback_method`, `summarize`,
+`sentiment`, `topics`, `custom_topic`, `intents`, `custom_intent`,
+`detect_entities`, `paragraphs`, `search`, `measurements`, `redact`,
+`replace`, `detect_language`, `multichannel`.
+
+**Accepted and ignored (18):** `model`, `version`, `punctuate`,
+`smart_format`, `numerals`, `profanity_filter`, `filler_words`, `dictation`,
+`keywords`, `keyterm`, `diarize_model`, `utt_split`, `tag`, `extra`,
+`mip_opt_out`, `encoding`, `custom_topic_mode`, `custom_intent_mode`, and any
+parameter Deepgram adds later.
+
+`custom_topic_mode` and `custom_intent_mode` are modifiers, meaningless without
+`custom_topic` / `custom_intent`, which are refused — so the pair is always
+caught by its head parameter.
+
+`encoding` deserves a note, as would `sample_rate` on the streaming transport:
+these describe headerless PCM. `coro` decodes with ffmpeg, which sniffs the
+container, so a headerless upload fails with the ordinary undecodable-audio 400
+rather than being interpreted.
 That is a real gap for raw-PCM clients, left open rather than papered over.
 
 ### Streaming is not implemented, and `coro` streams
@@ -146,6 +164,11 @@ different transport entirely — a WebSocket carrying `Results`, `Metadata`,
 stream, and none of the streaming parameters appear on the pre-recorded
 endpoint, so there is no silent-ignore hazard here — the capability is simply
 absent.
+
+Both `listen/v1` `connect` (30 parameters) and the whole of `listen/v2` (13)
+live on this transport. `listen/v2` adds contextual turn detection, which is a
+capability `coro` has no equivalent of at all: its Streaming Pipeline emits
+transcript deltas, not turn-boundary events.
 
 ADR 0001 excludes WebSocket routes, so implementing it would require amending
 that exclusion a second time, on its own evidence. Recorded as a known gap.
