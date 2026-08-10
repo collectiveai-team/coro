@@ -41,8 +41,8 @@ The server's transcription response converted to STM, written per workload item 
 _Avoid_: Hypothesis Diarization, response JSON
 
 **MeetEval Metric Set**:
-The fixed set of MeetEval scores reported for each workload item: siWER, cpWER, ORC-WER (greedy), DI-cpWER (greedy), and DER.
-_Avoid_: WER alone, custom metric mix
+The fixed set of MeetEval scores reported for each workload item: cpWER, ORC-WER (greedy), DI-cpWER (greedy) — each on both raw and punctuation-normalized text — plus DER. siWER is excluded because SISO-WER requires unique (session, speaker) pairs, which multi-speaker meeting recordings do not satisfy.
+_Avoid_: WER alone, custom metric mix, siWER
 
 **WDER**:
 Word Diarization Error Rate — speaker errors over the words present in both transcripts (correct + substituted), under MeetEval's cpWER speaker assignment. Reported as three numbers: `wder`, `wder_claimed` and `abstention_rate`. The primary metric for per-word speaker attribution; blind to segmentation and undiluted by the ASR error floor. See ADR 0009.
@@ -351,6 +351,8 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Benchmark Run** uses a **Bench-Managed Server** by default and a **Bench-Attached Server** when `--server-url` is passed; the two modes are mutually exclusive.
 - A **Bench-Managed Server** is configured by translating bench CLI flags into the same `CORO_` environment variables used for **Server Startup Selection**.
 - A **Bench-Managed Server** is considered ready only once `/health` reports both **Capability Readiness** and **Warmup Readiness**.
+- A **Bench-Attached Server** identifies its **Server Process Tree** root from `--server-pid`, or by resolving `--server-match` to exactly one process tree outside the benchmark client's own; an unresolved or ambiguous match fails the **Benchmark Run** rather than sampling an unrelated process.
+- A **Reference STM** is regenerated on every **Benchmark Run** unless reuse is explicitly opted into, so it never freezes against an older STM builder.
 - Diarization is enabled by default for both quality and performance subcommands so the **Quality Benchmark** can report cpWER, ORC-WER, DI-cpWER, and DER, and the **Performance Benchmark** measures the production-shaped pipeline.
 - The **Supported Endpoint Set** contains `/health` and the `/v1/audio/transcriptions` **Transcription Endpoint** only.
 - The **Transcription Endpoint** receives the **Configured Transcription Pipeline** through a **Pipeline Dependency**.
@@ -365,6 +367,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - The default **ASR Model Selection** is `openai/whisper-medium`.
 - When NeMo diarization is enabled without an explicit **Diarization Model Selection**, the default is `nvidia/diar_streaming_sortformer_4spk-v2` (CC-BY-4.0).
 - Every **Diarization Model Selection** the project names carries a documented license; a non-commercially licensed model — such as the batch Sortformer `nvidia/diar_sortformer_4spk-v1` (CC-BY-NC-4.0) — is never a default, a recommendation, or an unannotated example.
+- A diarization **Backend Provider** other than `none` combined with an empty **Diarization Model Selection** fails **Strict Startup Validation**; it never degrades silently to an **ASR-Only Server**.
 - A **Configured Transcription Pipeline** preserves the public **Transcription API Contract** while changing internal processing behavior.
 - `/health` reports **Server Startup Selection**, **Capability Readiness**, and **Warmup Readiness** rather than one ambiguous backend field.
 - The **Full-Memory Pipeline** and **Streaming Pipeline** both use shared **ASR Windowing**; they differ in how PCM is sourced.
@@ -428,7 +431,10 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "No — the benchmark converts the transcription response to a **Hypothesis STM** and MeetEval scores DER against the **Reference STM**."
 
 > **Dev:** "Should we report only WER for the **Quality Benchmark**?"
-> **Domain expert:** "No — report the **MeetEval Metric Set** (siWER, cpWER, ORC-WER, DI-cpWER, DER) because each captures a different speaker-attribution assumption."
+> **Domain expert:** "No — report the **MeetEval Metric Set** (cpWER, ORC-WER, DI-cpWER, DER) because each captures a different speaker-attribution assumption."
+
+> **Dev:** "Should the **MeetEval Metric Set** include siWER as well?"
+> **Domain expert:** "No — siWER assumes one speaker per session, which no **Workload Item** with a multi-speaker **Reference STM** satisfies."
 
 > **Dev:** "Did per-word speaker attribution improve? `cpWER − DI-cpWER` barely moved."
 > **Domain expert:** "That KPI reads hypothesis stream count, not attribution — use **WDER**, and read `wder_claimed` against `abstention_rate` rather than the headline alone."
@@ -584,7 +590,7 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "IO" was used to mean both file-interface activity and storage-device pressure — resolved: benchmark output separates **Logical IO Rate** from **Physical IO Rate**.
 - "benchmark" was used to imply both resource comparison and output-quality validation — resolved: split into **Performance Benchmark** and **Quality Benchmark**, optionally combined in one benchmark run.
 - "ground truth" was used for existing output artifacts — resolved: quality scoring uses an explicit **Reference STM** per **Workload Item**.
-- "WER" was used as a single headline number — resolved: a **Quality Benchmark** reports the **MeetEval Metric Set** (siWER, cpWER, ORC-WER, DI-cpWER, DER).
+- "WER" was used as a single headline number — resolved: a **Quality Benchmark** reports the **MeetEval Metric Set** (cpWER, ORC-WER, DI-cpWER, DER).
 - "warmup" was used ambiguously between server lifecycle and benchmark client behavior — resolved: **Server Warmup** runs at startup and gates **Warmup Readiness**, while a **Benchmark Warmup Item** is opt-in client-side and shares the same **Warmup Audio Asset**.
 - "memory CSV" was used for the sampled metrics file — resolved: the file is a **Resource CSV**.
 - "rate" was used without specifying the denominator — resolved: per-sample rates are **Sample Rate Field** values using observed sample duration.

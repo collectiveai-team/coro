@@ -130,3 +130,22 @@ class ServerSettings(BaseSettings):
             )
             raise ValueError(msg)
         return self
+
+    @model_validator(mode="after")
+    def reject_enabled_diarization_without_model(self) -> ServerSettings:
+        """Reject an enabled diarization Backend Provider with no Diarization Model Selection.
+
+        Runs after ``default_enabled_diarization_model``, so a model is only
+        missing here when it was explicitly set to an empty value. Without this
+        check the server silently degrades to an ASR-Only Server, producing
+        single-speaker hypotheses that look like a diarization quality
+        regression rather than a configuration error.
+        """
+        if self.backend_diarization != "none" and not (self.model_diarization or "").strip():
+            msg = (
+                f"Diarization Backend Provider '{self.backend_diarization}' is selected but "
+                "the Diarization Model Selection is empty. Set CORO_MODEL_DIARIZATION to a "
+                "model id, or set CORO_BACKEND_DIARIZATION=none for an ASR-Only Server."
+            )
+            raise ValueError(msg)
+        return self

@@ -363,9 +363,8 @@ def _write_hyp(hyp_dir: Path, item_id: str, result: dict[str, Any]) -> None:
 
 
 def _write_ref(ref_dir: Path, item_id: str, ref_stm_path: Path) -> None:
-    dst = ref_dir / f"{item_id}.ref.stm"
-    if not dst.exists():
-        shutil.copy2(ref_stm_path, dst)
+    """Copy the Reference STM into the run's ``ref/`` directory, overwriting any stale copy."""
+    shutil.copy2(ref_stm_path, ref_dir / f"{item_id}.ref.stm")
 
 
 def _write_manifest(

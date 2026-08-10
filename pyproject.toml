@@ -245,6 +245,8 @@ max-complexity = 10
     "C901",
 ]
 "coro/bench/cli.py" = ["S108", "DTZ005"]
+# The default --out-dir is a local, non-secret scratch path stamped with local wall time.
+"coro/bench/cli_args.py" = ["S108", "DTZ005"]
 # Mirrors coro/bench/run.py: the sampler's tests must spawn a real process tree
 # (`sh`, and `pgrep` as the reference implementation) to have anything to walk.
 "tests/test_bench_run.py" = ["S603", "S607"]
