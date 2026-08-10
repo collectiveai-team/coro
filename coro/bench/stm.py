@@ -383,6 +383,21 @@ def ami_meeting_to_stm(ami_root: Path, meeting_id: str) -> str:
     Walks the AMI annotation XML files under *ami_root*, extracts per-speaker
     word timing, groups words into segments, and returns STM text sorted by
     (start_time, speaker).
+
+    Known limitations of this reference, measured and tracked, not fixed here:
+
+    - Each emitted line spans ``min(word.start)..max(word.end)`` of one AMI
+      segment, so intra-turn pauses are marked as speech. The community AMI
+      diarization setup (``BUTSpeechFIT/AMI-diarization-setup``) explicitly does
+      not merge across pauses, and forced-alignment references are tighter still.
+      Scored against forced-alignment RTTMs at a 0 s collar, this reference differs
+      by ~43% DER — almost entirely boundaries, not speaker identity.
+    - :func:`_read_segments` drops any AMI segment whose word-id range starts or
+      ends on a non-``<w>`` element (``<disfmarker>``, ``<vocalsound>``,
+      ``<gap>``), which loses 18-31% of the annotated words.
+
+    Consequently both DER and every WER metric scored against this reference are
+    internally comparable but not comparable to published AMI results.
     """
     lines: list[str] = []
 

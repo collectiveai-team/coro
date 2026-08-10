@@ -269,6 +269,20 @@ def score_item(
     siWER (SISO-WER) is omitted because AMI data has multiple speakers
     per session, making (session, speaker) pairs non-unique — a hard
     requirement of siWER.
+
+    DER scoring protocol: NIST ``md-eval-22.pl`` via meeteval, at a **0 s collar**
+    with **overlapping speech scored** (``regions="all"``) and **no UEM**, so the
+    whole recording counts. That matches the convention published diarization
+    results for AMI use.
+
+    What does *not* match: when the caller passes a hypothesis built by
+    :func:`coro.bench.stm.hyp_segments_to_stm`, the hypothesis timeline is the
+    ASR's segmentation, not the diarizer's, and those segments tile the audio with
+    no silence and no overlap. Missed-speech and false-alarm are then properties of
+    ASR segmentation and are near-invariant to the diarization model; only
+    speaker-error responds to it. Use ``coro-bench-diar`` (which scores a real
+    diarizer timeline) for model-vs-model diarization comparisons, and pass
+    ``der_collar=0.0`` there to keep this protocol.
     """
     meeteval = _require_meeteval()
 
