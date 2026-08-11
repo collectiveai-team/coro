@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 # Item Models ---------------------------------------------------------------
-class WhisperWord(BaseModel):
+class TranscriptWord(BaseModel):
     """Word-level timestamp item in a segment.
 
     ``start``/``end`` are the ASR backend's real per-word values, and ``speaker``
@@ -36,8 +36,8 @@ class WhisperWord(BaseModel):
     overlap: bool = False
 
 
-class WhisperSegment(BaseModel):
-    """Segment item in the Whisper Response Schema.
+class ResponseSegment(BaseModel):
+    """Segment item in the Strict Transcription Response Schema.
 
     Segments are sentence-shaped, so one may span a speaker turn; ``speaker`` is
     the duration-weighted majority of ``words`` and is ``"-1"`` only when every
@@ -51,11 +51,11 @@ class WhisperSegment(BaseModel):
     end: float
     text: str
     speaker: str
-    words: list[WhisperWord]
+    words: list[TranscriptWord]
     overlap: bool = False
 
 
-class WhisperTranscriptItem(BaseModel):
+class TranscriptItem(BaseModel):
     """Transcript convenience item."""
 
     model_config = ConfigDict(extra="forbid")
@@ -65,7 +65,7 @@ class WhisperTranscriptItem(BaseModel):
     text: str
 
 
-class WhisperDiarizationItem(BaseModel):
+class DiarizationItem(BaseModel):
     """Diarization convenience item."""
 
     model_config = ConfigDict(extra="forbid")
@@ -95,8 +95,8 @@ class TranscriptionResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    segments: list[WhisperSegment]
-    word_segments: list[WhisperWord]
-    transcript: list[WhisperTranscriptItem]
-    diarization: list[WhisperDiarizationItem]
+    segments: list[ResponseSegment]
+    word_segments: list[TranscriptWord]
+    transcript: list[TranscriptItem]
+    diarization: list[DiarizationItem]
     raw_words: list[RawWord]

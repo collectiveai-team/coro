@@ -1,6 +1,6 @@
 """OpenAI-shaped boundary schemas for ``POST /v1/audio/transcriptions``.
 
-Mirrors ``openai.types.audio`` exactly; ``DiarizadJsonResponse`` is a
+Mirrors ``openai.types.audio`` exactly; ``DiarizedJsonResponse`` is a
 byte-exact clone of ``TranscriptionDiarized``. Conformance is asserted in
 ``tests/test_openai_sdk_conformance.py`` and the bytes are frozen in
 ``tests/test_openai_formats_unchanged.py``.
@@ -75,7 +75,7 @@ class VerboseJsonResponse(BaseModel):
     usage: TranscriptionUsage
 
 
-class DiarizadJsonSegment(BaseModel):
+class DiarizedJsonSegment(BaseModel):
     """Speaker-annotated segment in a diarized JSON response."""
 
     model_config = ConfigDict(extra="forbid")
@@ -88,7 +88,7 @@ class DiarizadJsonSegment(BaseModel):
     speaker: str
 
 
-class DiarizadJsonResponse(BaseModel):
+class DiarizedJsonResponse(BaseModel):
     """OpenAI-style diarized JSON transcription response."""
 
     model_config = ConfigDict(extra="forbid")
@@ -96,11 +96,8 @@ class DiarizadJsonResponse(BaseModel):
     task: str
     duration: float
     text: str
-    segments: list[DiarizadJsonSegment]
+    segments: list[DiarizedJsonSegment]
     usage: TranscriptionUsage
-
-
-DiarizedJsonResponse = DiarizadJsonResponse
 
 
 # MARK: OpenAI-Style Error Schema

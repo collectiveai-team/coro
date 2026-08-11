@@ -25,7 +25,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from coro.api.schemas import TranscriptionResponse, WhisperWord
+from coro.api.schemas import TranscriptionResponse, TranscriptWord
 from coro.api.utterances import (
     UNKNOWN_SPEAKER_LABEL,
     group_words_into_utterances,
@@ -161,7 +161,7 @@ class DeepgramErrorResponse(BaseModel):
     request_id: str
 
 
-def _word(word: WhisperWord, *, diarize: bool) -> DeepgramWord:
+def _word(word: TranscriptWord, *, diarize: bool) -> DeepgramWord:
     return DeepgramWord(
         word=word.word,
         start=word.start,

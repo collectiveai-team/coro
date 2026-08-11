@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import pytest
 
-from coro.api.schemas import WhisperWord
+from coro.api.schemas import TranscriptWord
 from coro.api.utterances import group_words_into_utterances, mean_confidence
 
 
-def _word(text: str, speaker: str, score: float | None = 1.0) -> WhisperWord:
-    return WhisperWord(word=text, start=0.0, end=1.0, score=score, speaker=speaker)
+def _word(text: str, speaker: str, score: float | None = 1.0) -> TranscriptWord:
+    return TranscriptWord(word=text, start=0.0, end=1.0, score=score, speaker=speaker)
 
 
 class TestUtteranceGrouping:
@@ -64,8 +64,8 @@ class TestUtteranceAggregates:
 
     def test_span_covers_first_start_to_last_end(self):
         words = [
-            WhisperWord(word="a", start=0.25, end=0.75, score=1.0, speaker="1"),
-            WhisperWord(word="b", start=0.75, end=2.5, score=1.0, speaker="1"),
+            TranscriptWord(word="a", start=0.25, end=0.75, score=1.0, speaker="1"),
+            TranscriptWord(word="b", start=0.75, end=2.5, score=1.0, speaker="1"),
         ]
         utterance = group_words_into_utterances(words)[0]
         assert (utterance.start, utterance.end) == (0.25, 2.5)

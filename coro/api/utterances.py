@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
-from coro.api.schemas import WhisperWord
+from coro.api.schemas import TranscriptWord
 
 UNKNOWN_SPEAKER_LABEL = "-1"
 """Speaker label for words the diarization timeline does not support."""
@@ -28,7 +28,7 @@ class Utterance:
     """A maximal run of consecutive words attributed to one speaker."""
 
     speaker: str
-    words: list[WhisperWord] = field(default_factory=list)
+    words: list[TranscriptWord] = field(default_factory=list)
 
     @property
     def start(self) -> float:
@@ -51,7 +51,7 @@ class Utterance:
         return mean_confidence(self.words)
 
 
-def group_words_into_utterances(words: Sequence[WhisperWord]) -> list[Utterance]:
+def group_words_into_utterances(words: Sequence[TranscriptWord]) -> list[Utterance]:
     """Group consecutive words into maximal same-speaker utterances.
 
     Args:
@@ -93,6 +93,6 @@ def mean_measured(values: Iterable[float | None]) -> float | None:
     return sum(measured) / len(measured)
 
 
-def mean_confidence(words: Sequence[WhisperWord]) -> float | None:
+def mean_confidence(words: Sequence[TranscriptWord]) -> float | None:
     """Return the mean of the words' measured ASR confidences, or ``None``."""
     return mean_measured(word.score for word in words)

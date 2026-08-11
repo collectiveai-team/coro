@@ -133,7 +133,7 @@ The sandwich rule in that module is also now premise-less. It existed because sp
 
 ## Contract change: additive `overlap` flag
 
-`WhisperWord` and `WhisperSegment` gain `overlap: bool = False`, mirrored on `TranscriptWord` and `ResponseSegment`. The schema is `extra="forbid"`, so a new field is a contract change and is recorded rather than slipped in.
+`TranscriptWord` and `ResponseSegment` gain `overlap: bool = False`, on both the core dataclasses and their mirrors in the Strict Transcription Response Schema. The schema is `extra="forbid"`, so a new field is a contract change and is recorded rather than slipped in.
 
 The alternative was a composite `speaker` label (`"1+2"`). Rejected: `speaker` is passed through verbatim into the Hypothesis STM used for cpWER and WDER scoring, so composite labels would manufacture speakers appearing in no Reference STM and degrade the metric this work is judged by. A separate boolean keeps labels scorable and keeps the flag ignorable. The `False` default means existing payloads still validate.
 
