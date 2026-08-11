@@ -1,6 +1,6 @@
 # Package and API Surface
 
-> **Status:** The provider-first backend layout decided here is **superseded by ADR 0007 (Capability-First Backend Layout)**. The Supported Endpoint Set is **amended by ADR 0013 (Published API Contracts)**, which adds a Contract Surface (`/openapi.json`, `/asyncapi.json`, `/docs`) alongside it. The rest of this ADR (package shape, API surface, core-owned protocols) still stands.
+> **Status:** The provider-first backend layout decided here is **superseded by ADR 0007 (Capability-First Backend Layout)**. The Supported Endpoint Set is amended twice: by **ADR 0013 (Published API Contracts)**, which adds a Contract Surface (`/openapi.json`, `/asyncapi.json`, `/docs`) alongside it, and by **ADR 0015 (Vendor-Native Endpoints)**, which adds `POST /v1/listen` and `WebSocket /v1/listen` as deliberately implemented, SDK-conformant Deepgram endpoints; the exclusions below — including the WebSocket one — were written against inherited *prototype* routes and still hold for every other route they name. The rest of this ADR (package shape, core-owned protocols) still stands.
 
 The packaged server uses a root-level `coro` package, exposes a lightweight module-level `coro.app:app`, and exposes one public transcription route: `/v1/audio/transcriptions`. Full-memory and chunked-file behavior are not public API versions; they are startup-selected transcription pipeline implementations chosen by `CORO_PIPELINE`.
 

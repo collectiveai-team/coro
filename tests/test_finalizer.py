@@ -127,6 +127,10 @@ def test_finalizer_word_timings_match_batch_across_the_overlap_clamp(tmp_path):
     may legitimately extend past its clamped segment end and the tiling
     assumption no longer holds. The invariant that still matters — and the one
     the test existed for — is that batch and streaming do not disagree.
+
+    The segment span is a display bound; the word timings are measurements.
+    Trimming them to match would corrupt the per-word timings the vendor-native
+    endpoints publish.
     """
     tokens = [_tok(0.0, 1.5, " uno."), _tok(1.0, 2.0, " dos.")]
     with TranscriptSpillStore(directory=str(tmp_path)) as store:
@@ -140,8 +144,10 @@ def test_finalizer_word_timings_match_batch_across_the_overlap_clamp(tmp_path):
     assert streamed.segments == batch.segments
     # Real timings, not interpolated: the clamp moves the segment, not the word.
     first = streamed.segments[0]
-    assert first.words[-1].end == pytest.approx(1.5, abs=1e-9)
+    # Clamped back to the next segment's start...
     assert first.end == pytest.approx(1.0, abs=1e-9)
+    # ...while the word keeps the ASR's real measurement, untrimmed.
+    assert first.words[-1].end == pytest.approx(1.5, abs=1e-9)
 
 
 def test_finalizer_open_buffer_stays_bounded(tmp_path):

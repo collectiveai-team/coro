@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from coro.api.docs import register_docs
-from coro.api.errors import transcription_exception_handler
+from coro.api.openai.errors import transcription_exception_handler
 from coro.api.exceptions import TranscriptionError
 from coro.runtime import RuntimeState
 from coro.settings import ServerSettings
@@ -203,12 +203,16 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     # Register routers
     from coro.api.health import router as health_router
-    from coro.api.v1.transcriptions import router as v1_router
+    from coro.api.deepgram.listen import router as listen_router
+    from coro.api.deepgram.listen_ws import router as listen_ws_router
+    from coro.api.openai.transcriptions import router as v1_router
 
     application.state.settings = settings
     application.state.runtime = runtime
     application.include_router(health_router)
     application.include_router(v1_router)
+    application.include_router(listen_router)
+    application.include_router(listen_ws_router)
 
     return application
 

@@ -27,17 +27,17 @@ from coro.api.exceptions import (
     TranscriptionValidationError,
     UnsupportedStreamingError,
 )
-from coro.api.schemas import (
+from coro.api.schemas import TranscriptionResponse
+from coro.api.openai.schemas import (
     DiarizadJsonResponse,
     DiarizadJsonSegment,
     JsonResponse,
-    TranscriptionResponse,
     TranscriptionUsage,
     VerboseJsonResponse,
     VerboseJsonSegment,
     VerboseJsonWord,
 )
-from coro.api.sse import streaming_response
+from coro.api.openai.sse import streaming_response
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.concurrency import AsrCapacityError
 

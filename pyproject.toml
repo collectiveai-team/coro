@@ -59,6 +59,7 @@ dependencies = [
     # — a wheel that only builds on Python <3.10. Pin a numba floor that ships
     # py3.12 wheels so the backtrack can't reach the broken release.
     "numba>=0.61",
+    "numpy>=1.26",
     "onnx-asr[hub]>=0.11.0",
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.27",
@@ -66,7 +67,12 @@ dependencies = [
     # MIT integration published from the scalar/scalar org; the JS bundle it
     # loads is pinned and self-hosted (see coro/api/docs.py).
     "scalar-fastapi>=1.8.2",
+    # Streaming resample for the Deepgram WebSocket: clients declare their own
+    # sample_rate, the pipeline is fixed at 16 kHz.
+    "soxr>=0.5",
     "uvicorn>=0.30.0",
+    # WebSocket transport for POST-less /v1/listen; uvicorn ships none by default.
+    "websockets>=13",
 ]
 
 # Shown in the PyPI sidebar. The `Homepage`/`Source`/`Issues` keys map to the
@@ -119,6 +125,7 @@ dev = [
     "openai>=2.0.0",
     "ruff>=0.15,<0.17",
     "pyrefly>=1.1.1",
+    "deepgram-sdk>=7.6.0",
 ]
 bench = [
     "meeteval>=0.4.3",
@@ -141,9 +148,14 @@ bench = [
 # here with ModuleNotFoundError rather than drifting silently.
 contracts = [
     "fastapi",
+    # The WebSocket route's PCM converter (coro/pcm.py) is imported when the app
+    # is built, so exporting the contract now needs the resample stack. Both are
+    # small wheels; the ~2 GB the group exists to avoid is torch/CUDA.
+    "numpy",
     "pydantic-settings",
     "python-multipart",
     "scalar-fastapi",
+    "soxr",
 ]
 
 [tool.uv]
@@ -244,8 +256,10 @@ max-complexity = 10
 # Tests assert/lack docstrings, use fixed /tmp paths for deterministic fixtures,
 # and pass dummy tokens (S106) to gated-model settings/adapters.
 "tests/**" = ["S101", "D", "S108", "S106"]
-# FastAPI routes use the idiomatic `= File(...)` / `= Form(...)` default style.
-"coro/api/v1/transcriptions.py" = ["FAST002", "B008"]
+# FastAPI routes use the idiomatic `= File(...)` / `= Form(...)` / `= Query(...)`
+# default style.
+"coro/api/openai/transcriptions.py" = ["FAST002", "B008"]
+"coro/api/deepgram/listen.py" = ["FAST002", "B008"]
 "coro/audio.py" = ["C901"]
 # Best-effort NVML telemetry: failures are intentionally swallowed per-device.
 "coro/bench/gpu.py" = ["S112", "S110", "SIM105"]
@@ -273,6 +287,9 @@ max-complexity = 10
 # Mirrors coro/bench/run.py: the sampler's tests must spawn a real process tree
 # (`sh`, and `pgrep` as the reference implementation) to have anything to walk.
 "tests/test_bench_run.py" = ["S603", "S607"]
+# Decodes the bundled public recording with the system ffmpeg by name — the same
+# convention as the clip utilities below, on a fixed local path with no shell.
+"tests/test_listen_websocket_e2e.py" = ["S607"]
 "coro/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
 # Clip utilities shell out to the system ffmpeg binary by name.
 "coro/bench/utils/make_ami_clip.py" = ["S603", "S607"]

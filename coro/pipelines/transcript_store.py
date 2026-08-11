@@ -27,10 +27,10 @@ order instead.
 Schema:
 - ``segments(idx, start, end, text, tokens_json)`` — one finalized, unattributed
   segment run per row; ``tokens_json`` holds that run's Project-Owned transcript
-  tokens (bounded by run length), with their real timings and confidences. Tokens
-  rather than response words are stored because speaker attribution — and the
-  segment split that follows from it — happens at assembly, once the streaming
-  diarizer has produced its complete timeline.
+  tokens (bounded by run length), with their real timings and confidences.
+  Tokens rather than response words are stored because per-word speaker
+  attribution happens at assembly, once the streaming diarizer has produced its
+  complete timeline.
 - ``raw_words(idx, word, start, end, score)`` — one ASR token per row.
 
 Rows are read back with a streaming cursor so iteration never materialises

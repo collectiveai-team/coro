@@ -6,7 +6,7 @@ two-way turn* (``A B``), which is what a genuine turn looks like and is left
 alone. An earlier implementation used a punctuation-bounded majority vote and
 flattened both; it was measured against six AMI meetings, made DER
 speaker-error worse than baseline on 6 of 6 clips, and was replaced. See
-ADR 0008 and ``coro/core/realignment.py``.
+ADR 0014 and ``coro/core/realignment.py``.
 """
 
 from __future__ import annotations
