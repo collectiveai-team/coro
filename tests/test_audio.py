@@ -213,9 +213,10 @@ async def test_stream_pcm_from_file_rejects_empty_output(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_convert_to_pcm_bytes_decodes_video_container(tmp_path):
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
-        pytest.skip("ffmpeg is required for video conversion regression coverage")
+    # Not skipped when ffmpeg is missing: it is a runtime dependency, so its
+    # absence is a broken environment, not an excuse to drop the only coverage
+    # of video-container decoding.
+    ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
 
     video_path = tmp_path / "sample.mp4"
     subprocess.run(  # noqa: S603
