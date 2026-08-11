@@ -290,6 +290,10 @@ max-complexity = 10
 # Decodes the bundled public recording with the system ffmpeg by name — the same
 # convention as the clip utilities below, on a fixed local path with no shell.
 "tests/test_listen_websocket_e2e.py" = ["S607"]
+# Asks git for the tracked-file list by name, with no shell and no interpolated
+# input. Reading the index is the point: it is what excludes untracked scratch
+# output and virtualenvs from the retired-decision scan by construction.
+"tests/test_retired_decisions.py" = ["S607"]
 "coro/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
 # Clip utilities shell out to the system ffmpeg binary by name.
 "coro/bench/utils/make_ami_clip.py" = ["S603", "S607"]
