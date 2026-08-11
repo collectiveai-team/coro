@@ -57,7 +57,9 @@ def test_no_two_adrs_claim_the_same_number() -> None:
     assert not duplicates, (
         "Two ADRs claim one number, so every reference to it is ambiguous. Renumber "
         "the one that merged later and repoint its references:\n"
-        + "\n".join(f"  {number}: {', '.join(sorted(names))}" for number, names in duplicates.items())
+        + "\n".join(
+            f"  {number}: {', '.join(sorted(names))}" for number, names in duplicates.items()
+        )
     )
 
 
