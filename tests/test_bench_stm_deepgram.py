@@ -15,6 +15,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from conftest import FakePipeline, make_app, make_wav
+from coro.bench.errors import UndiarizedResponseError
 from coro.bench.stm import hyp_response_to_stm, hyp_segments_to_stm
 
 
@@ -177,10 +178,48 @@ class TestRealListenResponseScoresFromWords:
         assert hyp_segments_to_stm(body.get("segments", []), "rec01") == ""
 
 
+class TestUndiarizedResponseIsRefused:
+    """The other half of the coupling: scoring refuses what the wire cannot tell apart.
+
+    A word with no ``speaker`` means abstention, but a *whole response* with no
+    speaker anywhere means diarization never ran. Both look identical per word.
+    Scoring the second as 100% abstention would report a plausible number
+    derived from nothing, so it is refused instead.
+    """
+
+    def test_a_response_with_no_speaker_anywhere_is_refused(self):
+        response = _deepgram([_word("a", 0.0, 1.0), _word("b", 1.0, 2.0)])
+
+        with pytest.raises(UndiarizedResponseError):
+            hyp_response_to_stm(response, "rec01")
+
+    def test_one_attributed_word_is_enough_to_score(self):
+        """Partial abstention is legitimate and must still score."""
+        response = _deepgram([_word("a", 0.0, 1.0, 0), _word("b", 1.0, 2.0)])
+
+        assert hyp_response_to_stm(response, "rec01").splitlines() == [
+            "rec01 1 0 0.000 1.000 a",
+            "rec01 1 -1 1.000 2.000 b",
+        ]
+
+    def test_a_response_with_no_words_is_not_refused(self):
+        """Nothing to score is not the same as scoring nothing."""
+        assert hyp_response_to_stm(_deepgram([]), "rec01") == ""
+
+
 class TestUnknownSpeakerLabelStaysInSync:
+    """Three layers spell this sentinel; they have to agree or it scores wrong."""
+
     def test_bench_sentinel_matches_the_serving_layer(self):
-        """The label is duplicated to keep bench free of serving-layer imports."""
+        """Duplicated across the layer boundary to keep bench independent of the API."""
         from coro.api.utterances import UNKNOWN_SPEAKER_LABEL
         from coro.bench.stm_deepgram import UNKNOWN_SPEAKER
+
+        assert UNKNOWN_SPEAKER == UNKNOWN_SPEAKER_LABEL
+
+    def test_emitted_label_is_the_one_wder_treats_as_abstention(self):
+        """If these diverged, abstention would score as an ordinary speaker."""
+        from coro.bench.stm_deepgram import UNKNOWN_SPEAKER
+        from coro.bench.wder import UNKNOWN_SPEAKER_LABEL
 
         assert UNKNOWN_SPEAKER == UNKNOWN_SPEAKER_LABEL

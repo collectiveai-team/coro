@@ -15,13 +15,15 @@ from __future__ import annotations
 
 from typing import Any
 
-UNKNOWN_SPEAKER = "-1"
-"""Speaker label for words the diarization timeline does not support.
+from coro.bench.errors import UndiarizedResponseError
+from coro.bench.wder import UNKNOWN_SPEAKER_LABEL as UNKNOWN_SPEAKER
 
-Mirrors ``coro.api.utterances.UNKNOWN_SPEAKER_LABEL``, duplicated rather than
-imported to keep the benchmark package independent of the serving layer. A test
-pins the two together.
-"""
+# The label is taken from the scorer rather than redeclared: WDER is what gives
+# it meaning (an abstention, counted as an error but excluded from
+# ``wder_claimed``), so emitting anything else here would silently score as an
+# ordinary speaker. The serving layer spells the same sentinel in
+# ``coro.api.utterances``; a test pins the two together, since bench stays
+# independent of that layer.
 
 
 def _speaker(word: dict[str, Any]) -> str:
@@ -37,13 +39,24 @@ def _speaker(word: dict[str, Any]) -> str:
     return UNKNOWN_SPEAKER if speaker is None else str(speaker)
 
 
-def deepgram_word_segments(response: dict[str, Any]) -> list[dict[str, Any]]:
+def deepgram_word_segments(
+    response: dict[str, Any],
+    *,
+    recording_id: str = "?",
+) -> list[dict[str, Any]]:
     """Extract per-word entries from a Deepgram-shaped response.
 
     Reads the top hypothesis of the first channel — coro downmixes uploads to
     mono, so there is exactly one channel and the first alternative is the only
     one served. Returns an empty list for any response that is not this shape,
     so callers can treat it as a "not a Deepgram response" signal.
+
+    Raises:
+        UndiarizedResponseError: If the response has words but not one carries
+            a speaker. Per word that is indistinguishable from abstention, but
+            across a whole response it means diarization never ran, and scoring
+            it would report a WDER computed over no attribution at all.
+
     """
     results = response.get("results")
     if not isinstance(results, dict):
@@ -55,6 +68,8 @@ def deepgram_word_segments(response: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(alternatives, list) or not alternatives:
         return []
     words = alternatives[0].get("words")
-    if not isinstance(words, list):
+    if not isinstance(words, list) or not words:
         return []
+    if all(word.get("speaker") is None for word in words):
+        raise UndiarizedResponseError(recording_id, word_count=len(words))
     return [{**word, "speaker": _speaker(word)} for word in words]

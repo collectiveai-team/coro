@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -55,7 +57,16 @@ CANNED_HEALTH = {
 }
 
 
+def _uploaded_filename(body: bytes) -> str:
+    """Pull the multipart upload's filename out of a captured request body."""
+    match = re.search(rb'filename="([^"]+)"', body)
+    return match.group(1).decode() if match else ""
+
+
 class _E2EHandler(BaseHTTPRequestHandler):
+    uploads: ClassVar[list[str]] = []
+    """Filenames posted to the transcription endpoint, in request order."""
+
     def do_GET(self):
         if self.path == "/health":
             body = json.dumps(CANNED_HEALTH).encode()
@@ -70,7 +81,7 @@ class _E2EHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/v1/audio/transcriptions":
             content_length = int(self.headers.get("Content-Length", 0))
-            self.rfile.read(content_length)
+            _E2EHandler.uploads.append(_uploaded_filename(self.rfile.read(content_length)))
             body = json.dumps(CANNED_DIARIZED_JSON).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -87,6 +98,7 @@ class _E2EHandler(BaseHTTPRequestHandler):
 
 @pytest.fixture()
 def e2e_server():
+    _E2EHandler.uploads = []
     server = HTTPServer(("127.0.0.1", 0), _E2EHandler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -346,8 +358,7 @@ class TestE2EAllSubcommand:
         assert (out_dir / "manifest.json").exists()
 
     def test_warmup_sends_request_before_items(self, e2e_server, tmp_path: Path):
-        from unittest.mock import patch
-
+        """Asserted at the server, so it holds whichever transport is selected."""
         from coro.bench.orchestrate import run_all_workload
 
         audio = tmp_path / "meeting1.wav"
@@ -367,31 +378,16 @@ class TestE2EAllSubcommand:
         warmup_path = tmp_path / "warmup.wav"
         warmup_path.write_bytes(b"RIFF" + b"\x00" * 100)
 
-        call_order = []
-        original_transcribe = __import__(
-            "coro.bench.transport", fromlist=["transcribe_audio"]
-        ).transcribe_audio
+        run_all_workload(
+            items=items,
+            base_url=e2e_server,
+            out_dir=out_dir,
+            reps=1,
+            server_pid=1,
+            warmup_audio=warmup_path,
+        )
 
-        def tracking_transcribe(base_url, audio_path, **kw):
-            call_order.append(str(audio_path))
-            return original_transcribe(base_url, audio_path, **kw)
-
-        with patch(
-            "coro.bench.orchestrate.transcribe_audio",
-            side_effect=tracking_transcribe,
-        ):
-            run_all_workload(
-                items=items,
-                base_url=e2e_server,
-                out_dir=out_dir,
-                reps=1,
-                server_pid=1,
-                warmup_audio=warmup_path,
-            )
-
-        assert len(call_order) == 2
-        assert str(warmup_path) == call_order[0]
-        assert str(audio) == call_order[1]
+        assert _E2EHandler.uploads == [warmup_path.name, audio.name]
 
         assert not any("warmup" in p.name for p in (out_dir / "responses").iterdir())
 

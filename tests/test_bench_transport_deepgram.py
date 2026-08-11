@@ -127,3 +127,17 @@ class TestTranscribeAudioDeepgram:
 
         with pytest.raises(ServerUnreachableError):
             transcribe_audio_deepgram("http://127.0.0.1:1", audio, timeout_seconds=0.5)
+
+    def test_a_caller_cannot_turn_diarization_off(self, tmp_path: Path):
+        """Diarization is not this transport's caller's choice.
+
+        An undiarized response is indistinguishable on the wire from one where
+        diarization abstained on every word: both omit ``speaker`` entirely. A
+        run configured with ``diarize=false`` would therefore score every word
+        as abstention and report a number, so the option does not exist.
+        """
+        audio = tmp_path / "test.wav"
+        audio.write_bytes(AUDIO_BYTES)
+
+        with pytest.raises(TypeError):
+            transcribe_audio_deepgram("http://127.0.0.1:1", audio, diarize=False)

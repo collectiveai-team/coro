@@ -31,6 +31,39 @@ class ServerUnreachableError(RuntimeError):
             self.__cause__ = cause
 
 
+class UndiarizedResponseError(RuntimeError):
+    """Raised when a Deepgram-shaped response carries no speaker labels at all.
+
+    Deepgram omits ``speaker`` both for a word diarization abstained on and for
+    every word of a request that never asked for diarization, so the two are
+    identical per word. They are only distinguishable in aggregate: a response
+    where *nothing* is attributed did not diarize.
+
+    Scoring that as total abstention would emit a plausible WDER derived from
+    no attribution at all, and nothing downstream could tell. The bench refuses
+    it instead.
+    """
+
+    def __init__(self, recording_id: str, *, word_count: int) -> None:
+        self.recording_id = recording_id
+        self.word_count = word_count
+        message = (
+            f"The response for {recording_id!r} has {word_count} words and not one "
+            "speaker label.\n"
+            "\n"
+            "Deepgram spells 'diarization abstained' and 'diarization was never "
+            "requested'\n"
+            "the same way — an omitted 'speaker' key — so a response with no labels "
+            "anywhere\n"
+            "cannot be scored: every word would count as abstention and WDER would "
+            "describe\n"
+            "nothing. Confirm the run reached /v1/listen with diarize=true, and that "
+            "the\n"
+            "server has a diarization backend configured rather than --no-diarization.\n"
+        )
+        super().__init__(message)
+
+
 class ServerPidUnresolvedError(RuntimeError):
     """Raised when the Server Process Tree root cannot be identified.
 

@@ -140,7 +140,7 @@ def hyp_response_to_stm(
     word field, so every response from the OpenAI endpoint still takes it. Both
     sources agree while a segment holds exactly one speaker.
     """
-    vendor_words = deepgram_word_segments(response)
+    vendor_words = deepgram_word_segments(response, recording_id=recording_id)
     if vendor_words:
         return word_segments_to_stm(vendor_words, recording_id, channel=channel)
     word_segments = response.get("word_segments") or response.get("words") or []

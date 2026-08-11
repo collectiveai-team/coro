@@ -202,3 +202,31 @@ def test_parse_args_stream_defaults_false_on_performance():
 def test_parse_args_stream_defaults_false_on_all():
     args = parse_args(["all"])
     assert args.stream is False
+
+
+def test_parse_args_deepgram_accepted_on_quality():
+    """Unlike --stream: quality is the subcommand that computes WDER."""
+    args = parse_args(["quality", "--deepgram"])
+    assert args.deepgram is True
+
+
+def test_parse_args_deepgram_accepted_on_all():
+    args = parse_args(["all", "--deepgram"])
+    assert args.deepgram is True
+
+
+def test_parse_args_deepgram_defaults_false_on_quality():
+    args = parse_args(["quality"])
+    assert args.deepgram is False
+
+
+def test_parse_args_deepgram_defaults_false_on_all():
+    args = parse_args(["all"])
+    assert args.deepgram is False
+
+
+def test_parse_args_rejects_stream_with_deepgram():
+    """/v1/listen is not an SSE surface, so the pair has no meaning."""
+    with pytest.raises(SystemExit) as exc_info:
+        parse_args(["all", "--stream", "--deepgram"])
+    assert exc_info.value.code != 0

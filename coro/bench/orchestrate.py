@@ -22,8 +22,7 @@ from coro.bench.sampling import Sampler, sample_resource_baseline
 from coro.bench.stm import hyp_response_to_stm
 from coro.bench.transport import (
     _is_connection_refused,
-    transcribe_audio,
-    transcribe_audio_sse,
+    select_transport,
 )
 
 
@@ -62,6 +61,7 @@ def run_workload(
     cli_args: list[str] | None = None,
     der_collar: float = 0.0,
     der_regions: str = "all",
+    deepgram: bool = False,
 ) -> None:
     resp_dir = out_dir / "responses"
     hyp_dir = out_dir / "hyp"
@@ -70,6 +70,7 @@ def run_workload(
     hyp_dir.mkdir(parents=True, exist_ok=True)
     ref_dir.mkdir(parents=True, exist_ok=True)
 
+    transcribe = select_transport(deepgram=deepgram)
     server_health = _fetch_health(base_url)
 
     for item in items:
@@ -80,7 +81,7 @@ def run_workload(
             item["audio_seconds"] = round(_audio_duration(audio_path), 3)
 
         for rep in range(1, reps + 1):
-            result = transcribe_audio(base_url, audio_path)
+            result, _ = transcribe(base_url, audio_path)
             resp_path = resp_dir / f"{item_id}_rep{rep}.json"
             resp_path.write_text(json.dumps(result, indent=2))
 
@@ -103,6 +104,7 @@ def run_workload(
         cli_args=cli_args,
         reps=reps,
         subcommand=subcommand,
+        deepgram=deepgram,
     )
 
 
@@ -120,6 +122,7 @@ def run_all_workload(
     der_regions: str = "all",
     warmup_audio: Path | None = None,
     stream: bool = False,
+    deepgram: bool = False,
 ) -> None:
     import time
 
@@ -132,10 +135,13 @@ def run_all_workload(
     hyp_dir.mkdir(parents=True, exist_ok=True)
     ref_dir.mkdir(parents=True, exist_ok=True)
 
+    transcribe = select_transport(stream=stream, deepgram=deepgram)
     server_health = _fetch_health(base_url)
 
+    # Warm up over the same endpoint the run will measure, so the first
+    # measured request is not the one paying that endpoint's setup cost.
     if warmup_audio is not None:
-        transcribe_audio(base_url, warmup_audio)
+        transcribe(base_url, warmup_audio)
     memory_baseline = sample_resource_baseline(server_pid, sample_fn=sample_fn)
 
     per_item_reps: dict[str, list[PerRepSummary]] = {}
@@ -157,11 +163,7 @@ def run_all_workload(
             sampler.start()
 
             req_start = time.monotonic()
-            if stream:
-                result, ttft = transcribe_audio_sse(base_url, audio_path)
-            else:
-                result = transcribe_audio(base_url, audio_path)
-                ttft = None
+            result, ttft = transcribe(base_url, audio_path)
             wall_seconds = time.monotonic() - req_start
 
             sampler.stop()
@@ -221,6 +223,7 @@ def run_all_workload(
         reps=reps,
         subcommand="all",
         stream=stream,
+        deepgram=deepgram,
         warmup=warmup_audio is not None,
     )
 
@@ -376,6 +379,7 @@ def _write_manifest(
     reps: int,
     subcommand: str,
     stream: bool = False,
+    deepgram: bool = False,
     warmup: bool = False,
 ) -> None:
     git_sha = _git_sha()
@@ -388,6 +392,9 @@ def _write_manifest(
         "reps": reps,
         "warmup": warmup,
         "stream": stream,
+        # Which wire surface produced the responses: the Deepgram endpoint
+        # carries per-word speakers, the OpenAI one only a segment summary.
+        "deepgram": deepgram,
         "workload_set": [
             {
                 "item_id": it["item_id"],
@@ -454,6 +461,7 @@ def run_performance_workload(
     sample_interval: float = 0.25,
     cli_args: list[str] | None = None,
     stream: bool = False,
+    deepgram: bool = False,
     warmup_audio: Path | None = None,
 ) -> None:
     import time
@@ -463,9 +471,11 @@ def run_performance_workload(
     resp_dir.mkdir(parents=True, exist_ok=True)
     perf_dir.mkdir(parents=True, exist_ok=True)
 
+    transcribe = select_transport(stream=stream, deepgram=deepgram)
     server_health = _fetch_health(base_url)
+    # Warm up over the same endpoint the run will measure.
     if warmup_audio is not None:
-        transcribe_audio(base_url, warmup_audio)
+        transcribe(base_url, warmup_audio)
     memory_baseline = sample_resource_baseline(server_pid, sample_fn=sample_fn)
     per_item_reps: dict[str, list[PerRepSummary]] = {}
 
@@ -484,11 +494,7 @@ def run_performance_workload(
             sampler.start()
 
             req_start = time.monotonic()
-            if stream:
-                result, ttft = transcribe_audio_sse(base_url, audio_path)
-            else:
-                result = transcribe_audio(base_url, audio_path)
-                ttft = None
+            result, ttft = transcribe(base_url, audio_path)
             wall_seconds = time.monotonic() - req_start
 
             sampler.stop()
@@ -537,6 +543,7 @@ def run_performance_workload(
         reps=reps,
         subcommand="performance",
         stream=stream,
+        deepgram=deepgram,
         warmup=warmup_audio is not None,
     )
 

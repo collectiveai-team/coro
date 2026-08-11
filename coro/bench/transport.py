@@ -6,10 +6,18 @@ import json
 import mimetypes
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from coro.bench.errors import ServerUnreachableError
+
+TranscribeFn = Callable[[str, Path], tuple[Any, float | None]]
+"""A transport: takes ``(base_url, audio_path)``, returns ``(response, ttft)``.
+
+``ttft`` is the time to first delta, which only the SSE transport can measure;
+the others report ``None`` rather than a fabricated zero.
+"""
 
 
 def _is_connection_refused(exc: BaseException) -> bool:
@@ -71,12 +79,21 @@ def transcribe_audio(
         raise
 
 
+DEEPGRAM_QUERY = "diarize=true&utterances=true"
+"""Not configurable, and deliberately so.
+
+Both default to ``false`` at the endpoint, as they do at Deepgram, and an
+undiarized response is byte-identical to one where diarization abstained on
+every word — Deepgram omits ``speaker`` in both cases. A caller able to pass
+``diarize=false`` could therefore produce a run that scores every word as
+abstention and still reports a WDER, with nothing downstream able to detect it.
+"""
+
+
 def transcribe_audio_deepgram(
     base_url: str,
     audio_path: Path,
     *,
-    diarize: bool = True,
-    utterances: bool = True,
     timeout_seconds: float = 14400.0,
 ) -> Any:
     """POST the audio to the Deepgram-native ``/v1/listen`` endpoint.
@@ -87,19 +104,11 @@ def transcribe_audio_deepgram(
     so a benchmark run over the OpenAI endpoint can only ever score the
     segment-level speaker summary.
 
-    ``diarize`` and ``utterances`` both default to ``false`` at the endpoint,
-    as they do at Deepgram, so they are requested explicitly — omitting them
-    returns words with no ``speaker`` key at all.
+    Diarization is always requested; see :data:`DEEPGRAM_QUERY`.
     """
     import urllib.request
 
-    query = urllib.parse.urlencode(
-        {
-            "diarize": str(diarize).lower(),
-            "utterances": str(utterances).lower(),
-        }
-    )
-    url = f"{base_url.rstrip('/')}/v1/listen?{query}"
+    url = f"{base_url.rstrip('/')}/v1/listen?{DEEPGRAM_QUERY}"
     mime_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
     req = urllib.request.Request(
         url,
@@ -179,6 +188,44 @@ def transcribe_audio_sse(
         raise RuntimeError("SSE stream ended without a transcript.text.done event")
 
     return done_payload, first_delta_time
+
+
+def select_transport(*, stream: bool = False, deepgram: bool = False) -> TranscribeFn:
+    """Return the transport a run's configuration asks for.
+
+    The workloads differ in what they measure but not in how they choose an
+    endpoint, so the choice lives here once rather than as an ``if`` repeated at
+    every call site. Repeating it is what left the quality workload — the one
+    that computes WDER — with no choice at all, pinned to the OpenAI endpoint
+    whose ``diarized_json`` carries no per-word speakers.
+
+    Every transport returns ``(response, time_to_first_delta)`` so callers need
+    no branch of their own; only the SSE transport can measure that latency, and
+    the others report ``None`` rather than a fabricated zero.
+
+    Args:
+        stream: Use the OpenAI SSE path and record time-to-first-delta.
+        deepgram: Use the Deepgram-native endpoint, the only wire surface that
+            carries per-word speaker labels.
+
+    Raises:
+        ValueError: If both are requested. The Deepgram endpoint is not an SSE
+            surface, so the combination has no meaning and would otherwise
+            resolve by silent precedence.
+
+    """
+    if stream and deepgram:
+        raise ValueError(
+            "stream and deepgram select different endpoints; /v1/listen is not an SSE surface."
+        )
+    if deepgram:
+        return lambda base_url, audio_path: (
+            transcribe_audio_deepgram(base_url, audio_path),
+            None,
+        )
+    if stream:
+        return transcribe_audio_sse
+    return lambda base_url, audio_path: (transcribe_audio(base_url, audio_path), None)
 
 
 def _form_field(boundary: str, name: str, value: str) -> bytes:
