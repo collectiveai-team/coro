@@ -97,6 +97,14 @@ for segment in result.segments:  # who spoke, when, and what
     print(f"[{segment.start:.2f}-{segment.end:.2f}] {segment.speaker}: {segment.text}")
 ```
 
+> **`segments[].speaker` is a summary, not a guarantee.** Segment boundaries come
+> from sentence punctuation, never from a speaker change, so a segment can span a
+> speaker turn. Its `speaker` is the **duration-weighted majority** of its own
+> words — the right label for display, the wrong one to treat as exact for every
+> word inside it. For per-word truth use `POST /v1/listen`, which carries a
+> speaker on every word; `diarized_json` has no per-word slot. The JSON *shape*
+> is unchanged, so no schema diff will flag this. See ADR 0014.
+
 Or hit the endpoint directly with `curl` (the same OpenAI multipart contract):
 
 ```bash
