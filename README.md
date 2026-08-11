@@ -981,10 +981,8 @@ See `docs/adr/0015-vendor-native-endpoints.md` for the fidelity policy.
 `/v1/audio/transcriptions` is byte-unchanged, asserted in
 `tests/test_openai_formats_unchanged.py`.
 
-> AssemblyAI is not yet available. Its contract is asynchronous
-> (`POST /v2/upload` → `POST /v2/transcript` → poll `GET /v2/transcript/{id}`),
-> which needs job state Coro does not have; a synchronous approximation would
-> be a partial clone. Tracked separately.
+> Coro speaks two vendor dialects — OpenAI and Deepgram — and adding a third is
+> **out of scope**, not pending. See ADR 0015.
 
 ## Development
 

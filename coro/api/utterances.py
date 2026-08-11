@@ -5,11 +5,11 @@ per-word view. An utterance is a maximal run of consecutive words sharing one
 speaker.
 
 The grouping deliberately reads ``word_segments`` rather than ``segments``.
-Per-word speakers are the truth the vendor formats exist to expose, and
-deriving turns from them keeps this projection correct no matter what shape
-``segments`` takes — sentence-shaped with a majority speaker, or split at every
-speaker change. The two views cannot disagree because only one of them is a
-source.
+Per-word speakers are the truth the vendor formats exist to expose. Segments are
+sentence-shaped and carry the duration-weighted majority of their own words
+(ADR 0014), so a segment can span a speaker turn and is not a valid utterance;
+deriving turns from the per-word view is what keeps this projection correct. The
+two views cannot disagree because only one of them is a source.
 """
 
 from __future__ import annotations

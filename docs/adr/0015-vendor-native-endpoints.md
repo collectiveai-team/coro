@@ -10,23 +10,29 @@ contract**, not through a new value on the OpenAI endpoint.
 ## This departs from the recorded decision, deliberately
 
 Issue `46` recorded exposure option **X1**: per-word speakers reached through
-additional opt-in `response_format` values on `/v1/audio/transcriptions`,
-**AssemblyAI first, Deepgram second**. Issue `12` then cited X1 as the discharged
-gate for its own segmentation decision. This ADR does **not** implement X1, and
-says so here rather than letting `main` and the issue record disagree.
+additional opt-in `response_format` values on `/v1/audio/transcriptions`, a
+second vendor dialect first and Deepgram second. Issue `12` then cited X1 as the
+discharged gate for its own segmentation decision. This ADR does **not** implement
+X1, and says so here rather than letting `main` and the issue record disagree.
 
-Two departures, both argued below:
+Two departures, both settled by this ADR:
 
 1. **Vendor-native endpoints instead of new `response_format` values.** X1's
    stated goal was to leave the OpenAI-compatible surface unspent. New endpoints
    achieve that goal *more* completely than X1 does, because they leave the
    OpenAI request parameter alone as well as the response bodies — see the next
    section. X1 was implemented first on this branch and then withdrawn.
-2. **AssemblyAI is not implemented, so the ordering is inverted.** Its contract
-   is asynchronous and needs a job-state subsystem coro does not have; a
-   synchronous single-POST imitation would be the partial clone rule 1 of the
-   fidelity policy forbids. Deferred to its own issue, with the reasoning under
-   *Consequences*.
+2. **Coro ships exactly two vendor dialects: OpenAI and Deepgram.** X1's ordering
+   named a third dialect first. That dialect is **rejected, not deferred** — its
+   contract is asynchronous (upload, then a queued job, then polling), which needs
+   a job-state subsystem coro does not have and is not going to acquire for this;
+   a synchronous single-POST imitation would be the partial clone rule 1 of the
+   fidelity policy forbids. The infrastructure cost is not worth the return.
+
+**This part of issue 46 is closed.** Reopening it needs a new ADR that supersedes
+this one, not a re-reading of issue 46 — the ordering recorded there is
+superseded, and `tests/test_retired_decisions.py` fails if a third dialect is
+reintroduced by name.
 
 **What does not change is the premise issue `12` depends on.** Its decision rule
 is "if per-word speaker truth leaves the process → sentence-first + majority". It
@@ -341,10 +347,10 @@ coro/api/
 
 The previous `coro/api/v1/` grouped by *path version*, which fails on its own
 terms: it held OpenAI's `v1` and Deepgram's `v1` side by side, two unrelated
-numbers owned by different companies. It does not scale either — AssemblyAI's
-`/v2/transcript` and Deepgram's WebSocket `v2` would land in one `v2/`
-directory with nothing in common. A version is a fact *about a provider*, not
-an axis the codebase shares.
+numbers owned by different companies. It does not scale either — a third vendor's
+`/v2/transcript` and Deepgram's WebSocket `v2` would land in one `v2/` directory
+with nothing in common. A version is a fact *about a provider*, not an axis the
+codebase shares.
 
 This is the opposite choice from ADR 0007, which moved `coro/backends` from
 provider-first to capability-first, and deliberately so. Backends are
@@ -377,9 +383,11 @@ expects, and moving a module must never move a route. Asserted by
   does not otherwise have.
 - No package `__init__` re-exports anything; consumers import the module they
   need, so a re-export shim cannot accumulate unread.
-- **AssemblyAI is not implemented here.** Its contract is asynchronous —
-  `POST /v2/upload`, `POST /v2/transcript` returning `queued`, then polling
-  `GET /v2/transcript/{id}` — which needs a job-state subsystem `coro` does not
-  have. Implementing it as a synchronous single POST would be a partial clone
-  of exactly the kind rule 1 forbids. Deferred to its own issue; when it lands
-  it gets `coro/api/assemblyai/`.
+- **The supported dialect list is closed at two: OpenAI and Deepgram.** A third
+  dialect is rejected on infrastructure cost, not sequenced for later: the
+  candidate contract issue 46 named is asynchronous (upload, queued job, polling),
+  which needs a job-state subsystem `coro` does not have, and a synchronous
+  single-POST imitation would be the partial clone rule 1 forbids. Adding any
+  further dialect is a new ADR superseding this one, and
+  `tests/test_retired_decisions.py` enforces that the rejected one does not
+  reappear by name.
