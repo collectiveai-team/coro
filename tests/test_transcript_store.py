@@ -1,11 +1,12 @@
-"""TranscriptSpillStore on-disk round-trip, WAL mode, and cleanup."""
+"""TranscriptSpillStore on-disk round-trip, WAL mode, commit batching, cleanup."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from coro.core.models import RawWord, TranscriptToken
-from coro.pipelines.transcript_store import TranscriptSpillStore
+from coro.pipelines.transcript_store import COMMIT_ROW_INTERVAL, TranscriptSpillStore
 
 
 def _append(store, start, end, text, tokens=None):
@@ -86,3 +87,52 @@ def test_close_deletes_database_and_sidecars(tmp_path):
 def test_store_file_lands_in_requested_directory(tmp_path):
     with TranscriptSpillStore(directory=str(tmp_path)) as store:
         assert Path(store.path).parent == tmp_path
+
+
+def test_store_creates_a_missing_spill_directory(tmp_path):
+    directory = tmp_path / "nested" / "spill"
+    with TranscriptSpillStore(directory=str(directory)) as store:
+        assert Path(store.path).parent == directory
+
+
+# ---------------------------------------------------------------------------
+# Commit batching
+# ---------------------------------------------------------------------------
+
+
+def _spy_on_commits(store):
+    """Wrap the store's connection so commit calls can be counted."""
+    store._conn = MagicMock(wraps=store._conn)
+    return store._conn.commit
+
+
+def test_appends_do_not_commit_per_row(tmp_path):
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        commit = _spy_on_commits(store)
+        for i in range(10):
+            _append(store, i, i + 1, " a.")
+            store.append_raw_words([RawWord(word=" a.", start=i, end=i + 1, score=1.0)])
+
+        assert commit.call_count == 0
+        assert store.uncommitted_rows == 20
+
+
+def test_appends_commit_once_the_batch_interval_is_reached(tmp_path):
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        commit = _spy_on_commits(store)
+        for i in range(COMMIT_ROW_INTERVAL):
+            _append(store, i, i + 1, " a.")
+
+        assert commit.call_count == 1
+        assert store.uncommitted_rows == 0
+
+
+def test_iteration_flushes_buffered_appends(tmp_path):
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        _append(store, 0.0, 1.0, " a.")
+        store.append_raw_words([RawWord(word=" a.", start=0.0, end=1.0, score=1.0)])
+        assert store.uncommitted_rows == 2
+
+        assert len(list(store.iter_segment_tokens())) == 1
+        assert len(list(store.iter_raw_words())) == 1
+        assert store.uncommitted_rows == 0

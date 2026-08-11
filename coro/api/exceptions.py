@@ -53,3 +53,25 @@ class TranscriptionProcessingError(TranscriptionError):
 
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     error_type = "server_error"
+
+
+class TranscriptionCapacityError(TranscriptionError):
+    """Admission-control rejection: the ASR queue-depth cap was exceeded.
+
+    Carries ``retry_after_seconds``, which the exception handler renders as a
+    ``Retry-After`` response header alongside the OpenAI-Style Error body.
+    """
+
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    error_type = "rate_limit_exceeded"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_after_seconds: float,
+        param: str | None = None,
+        code: str | None = "server_overloaded",
+    ) -> None:
+        super().__init__(message, param=param, code=code)
+        self.retry_after_seconds = retry_after_seconds

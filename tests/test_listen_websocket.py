@@ -24,12 +24,19 @@ WINDOW_SECONDS = 31
 
 
 class _FakeASR:
-    """Returns a fixed token batch for every window."""
+    """Returns a fixed token batch for every window.
+
+    Timings are window-relative, as a real adapter's are, and sit past the
+    half-overlap boundary: ``ASRWindowing`` attributes the first
+    ``overlap_seconds / 2`` of every window after the first to the *previous*
+    window, so tokens placed at relative 0.0 would be reconciled away on every
+    window but the first and no second Results frame would ever be emitted.
+    """
 
     def __init__(self, tokens: list[TranscriptToken] | None = None) -> None:
         self._tokens = tokens or [
-            TranscriptToken(start=0.0, end=0.5, text=" hola", probability=0.91),
-            TranscriptToken(start=0.5, end=1.0, text=" mundo.", probability=0.83),
+            TranscriptToken(start=2.0, end=2.5, text=" hola", probability=0.91),
+            TranscriptToken(start=2.5, end=3.0, text=" mundo.", probability=0.83),
         ]
         self.calls = 0
         self.max_pcm = 0
@@ -93,7 +100,7 @@ class TestLiveResults:
         word = results[0]["channel"]["alternatives"][0]["words"][0]
         assert word["word"] == "hola"
         assert word["confidence"] == 0.91
-        assert (word["start"], word["end"]) == (0.0, 0.5)
+        assert (word["start"], word["end"]) == (2.0, 2.5)
 
     def test_stream_ends_with_a_metadata_frame(self):
         frames = _stream(_app())

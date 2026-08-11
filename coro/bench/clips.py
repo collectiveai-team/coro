@@ -1,13 +1,17 @@
 """Resolve a directory of (audio, reference STM) pairs into workload items.
 
-Used for short, reliable-reference benchmarks (e.g. AMI clips via make_ami_clip).
-Each ``<stem>.wav`` is paired with a sibling ``<stem>.ref.stm`` when present.
+Used for short, reliable-reference benchmarks (e.g. AMI clips via make_ami_clip,
+or a Spanish preset via ``bench.spanish``). Each ``<stem>.wav`` is paired with a
+sibling ``<stem>.ref.stm`` when present. References that are (or look like)
+self-generated output are rejected here rather than silently scored.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+
+from coro.bench.quarantine import assert_scorable_reference
 
 _AUDIO_SUFFIXES = (".wav", ".mp3", ".flac", ".m4a", ".ogg")
 
@@ -17,7 +21,13 @@ def resolve_clip_items(clips_dir: Path) -> list[dict[str, Any]]:
 
     Each item pairs ``<stem>.<audio-ext>`` with ``<stem>.ref.stm`` (None when the
     reference is absent). Items are sorted by stem for deterministic ordering.
+
+    Raises:
+        CircularReferenceError: If a paired reference is quarantined as
+            self-generated material.
+
     """
+    assert_scorable_reference(clips_dir)
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
     for audio in sorted(clips_dir.iterdir() if clips_dir.is_dir() else []):

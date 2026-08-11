@@ -41,8 +41,32 @@ The server's transcription response converted to STM, written per workload item 
 _Avoid_: Hypothesis Diarization, response JSON
 
 **MeetEval Metric Set**:
-The fixed set of MeetEval scores reported for each workload item: siWER, cpWER, ORC-WER (greedy), DI-cpWER (greedy), and DER.
-_Avoid_: WER alone, custom metric mix
+The fixed set of MeetEval scores reported for each workload item: cpWER, ORC-WER (greedy), DI-cpWER (greedy) — each on both raw and punctuation-normalized text — plus DER. siWER is excluded because SISO-WER requires unique (session, speaker) pairs, which multi-speaker meeting recordings do not satisfy.
+_Avoid_: WER alone, custom metric mix, siWER
+
+**WDER**:
+Word Diarization Error Rate — speaker errors over the words present in both transcripts (correct + substituted), under MeetEval's cpWER speaker assignment. Reported as three numbers: `wder`, `wder_claimed` and `abstention_rate`. The primary metric for per-word speaker attribution; blind to segmentation and undiluted by the ASR error floor. See ADR 0009.
+_Avoid_: DER for word-label changes, `cpWER − DI-cpWER` as an attribution KPI
+
+**Unknown Speaker Sentinel**:
+The `-1` hypothesis speaker label meaning "no diarization support for this word". Counted as an error in `wder` and excluded from `wder_claimed`, so abstention is measured as a coverage cost rather than credited or hidden.
+_Avoid_: dropping `-1` lines, relabelling `-1` to a real speaker
+
+**Basic Text Normalizer**:
+The diacritic-preserving, language-agnostic text normalizer vendored from OpenAI Whisper (`coro/bench/normalizers/basic.py`), used as the Quality Benchmark's normalization protocol: bracketed and parenthesised content removed, lowercased, markers/symbols/punctuation mapped to spaces, whitespace collapsed. See ADR 0011.
+_Avoid_: EnglishTextNormalizer, `remove_diacritics=True`, ad hoc punctuation stripping, whisper dependency
+
+**Metric Lane**:
+One of the two normalization protocols under which every WER metric in the MeetEval Metric Set is reported, per workload item and in the run-level aggregate.
+_Avoid_: Normalization mode, WER variant
+
+**Raw Metric Lane**:
+The metric lane scoring Reference STM and Hypothesis STM text verbatim, so punctuation, casing and diacritics all count; it catches regressions the normalizer hides and is not comparable to published WER.
+_Avoid_: Unnormalized WER, the real WER, headline lane
+
+**Normalized Metric Lane**:
+The metric lane scoring Reference STM and Hypothesis STM after applying the Basic Text Normalizer identically to both; it is the lane comparable to published WER figures.
+_Avoid_: Normalized WER as a single number, punctuation-stripped WER, the corrected lane
 
 **Server Warmup**:
 A pipeline execution against a fixed warmup audio at server startup, completed before the server reports ready, so the first transcription endpoint request does not pay cold-model costs.
@@ -133,8 +157,12 @@ The `/v1/audio/transcriptions` HTTP route that accepts audio transcription reque
 _Avoid_: Pipeline endpoint, behavior-specific endpoint
 
 **Supported Endpoint Set**:
-The intentionally exposed server endpoints for the packaged ASR diarization service.
+The intentionally exposed *product* endpoints for the packaged ASR diarization service: `/health` and `/v1/audio/transcriptions`. Distinct from the **Contract Surface**.
 _Avoid_: Every route from the prototype scripts
+
+**Contract Surface**:
+The endpoints that publish coro's own machine-readable contracts rather than serving transcription: `/openapi.json` (request/response), `/asyncapi.json` (SSE events) and `/docs` (one Scalar reference over both). Generated from the code, never authored. See ADR 0013.
+_Avoid_: Calling these part of the Supported Endpoint Set; API docs endpoints
 
 **Transcription Pipeline**:
 The end-to-end processing path that turns an uploaded audio file into transcript, diarization, and raw-word response data.
@@ -145,7 +173,7 @@ A transcription pipeline implementation that decodes the entire uploaded audio i
 _Avoid_: v1 pipeline, memory pipeline
 
 **Chunked-File Pipeline** *(removed)*:
-A former transcription pipeline implementation that spooled uploaded audio to a file but still materialized decoded PCM before downstream processing. It and the `chunked-file` startup selector have been removed (not aliased) and replaced by the **Streaming Pipeline**; the term is retained only as historical context. See ADR 0002.
+A former transcription pipeline implementation that spooled uploaded audio to a file but still materialized decoded PCM before downstream processing. It and the `chunked-file` startup selector have been removed (not aliased) and replaced by the **Streaming Pipeline**; the term is retained only as historical context. See ADR 0004.
 _Avoid_: v2 pipeline, disk pipeline, active implementation, compatibility alias
 
 **Streaming Pipeline**:
@@ -301,12 +329,15 @@ A `backends/` package structure organized by capability first — `backends/asr/
 _Avoid_: Provider-first backend tree, duplicated provider setup, capability code split across unrelated directories
 
 **ASR Model Selection**:
-The Hugging Face-style model identifier passed to the configured ASR backend provider.
-_Avoid_: ASR backend, provider name
+The model identifier passed to the configured ASR backend provider — Hugging Face-style
+(`openai/whisper-medium`) unless the provider defines its own catalogue handle, as
+`onnx-asr` does for the models it curates (`nemo-parakeet-tdt-0.6b-v3`). The rule is that
+the identifier is whatever the provider resolves, never a package-invented short alias.
+_Avoid_: ASR backend, provider name, package-invented short alias
 
 **Diarization Model Selection**:
-The Hugging Face-style model identifier passed to the configured diarization backend provider.
-_Avoid_: Diarization backend, provider name
+The Hugging Face-style model identifier passed to the configured diarization backend provider. The package is distributed under MIT, so a selection that is named as a default, a recommendation, or an example must be permissively licensed; a non-commercial selection may only be named as a comparative reference and must be labelled with its license.
+_Avoid_: Diarization backend, provider name, unlabelled non-commercial model
 
 **Diarization Adapter**:
 A model integration that produces speaker timeline segments from audio while hiding backend-specific diarization APIs.
@@ -315,6 +346,18 @@ _Avoid_: ASR backend, speaker helper
 **Diarization Flow**:
 The adapter-owned choice of batch or incremental speaker timeline generation for a transcription pipeline.
 _Avoid_: Pipeline-owned diarization algorithm, forced batch diarization
+
+**Diarization Post-Processing Configuration**:
+The threshold source a NeMo Diarization Adapter applies to raw Sortformer speaker-activity predictions before emitting segments: `none` (the default) keeps NeMo's own unconfigured baseline, a named preset or a custom YAML path overrides it. Coro vendors NVIDIA's own published presets without computing or recommending threshold values itself; see ADR 0010.
+_Avoid_: A coro-tuned default, a benchmark-optimized threshold set
+
+**Target Scoring Collar**:
+The DER scoring collar a vendored post-processing parameter set was optimised against, recorded alongside the set itself. Zero-collar scoring rewards boundary precision and near-zero padding; collar-tolerant scoring rewards generous padding and aggressive short-segment deletion. Pairing a parameter set with a different collar is a measurement error, not a preference.
+_Avoid_: One universal parameter set, collar-agnostic thresholds
+
+**Speaker-Count Post-Processing Gate**:
+The rule that suppresses the **Diarization Post-Processing Configuration** when the estimated speaker count exceeds a configured ceiling, falling back to NeMo's baseline for that recording only. NVIDIA reports the tuned thresholds improve DER at four or fewer speakers and degrade it at five or more, because short-segment deletion destroys the fragmentary evidence for the additional speakers. Unobservable while a 4-speaker **Diarization Model Selection** is configured, since the estimate can never exceed 4.
+_Avoid_: Unconditional post-processing, a gate on reference speaker count
 
 **ASR-Only Server**:
 A valid server configuration with an ASR adapter and no diarization adapter.
@@ -333,6 +376,11 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Performance Benchmark** and a **Quality Benchmark** may share one benchmark run; both consume the same hypothesis from the same request.
 - A **Resource CSV** uses a **Stable Resource Schema** across hardware profiles and contains only resource and timing columns; quality columns are not embedded.
 - A **Quality Benchmark** computes the **MeetEval Metric Set** for each workload item using its **Reference STM** and the converted **Hypothesis STM**.
+- A **Quality Benchmark** reports every WER metric in both the **Raw Metric Lane** and the **Normalized Metric Lane**, per **Workload Item** and in the run-level aggregate; neither lane is reported alone.
+- DER belongs to no **Metric Lane** — it scores speaker time rather than text — and is reported once.
+- The **Normalized Metric Lane** applies the **Basic Text Normalizer** identically to the **Reference STM** and the **Hypothesis STM** at scoring time, leaving both artifacts unmodified on disk.
+- The **Basic Text Normalizer** preserves diacritics; the Whisper English normalizer is used for no language.
+- A rendered **Quality Benchmark** report labels each table with the **Metric Lane** that produced its figures.
 - A **Resource CSV** contains both cumulative counters and **Sample Rate Field** values.
 - An **Observed Hardware Profile** is inferred from measurements, not from how the server was launched.
 - A **CPU+GPU Run** requires GPU activity attributable to the **Server Process Tree**.
@@ -351,6 +399,8 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Benchmark Run** uses a **Bench-Managed Server** by default and a **Bench-Attached Server** when `--server-url` is passed; the two modes are mutually exclusive.
 - A **Bench-Managed Server** is configured by translating bench CLI flags into the same `CORO_` environment variables used for **Server Startup Selection**.
 - A **Bench-Managed Server** is considered ready only once `/health` reports both **Capability Readiness** and **Warmup Readiness**.
+- A **Bench-Attached Server** identifies its **Server Process Tree** root from `--server-pid`, or by resolving `--server-match` to exactly one process tree outside the benchmark client's own; an unresolved or ambiguous match fails the **Benchmark Run** rather than sampling an unrelated process.
+- A **Reference STM** is regenerated on every **Benchmark Run** unless reuse is explicitly opted into, so it never freezes against an older STM builder.
 - Diarization is enabled by default for both quality and performance subcommands so the **Quality Benchmark** can report cpWER, ORC-WER, DI-cpWER, and DER, and the **Performance Benchmark** measures the production-shaped pipeline.
 - The **Supported Endpoint Set** contains `/health` and the `/v1/audio/transcriptions` **Transcription Endpoint** only.
 - The **Transcription Endpoint** receives the **Configured Transcription Pipeline** through a **Pipeline Dependency**.
@@ -360,10 +410,15 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - The **Streaming Pipeline** is selected with the startup value `streaming`; the **Full-Memory Pipeline** is selected with `full-memory`. There is no `chunked-file` selector — it was removed, and **Strict Startup Validation** rejects it.
 - **Server Startup Selection** uses the `CORO_` environment prefix for pipeline, backend provider, and model selection settings.
 - **Server Startup Selection** uses **Strict Startup Validation** for selector values.
-- The default ASR **Backend Provider** is `faster-whisper`.
-- The default diarization **Backend Provider** is `none`.
-- The default **ASR Model Selection** is `openai/whisper-medium`.
-- When NeMo diarization is enabled without an explicit **Diarization Model Selection**, the default is `nvidia/diar_streaming_sortformer_4spk-v2`.
+- The default ASR **Backend Provider** is `onnx-asr`.
+- The default diarization **Backend Provider** is `none`; an **ASR-Only Server** is the
+  out-of-the-box configuration by explicit decision, not by omission.
+- The default **ASR Model Selection** is `nemo-parakeet-tdt-0.6b-v3`.
+- The default **ASR Model Selection** runs unquantized; `int8` is a memory-fitting
+  option for it, never a throughput one.
+- When NeMo diarization is enabled without an explicit **Diarization Model Selection**, the default is `nvidia/diar_streaming_sortformer_4spk-v2` (CC-BY-4.0).
+- Every **Diarization Model Selection** the project names carries a documented license; a non-commercially licensed model — such as the batch Sortformer `nvidia/diar_sortformer_4spk-v1` (CC-BY-NC-4.0) — is never a default, a recommendation, or an unannotated example.
+- A diarization **Backend Provider** other than `none` combined with an empty **Diarization Model Selection** fails **Strict Startup Validation**; it never degrades silently to an **ASR-Only Server**.
 - A **Configured Transcription Pipeline** preserves the public **Transcription API Contract** while changing internal processing behavior.
 - `/health` reports **Server Startup Selection**, **Capability Readiness**, and **Warmup Readiness** rather than one ambiguous backend field.
 - The **Full-Memory Pipeline** and **Streaming Pipeline** both use shared **ASR Windowing**; they differ in how PCM is sourced.
@@ -393,6 +448,10 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Backend Provider** may provide ASR, diarization, or both capabilities.
 - **ML Model Integration** modules use a **Capability-First Backend Layout**.
 - **ASR Model Selection** and **Diarization Model Selection** are configured independently, even when they use the same **Backend Provider**.
+- The batch and streaming NeMo **Diarization Flows** apply the identical resolved **Diarization Post-Processing Configuration** for the same setting, resolved once and shared between them.
+- Every vendored **Diarization Post-Processing Configuration** preset records its **Target Scoring Collar**; a benchmark lane selects the preset matching the collar it scores at.
+- Both NeMo **Diarization Flows** apply the same **Speaker-Count Post-Processing Gate** before emitting segments.
+- Building the streaming **Diarization Flow** does not mutate the Sortformer model state the batch **Diarization Flow** reads; latency-tier parameters are scoped to each model call.
 
 ## Example Dialogue
 
@@ -427,7 +486,28 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "No — the benchmark converts the transcription response to a **Hypothesis STM** and MeetEval scores DER against the **Reference STM**."
 
 > **Dev:** "Should we report only WER for the **Quality Benchmark**?"
-> **Domain expert:** "No — report the **MeetEval Metric Set** (siWER, cpWER, ORC-WER, DI-cpWER, DER) because each captures a different speaker-attribution assumption."
+> **Domain expert:** "No — report the **MeetEval Metric Set** (cpWER, ORC-WER, DI-cpWER, DER) because each captures a different speaker-attribution assumption."
+
+> **Dev:** "Should the **MeetEval Metric Set** include siWER as well?"
+> **Domain expert:** "No — siWER assumes one speaker per session, which no **Workload Item** with a multi-speaker **Reference STM** satisfies."
+
+> **Dev:** "Did per-word speaker attribution improve? `cpWER − DI-cpWER` barely moved."
+> **Domain expert:** "That KPI reads hypothesis stream count, not attribution — use **WDER**, and read `wder_claimed` against `abstention_rate` rather than the headline alone."
+
+> **Dev:** "Can we just strip punctuation and collapse whitespace before scoring WER?"
+> **Domain expert:** "No — use the **Basic Text Normalizer** for the **Normalized Metric Lane**, because a locally invented normalization is not comparable to any published Spanish WER."
+
+> **Dev:** "Should we strip accents so `está` and `esta` stop counting as errors?"
+> **Domain expert:** "No — the **Basic Text Normalizer** preserves diacritics, because `esta`/`está` and `ano`/`año` are distinct Spanish words and collapsing them understates error."
+
+> **Dev:** "Whisper ships an English normalizer that handles contractions — should we use it when the audio is English?"
+> **Domain expert:** "No — the English normalizer is used for no language; both lanes use the same **Basic Text Normalizer** so results stay comparable across the **Workload Set**."
+
+> **Dev:** "Now that we have a real protocol, can we drop the un-normalized numbers?"
+> **Domain expert:** "No — report both. Normalization is not neutral, and the **Raw Metric Lane** is the only thing that catches a punctuation or casing regression."
+
+> **Dev:** "Should the normalizer rewrite the **Reference STM** and **Hypothesis STM** files?"
+> **Domain expert:** "No — normalize at scoring time only, so the artifacts stay intact and the **Raw Metric Lane** remains recoverable."
 
 > **Dev:** "Should the sampled metrics file still be called `memory_N.csv`?"
 > **Domain expert:** "No — use a **Resource CSV** because the file contains memory, IO, CPU, and GPU observations."
@@ -490,16 +570,34 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "No — **Strict Startup Validation** rejects unknown selector values before the server starts."
 
 > **Dev:** "What ASR model should be used when no ASR model environment variable is set?"
-> **Domain expert:** "Use `openai/whisper-medium` as the default **ASR Model Selection**."
+> **Domain expert:** "Use `nemo-parakeet-tdt-0.6b-v3` as the default **ASR Model Selection**.
+> It was measured faster and no worse than `openai/whisper-medium` on English meetings, and
+> materially better on Spanish."
 
 > **Dev:** "What backend providers should be used with no environment variables?"
-> **Domain expert:** "Use `faster-whisper` for ASR and `none` for diarization."
+> **Domain expert:** "Use `onnx-asr` for ASR and `none` for diarization."
+
+> **Dev:** "Should we set `int8` quantization by default so the CPU path is faster?"
+> **Domain expert:** "No — for the default transducer **ASR Model Selection** int8 measured
+> no throughput gain and a small WER cost. It is a memory-fitting tool only."
+
+> **Dev:** "The Sortformer v2.1 model card reports much better AMI DER — should it be the
+> default **Diarization Model Selection**?"
+> **Domain expert:** "Not on our evidence. The A/B on AMI did not reproduce that gain, so the
+> default stays `nvidia/diar_streaming_sortformer_4spk-v2`. Defaults follow measurements taken
+> on this pipeline, not model-card claims."
 
 > **Dev:** "Should model selections use short names like `whisper-medium` or full names?"
-> **Domain expert:** "Use Hugging Face-style full names such as `openai/whisper-medium` and `nvidia/diar_sortformer_4spk-v1`."
+> **Domain expert:** "Never a package-invented short alias. Use the identifier the **Backend
+> Provider** itself resolves — Hugging Face-style full names such as `openai/whisper-medium`
+> and `nvidia/diar_streaming_sortformer_4spk-v2`, or a provider's own catalogue handle where
+> it has one, as `onnx-asr` does with `nemo-parakeet-tdt-0.6b-v3`."
 
 > **Dev:** "If NeMo diarization is enabled without a model setting, what should load?"
 > **Domain expert:** "Use `nvidia/diar_streaming_sortformer_4spk-v2` as the default **Diarization Model Selection**."
+
+> **Dev:** "Can we show the batch Sortformer `nvidia/diar_sortformer_4spk-v1` as an example **Diarization Model Selection**?"
+> **Domain expert:** "No — it is licensed CC-BY-NC-4.0 while the package ships under MIT. Name it only as a comparative reference, always labelled with its license, and use the CC-BY-4.0 `nvidia/diar_streaming_sortformer_4spk-v2` for defaults, recommendations, and examples."
 
 > **Dev:** "Should `/health` still return one `backend` field?"
 > **Domain expert:** "No — it should expose **Server Startup Selection** and **Capability Readiness**, including optional diarization status."
@@ -570,6 +668,12 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Dev:** "Should pipelines force diarization to be batch or streaming?"
 > **Domain expert:** "No — the **Diarization Adapter** owns the **Diarization Flow** and returns the same speaker timeline shape either way."
 
+> **Dev:** "We measured Sortformer's diarization error on one benchmark — should we tune its post-processing thresholds on that benchmark and ship the tuned numbers as coro's new default?"
+> **Domain expert:** "No — NVIDIA's own two published presets differ substantially from each other because different acoustic domains want different thresholds; tuning on one benchmark and shipping it as a general default would launder a single-domain overfit. Expose the **Diarization Post-Processing Configuration** as an operator setting instead, vendor NVIDIA's presets verbatim, and leave choosing (or supplying a custom one) to whoever has data representative of their own deployment."
+
+> **Dev:** "Our A/B says one preset wins on this corpus — is that enough to pick it?"
+> **Domain expert:** "Not on its own. A preset is selected from the *decomposition* of the error — how much is miss versus false alarm — and that decomposition is a property of the reference you scored against, not only of the model. Two defensible references for the same corpus can agree on total DER while disagreeing about whether the model over-detects or under-detects. Record which reference and which **Target Scoring Collar** a set was chosen under, and treat a ranking that holds under only one of them as unproven."
+
 ## Flagged Ambiguities
 
 - "server PID" was used to mean both the root process and the full resource footprint — resolved: benchmark metrics target the **Server Process Tree**.
@@ -577,7 +681,9 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "IO" was used to mean both file-interface activity and storage-device pressure — resolved: benchmark output separates **Logical IO Rate** from **Physical IO Rate**.
 - "benchmark" was used to imply both resource comparison and output-quality validation — resolved: split into **Performance Benchmark** and **Quality Benchmark**, optionally combined in one benchmark run.
 - "ground truth" was used for existing output artifacts — resolved: quality scoring uses an explicit **Reference STM** per **Workload Item**.
-- "WER" was used as a single headline number — resolved: a **Quality Benchmark** reports the **MeetEval Metric Set** (siWER, cpWER, ORC-WER, DI-cpWER, DER).
+- "WER" was used as a single headline number — resolved: a **Quality Benchmark** reports the **MeetEval Metric Set** (cpWER, ORC-WER, DI-cpWER, DER).
+- "normalized WER" was used for an ad hoc punctuation-stripping step — resolved: the **Normalized Metric Lane** uses the vendored **Basic Text Normalizer**, and every WER figure names the **Metric Lane** it came from (ADR 0011).
+- "normalization" was treated as a neutral cleanup — resolved: it discards punctuation and casing, so the **Raw Metric Lane** and **Normalized Metric Lane** are always reported together.
 - "warmup" was used ambiguously between server lifecycle and benchmark client behavior — resolved: **Server Warmup** runs at startup and gates **Warmup Readiness**, while a **Benchmark Warmup Item** is opt-in client-side and shares the same **Warmup Audio Asset**.
 - "memory CSV" was used for the sampled metrics file — resolved: the file is a **Resource CSV**.
 - "rate" was used without specifying the denominator — resolved: per-sample rates are **Sample Rate Field** values using observed sample duration.
@@ -595,10 +701,13 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "full-memory" was used to imply whole-file ASR — resolved: both pipeline implementations use **ASR Windowing**.
 - "environment variable" was used without namespacing — resolved: **Server Startup Selection** uses `CORO_PIPELINE`, `CORO_BACKEND_ASR`, `CORO_MODEL_ASR`, `CORO_BACKEND_DIARIZATION`, and `CORO_MODEL_DIARIZATION`.
 - "default pipeline" was used to imply fallback behavior — resolved: defaults apply only when unset; invalid values fail **Strict Startup Validation**.
-- "backend provider default" was unspecified — resolved: ASR defaults to `faster-whisper` and diarization defaults to `none`.
-- "ASR model default" was unspecified — resolved: the default **ASR Model Selection** is `openai/whisper-medium`.
-- "model name" was used to imply short aliases — resolved: **ASR Model Selection** and **Diarization Model Selection** use Hugging Face-style full model identifiers.
+- "backend provider default" was unspecified — resolved: ASR defaults to `onnx-asr` and diarization defaults to `none`.
+- "ASR model default" was unspecified — resolved: the default **ASR Model Selection** is `nemo-parakeet-tdt-0.6b-v3`.
+- "quantization" was used as a speed setting — resolved: for the default transducer **ASR Model Selection**, `int8` is a memory-fitting option with no measured throughput gain.
+- "better model card DER" was treated as sufficient to move a default — resolved: a **Diarization Model Selection** default changes only when an A/B on this pipeline shows the gain; Sortformer v2.1 did not, so the default stays v2.
+- "model name" was used to imply short aliases — resolved: **ASR Model Selection** and **Diarization Model Selection** use the identifier the **Backend Provider** resolves — Hugging Face-style full ids, or a provider's own catalogue handle (e.g. onnx-asr's `nemo-parakeet-tdt-0.6b-v3`) — never a package-invented alias.
 - "diarization model default" was unspecified — resolved: enabled NeMo diarization defaults to `nvidia/diar_streaming_sortformer_4spk-v2`.
+- "Sortformer" was used as if it named one interchangeable model — resolved: the family spans the batch `nvidia/diar_sortformer_4spk-v1` (CC-BY-NC-4.0) and the streaming `nvidia/diar_streaming_sortformer_4spk-v2` (CC-BY-4.0); only the permissively licensed streaming model is a default, recommendation, or example **Diarization Model Selection**.
 - "health backend" was used to imply one backend status — resolved: `/health` reports **Server Startup Selection** and **Capability Readiness** separately.
 - "route code" was used to include transcription orchestration — resolved: orchestration belongs in a **Pipeline Module**.
 - "Pydantic models" was used to imply request parsing, response serialization, and response cleanup — resolved: use **Boundary Response Schema** models for successful and error JSON while preserving multipart form parsing and the existing **Transcription API Contract**.
@@ -620,3 +729,6 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "ASR lock" was used to imply a pipeline-level concern — resolved: concurrency is an **Adapter Concurrency Policy**.
 - "diarization backend" was used to imply a required server dependency — resolved: diarization is optional, and an **ASR-Only Server** is valid.
 - "diarization chunks" was used to imply pipeline-owned diarization behavior — resolved: **Diarization Flow** belongs to the **Diarization Adapter**.
+- "tune the diarizer" was used to imply coro should pick and ship numbers — resolved: coro exposes the **Diarization Post-Processing Configuration** capability and vendors NVIDIA's own presets verbatim; choosing or supplying a value is a per-deployment operator decision, per ADR 0010.
+- "collar-matched preset" was used to imply the collar predicts which preset scores best — resolved: the **Target Scoring Collar** is provenance governing *selection*, not a performance prediction.
+- "the model over-detects speech" was stated as a property of the model — resolved: miss and false-alarm shares are properties of the *reference* a timeline was scored against; two defensible references for one corpus can agree on total DER and disagree on the decomposition.

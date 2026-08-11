@@ -22,6 +22,7 @@ from fastapi.responses import Response
 from coro.api.dependencies import get_pipeline
 from coro.api.exceptions import (
     UNDECODABLE_MEDIA_MESSAGE,
+    TranscriptionCapacityError,
     TranscriptionProcessingError,
     TranscriptionValidationError,
     UnsupportedStreamingError,
@@ -38,6 +39,7 @@ from coro.api.openai.schemas import (
 )
 from coro.api.openai.sse import streaming_response
 from coro.audio import AudioConversionError, AudioInput
+from coro.backends.asr.concurrency import AsrCapacityError
 
 
 # MARK: Router Configuration
@@ -338,6 +340,18 @@ async def create_transcription(
         result = await pipeline.transcribe(audio, language=language, prompt=prompt_value)
     except TranscriptionValidationError:
         raise
+    except AsrCapacityError as exc:
+        # Admission control rejected the call: shed load with a retry hint rather
+        # than reporting it as a server fault.
+        logger.info(
+            "transcription[%s] rejected at ASR capacity after %.3fs: %s",
+            request_id,
+            time.perf_counter() - started,
+            exc,
+        )
+        raise TranscriptionCapacityError(
+            exc.message, retry_after_seconds=exc.retry_after_seconds
+        ) from exc
     except AudioConversionError as exc:
         logger.info(
             "transcription[%s] undecodable upload after %.3fs: %s",

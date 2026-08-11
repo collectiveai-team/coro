@@ -36,7 +36,37 @@ def test_build_diarization_adapter_dispatches_to_nemo():
         adapter = factory.build_diarization_adapter("nemo", "some/model", device="cpu")
 
     assert adapter is sentinel
-    mock_build.assert_called_once_with("some/model", device="cpu")
+    mock_build.assert_called_once_with(
+        "some/model", device="cpu", postprocessing=None, max_speakers=4
+    )
+
+
+def test_build_diarization_adapter_passes_postprocessing_to_nemo():
+    """A Diarization Post-Processing Configuration value reaches the NeMo builder."""
+    with patch(
+        "coro.backends.diarization.nemo.diarization.build_nemo_diarization_adapter",
+        return_value=object(),
+    ) as mock_build:
+        factory.build_diarization_adapter(
+            "nemo", "some/model", device="cpu", postprocessing="dihard3-dev"
+        )
+
+    mock_build.assert_called_once_with(
+        "some/model", device="cpu", postprocessing="dihard3-dev", max_speakers=4
+    )
+
+
+def test_build_diarization_adapter_ignores_postprocessing_for_pyannote():
+    """pyannote has no post-processing concept; the kwarg is not forwarded to it."""
+    with patch(
+        "coro.backends.diarization.pyannote.build_pyannote_diarization_adapter",
+        return_value=object(),
+    ) as mock_build:
+        factory.build_diarization_adapter(
+            "pyannote", "some/model", device="cpu", postprocessing="dihard3-dev"
+        )
+
+    mock_build.assert_called_once_with("some/model", device="cpu", hf_token=None)
 
 
 def test_build_diarization_adapter_unknown_provider_raises():
@@ -57,7 +87,30 @@ def test_build_streaming_diarizer_factory_nemo():
     ) as mock_factory:
         factory.build_streaming_diarizer_factory("nemo", adapter, tier="low")
 
-    mock_factory.assert_called_once_with(fake_model, tier="low")
+    mock_factory.assert_called_once_with(
+        fake_model, tier="low", postprocessing_yaml=None, max_speakers=4
+    )
+
+
+def test_build_streaming_diarizer_factory_reuses_resolved_postprocessing():
+    """The streaming factory reuses the batch adapter's already-resolved value.
+
+    Resolved once by the batch adapter's construction, never re-resolved or
+    re-validated for the streaming path. See ADR 0010.
+    """
+    from coro.backends.diarization.nemo.diarization import NemoDiarizationAdapter
+
+    fake_model = object()
+    adapter = NemoDiarizationAdapter(fake_model, postprocessing_yaml="/resolved/path.yaml")
+
+    with patch(
+        "coro.backends.diarization.nemo.streaming.NemoStreamingDiarizerFactory"
+    ) as mock_factory:
+        factory.build_streaming_diarizer_factory("nemo", adapter, tier="low")
+
+    mock_factory.assert_called_once_with(
+        fake_model, tier="low", postprocessing_yaml="/resolved/path.yaml", max_speakers=4
+    )
 
 
 def test_build_streaming_diarizer_factory_rejects_non_streaming_provider():

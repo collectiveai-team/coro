@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -98,43 +99,60 @@ def test_parse_args_audio_defaults_none():
     assert args.audio is None
 
 
-def test_main_quality_calls_run_quality(capsys):
-    from coro.bench.cli import main
-
+@contextmanager
+def _stubbed_main(subcommand: str, runner: str, handle):
+    """Run `coro-bench <subcommand>` with AMI IO and the server handle stubbed out."""
     with (
-        patch.object(sys, "argv", ["coro-bench", "quality"]),
+        patch.object(sys, "argv", ["coro-bench", subcommand]),
         patch("coro.bench.cli.ensure_audio_and_annotations"),
         patch("coro.bench.cli.materialize_reference_stms"),
-        patch("coro.bench.cli._run_quality") as mock_quality,
+        patch("coro.bench.cli.build_server_handle", return_value=handle),
+        patch(f"coro.bench.cli.{runner}") as mock_runner,
     ):
+        yield mock_runner
+
+
+def test_main_quality_calls_run_quality(stub_server_handle):
+    from coro.bench.cli import main
+
+    with _stubbed_main("quality", "_run_quality", stub_server_handle) as mock_quality:
         main()
     mock_quality.assert_called_once()
 
 
-def test_main_performance_runs_and_outputs_summary(capsys):
+def test_main_performance_runs_and_outputs_summary(stub_server_handle):
     from coro.bench.cli import main
 
-    with (
-        patch.object(sys, "argv", ["coro-bench", "performance"]),
-        patch("coro.bench.cli.ensure_audio_and_annotations"),
-        patch("coro.bench.cli.materialize_reference_stms"),
-        patch("coro.bench.cli._run_performance") as mock_perf,
-    ):
+    with _stubbed_main("performance", "_run_performance", stub_server_handle) as mock_perf:
         main()
     mock_perf.assert_called_once()
 
 
-def test_main_all_calls_run_all(capsys):
+def test_main_all_calls_run_all(stub_server_handle):
     from coro.bench.cli import main
 
-    with (
-        patch.object(sys, "argv", ["coro-bench", "all"]),
-        patch("coro.bench.cli.ensure_audio_and_annotations"),
-        patch("coro.bench.cli.materialize_reference_stms"),
-        patch("coro.bench.cli._run_all") as mock_all,
-    ):
+    with _stubbed_main("all", "_run_all", stub_server_handle) as mock_all:
         main()
     mock_all.assert_called_once()
+
+
+def test_main_enters_and_exits_the_server_handle(stub_server_handle):
+    """The server handle's lifecycle brackets the workload, teardown included."""
+    from coro.bench.cli import main
+
+    with _stubbed_main("all", "_run_all", stub_server_handle):
+        main()
+    stub_server_handle.__enter__.assert_called_once()
+    stub_server_handle.__exit__.assert_called_once()
+
+
+def test_main_passes_the_server_handle_to_the_runner(stub_server_handle):
+    """The runner receives the live handle, not a URL rebuilt from flag defaults."""
+    from coro.bench.cli import main
+
+    with _stubbed_main("all", "_run_all", stub_server_handle) as mock_all:
+        main()
+    assert mock_all.call_args.args[2] is stub_server_handle
 
 
 def test_parse_args_accepts_warmup():

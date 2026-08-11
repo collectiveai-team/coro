@@ -116,6 +116,34 @@ def test_finalizer_flushes_unterminated_tail(tmp_path):
     assert streamed.segments[0].text == "sin punto"
 
 
+def test_finalizer_word_timings_respect_the_overlap_clamp(tmp_path):
+    """Streamed and batch word timings agree, clamped segments included.
+
+    The parity assertion is the load-bearing one: interpolating words before
+    clamping used to make the streamed ``word_segments`` disagree with the batch
+    ones, and that must not come back.
+
+    A word is *not* trimmed to its clamped segment, though. Words now carry the
+    ASR's real ``start``/``end`` rather than an interpolation over the segment
+    span, so when a segment's end is clamped back to the next segment's start,
+    its last word can legitimately end past it — the segment span is a display
+    bound, the word timings are measurements. Trimming them to match would
+    corrupt the per-word timings the vendor-native endpoints publish.
+    """
+    tokens = [_tok(0.0, 1.5, " uno."), _tok(1.0, 2.0, " dos.")]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(tokens)
+        finalizer.finish()
+        streamed = build_streaming_response(store)
+
+    batch = build_transcription_response(tokens, [], duration=2.0)
+    assert streamed.word_segments == batch.word_segments
+    first = streamed.segments[0]
+    assert first.end == 1.0  # clamped back to the next segment's start
+    assert first.words[-1].end == 1.5  # the ASR's real measurement, untrimmed
+
+
 def test_finalizer_open_buffer_stays_bounded(tmp_path):
     """Open run never retains more than the current unterminated segment."""
     with TranscriptSpillStore(directory=str(tmp_path)) as store:

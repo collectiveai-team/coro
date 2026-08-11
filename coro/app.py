@@ -19,6 +19,7 @@ import coro
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from coro.api.docs import register_docs
 from coro.api.openai.errors import transcription_exception_handler
 from coro.api.exceptions import TranscriptionError
 from coro.runtime import RuntimeState
@@ -28,6 +29,47 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+API_TITLE = "ASR Diarization Server"
+
+# Each contract names the other, so a consumer that only ever fetches one
+# document still learns the other half exists. This is contract metadata, not UI
+# copy: the pointer is just as useful to a codegen tool as to a reader.
+_CONTRACT_CROSS_REFERENCE = (
+    "This is the request/response half of coro's contract. The server-sent "
+    "event stream returned when `stream=true` is published separately as "
+    "AsyncAPI at `/asyncapi.json`; `/docs` renders both."
+)
+
+
+def api_metadata(summary: str, license_expression: str) -> tuple[str, dict[str, str] | None]:
+    """Compose the OpenAPI ``info`` description and license from package metadata.
+
+    A source tree with no install has no distribution metadata, so both inputs
+    are empty. Each is dropped rather than published blank: an empty SPDX
+    identifier is not a valid OpenAPI license object, and a description opening
+    with a blank line is just noise. The CI contract gate runs in exactly that
+    environment (``uv sync --only-group contracts`` installs no project), so this
+    is a live path, not a defensive one.
+
+    Args:
+        summary: Distribution summary, or empty when metadata is unavailable.
+        license_expression: SPDX expression, or empty when unavailable.
+
+    Returns:
+        The description, and the license object or ``None`` when unknown.
+
+    """
+    description = "\n\n".join(part for part in (summary, _CONTRACT_CROSS_REFERENCE) if part)
+    license_info = (
+        {"name": license_expression, "identifier": license_expression}
+        if license_expression
+        else None
+    )
+    return description, license_info
+
+
+API_DESCRIPTION, API_LICENSE_INFO = api_metadata(coro.__summary__, coro.__license__)
 
 
 def create_app(settings: ServerSettings | None = None) -> FastAPI:
@@ -74,12 +116,24 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
         # Build optional diarization adapter via the diarization Backend Adapter Factory.
         diarization_adapter = None
-        if settings.backend_diarization != "none" and settings.model_diarization:
+        if settings.backend_diarization != "none":
+            diarization_model = settings.model_diarization
+            if not diarization_model:
+                # Strict Startup Validation already rejects this combination; failing
+                # here too keeps the invariant enforced at the point of use, so an
+                # enabled provider can never silently degrade to an ASR-Only Server.
+                msg = (
+                    f"Diarization Backend Provider '{settings.backend_diarization}' is "
+                    "selected but the Diarization Model Selection is empty."
+                )
+                raise ValueError(msg)
             diarization_adapter = diarization_factory.build_diarization_adapter(
                 settings.backend_diarization,
-                settings.model_diarization,
+                diarization_model,
                 device=settings.diarization_device,
                 hf_token=settings.hf_token.get_secret_value() if settings.hf_token else None,
+                postprocessing=settings.diarization_postprocessing,
+                postprocessing_max_speakers=settings.diarization_postprocessing_max_speakers,
             )
             runtime.diarization_adapter = diarization_adapter
 
@@ -121,8 +175,23 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
         # Cleanup: adapters do not currently expose explicit teardown hooks.
 
-    application = FastAPI(title="ASR Diarization Server", lifespan=lifespan)
+    # docs_url/redoc_url are off because Scalar owns /docs: it is the only
+    # renderer that can show the OpenAPI and AsyncAPI contracts together.
+    application = FastAPI(
+        title=API_TITLE,
+        version=coro.__version__,
+        description=API_DESCRIPTION,
+        license_info=API_LICENSE_INFO,
+        # A relative server keeps the published contract correct behind any
+        # host, port or reverse proxy, and is what redocly's no-empty-servers
+        # rule asks for.
+        servers=[{"url": "/", "description": "This server."}],
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+    )
     application.add_exception_handler(TranscriptionError, transcription_exception_handler)
+    register_docs(application, title=f"{API_TITLE} API")
 
     application.add_middleware(
         CORSMiddleware,

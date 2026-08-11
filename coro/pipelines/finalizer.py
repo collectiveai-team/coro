@@ -7,13 +7,17 @@ nothing later inserts before it.  This finalizer exploits that to spill
 finalized runs and raw words to a :class:`TranscriptSpillStore`, keeping only
 the current open run of tokens in memory.
 
-Runs are spilled as *tokens*, not as assembled segments: the streaming diarizer
-only produces its complete timeline once the audio ends, so word-level speaker
-attribution — and the segment split that follows from it — is deferred to
-assembly (:func:`build_streaming_response`).  Assembly then calls the very same
-:func:`coro.core.response.build_response_segments` the batch builder uses, one
-run at a time, so both paths are identical by construction while memory stays
-flat.
+Speaker labels, overlap clamping and word interpolation are NOT applied here.
+Each depends on information that does not exist when a segment finalizes — the
+streaming diarizer only produces its complete timeline once the audio ends, and
+a segment's clamped end depends on the *next* segment's start.  All three are
+deferred to assembly (:func:`iter_response_segments`).
+
+Runs are therefore spilled as *tokens*, not as assembled segments.  Assembly
+calls the very same :func:`coro.core.response.build_response_segments` the batch
+builder uses, one run at a time, so both paths are identical by construction
+while memory stays flat.
+
 """
 
 from __future__ import annotations
@@ -82,13 +86,12 @@ def iter_response_segments(
     store: TranscriptSpillStore,
     speaker_timeline: list[SpeakerSegment] | None = None,
 ) -> Iterator[ResponseSegment]:
-    """Yield finalized segments, speaker-attributed and overlap-clamped.
+    """Yield finalized segments, speaker-attributed, overlap-clamped and worded.
 
-    Each stored run is attributed at word granularity and split where the
-    word-level speaker changes, then a one-segment-lookahead clamp ensures a
-    segment never ends past the next one's start (matching ``_clamp_overlaps``
-    for in-order input).  Only a single segment is buffered, so memory stays
-    flat.
+    Applies the batch builder's steps in its order: attribute each stored run at
+    word granularity against the (complete) diarization timeline, then clamp the
+    end against the next segment's start (matching ``_clamp_overlaps`` for
+    in-order input).  Only a single segment is buffered, so memory stays flat.
     """
     merged = merge_speaker_timeline(speaker_timeline or [])
 
