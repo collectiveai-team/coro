@@ -22,17 +22,28 @@ Two departures, both settled by this ADR:
    achieve that goal *more* completely than X1 does, because they leave the
    OpenAI request parameter alone as well as the response bodies — see the next
    section. X1 was implemented first on this branch and then withdrawn.
-2. **Coro ships exactly two vendor dialects: OpenAI and Deepgram.** X1's ordering
-   named a third dialect first. That dialect is **rejected, not deferred** — its
-   contract is asynchronous (upload, then a queued job, then polling), which needs
-   a job-state subsystem coro does not have and is not going to acquire for this;
-   a synchronous single-POST imitation would be the partial clone rule 1 of the
-   fidelity policy forbids. The infrastructure cost is not worth the return.
+2. **This ADR ships two dialects: OpenAI and Deepgram.** X1's ordering named a
+   third dialect first. It is **not implemented here**, and the reason is specific
+   to that vendor's contract rather than to the number of dialects: the contract
+   is asynchronous — upload, then a queued job, then polling — which needs a
+   job-state subsystem coro does not have. A synchronous single-POST imitation
+   would be the partial clone rule 1 of the fidelity policy forbids, so
+   implementing it *honestly* means building that subsystem first. That was not
+   worth the return for this piece of work.
 
-**This part of issue 46 is closed.** Reopening it needs a new ADR that supersedes
-this one, not a re-reading of issue 46 — the ordering recorded there is
-superseded, and `tests/test_retired_decisions.py` fails if a third dialect is
-reintroduced by name.
+**That is a cost judgement in a context, not a standing position.** It is scoped
+to one vendor's asynchronous contract at one point in time. It says nothing about
+a vendor whose contract is synchronous, and nothing about revisiting this one if
+the job-state infrastructure ever exists for another reason. There is no dialect
+budget, and no count above which an endpoint is refused.
+
+What a further vendor endpoint has to clear is the **fidelity policy** below —
+the same bar Deepgram cleared. That is a question about the candidate endpoint,
+not about how many already exist.
+
+What *is* superseded is X1's **ordering** in issue 46, which named that dialect
+first and Deepgram second. Nothing in the issue record should be read as
+scheduling it.
 
 **What does not change is the premise issue `12` depends on.** Its decision rule
 is "if per-word speaker truth leaves the process → sentence-first + majority". It

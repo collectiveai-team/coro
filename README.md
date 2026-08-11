@@ -981,8 +981,9 @@ See `docs/adr/0015-vendor-native-endpoints.md` for the fidelity policy.
 `/v1/audio/transcriptions` is byte-unchanged, asserted in
 `tests/test_openai_formats_unchanged.py`.
 
-> Coro speaks two vendor dialects — OpenAI and Deepgram — and adding a third is
-> **out of scope**, not pending. See ADR 0015.
+> Coro currently speaks two vendor dialects — OpenAI and Deepgram. Whether a
+> further dialect is added is a question of whether that vendor's contract can be
+> met under the fidelity policy, not of a fixed count. See ADR 0015.
 
 ## Development
 

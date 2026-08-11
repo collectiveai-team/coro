@@ -1,19 +1,28 @@
 """Guard the repository against decisions that were made and then un-made.
 
-This program has now had the same class of defect five times: a decision is
-recorded in an ADR, the code changes, and prose somewhere else keeps asserting
-the superseded version — a retired ADR number, a renamed function, a guarantee
-the response no longer offers, a vendor that was rejected. Each incident cost a
-review cycle to rediscover, and one of them shipped a docstring that contradicted
-its own ADR in the same commit that wrote the ADR.
+A decision gets recorded in an ADR, the code changes, and prose somewhere else
+keeps asserting the superseded version — a retired ADR number, a renamed
+function, a guarantee the response no longer offers. Each incident cost a review
+cycle to rediscover, and one shipped a docstring that contradicted its own ADR in
+the same commit that wrote the ADR.
 
-Reviewer attention has already failed at this repeatedly, so the rule is
-mechanical instead. Each entry below is a string that has **no legitimate
-present-tense use** in this repository; ADRs that must describe what they
-superseded name themselves in ``allow``.
+Each entry below is a string with **no legitimate present-tense use** in this
+repository. ADRs that must describe what they superseded name themselves in
+``allow``; adding any other exception means editing ``allow`` with a reason,
+which is a visible diff in review.
 
-Adding a genuine exception means editing ``allow`` with a reason, which is a
-visible diff in review. Reintroducing a retired decision by accident fails here.
+**Scope, and what this cannot do.** A needle belongs here only when the thing it
+names no longer exists or is no longer true — a *fact* about the tree, not a
+preference about its direction. Two limits follow, and both have been hit:
+
+- It is not a place to make a decision permanent. A judgement taken in a context
+  can be revisited; banning its vocabulary enforces a finality the decision never
+  had, and blocks the very thing an ADR exists for, which is recording what was
+  considered and why it was not chosen. One needle was removed for exactly this.
+- It only catches strings someone already thought to list, so it always describes
+  the *last* incident and never the next one. A stubbed confidence documented as
+  a measured one was the same species of defect and this guard was blind to it,
+  because no retired name was involved.
 """
 
 from __future__ import annotations
@@ -27,11 +36,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 ADR_0014 = "docs/adr/0014-response-segmentation-and-per-word-speakers.md"
-ADR_0015 = "docs/adr/0015-vendor-native-endpoints.md"
 SELF = "tests/test_retired_decisions.py"
 
 # Only text a human reads or a machine executes. Lock files and binaries carry
-# vendor strings this guard has no opinion about.
+# strings this guard has no opinion about.
 SCANNED_SUFFIXES = {".py", ".md", ".toml", ".yml", ".yaml", ".sh", ".cfg", ".txt"}
 
 
@@ -82,16 +90,14 @@ RETIRED = (
         ),
         allow=(ADR_0014, SELF),
     ),
-    Retired(
-        needle="AssemblyAI",
-        reason=(
-            "Rejected on infrastructure cost, not deferred (ADR 0015). Coro ships exactly "
-            "two vendor dialects, OpenAI and Deepgram. Adding a third needs a new ADR that "
-            "supersedes 0015 — not a re-reading of issue 46, whose ordering is superseded."
-        ),
-        allow=(SELF,),
-    ),
 )
+# A third vendor dialect was *not* retired, and no needle guards it. ADR 0015
+# declines one specific vendor because its asynchronous contract needs job-state
+# infrastructure coro does not have — a cost judgement in a context, not a closed
+# door and not a cap on how many dialects may exist. Banning the name here was a
+# category error: it enforced a permanence the decision never had, and it
+# forbade the one thing an ADR is for, which is writing down what was considered
+# and why it was not chosen.
 
 # The sandwich rule was measured, rejected, and kept as evidence (issue 17). The
 # module and its tests must survive; the default assembly path must not call it.
