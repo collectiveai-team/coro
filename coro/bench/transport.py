@@ -71,6 +71,51 @@ def transcribe_audio(
         raise
 
 
+def transcribe_audio_deepgram(
+    base_url: str,
+    audio_path: Path,
+    *,
+    diarize: bool = True,
+    utterances: bool = True,
+    timeout_seconds: float = 14400.0,
+) -> Any:
+    """POST the audio to the Deepgram-native ``/v1/listen`` endpoint.
+
+    Deepgram takes a **raw audio body**, not multipart, so this cannot reuse
+    the OpenAI request builder above. It is the only wire surface coro serves
+    that carries per-word speaker labels; ``diarized_json`` has no word field,
+    so a benchmark run over the OpenAI endpoint can only ever score the
+    segment-level speaker summary.
+
+    ``diarize`` and ``utterances`` both default to ``false`` at the endpoint,
+    as they do at Deepgram, so they are requested explicitly — omitting them
+    returns words with no ``speaker`` key at all.
+    """
+    import urllib.request
+
+    query = urllib.parse.urlencode(
+        {
+            "diarize": str(diarize).lower(),
+            "utterances": str(utterances).lower(),
+        }
+    )
+    url = f"{base_url.rstrip('/')}/v1/listen?{query}"
+    mime_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
+    req = urllib.request.Request(
+        url,
+        data=audio_path.read_bytes(),
+        headers={"Content-Type": mime_type},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
+            return json.loads(resp.read())
+    except Exception as exc:
+        if _is_connection_refused(exc):
+            raise ServerUnreachableError(base_url, cause=exc) from exc
+        raise
+
+
 def transcribe_audio_sse(
     base_url: str,
     audio_path: Path,
