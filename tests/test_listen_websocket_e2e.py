@@ -73,8 +73,20 @@ def _free_port() -> int:
 
 
 def _real_pcm(seconds: int) -> list[bytes]:
-    """Decode the bundled recording to canonical PCM and slice it into frames."""
+    """Decode the bundled recording to canonical PCM and slice it into frames.
+
+    Guarded rather than decorated per test: every caller reaches ffmpeg through
+    here, directly or via ``_stream``, so one check covers all of them and fires
+    exactly when a decode is actually needed. ffmpeg is a genuine runtime
+    dependency (the shipped image installs it, and ``coro.pcm`` decodes every
+    upload through it) and CI installs it explicitly, so a skip here means a
+    developer's machine lacks it — not that the dependency is optional.
+    """
+    import shutil
     import subprocess
+
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is not on PATH; cannot decode the bundled recording")
 
     raw = subprocess.run(  # noqa: S603
         [
