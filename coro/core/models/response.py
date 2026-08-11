@@ -27,9 +27,11 @@ class RawWord:
 class ResponseSegment:
     """A speaker-attributed, serialisable transcript segment with word timings.
 
-    A segment is speaker-homogeneous: the builder splits a segment run wherever
-    the word-level speaker changes. ``overlap`` is set when any of its words
-    falls inside concurrently active speaker timeline entries.
+    Boundaries are sentence-shaped, so a segment may span a speaker turn and its
+    ``speaker`` is the duration-weighted *majority* of ``words`` — a summary, not
+    a homogeneity guarantee. ``words`` carries the per-word truth. ``overlap`` is
+    set when any of its words falls inside concurrently active speaker timeline
+    entries. See ADR 0014.
     """
 
     start: float

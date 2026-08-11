@@ -123,7 +123,7 @@ def test_finalizer_word_timings_match_batch_across_the_overlap_clamp(tmp_path):
 
     Inherited from the streaming-correctness work, which asserted the last word
     ended exactly at the clamped segment end because words were *interpolated*
-    over that span. Word timings are now the backend's own (ADR 0008), so a word
+    over that span. Word timings are now the backend's own (ADR 0014), so a word
     may legitimately extend past its clamped segment end and the tiling
     assumption no longer holds. The invariant that still matters — and the one
     the test existed for — is that batch and streaming do not disagree.
@@ -161,11 +161,13 @@ def test_finalizer_open_buffer_stays_bounded(tmp_path):
 
 
 def test_finalizer_matches_batch_when_a_speaker_changes_mid_run(tmp_path):
-    """Word-level splitting inside one segment run is identical in both paths.
+    """A mid-run turn stays one segment, and both paths summarise it identically.
 
-    The turn is a clean two-way split with no punctuation support, and flicker
-    correction leaves it alone because it is not sandwiched (see
-    ``test_core_realignment.py``).
+    The turn is a clean two-way change with no punctuation support. Sentence-first
+    segmentation does not cut on it (ADR 0014), so the run stays whole and only the
+    per-word labels record the change. Speaker 2 and speaker 3 hold 0.8 s each over
+    two words apiece, so this is also the deterministic tie case: equal duration,
+    equal count, lowest label wins.
     """
     tokens = [
         _tok(0.0, 0.4, " hola"),
@@ -188,7 +190,8 @@ def test_finalizer_matches_batch_when_a_speaker_changes_mid_run(tmp_path):
     assert streamed.segments == batch.segments
     assert streamed.word_segments == batch.word_segments
     assert streamed.diarization == batch.diarization
-    assert [s.speaker for s in streamed.segments] == ["2", "3"]
+    assert [s.speaker for s in streamed.segments] == ["2"]
+    assert [w.speaker for w in streamed.word_segments] == ["2", "2", "3", "3"]
 
 
 def test_finalizer_matches_batch_for_overlapped_speech(tmp_path):

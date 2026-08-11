@@ -9,9 +9,11 @@ from pydantic import BaseModel, ConfigDict
 class WhisperWord(BaseModel):
     """Word-level timestamp item in a segment.
 
-    ``start``/``end``/``score`` are the ASR backend's real per-word values.
-    ``overlap`` flags a word whose span contains concurrently active speakers,
-    so the single-label collapse is visible rather than silent (see ADR 0008).
+    ``start``/``end``/``score`` are the ASR backend's real per-word values, and
+    ``speaker`` is decided for this word alone — the normative per-word speaker
+    truth. ``overlap`` flags a word whose span contains concurrently active
+    speakers, so the single-label collapse is visible rather than silent (see
+    ADR 0014).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -27,8 +29,10 @@ class WhisperWord(BaseModel):
 class WhisperSegment(BaseModel):
     """Segment item in the Whisper Response Schema.
 
-    Segments are speaker-homogeneous; ``overlap`` is true when any word in the
-    segment falls in overlapped speech (see ADR 0008).
+    Segments are sentence-shaped, so one may span a speaker turn; ``speaker`` is
+    the duration-weighted majority of ``words`` and is ``"-1"`` only when every
+    word is. ``overlap`` is true when any word in the segment falls in overlapped
+    speech (see ADR 0014).
     """
 
     model_config = ConfigDict(extra="forbid")

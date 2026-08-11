@@ -65,7 +65,7 @@ def test_transcription_response_rejects_extra_fields_inside_items():
 
 
 def test_segment_and_word_overlap_defaults_to_false():
-    """The additive overlap flag (ADR 0008) is optional on input."""
+    """The additive overlap flag (ADR 0014) is optional on input."""
     response = TranscriptionResponse.model_validate(
         {
             "segments": [

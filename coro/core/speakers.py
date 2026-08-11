@@ -17,8 +17,9 @@ Three behaviours differ deliberately from a naive maximum-overlap rule:
   per speaker, so genuinely overlapped speech shows up as concurrently active
   entries. The winner is still a single label, but the span is marked so the
   collapse is visible instead of silent.
-Correcting the *flicker* that per-word attribution exposes is a separate
-concern and lives in :mod:`coro.core.realignment`.
+Summarising a whole segment's words into one label is a separate concern and
+lives in :mod:`coro.core.response`; smoothing the per-word labels themselves is
+a third, measured and not adopted, in :mod:`coro.core.realignment`.
 """
 
 from __future__ import annotations

@@ -1,13 +1,21 @@
-"""Flicker correction for per-word speaker labels.
+"""Flicker correction for per-word speaker labels — not in the default path.
 
-Per-word attribution splits a segment run at every speaker change, which takes
-the diarization timeline at face value. A timeline that changes hands for a
-fraction of a second manufactures *flicker*: a stretch of words whose speaker
-differs from both neighbours, where those two neighbours agree. Measured over
-six AMI meetings, splitting on the raw change tripled it — 11.6% of segments to
-27.6% — and doubled one-word segments.
+This module is retained as evidence, not as behaviour. It was written for the
+speaker-first architecture, in which a segment run was cut at every word-level
+speaker change and a timeline that changed hands for a fraction of a second
+therefore manufactured *flicker*: a stretch of words whose speaker differs from
+both neighbours, where those two neighbours agree. Measured over six AMI
+meetings, splitting on the raw change tripled it — 11.6% of segments to 27.6% —
+and doubled one-word segments.
 
-This module corrects that, and the shape of the correction is the whole point.
+Segmentation is now sentence-first (ADR 0014): boundaries come from the
+transcript alone, so segment count and one-word-segment count no longer depend
+on the timeline and flicker is bounded by construction. The premise above is
+gone, so the correction is not applied. Word-label smoothing as a question in
+its own right is refiled as issue 17, and the measured rejection below is the
+input that issue starts from.
+
+The shape of the correction is the whole point.
 
 **Only sandwiched islands are absorbed.** An island of one speaker flanked on
 both sides by the *same* other speaker is the exact pattern that defines
@@ -26,7 +34,12 @@ workload 62% of what it flattened were clean two-way turns rather than flicker.
 It made DER speaker-error worse than the pre-attribution baseline on 6 of 6
 clips. Its upstream design target is different from ours — it exists to repair
 turn boundaries landing a few hundred milliseconds inside a sentence, after a
-punctuation-restoration model has run, on two-speaker audio. See ADR 0008.
+punctuation-restoration model has run, on two-speaker audio. See ADR 0014.
+
+That rejection is a rejection of *word relabelling*, and it is not an argument
+against the segment-level majority summary in :mod:`coro.core.response`: the two
+rules read the same evidence but write to different places. One overwrites the
+per-word truth; the other only summarises it.
 
 Both rules are bounded by sentences, and that part is kept: punctuation is
 evidence of a genuine turn, so a change that coincides with it is never

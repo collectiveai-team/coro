@@ -9,11 +9,15 @@ the current open run of tokens in memory.
 
 Runs are spilled as *tokens*, not as assembled segments: the streaming diarizer
 only produces its complete timeline once the audio ends, so word-level speaker
-attribution — and the segment split that follows from it — is deferred to
-assembly (:func:`build_streaming_response`).  Assembly then calls the very same
-:func:`coro.core.response.build_response_segments` the batch builder uses, one
-run at a time, so both paths are identical by construction while memory stays
-flat.
+attribution — and the segment's majority label that summarises it — is deferred
+to assembly (:func:`build_streaming_response`).  Assembly then calls the very
+same :func:`coro.core.response.build_response_segment` the batch builder uses,
+one run at a time, so both paths are identical by construction while memory
+stays flat.
+
+Run boundaries are sentence-shaped and decided from the transcript alone, so
+they are final at spill time and do not depend on the diarization timeline that
+has not arrived yet (ADR 0014).
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from coro.core.models import (
     TranscriptToken,
     TranscriptWord,
 )
-from coro.core.response import build_response_segments
+from coro.core.response import build_response_segment
 from coro.core.segmentation import SegmentAccumulator, run_span
 from coro.core.speakers import merge_speaker_timeline
 from coro.pipelines.transcript_store import TranscriptSpillStore
@@ -84,22 +88,24 @@ def iter_response_segments(
 ) -> Iterator[ResponseSegment]:
     """Yield finalized segments, speaker-attributed and overlap-clamped.
 
-    Each stored run is attributed at word granularity and split where the
-    word-level speaker changes, then a one-segment-lookahead clamp ensures a
-    segment never ends past the next one's start (matching ``_clamp_overlaps``
-    for in-order input).  Only a single segment is buffered, so memory stays
-    flat.
+    Each stored run is attributed at word granularity and labelled with the
+    duration-weighted majority of its own words, then a one-segment-lookahead
+    clamp ensures a segment never ends past the next one's start (matching
+    ``_clamp_overlaps`` for in-order input).  Only a single segment is buffered,
+    so memory stays flat.
     """
     merged = merge_speaker_timeline(speaker_timeline or [])
 
     prev: ResponseSegment | None = None
     for tokens in store.iter_segment_tokens():
-        for seg in build_response_segments(tokens, merged):
-            if prev is not None:
-                if prev.end > seg.start:
-                    prev.end = round(max(prev.start, seg.start), 2)
-                yield prev
-            prev = seg
+        seg = build_response_segment(tokens, merged)
+        if seg is None:
+            continue
+        if prev is not None:
+            if prev.end > seg.start:
+                prev.end = round(max(prev.start, seg.start), 2)
+            yield prev
+        prev = seg
     if prev is not None:
         yield prev
 

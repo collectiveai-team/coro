@@ -155,16 +155,16 @@ def test_missing_probability_defaults_to_one():
 
 
 # ---------------------------------------------------------------------------
-# Word-level speaker attribution
+# Word-level speaker attribution, and the segment-level majority summary
 # ---------------------------------------------------------------------------
 
 
-def test_segment_splits_where_the_word_level_speaker_changes():
-    """A sentence spanning a speaker turn no longer inherits one label.
+def test_segment_is_not_split_where_the_word_level_speaker_changes():
+    """A sentence spanning a speaker turn stays one segment (ADR 0014).
 
-    The turn is a clean two-way split with no punctuation support at all, and
-    it must still survive flicker correction: it is not sandwiched, so it is
-    not a blip (see ``test_core_realignment.py``).
+    Boundaries are sentence-first, so a mid-sentence turn does not manufacture
+    a boundary. The per-word labels still record the turn exactly, which is what
+    makes the segment's single label a summary rather than a loss.
     """
     tokens = [
         TranscriptToken(start=0.0, end=0.4, text=" hola", probability=1.0),
@@ -178,27 +178,68 @@ def test_segment_splits_where_the_word_level_speaker_changes():
     ]
     result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.0)
 
-    assert [s.speaker for s in result.segments] == ["2", "3"]
-    assert [s.text for s in result.segments] == ["hola mundo", "adios amigo."]
+    assert [s.text for s in result.segments] == ["hola mundo adios amigo."]
     assert [w.speaker for w in result.word_segments] == ["2", "2", "3", "3"]
 
 
-def test_single_word_flicker_within_a_sentence_does_not_split_the_segment():
-    """Punctuation-aware realignment absorbs a one-word diarization blip."""
+def test_segment_speaker_is_the_duration_weighted_majority_of_its_words():
+    """Two words of speaker 3 outweigh two of speaker 2 on duration, not count."""
+    tokens = [
+        TranscriptToken(start=0.0, end=0.1, text=" a", probability=1.0),
+        TranscriptToken(start=0.1, end=0.2, text=" b", probability=1.0),
+        TranscriptToken(start=2.0, end=3.0, text=" c", probability=1.0),
+        TranscriptToken(start=3.0, end=4.0, text=" d.", probability=1.0),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.0, speaker=2),
+        SpeakerSegment(start=1.5, end=4.0, speaker=3),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=4.0)
+    assert [w.speaker for w in result.word_segments] == ["2", "2", "3", "3"]
+    assert [s.speaker for s in result.segments] == ["3"]
+
+
+def test_majority_outvotes_a_more_numerous_but_shorter_speaker():
+    """One long word beats three short ones — duration-weighted, not counted."""
+    tokens = [
+        TranscriptToken(start=0.0, end=3.0, text=" larguisima", probability=1.0),
+        TranscriptToken(start=4.0, end=4.1, text=" a", probability=1.0),
+        TranscriptToken(start=4.1, end=4.2, text=" b", probability=1.0),
+        TranscriptToken(start=4.2, end=4.3, text=" c.", probability=1.0),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=3.5, speaker=2),
+        SpeakerSegment(start=3.9, end=5.0, speaker=3),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=5.0)
+    assert [w.speaker for w in result.word_segments] == ["2", "3", "3", "3"]
+    assert [s.speaker for s in result.segments] == ["2"]
+
+
+def test_a_mid_sentence_flicker_word_does_not_change_the_segment_label():
+    """A one-word diarization blip is a minority, so the majority absorbs it.
+
+    This is the exact ``A B A`` sandwich ``coro.core.realignment`` was written for
+    (island 0.8 s against 2.8 s of flanks), and the blip is long enough that
+    gap-bounded merging does not already swallow it. The word keeps its own ``2``
+    label: flicker is summarised away at *segment* granularity without
+    overwriting the per-word truth, which is what relabelling used to do and no
+    longer does.
+    """
     tokens = [
         TranscriptToken(start=0.0, end=1.0, text=" esto", probability=1.0),
         TranscriptToken(start=1.0, end=2.0, text=" es", probability=1.0),
-        TranscriptToken(start=2.0, end=2.2, text=" una", probability=1.0),
-        TranscriptToken(start=2.2, end=3.0, text=" prueba.", probability=1.0),
+        TranscriptToken(start=2.0, end=2.8, text=" una", probability=1.0),
+        TranscriptToken(start=2.8, end=3.6, text=" prueba.", probability=1.0),
     ]
     timeline = [
         SpeakerSegment(start=0.0, end=2.0, speaker=1),
-        SpeakerSegment(start=2.0, end=2.2, speaker=2),
-        SpeakerSegment(start=2.2, end=3.0, speaker=1),
+        SpeakerSegment(start=2.0, end=2.8, speaker=2),
+        SpeakerSegment(start=2.8, end=3.6, speaker=1),
     ]
-    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.0)
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.6)
     assert [s.speaker for s in result.segments] == ["1"]
-    assert [w.speaker for w in result.word_segments] == ["1", "1", "1", "1"]
+    assert [w.speaker for w in result.word_segments] == ["1", "1", "2", "1"]
 
 
 def test_word_in_a_diarization_gap_is_marked_unknown():
@@ -212,7 +253,46 @@ def test_word_in_a_diarization_gap_is_marked_unknown():
         SpeakerSegment(start=8.0, end=9.0, speaker=3),
     ]
     result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=9.0)
-    assert [s.speaker for s in result.segments] == ["2", "-1"]
+    assert [w.speaker for w in result.word_segments] == ["2", "-1"]
+
+
+def test_unknown_words_abstain_rather_than_outvote_a_real_speaker():
+    """An unknown majority by duration still loses to the one attributed word."""
+    tokens = [
+        TranscriptToken(start=0.0, end=0.4, text=" dentro", probability=1.0),
+        TranscriptToken(start=5.0, end=9.0, text=" fuera.", probability=1.0),
+    ]
+    timeline = [SpeakerSegment(start=0.0, end=1.0, speaker=2)]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=9.0)
+    assert [w.speaker for w in result.word_segments] == ["2", "-1"]
+    assert [s.speaker for s in result.segments] == ["2"]
+
+
+def test_segment_is_unknown_only_when_all_of_its_words_are():
+    """Every word unattributed is the one case that makes the segment ``-1``."""
+    tokens = [
+        TranscriptToken(start=5.0, end=5.4, text=" fuera", probability=1.0),
+        TranscriptToken(start=5.4, end=5.8, text=" tambien.", probability=1.0),
+    ]
+    timeline = [SpeakerSegment(start=0.0, end=1.0, speaker=2)]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=9.0)
+    assert [w.speaker for w in result.word_segments] == ["-1", "-1"]
+    assert [s.speaker for s in result.segments] == ["-1"]
+
+
+def test_a_duration_tie_breaks_on_the_lowest_speaker_label():
+    """Equal duration and equal word count resolve deterministically, low label first."""
+    tokens = [
+        TranscriptToken(start=0.0, end=1.0, text=" uno", probability=1.0),
+        TranscriptToken(start=2.0, end=3.0, text=" dos.", probability=1.0),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.0, speaker=3),
+        SpeakerSegment(start=2.0, end=3.0, speaker=2),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.0)
+    assert [w.speaker for w in result.word_segments] == ["3", "2"]
+    assert [s.speaker for s in result.segments] == ["2"]
 
 
 def test_same_speaker_across_a_long_silence_does_not_swallow_the_gap():
