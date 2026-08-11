@@ -30,12 +30,16 @@ class TranscriptToken:
 
 @dataclass
 class TranscriptWord:
-    """A response word carrying its backend's real timing and confidence.
+    """A response word carrying its backend's real timing.
 
-    ``start``/``end``/``score`` come from the ASR Adapter's own per-word output,
-    ``speaker`` from word-level attribution, and ``overlap`` marks a word whose
-    span contains concurrently active speakers. Serialised to dict at the API
-    boundary.
+    ``start``/``end`` come from the ASR Adapter's own per-word output, ``speaker``
+    from word-level attribution, and ``overlap`` marks a word whose span contains
+    concurrently active speakers. Serialised to dict at the API boundary.
+
+    ``score`` is the backend's own probability **when it reports one**; backends
+    that express no probability fall back to ``1.0``, which is a placeholder and
+    not a measured certainty. Do not read it as confidence without checking the
+    backend first.
     """
 
     word: str

@@ -17,11 +17,14 @@ from pydantic import BaseModel, ConfigDict
 class WhisperWord(BaseModel):
     """Word-level timestamp item in a segment.
 
-    ``start``/``end``/``score`` are the ASR backend's real per-word values, and
-    ``speaker`` is decided for this word alone — the normative per-word speaker
-    truth. ``overlap`` flags a word whose span contains concurrently active
-    speakers, so the single-label collapse is visible rather than silent (see
-    ADR 0014).
+    ``start``/``end`` are the ASR backend's real per-word values, and ``speaker``
+    is decided for this word alone — the normative per-word speaker truth.
+    ``overlap`` flags a word whose span contains concurrently active speakers, so
+    the single-label collapse is visible rather than silent (see ADR 0014).
+
+    ``score`` is the backend's own probability **when it reports one**; backends
+    that express no probability fall back to ``1.0``, which is a placeholder and
+    not a measured certainty.
     """
 
     model_config = ConfigDict(extra="forbid")
