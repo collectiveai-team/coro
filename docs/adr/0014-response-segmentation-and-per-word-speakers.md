@@ -71,7 +71,55 @@ Four things follow, and the third is not favourable.
 
 4. **Per-word attribution trades coverage for precision, and total WDER charges the trade.** It abstains on 3.08% of words where the segment-stamp rule abstains on 0.12%, so `wder` — which counts an abstention as an error — is worse on 6 of 6 clips (p = 0.031) while `wder_claimed` is better. That is a real, reportable cost of the `-1` sentinel, not an artefact: the sentinel exists because inferring a speaker for a word the diarizer never covered is a guess dressed as a measurement.
 
-**What was not measured.** ORC-WER and cpWER are not attributed to this change: the only run that produced them for this arm is a different inference pass from the ones it would be compared against, and the hypothesis word count moved 5.7% between them. The single-clip cpWER regression recorded against the earlier shape of this branch (0.5673 → 0.5836) is therefore neither reproduced nor refuted here. **Per-word WDER has also never been measured end-to-end through the API**, only in-process: the Quality Benchmark requests `diarized_json`, which carries no word field, so `hyp_response_to_stm` takes its `segments` fallback on every response the benchmark currently receives. Scoring the per-word surface through the wire needs the exposure format plus a vendor-shape STM adapter in the benchmark transport.
+### Measured end-to-end through the API
+
+Everything above was measured in-process. It has now been confirmed **on the wire**, which
+was previously impossible: the Quality Benchmark requested `diarized_json`, which carries no
+word field, so `hyp_response_to_stm` took its `segments` fallback on every response it ever
+received. Every WDER figure in this repository's history before this run therefore scored the
+**segment majority summary**, not per-word labels.
+
+Both arms ran back to back against **one** server process — models loaded once — so the arms
+differ only in which wire surface the transport requested. The check that this held is that
+`scored` (6697), `correct` (4638) and `substitutions` (2059) are **identical** across both:
+same audio, same ASR output, same words. 6/6 clips succeeded in both arms, no failures.
+
+| wire surface | `wder` | `wder_claimed` | abstentions | speaker errors | errors on claimed words | cpWER | DER |
+|---|---|---|---|---|---|---|---|
+| `POST /v1/audio/transcriptions` → `diarized_json` (segments fallback) | **0.1607** | 0.1597 | 8 (0.12%) | 1076 | 1068 | 0.6294 | 0.7508 |
+| `POST /v1/listen` → per-word speakers | 0.1786 | **0.1525** | 206 (3.08%) | 1196 | **990** | 0.6430 | 0.7409 |
+
+**The naive reading is backwards.** Total `wder` looks *better* on the summary surface
+(0.1607 vs 0.1786), and it is not a better result: the majority label collapses 206
+abstentions into 8 by inheriting a segment's label for words the diarizer never covered. On
+`wder_claimed` — the labels the system actually asserts — the per-word surface is **better**
+(0.1525 vs 0.1597) with **78 fewer errors on claimed words** (990 vs 1068). On the normalized
+lane the gap is wider: 0.0988 against 0.1159, a 14.8% relative reduction.
+
+So per-word attribution is *more* accurate where it commits and honest where it does not,
+and the summary surface hides both facts. Any WDER comparison that does not state its surface
+is uninterpretable; `coro-bench quality --deepgram` is the one that measures per-word.
+
+**These figures were predicted before they were run.** The offline rebuild
+(`.tmp/score_arms_offline.py`, every arm from one shared token dump) predicted 0.1786 /
+0.1525 / 3.08% for the per-word surface and 0.1607 / 0.1597 / 0.12% for the summary; the wire
+returned 0.17859 / 0.15252 / 3.076% and 0.16067 / 0.15967 / 0.119%. Agreement to four decimals
+across both surfaces is strong evidence that the offline instrument models the shipped path
+faithfully, and that the fallback diagnosis was exact.
+
+**The single-clip cpWER regression is settled.** It reproduces in *direction* — the per-word
+surface is worse on 5 of 6 clips — but it is **not significant** (sign test p = 0.219), and it
+is **not caused by this ADR**: the speaker-first and sentence-first-majority arms are identical
+on every clip and every metric at per-word granularity. The cost is abstention, not
+misattribution; on the claimed-labels lane the two are indistinguishable (p = 1.000). The
+originally recorded figures (0.5673 → 0.5836) came from a contaminated pair of inference runs
+and are not reproducible as numbers — only as a direction.
+
+**ORC-WER is not computable on this workload.** MeetEval's MIMO matching is exponential in the
+number of hypothesis streams and documented as intended for 1–2; these clips carry up to 5
+speakers, where it self-reports requiring >4 TB. Recorded as unavailable rather than skipped.
+The benchmark's own ORC-WER column comes from a different, non-exponential path and is
+reported per clip above.
 
 ### The rejected alternative, kept because the distinction is easy to lose
 

@@ -58,6 +58,28 @@ own data before trusting absolute numbers.
   over-detects or under-detects speech. Post-processing parameters — padding,
   minimum durations — are selected from exactly that ratio, so a decomposition
   taken here can select a parameter set that is wrong in sign.
+- **WDER** — Word Diarization Error Rate: speaker errors over the words present in
+  both transcripts, under MeetEval's cpWER speaker assignment. **Lower is better.**
+  Two lanes: `wder` charges an abstention (`-1`, no diarizer coverage) as an error;
+  `wder_claimed` excludes abstentions and so measures precision on the labels the
+  system actually asserts.
+
+  **A WDER number is meaningless without stating which wire surface produced it.**
+  `/v1/audio/transcriptions` returns `diarized_json`, which has no per-word field,
+  so the scorer falls back to `segments[].speaker` — a duration-weighted *majority*
+  summary. Scoring that surface makes WDER look better while measuring something
+  weaker, because the majority label inherits a speaker for words the diarizer never
+  covered. Measured on one server, both surfaces, identical audio and identical ASR
+  output (6697 scored words, 4638 correct, 2059 substitutions in both):
+
+  | surface | flag | `wder` | `wder_claimed` | abstentions |
+  |---|---|---|---|---|
+  | `diarized_json` segments summary | *(default)* | 0.1607 | 0.1597 | 8 |
+  | `/v1/listen` per-word speakers | `--deepgram` | 0.1786 | **0.1525** | 206 |
+
+  The summary surface reports a *lower total* `wder` and a *higher* error rate on the
+  labels it actually claims. **Use `coro-bench quality --deepgram` to measure per-word
+  attribution**; the default flag measures the segment summary. See ADR 0014.
 - **RTFx** — audio seconds ÷ processing wall seconds. **Higher is faster**
   (10× = 10 s of audio per 1 s of compute).
 - **Peak VRAM / host RAM** — peak resident during inference (per server process).
