@@ -7,6 +7,34 @@ contract**, not through a new value on the OpenAI endpoint.
 
 `POST /v1/listen` is added, serving Deepgram's pre-recorded contract.
 
+## This departs from the recorded decision, deliberately
+
+Issue `46` recorded exposure option **X1**: per-word speakers reached through
+additional opt-in `response_format` values on `/v1/audio/transcriptions`,
+**AssemblyAI first, Deepgram second**. Issue `12` then cited X1 as the discharged
+gate for its own segmentation decision. This ADR does **not** implement X1, and
+says so here rather than letting `main` and the issue record disagree.
+
+Two departures, both argued below:
+
+1. **Vendor-native endpoints instead of new `response_format` values.** X1's
+   stated goal was to leave the OpenAI-compatible surface unspent. New endpoints
+   achieve that goal *more* completely than X1 does, because they leave the
+   OpenAI request parameter alone as well as the response bodies — see the next
+   section. X1 was implemented first on this branch and then withdrawn.
+2. **AssemblyAI is not implemented, so the ordering is inverted.** Its contract
+   is asynchronous and needs a job-state subsystem coro does not have; a
+   synchronous single-POST imitation would be the partial clone rule 1 of the
+   fidelity policy forbids. Deferred to its own issue, with the reasoning under
+   *Consequences*.
+
+**What does not change is the premise issue `12` depends on.** Its decision rule
+is "if per-word speaker truth leaves the process → sentence-first + majority". It
+leaves the process: on `POST /v1/listen` and `WebSocket /v1/listen`, with
+`word_segments` carrying the per-word truth beside the segment summary. The door
+is different; the gate is still discharged, so issue `12`'s decision stands
+unaltered and is not reopened by this ADR.
+
 ## Each provider owns its own contract, including the endpoint
 
 The OpenAI-compatible surface is defined by OpenAI. `response_format` is
