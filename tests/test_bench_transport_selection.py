@@ -126,9 +126,7 @@ class TestSelectTransport:
         assert ttft is None
         assert result["text"] == "hello world"
 
-    def test_stream_selects_the_sse_endpoint_and_times_first_delta(
-        self, recording_server, audio
-    ):
+    def test_stream_selects_the_sse_endpoint_and_times_first_delta(self, recording_server, audio):
         result, ttft = select_transport(stream=True)(recording_server, audio)
 
         assert _paths() == [OPENAI_PATH]
