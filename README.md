@@ -220,6 +220,7 @@ ASR-only server, or swap `nemo` → `pyannote` (`--pipeline full-memory`, needs
 | `GET`  | `/health` | Readiness / capability status. |
 | `POST` | `/v1/audio/transcriptions` | OpenAI-compatible transcription (multipart). |
 | `POST` | `/v1/listen` | Deepgram-compatible transcription (raw body); per-word speakers. |
+| `WS`   | `/v1/listen` | Deepgram-compatible live transcription; `Results` frames as windows complete. |
 
 `response_format` accepts `json`, `verbose_json`, and `diarized_json`. With
 `stream=true` the endpoint emits OpenAI-exact SSE
@@ -234,11 +235,12 @@ below — no OpenAI type has a slot for one.
 |--------|------|-------------|
 | `GET`  | `/docs` | Scalar API reference — both contracts behind one document picker. |
 | `GET`  | `/openapi.json` | OpenAPI 3.1 contract for the request/response surface. |
-| `GET`  | `/asyncapi.json` | AsyncAPI 3.0 contract for the SSE event stream. |
+| `GET`  | `/asyncapi.json` | AsyncAPI 3.0 contract for the SSE stream and the `/v1/listen` socket. |
 
 Both documents are generated from the code — OpenAPI by FastAPI from the routes,
-AsyncAPI from the same dataclasses the SSE writer serialises — so neither is
-hand-maintained and neither is committed to the repo. CI exports both, lints
+AsyncAPI from the same types the SSE writer and the WebSocket handler serialise
+— so neither is hand-maintained and neither is committed to the repo. The
+socket is published only as AsyncAPI, because OpenAPI cannot describe one. CI exports both, lints
 them with `redocly`, and fails a PR that breaks the REST contract. Swagger UI
 and ReDoc are switched off: Scalar is the only renderer that can show the
 event-driven contract alongside the REST one. See

@@ -409,9 +409,11 @@ bench = [
 ]
 contracts = [
     { name = "fastapi" },
+    { name = "numpy" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "scalar-fastapi" },
+    { name = "soxr" },
 ]
 dev = [
     { name = "anyio" },
@@ -465,9 +467,11 @@ bench = [
 ]
 contracts = [
     { name = "fastapi" },
+    { name = "numpy" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "scalar-fastapi" },
+    { name = "soxr" },
 ]
 dev = [
     { name = "anyio", specifier = ">=4.0.0" },

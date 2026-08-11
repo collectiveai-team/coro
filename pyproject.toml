@@ -148,9 +148,14 @@ bench = [
 # here with ModuleNotFoundError rather than drifting silently.
 contracts = [
     "fastapi",
+    # The WebSocket route's PCM converter (coro/pcm.py) is imported when the app
+    # is built, so exporting the contract now needs the resample stack. Both are
+    # small wheels; the ~2 GB the group exists to avoid is torch/CUDA.
+    "numpy",
     "pydantic-settings",
     "python-multipart",
     "scalar-fastapi",
+    "soxr",
 ]
 
 [tool.uv]
