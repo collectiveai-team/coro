@@ -60,12 +60,17 @@ def _word_from_token(
     The word keeps its *own* attribution. Nothing here is overwritten by the
     segment's label: ``word_segments`` is the normative per-word speaker truth
     and the segment label is a summary of it, not the other way round.
+
+    An absent probability stays absent. Substituting ``1.0`` would publish the
+    strongest possible certainty precisely where the backend expressed none, and
+    it travels: it is averaged into utterance confidences and emitted under a
+    vendor's ``confidence`` key, where a client cannot tell it from a measurement.
     """
     return TranscriptWord(
         word=token.text.strip(),
         start=round(token.start, 2),
         end=round(token.end, 2),
-        score=float(token.probability) if token.probability is not None else 1.0,
+        score=float(token.probability) if token.probability is not None else None,
         speaker=str(attribution.speaker),
         overlap=attribution.overlap,
     )

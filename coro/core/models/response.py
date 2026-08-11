@@ -15,12 +15,16 @@ from coro.core.models.transcript import TranscriptWord
 
 @dataclass
 class RawWord:
-    """A raw ASR word before segment interpolation, in response shape."""
+    """A raw ASR word as the backend emitted it, in response shape.
+
+    ``score`` is ``None`` when the backend expresses no probability; it is never
+    stubbed (ADR 0015 rule 3).
+    """
 
     word: str
     start: float
     end: float
-    score: float
+    score: float | None
 
 
 @dataclass

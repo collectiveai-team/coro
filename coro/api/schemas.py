@@ -22,9 +22,8 @@ class WhisperWord(BaseModel):
     ``overlap`` flags a word whose span contains concurrently active speakers, so
     the single-label collapse is visible rather than silent (see ADR 0014).
 
-    ``score`` is the backend's own probability **when it reports one**; backends
-    that express no probability fall back to ``1.0``, which is a placeholder and
-    not a measured certainty.
+    ``score`` is the backend's own probability, and ``None`` when the backend
+    expresses none. Unmeasured is never stubbed (ADR 0015 rule 3).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -32,7 +31,7 @@ class WhisperWord(BaseModel):
     word: str
     start: float
     end: float
-    score: float
+    score: float | None
     speaker: str
     overlap: bool = False
 
@@ -77,14 +76,17 @@ class WhisperDiarizationItem(BaseModel):
 
 
 class RawWord(BaseModel):
-    """Raw ASR word item before segment interpolation."""
+    """Raw ASR word item as the backend emitted it.
+
+    ``score`` is ``None`` when the backend expresses no probability.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     word: str
     start: float
     end: float
-    score: float
+    score: float | None
 
 
 # Response Model ------------------------------------------------------------

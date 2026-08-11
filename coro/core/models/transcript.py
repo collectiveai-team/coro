@@ -36,16 +36,16 @@ class TranscriptWord:
     from word-level attribution, and ``overlap`` marks a word whose span contains
     concurrently active speakers. Serialised to dict at the API boundary.
 
-    ``score`` is the backend's own probability **when it reports one**; backends
-    that express no probability fall back to ``1.0``, which is a placeholder and
-    not a measured certainty. Do not read it as confidence without checking the
-    backend first.
+    ``score`` is the backend's own probability, and ``None`` when the backend
+    expresses none — onnx-genai and the onnx-asr text-only fallback report no
+    probability. It is never a stand-in value: a placeholder here reaches clients
+    as a measured certainty the model never claimed (ADR 0015 rule 3).
     """
 
     word: str
     start: float
     end: float
-    score: float
+    score: float | None
     speaker: str
     overlap: bool = False
 

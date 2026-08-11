@@ -31,7 +31,10 @@ Schema:
   Tokens rather than response words are stored because per-word speaker
   attribution happens at assembly, once the streaming diarizer has produced its
   complete timeline.
-- ``raw_words(idx, word, start, end, score)`` — one ASR token per row.
+- ``raw_words(idx, word, start, end, score)`` — one ASR token per row. ``score``
+  is nullable: backends that express no probability store SQL ``NULL`` rather
+  than a stand-in value, so a spilled word round-trips to the same absent
+  confidence a non-spilled one has.
 
 Rows are read back with a streaming cursor so iteration never materialises
 the whole transcript in memory.
@@ -63,7 +66,7 @@ CREATE TABLE IF NOT EXISTS raw_words (
     word TEXT NOT NULL,
     start REAL NOT NULL,
     end REAL NOT NULL,
-    score REAL NOT NULL
+    score REAL
 );
 """
 
@@ -162,7 +165,7 @@ class TranscriptSpillStore:
 
         Args:
             words: :class:`RawWord` items with ``word``, ``start``, ``end``
-                and ``score``.
+                and ``score``. A ``None`` score is stored as SQL ``NULL``.
 
         """
         if not words:
@@ -175,7 +178,7 @@ class TranscriptSpillStore:
                     str(w.word),
                     float(w.start),
                     float(w.end),
-                    float(w.score),
+                    None if w.score is None else float(w.score),
                 )
             )
             self._raw_word_count += 1

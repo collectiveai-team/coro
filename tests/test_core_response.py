@@ -148,10 +148,25 @@ def test_words_carry_the_backends_real_confidence():
     assert [w.score for w in result.segments[0].words] == pytest.approx([0.62, 0.31], abs=1e-9)
 
 
-def test_missing_probability_defaults_to_one():
+def test_missing_probability_stays_absent_rather_than_becoming_certainty():
+    """An unmeasured confidence must not acquire a value on the way out.
+
+    Substituting ``1.0`` here published the strongest possible certainty exactly
+    where the backend expressed none, and it did not stay local: the value is
+    averaged into utterance confidences and emitted under a vendor's
+    ``confidence`` key, where a client cannot distinguish it from a measurement.
+    ADR 0015 rule 3 — unmeasured is omitted, never stubbed.
+    """
     tokens = [TranscriptToken(start=0.0, end=0.5, text=" hola.", probability=None)]
     result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=0.5)
-    assert result.segments[0].words[0].score == 1.0
+    assert result.segments[0].words[0].score is None
+
+
+def test_measured_probability_is_carried_through_unchanged():
+    """The companion to the test above: a real probability must survive intact."""
+    tokens = [TranscriptToken(start=0.0, end=0.5, text=" hola.", probability=0.42)]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=0.5)
+    assert result.segments[0].words[0].score == pytest.approx(0.42, abs=1e-9)
 
 
 # ---------------------------------------------------------------------------

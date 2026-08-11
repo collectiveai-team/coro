@@ -261,6 +261,39 @@ different response shape from the same request.
 This also makes the payload opt-in at the vendor's own control point rather
 than at one `coro` invents.
 
+## `confidence` is omitted when the backend measured none
+
+Rule 3 decides `confidence` the same way it decides `speaker_confidence`, and
+this had to be corrected once already: the first cut of this endpoint stubbed
+`1.0` whenever the ASR backend reported no probability.
+
+The substitution began in `coro/core/response.py`, not in this projection, so it
+reached everything downstream — `word_segments[].score`, the mean rolled up into
+`alternatives[].confidence` and `utterances[].confidence`, and the persisted
+`raw_words` rows. `1.0` is not a neutral filler either; it is the *strongest*
+claim the field can carry, asserted precisely where nothing was measured, and a
+client cannot tell it from a real one.
+
+It fires on the default configuration rather than an exotic one: the onnx-asr
+text-only fallback and onnx-genai both emit tokens with no probability.
+
+**Absence is valid against the vendor's own types.** Deepgram declares
+`confidence` as `Optional[float]` at word, alternative *and* utterance level —
+verified against the SDK models, not a local copy, per rule 1. So omission needs
+no workaround; it is what the vendor's schema already allows, and
+`exclude_none` at serialization drops the key exactly as it does for `speaker`.
+
+An aggregate follows the same rule: unmeasured words are excluded from the
+denominator rather than counted as any value, and the aggregate is absent when
+none of its words carried a confidence. Counting a missing word as `0.0` would
+understate the measured ones and `1.0` would overstate them. One helper,
+`mean_measured`, implements this for both the batch and live surfaces so they
+cannot drift.
+
+**The OpenAI surface is unaffected.** `TranscriptionWord` there is `word`/
+`start`/`end` with no confidence field at all, so the dialect never had a place
+to put a stub.
+
 ## `speaker_confidence` is omitted
 
 Deepgram's `words[].speaker_confidence` is the diarizer's posterior for the

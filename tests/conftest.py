@@ -38,8 +38,13 @@ DIARIZED_WORDS = [
     ("claro", 1.6, 2.0, 0.66, "-1"),
 ]
 
+# The same words as a backend that reports no per-word probability sees them —
+# onnx-genai and the onnx-asr text-only fallback both do. A ``None`` score must
+# stay absent all the way to the wire rather than becoming a stubbed 1.0.
+UNSCORED_WORDS = [(w, s, e, None, sp) for w, s, e, _, sp in DIARIZED_WORDS]
 
-def make_result(words: list[tuple[str, float, float, float, str]]) -> TranscriptionResult:
+
+def make_result(words: list[tuple[str, float, float, float | None, str]]) -> TranscriptionResult:
     """Build a TranscriptionResult whose segments are same-speaker runs."""
     typed = [
         TranscriptWord(word=w, start=s, end=e, score=c, speaker=sp) for w, s, e, c, sp in words

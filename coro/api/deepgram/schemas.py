@@ -11,6 +11,12 @@ Timestamps are floating-point seconds, which is Deepgram's unit.
 adapters binarize their per-frame posteriors into a speaker timeline before it
 reaches the Core Boundary, so the quantity Deepgram names is not available.
 See ADR 0015.
+
+``confidence`` is omitted by the same rule whenever the ASR backend expresses
+no probability. Deepgram types it ``Optional[float]`` at word, alternative and
+utterance level, so absence is valid against the vendor's own SDK types, and it
+is the only honest encoding: a stubbed ``1.0`` is indistinguishable from a
+measured certainty on the wire.
 """
 
 from __future__ import annotations
@@ -50,24 +56,31 @@ def _speaker_label(speaker: str) -> int | None:
 
 
 class DeepgramWord(BaseModel):
-    """Word item in a Deepgram-shaped response."""
+    """Word item in a Deepgram-shaped response.
+
+    ``confidence`` is absent when the ASR backend reported no probability.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     word: str
     start: float
     end: float
-    confidence: float
+    confidence: float | None = None
     speaker: int | None = None
 
 
 class DeepgramAlternative(BaseModel):
-    """A single transcription hypothesis for one channel."""
+    """A single transcription hypothesis for one channel.
+
+    ``confidence`` is the mean over the words that carry one, and absent when
+    none of them do.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     transcript: str
-    confidence: float
+    confidence: float | None = None
     words: list[DeepgramWord]
 
 
@@ -80,13 +93,17 @@ class DeepgramChannel(BaseModel):
 
 
 class DeepgramUtterance(BaseModel):
-    """A maximal same-speaker word run, with its words retained."""
+    """A maximal same-speaker word run, with its words retained.
+
+    ``confidence`` is the mean over the words that carry one, and absent when
+    none of them do.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     start: float
     end: float
-    confidence: float
+    confidence: float | None = None
     channel: int
     transcript: str
     words: list[DeepgramWord]

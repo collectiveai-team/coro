@@ -15,6 +15,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 
 from coro.api.deepgram.schemas import DeepgramWord
+from coro.api.utterances import mean_measured
 
 RESULTS = "Results"
 METADATA = "Metadata"
@@ -48,12 +49,16 @@ class DeepgramLiveResultsMetadata(BaseModel):
 
 
 class DeepgramLiveAlternative(BaseModel):
-    """One hypothesis inside a live ``Results`` frame."""
+    """One hypothesis inside a live ``Results`` frame.
+
+    ``confidence`` is the mean over the frame's words that carry one, and absent
+    when none of them do — the same rule as the batch projection.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     transcript: str
-    confidence: float
+    confidence: float | None = None
     words: list[DeepgramWord]
 
 
@@ -128,7 +133,7 @@ def live_results(
 ) -> DeepgramLiveResults:
     """Build a ``Results`` frame from already-attributed words."""
     transcript = " ".join(word.word for word in words).strip()
-    confidence = sum(word.confidence for word in words) / len(words) if words else 0.0
+    confidence = mean_measured(word.confidence for word in words)
     return DeepgramLiveResults(
         duration=duration,
         start=start,

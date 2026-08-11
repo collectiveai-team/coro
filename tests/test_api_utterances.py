@@ -12,7 +12,7 @@ from coro.api.schemas import WhisperWord
 from coro.api.utterances import group_words_into_utterances, mean_confidence
 
 
-def _word(text: str, speaker: str, score: float = 1.0) -> WhisperWord:
+def _word(text: str, speaker: str, score: float | None = 1.0) -> WhisperWord:
     return WhisperWord(word=text, start=0.0, end=1.0, score=score, speaker=speaker)
 
 
@@ -44,8 +44,23 @@ class TestUtteranceAggregates:
         words = [_word("a", "1", 0.5), _word("b", "1", 1.0)]
         assert group_words_into_utterances(words)[0].confidence == pytest.approx(0.75, abs=1e-9)
 
-    def test_mean_confidence_of_no_words_is_zero(self):
-        assert mean_confidence([]) == 0.0
+    def test_mean_confidence_of_no_words_is_absent_not_zero(self):
+        """An aggregate over no evidence is absent; ``0.0`` claims no confidence."""
+        assert mean_confidence([]) is None
+
+    def test_unmeasured_words_are_excluded_from_the_mean_not_counted(self):
+        """A word without a probability must not drag the mean in either direction.
+
+        Counting it as ``0.0`` understates the words that *were* measured and
+        counting it as ``1.0`` overstates them; the only correct denominator is
+        the measured words.
+        """
+        words = [_word("a", "1", 0.5), _word("b", "1", None), _word("c", "1", 1.0)]
+        assert mean_confidence(words) == pytest.approx(0.75, abs=1e-9)
+
+    def test_mean_confidence_is_absent_when_no_word_was_measured(self):
+        words = [_word("a", "1", None), _word("b", "1", None)]
+        assert mean_confidence(words) is None
 
     def test_span_covers_first_start_to_last_end(self):
         words = [

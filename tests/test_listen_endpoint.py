@@ -12,11 +12,17 @@ from typing import Any
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from conftest import FakePipeline, make_app, make_wav
+from conftest import UNSCORED_WORDS, FakePipeline, make_app, make_result, make_wav
 
 
-async def _listen(query: str = "", *, body: bytes | None = None, **headers: str) -> Any:
-    app = make_app(FakePipeline())
+async def _listen(
+    query: str = "",
+    *,
+    body: bytes | None = None,
+    result: Any = None,
+    **headers: str,
+) -> Any:
+    app = make_app(FakePipeline(result))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         return await client.post(
             f"/v1/listen{query}",
@@ -69,6 +75,47 @@ class TestDeepgramDiarization:
     async def test_speaker_confidence_is_never_emitted(self):
         raw = (await _listen("?diarize=true&utterances=true")).text
         assert "speaker_confidence" not in raw
+
+
+@pytest.mark.asyncio
+class TestDeepgramConfidence:
+    """Rule 3: unmeasured is omitted, never stubbed — on the wire, not just in types.
+
+    Deepgram declares ``confidence`` ``Optional[float]`` at word, alternative and
+    utterance level, so absence is valid against the vendor's own SDK types. A
+    stubbed ``1.0`` would be indistinguishable from a real measurement.
+    """
+
+    async def test_measured_confidence_is_still_emitted(self):
+        body = (await _listen()).json()
+        assert [w["confidence"] for w in _channel_words(body)] == [0.91, 0.83, 0.77, 0.66]
+
+    async def test_word_confidence_is_omitted_when_the_backend_measured_none(self):
+        body = (await _listen(result=make_result(UNSCORED_WORDS))).json()
+        assert all("confidence" not in word for word in _channel_words(body))
+
+    async def test_no_null_confidence_is_emitted_either(self):
+        # Absence is the native encoding; a null would invent a convention
+        # Deepgram does not use, exactly as for `speaker`.
+        raw = (await _listen(result=make_result(UNSCORED_WORDS))).text
+        assert '"confidence"' not in raw
+
+    async def test_aggregate_confidence_is_omitted_rather_than_averaged_from_nothing(self):
+        body = (await _listen("?utterances=true", result=make_result(UNSCORED_WORDS))).json()
+        alternative = body["results"]["channels"][0]["alternatives"][0]
+        assert "confidence" not in alternative
+        assert all("confidence" not in u for u in body["results"]["utterances"])
+
+    async def test_a_partially_measured_run_averages_only_the_measured_words(self):
+        # 0.91 and 0.83 measured, one word unmeasured: the mean is over 2, not 3.
+        words = [
+            ("hola", 0.0, 0.5, 0.91, "1"),
+            ("mundo", 0.5, 1.0, 0.83, "1"),
+            ("si", 1.2, 1.6, None, "1"),
+        ]
+        body = (await _listen("?utterances=true", result=make_result(words))).json()
+        utterance = body["results"]["utterances"][0]
+        assert utterance["confidence"] == pytest.approx(0.87, abs=1e-9)
 
     async def test_timestamps_are_float_seconds(self):
         body = (await _listen("?diarize=true")).json()
