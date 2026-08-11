@@ -76,11 +76,12 @@ def test_opening_mark_after_a_terminator_does_not_emit_an_empty_run():
 def test_unpunctuated_run_segments_at_the_maximum_duration():
     tokens = [_tok(i * 2.0, (i + 1) * 2.0, f" w{i}") for i in range(12)]
     runs = group_tokens_into_runs(tokens)
+    spans = [run_span(run) for run in runs[:-1]]
     assert len(runs) > 1
-    for run in runs[:-1]:
-        span = run_span(run)
-        assert span is not None
-        assert span[1] - span[0] >= MAX_SEGMENT_SECONDS
+    assert all(span is not None for span in spans)
+    assert [span[1] - span[0] >= MAX_SEGMENT_SECONDS for span in spans if span] == [True] * len(
+        spans
+    )
 
 
 def test_maximum_duration_fallback_can_be_disabled():

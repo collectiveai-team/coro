@@ -42,7 +42,7 @@ class TestUtteranceGrouping:
 class TestUtteranceAggregates:
     def test_confidence_is_the_mean_of_its_words(self):
         words = [_word("a", "1", 0.5), _word("b", "1", 1.0)]
-        assert group_words_into_utterances(words)[0].confidence == pytest.approx(0.75)
+        assert group_words_into_utterances(words)[0].confidence == pytest.approx(0.75, abs=1e-9)
 
     def test_mean_confidence_of_no_words_is_zero(self):
         assert mean_confidence([]) == 0.0

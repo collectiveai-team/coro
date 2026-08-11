@@ -39,12 +39,19 @@ CHUNK_BYTES = int(SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_SECONDS)
 
 
 class _FakeASR:
-    """Deterministic tokens; the point here is transport, not model quality."""
+    """Deterministic tokens; the point here is transport, not model quality.
+
+    Window-relative timings, past the half-overlap boundary: ASRWindowing
+    attributes the first ``overlap_seconds / 2`` of every window after the
+    first to the previous window, so tokens at relative 0.0 would be
+    reconciled away on every window but the first and this file would stop
+    covering multi-window streams without failing.
+    """
 
     async def transcribe_pcm(self, pcm, *, language=None, prompt=None):
         return [
-            TranscriptToken(start=0.0, end=0.6, text=" ask", probability=0.94),
-            TranscriptToken(start=0.6, end=1.2, text=" not.", probability=0.88),
+            TranscriptToken(start=2.0, end=2.6, text=" ask", probability=0.94),
+            TranscriptToken(start=2.6, end=3.2, text=" not.", probability=0.88),
         ]
 
 
@@ -67,12 +74,25 @@ def _free_port() -> int:
 
 def _real_pcm(seconds: int) -> list[bytes]:
     """Decode the bundled recording to canonical PCM and slice it into frames."""
-    import subprocess  # noqa: S404 -- ffmpeg is already the project's decoder
+    import subprocess
 
     raw = subprocess.run(  # noqa: S603
         [
-            "ffmpeg", "-nostdin", "-loglevel", "quiet", "-i", str(WARMUP_AUDIO_PATH),
-            "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-",
+            "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "quiet",
+            "-i",
+            str(WARMUP_AUDIO_PATH),
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
+            "-ac",
+            "1",
+            "-ar",
+            str(SAMPLE_RATE),
+            "-",
         ],
         capture_output=True,
         check=True,
@@ -153,23 +173,25 @@ class TestRealServerTransport:
     async def test_uvicorn_accepts_the_websocket_upgrade(self):
         # Fails outright if the `websockets` runtime dependency is missing,
         # which the in-process TestClient can never detect.
-        async with _LiveServer(_app()) as server:
-            async with websockets.connect(server.ws_url) as ws:
-                assert ws.state is websockets.protocol.State.OPEN
+        async with _LiveServer(_app()) as server, websockets.connect(server.ws_url) as ws:
+            state = ws.state
+        assert state is websockets.protocol.State.OPEN
 
     async def test_real_audio_produces_results_and_metadata(self):
         async with _LiveServer(_app()) as server:
             frames = await _stream(server)
-        assert any(f["type"] == "Results" for f in frames)
-        assert frames[-1]["type"] == "Metadata"
+        types = [f["type"] for f in frames]
+        assert types.count("Metadata") == 1
+        assert types[-1] == "Metadata"
+        assert "Results" in types
 
     async def test_results_arrive_before_the_client_closes(self):
         async with _LiveServer(_app()) as server, websockets.connect(server.ws_url) as ws:
             for chunk in _real_pcm(31):
                 await ws.send(chunk)
             frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=30))
-            assert frame["type"] == "Results"
             await ws.send(json.dumps({"type": "CloseStream"}))
+        assert frame["type"] == "Results"
 
 
 class TestDeepgramLiveSdkConformance:
@@ -177,7 +199,8 @@ class TestDeepgramLiveSdkConformance:
         async with _LiveServer(_app()) as server:
             frames = await _stream(server)
         results = [f for f in frames if f["type"] == "Results"]
-        assert results
+        # 31 s of audio is one full 30 s window plus the final flush.
+        assert len(results) == 2
         for frame in results:
             ListenV1Results.model_validate(frame)
 
@@ -185,7 +208,7 @@ class TestDeepgramLiveSdkConformance:
         async with _LiveServer(_app()) as server:
             frames = await _stream(server)
         parsed = ListenV1Metadata.model_validate(frames[-1])
-        assert parsed.request_id
+        assert len(parsed.request_id) == 8
         assert len(parsed.sha256) == 64
         assert parsed.channels == 1
 
@@ -203,14 +226,20 @@ class TestDeepgramLiveSdkConformance:
             frames = await _stream(server, "?diarize=true")
         results = [ListenV1Results.model_validate(f) for f in frames if f["type"] == "Results"]
         speakers = [w.speaker for w in results[-1].channel.alternatives[0].words]
-        assert speakers and set(speakers) == {1}
+        # The final frame replays every collected word with its speaker attached,
+        # because a streaming diarizer only has a timeline once the audio ends.
+        # Two windows of two tokens each, so all four words appear here.
+        assert len(speakers) == 4
+        assert set(speakers) == {1}
 
 
 class TestRealClientRejection:
     async def test_unsupported_encoding_is_refused_over_a_real_socket(self):
-        async with _LiveServer(_app()) as server:
-            async with websockets.connect(server.ws_url + "?encoding=opus") as ws:
-                frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-                assert frame["type"] == "Error"
-                with contextlib.suppress(Exception):
-                    await asyncio.wait_for(ws.recv(), timeout=5)
+        async with (
+            _LiveServer(_app()) as server,
+            websockets.connect(server.ws_url + "?encoding=opus") as ws,
+        ):
+            frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(ws.recv(), timeout=5)
+        assert frame["type"] == "Error"

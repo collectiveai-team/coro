@@ -145,7 +145,7 @@ def test_words_carry_the_backends_real_confidence():
         TranscriptToken(start=0.5, end=1.0, text=" mundo.", probability=0.31),
     ]
     result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=1.0)
-    assert [w.score for w in result.segments[0].words] == pytest.approx([0.62, 0.31])
+    assert [w.score for w in result.segments[0].words] == pytest.approx([0.62, 0.31], abs=1e-9)
 
 
 def test_missing_probability_defaults_to_one():

@@ -42,7 +42,8 @@ async def test_excluded_routes_stay_excluded(path: str):
     # a deliberately implemented /v1/listen.
     app = create_app(ServerSettings(_env_file=None))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        assert (await client.post(path, content=b"")).status_code == 404
+        response = await client.post(path, content=b"")
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

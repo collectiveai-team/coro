@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from coro.core.models import RawWord, TranscriptToken
 from coro.pipelines.transcript_store import COMMIT_ROW_INTERVAL, TranscriptSpillStore
 
@@ -30,7 +32,7 @@ def test_store_round_trips_segment_tokens_in_order(tmp_path):
 
     assert runs[0] == tokens
     assert [t.text for run in runs for t in run] == [" hola", " mundo.", " adios."]
-    assert runs[0][0].probability == 0.9
+    assert runs[0][0].probability == pytest.approx(0.9, abs=1e-9)
 
 
 def test_store_round_trips_raw_words_in_order(tmp_path):

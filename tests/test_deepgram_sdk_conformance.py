@@ -29,13 +29,23 @@ async def _listen(query: str = "") -> Any:
 
 @pytest.mark.asyncio
 async def test_default_response_validates_against_deepgram_sdk():
-    ListenV1Response.model_validate(await _listen())
+    body = await _listen()
+    parsed = ListenV1Response.model_validate(body)
+
+    alternative = parsed.results.channels[0].alternatives[0]
+    assert alternative.transcript == "hola mundo si claro"
+    # Deepgram gates speakers behind diarize=true, so the default carries none —
+    # asserted on the wire body, because the SDK's non-diarized word type has no
+    # `speaker` field to read back.
+    assert parsed.results.utterances is None
+    words = body["results"]["channels"][0]["alternatives"][0]["words"]
+    assert words and all("speaker" not in word for word in words)
 
 
 @pytest.mark.asyncio
 async def test_diarized_response_validates_against_deepgram_sdk():
     parsed = ListenV1Response.model_validate(await _listen("?diarize=true&utterances=true"))
-    assert parsed.results.utterances
+    assert parsed.results.utterances is not None
     assert [u.speaker for u in parsed.results.utterances] == [1, 2, None]
     words = parsed.results.utterances[0].words
     assert words is not None
@@ -47,11 +57,16 @@ async def test_diarized_response_validates_against_deepgram_sdk():
 @pytest.mark.asyncio
 async def test_metadata_required_fields_are_populated():
     parsed = ListenV1Response.model_validate(await _listen())
-    assert parsed.metadata.request_id
-    assert len(parsed.metadata.sha256) == 64
-    assert parsed.metadata.channels == 1
-    assert parsed.metadata.duration > 0
-    assert parsed.metadata.models
+    metadata = parsed.metadata
+    # The route builds it as uuid4().hex[:8], so its shape is pinnable.
+    assert len(metadata.request_id) == 8
+    assert int(metadata.request_id, 16) >= 0
+    assert len(metadata.sha256) == 64
+    assert metadata.channels == 1
+    assert metadata.duration == pytest.approx(2.0, abs=0.01)
+    # One model, named, and described in model_info under the same key.
+    assert len(metadata.models) == 1
+    assert set(metadata.model_info) == set(metadata.models)
 
 
 @pytest.mark.asyncio

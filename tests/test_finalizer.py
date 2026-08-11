@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from coro.core.response import build_transcription_response
 from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.pipelines.finalizer import (
@@ -140,8 +142,10 @@ def test_finalizer_word_timings_respect_the_overlap_clamp(tmp_path):
     batch = build_transcription_response(tokens, [], duration=2.0)
     assert streamed.word_segments == batch.word_segments
     first = streamed.segments[0]
-    assert first.end == 1.0  # clamped back to the next segment's start
-    assert first.words[-1].end == 1.5  # the ASR's real measurement, untrimmed
+    # Clamped back to the next segment's start...
+    assert first.end == pytest.approx(1.0, abs=1e-9)
+    # ...while the word keeps the ASR's real measurement, untrimmed.
+    assert first.words[-1].end == pytest.approx(1.5, abs=1e-9)
 
 
 def test_finalizer_open_buffer_stays_bounded(tmp_path):

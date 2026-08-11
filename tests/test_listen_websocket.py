@@ -99,13 +99,14 @@ class TestLiveResults:
         results = [f for f in _stream(_app()) if f["type"] == "Results"]
         word = results[0]["channel"]["alternatives"][0]["words"][0]
         assert word["word"] == "hola"
-        assert word["confidence"] == 0.91
-        assert (word["start"], word["end"]) == (2.0, 2.5)
+        assert word["confidence"] == pytest.approx(0.91, abs=1e-9)
+        assert (word["start"], word["end"]) == pytest.approx((2.0, 2.5), abs=1e-9)
 
     def test_stream_ends_with_a_metadata_frame(self):
         frames = _stream(_app())
         assert frames[-1]["type"] == "Metadata"
-        assert frames[-1]["request_id"]
+        # uuid4().hex[:8], as the REST route builds it.
+        assert len(frames[-1]["request_id"]) == 8
         assert frames[-1]["channels"] == 1
 
     def test_metadata_reports_the_audio_duration_actually_ingested(self):

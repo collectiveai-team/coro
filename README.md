@@ -88,12 +88,12 @@ client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="not-needed")
 with open("audio.wav", "rb") as f:
     result = client.audio.transcriptions.create(
         file=f,
-        model="whisper-1",                # accepted but ignored; server uses its backend
+        model="whisper-1",  # accepted but ignored; server uses its backend
         response_format="diarized_json",  # json | verbose_json | diarized_json
     )
 
 print(result.text)
-for segment in result.segments:          # who spoke, when, and what
+for segment in result.segments:  # who spoke, when, and what
     print(f"[{segment.start:.2f}-{segment.end:.2f}] {segment.speaker}: {segment.text}")
 ```
 
@@ -795,7 +795,7 @@ client = OpenAI(base_url="http://<host>:<port>/v1", api_key="not-needed")
 with open("audio.wav", "rb") as f:
     result = client.audio.transcriptions.create(
         file=f,
-        model="whisper-1",              # accepted but ignored; server uses its configured backend
+        model="whisper-1",  # accepted but ignored; server uses its configured backend
         response_format="diarized_json",  # -> openai.types.audio.TranscriptionDiarized
     )
 
@@ -808,8 +808,8 @@ for segment in result.segments:
 
 ```python
 from openai.types.audio import (
-    Transcription,          # response_format="json"
-    TranscriptionVerbose,   # response_format="verbose_json"
+    Transcription,  # response_format="json"
+    TranscriptionVerbose,  # response_format="verbose_json"
     TranscriptionDiarized,  # response_format="diarized_json"
 )
 
@@ -886,6 +886,7 @@ Responses parse with the official SDK, enforced by
 
 ```python
 from deepgram.types.listen_v1response import ListenV1Response
+
 ListenV1Response.model_validate(response.json())
 ```
 
@@ -948,9 +949,9 @@ import json, websockets
 async with websockets.connect(
     "ws://localhost:8000/v1/listen?encoding=linear16&sample_rate=16000&diarize=true"
 ) as ws:
-    await ws.send(pcm_chunk)                       # binary frames: raw samples
+    await ws.send(pcm_chunk)  # binary frames: raw samples
     await ws.send(json.dumps({"type": "KeepAlive"}))
-    print(json.loads(await ws.recv()))             # {"type": "Results", ...}
+    print(json.loads(await ws.recv()))  # {"type": "Results", ...}
     await ws.send(json.dumps({"type": "CloseStream"}))
 ```
 
