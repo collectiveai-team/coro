@@ -49,7 +49,7 @@ def _tracked_text_files() -> list[Path]:
     virtualenvs and build artifacts are excluded by construction.
     """
     listing = subprocess.run(  # noqa: S603
-        ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],  # noqa: S607
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
         capture_output=True,
         check=True,
         text=True,
