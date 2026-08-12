@@ -427,11 +427,9 @@ expects, and moving a module must never move a route. Asserted by
   does not otherwise have.
 - No package `__init__` re-exports anything; consumers import the module they
   need, so a re-export shim cannot accumulate unread.
-- **The supported dialect list is closed at two: OpenAI and Deepgram.** A third
-  dialect is rejected on infrastructure cost, not sequenced for later: the
-  candidate contract issue 46 named is asynchronous (upload, queued job, polling),
-  which needs a job-state subsystem `coro` does not have, and a synchronous
-  single-POST imitation would be the partial clone rule 1 forbids. Adding any
-  further dialect is a new ADR superseding this one, and
-  `tests/test_retired_decisions.py` enforces that the rejected one does not
-  reappear by name.
+- **Two dialects ship: OpenAI and Deepgram.** The list is not closed at two. The
+  candidate issue 46 named is not implemented because *its* contract is
+  asynchronous (upload, queued job, polling), needing a job-state subsystem `coro`
+  does not have, and a synchronous single-POST imitation would be the partial
+  clone rule 1 forbids — a cost judgement about one vendor, not a cap. A further
+  dialect is admitted on whether it can meet the fidelity policy above.
