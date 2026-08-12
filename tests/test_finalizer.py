@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from coro.core.response import build_transcription_response
 from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.pipelines.finalizer import (
@@ -87,7 +89,7 @@ def test_finalizer_emits_three_segments(tmp_path):
 
 
 def test_finalizer_defers_speaker_assignment_to_assembly(tmp_path):
-    """Finalizer spills unattributed spans; assembly assigns from the timeline."""
+    """Finalizer spills bare tokens; assembly attributes them from the timeline."""
     timeline = [
         SpeakerSegment(start=0.0, end=0.8, speaker=2),
         SpeakerSegment(start=0.8, end=2.4, speaker=3),
@@ -96,9 +98,8 @@ def test_finalizer_defers_speaker_assignment_to_assembly(tmp_path):
         finalizer = StreamingTranscriptFinalizer(store)
         finalizer.add_tokens(_TOKENS)
         finalizer.finish()
-        # Nothing attributed and no words interpolated before assembly.
-        stored = list(store.iter_segments())
-        assert all(s.speaker == -1 and s.words == [] for s in stored)
+        # The store holds tokens only — no speaker is decided at spill time.
+        assert [len(run) for run in store.iter_segment_tokens()] == [2, 2, 2]
         streamed = build_streaming_response(store, timeline)
 
     assert [s.speaker for s in streamed.segments] == ["2", "3", "3"]
@@ -117,11 +118,19 @@ def test_finalizer_flushes_unterminated_tail(tmp_path):
     assert streamed.segments[0].text == "sin punto"
 
 
-def test_finalizer_word_timings_respect_the_overlap_clamp(tmp_path):
-    """Words are interpolated over the clamped span, matching the batch builder.
+def test_finalizer_word_timings_match_batch_across_the_overlap_clamp(tmp_path):
+    """Both paths agree on word timings even where the clamp shortens a segment.
 
-    Interpolating before the clamp let a segment's last word end past the
-    segment itself, so the streamed word_segments disagreed with the batch ones.
+    Inherited from the streaming-correctness work, which asserted the last word
+    ended exactly at the clamped segment end because words were *interpolated*
+    over that span. Word timings are now the backend's own (ADR 0014), so a word
+    may legitimately extend past its clamped segment end and the tiling
+    assumption no longer holds. The invariant that still matters — and the one
+    the test existed for — is that batch and streaming do not disagree.
+
+    The segment span is a display bound; the word timings are measurements.
+    Trimming them to match would corrupt the per-word timings the vendor-native
+    endpoints publish.
     """
     tokens = [_tok(0.0, 1.5, " uno."), _tok(1.0, 2.0, " dos.")]
     with TranscriptSpillStore(directory=str(tmp_path)) as store:
@@ -132,8 +141,13 @@ def test_finalizer_word_timings_respect_the_overlap_clamp(tmp_path):
 
     batch = build_transcription_response(tokens, [], duration=2.0)
     assert streamed.word_segments == batch.word_segments
+    assert streamed.segments == batch.segments
+    # Real timings, not interpolated: the clamp moves the segment, not the word.
     first = streamed.segments[0]
-    assert first.words[-1].end == first.end
+    # Clamped back to the next segment's start...
+    assert first.end == pytest.approx(1.0, abs=1e-9)
+    # ...while the word keeps the ASR's real measurement, untrimmed.
+    assert first.words[-1].end == pytest.approx(1.5, abs=1e-9)
 
 
 def test_finalizer_open_buffer_stays_bounded(tmp_path):
@@ -143,13 +157,83 @@ def test_finalizer_open_buffer_stays_bounded(tmp_path):
         max_open = 0
         for i in range(500):
             finalizer.add_tokens([_tok(i, i + 0.5, f" w{i}.")])
-            max_open = max(max_open, len(finalizer._open))
+            max_open = max(max_open, len(finalizer.open_tokens))
         finalizer.finish()
 
     # Each batch is a single punctuation-terminated token, so the open run is
     # flushed every batch and never accumulates.
     assert max_open <= 1
     assert store.segment_count == 500
+
+
+def test_finalizer_matches_batch_when_a_speaker_changes_mid_run(tmp_path):
+    """A mid-run turn stays one segment, and both paths summarise it identically.
+
+    The turn is a clean two-way change with no punctuation support. Sentence-first
+    segmentation does not cut on it (ADR 0014), so the run stays whole and only the
+    per-word labels record the change. Speaker 2 and speaker 3 hold 0.8 s each over
+    two words apiece, so this is also the deterministic tie case: equal duration,
+    equal count, lowest label wins.
+    """
+    tokens = [
+        _tok(0.0, 0.4, " hola"),
+        _tok(0.4, 0.8, " mundo"),
+        _tok(2.0, 2.4, " adios"),
+        _tok(2.4, 2.8, " amigo."),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.0, speaker=2),
+        SpeakerSegment(start=1.5, end=3.0, speaker=3),
+    ]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(tokens)
+        finalizer.finish()
+        assert store.segment_count == 1  # one punctuation-bounded run
+        streamed = build_streaming_response(store, timeline)
+
+    batch = build_transcription_response(tokens, timeline, duration=3.0)
+    assert streamed.segments == batch.segments
+    assert streamed.word_segments == batch.word_segments
+    assert streamed.diarization == batch.diarization
+    assert [s.speaker for s in streamed.segments] == ["2"]
+    assert [w.speaker for w in streamed.word_segments] == ["2", "2", "3", "3"]
+
+
+def test_finalizer_matches_batch_for_overlapped_speech(tmp_path):
+    timeline = [
+        SpeakerSegment(start=0.0, end=2.4, speaker=2),
+        SpeakerSegment(start=0.6, end=2.4, speaker=3),
+    ]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(_TOKENS)
+        finalizer.finish()
+        streamed = build_streaming_response(store, timeline)
+
+    batch = build_transcription_response(_TOKENS, timeline, duration=2.4)
+    assert streamed.segments == batch.segments
+    assert any(s.overlap for s in streamed.segments)
+
+
+def test_finalizer_matches_batch_with_real_word_timings(tmp_path):
+    """Uneven per-word timings and confidences survive the spill round-trip."""
+    tokens = [
+        _tok(0.0, 0.2, " muy", prob=0.9),
+        _tok(3.0, 4.0, " tarde.", prob=0.4),
+    ]
+    with TranscriptSpillStore(directory=str(tmp_path)) as store:
+        finalizer = StreamingTranscriptFinalizer(store)
+        finalizer.add_tokens(tokens)
+        finalizer.finish()
+        streamed = build_streaming_response(store)
+
+    batch = build_transcription_response(tokens, [], duration=4.0)
+    assert streamed.word_segments == batch.word_segments
+    assert [(w.start, w.end, w.score) for w in streamed.word_segments] == [
+        (0.0, 0.2, 0.9),
+        (3.0, 4.0, 0.4),
+    ]
 
 
 def test_finalizer_clamps_overlapping_segments(tmp_path):

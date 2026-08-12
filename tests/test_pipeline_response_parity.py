@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from coro.api.sse import _sse_generator
+from coro.api.openai.sse import _sse_generator
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput
 from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.pipelines.full_memory import FullMemoryPipeline

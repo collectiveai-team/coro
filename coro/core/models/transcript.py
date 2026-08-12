@@ -7,7 +7,7 @@ Backend adapters convert native objects into these types at adapter edges.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 # MARK: Token and Segment Types
@@ -30,27 +30,24 @@ class TranscriptToken:
 
 @dataclass
 class TranscriptWord:
-    """A single interpolated word with timing and speaker attribution.
+    """A response word carrying its backend's real timing.
 
-    Produced by ``_build_words_for_segment``; serialised to dict at the API boundary.
+    ``start``/``end`` come from the ASR Adapter's own per-word output, ``speaker``
+    from word-level attribution, and ``overlap`` marks a word whose span contains
+    concurrently active speakers. Serialised to dict at the API boundary.
+
+    ``score`` is the backend's own probability, and ``None`` when the backend
+    expresses none — onnx-genai and the onnx-asr text-only fallback report no
+    probability. It is never a stand-in value: a placeholder here reaches clients
+    as a measured certainty the model never claimed (ADR 0015 rule 3).
     """
 
     word: str
     start: float
     end: float
-    score: float
+    score: float | None
     speaker: str
-
-
-@dataclass
-class TranscriptSegment:
-    """A speaker-attributed transcript segment built from one or more tokens."""
-
-    start: float
-    end: float
-    text: str
-    speaker: int = -1
-    words: list[TranscriptWord] = field(default_factory=list)
+    overlap: bool = False
 
 
 @dataclass

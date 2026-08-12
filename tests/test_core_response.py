@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-from coro.core.response import _build_words_for_segment, build_transcription_response
+from coro.core.response import build_transcription_response
 from coro.core.models import (
     DiarizationItem,
     SpeakerSegment,
     TranscriptItem,
-    TranscriptSegment,
     TranscriptToken,
     TranscriptWord,
 )
@@ -108,12 +107,254 @@ def test_raw_words_contains_probability():
     assert result.raw_words[0].score == pytest.approx(0.75)
 
 
-def test_build_words_for_segment_returns_typed_words():
-    """_build_words_for_segment returns list[TranscriptWord], not list[dict]."""
-    seg = TranscriptSegment(start=0.0, end=2.0, text="hello world", speaker=1)
-    words = _build_words_for_segment(seg)
+def test_segment_words_are_typed_and_speaker_attributed():
+    """Segment words are TranscriptWord values carrying the segment's speaker."""
+    tokens = [
+        TranscriptToken(start=0.0, end=1.0, text=" hello", probability=1.0),
+        TranscriptToken(start=1.0, end=2.0, text=" world", probability=1.0),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=2.0)
+    words = result.segments[0].words
     assert len(words) == 2
     assert all(isinstance(w, TranscriptWord) for w in words)
     assert words[0].word == "hello"
     assert words[0].speaker == "1"
     assert isinstance(words[0].start, float)
+
+
+# ---------------------------------------------------------------------------
+# Real word timings and confidences
+# ---------------------------------------------------------------------------
+
+
+def test_words_carry_the_backends_real_timings_not_interpolation():
+    """Uneven word timings survive; they are not spread evenly over the segment."""
+    tokens = [
+        TranscriptToken(start=0.0, end=0.2, text=" muy", probability=0.9),
+        TranscriptToken(start=3.0, end=4.0, text=" tarde.", probability=0.4),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=4.0)
+    words = result.segments[0].words
+    assert [(w.start, w.end) for w in words] == [(0.0, 0.2), (3.0, 4.0)]
+
+
+def test_words_carry_the_backends_real_confidence():
+    """Word score is the token probability, not a constant 1.0."""
+    tokens = [
+        TranscriptToken(start=0.0, end=0.5, text=" hola", probability=0.62),
+        TranscriptToken(start=0.5, end=1.0, text=" mundo.", probability=0.31),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=1.0)
+    assert [w.score for w in result.segments[0].words] == pytest.approx([0.62, 0.31], abs=1e-9)
+
+
+def test_missing_probability_stays_absent_rather_than_becoming_certainty():
+    """An unmeasured confidence must not acquire a value on the way out.
+
+    Substituting ``1.0`` here published the strongest possible certainty exactly
+    where the backend expressed none, and it did not stay local: the value is
+    averaged into utterance confidences and emitted under a vendor's
+    ``confidence`` key, where a client cannot distinguish it from a measurement.
+    ADR 0015 rule 3 — unmeasured is omitted, never stubbed.
+    """
+    tokens = [TranscriptToken(start=0.0, end=0.5, text=" hola.", probability=None)]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=0.5)
+    assert result.segments[0].words[0].score is None
+
+
+def test_measured_probability_is_carried_through_unchanged():
+    """The companion to the test above: a real probability must survive intact."""
+    tokens = [TranscriptToken(start=0.0, end=0.5, text=" hola.", probability=0.42)]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=0.5)
+    assert result.segments[0].words[0].score == pytest.approx(0.42, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Word-level speaker attribution, and the segment-level majority summary
+# ---------------------------------------------------------------------------
+
+
+def test_segment_is_not_split_where_the_word_level_speaker_changes():
+    """A sentence spanning a speaker turn stays one segment (ADR 0014).
+
+    Boundaries are sentence-first, so a mid-sentence turn does not manufacture
+    a boundary. The per-word labels still record the turn exactly, which is what
+    makes the segment's single label a summary rather than a loss.
+    """
+    tokens = [
+        TranscriptToken(start=0.0, end=0.4, text=" hola", probability=1.0),
+        TranscriptToken(start=0.4, end=0.8, text=" mundo", probability=1.0),
+        TranscriptToken(start=2.0, end=2.4, text=" adios", probability=1.0),
+        TranscriptToken(start=2.4, end=2.8, text=" amigo.", probability=1.0),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.0, speaker=2),
+        SpeakerSegment(start=1.5, end=3.0, speaker=3),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.0)
+
+    assert [s.text for s in result.segments] == ["hola mundo adios amigo."]
+    assert [w.speaker for w in result.word_segments] == ["2", "2", "3", "3"]
+
+
+def test_segment_speaker_is_the_duration_weighted_majority_of_its_words():
+    """Two words of speaker 3 outweigh two of speaker 2 on duration, not count."""
+    tokens = [
+        TranscriptToken(start=0.0, end=0.1, text=" a", probability=1.0),
+        TranscriptToken(start=0.1, end=0.2, text=" b", probability=1.0),
+        TranscriptToken(start=2.0, end=3.0, text=" c", probability=1.0),
+        TranscriptToken(start=3.0, end=4.0, text=" d.", probability=1.0),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.0, speaker=2),
+        SpeakerSegment(start=1.5, end=4.0, speaker=3),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=4.0)
+    assert [w.speaker for w in result.word_segments] == ["2", "2", "3", "3"]
+    assert [s.speaker for s in result.segments] == ["3"]
+
+
+def test_majority_outvotes_a_more_numerous_but_shorter_speaker():
+    """One long word beats three short ones — duration-weighted, not counted."""
+    tokens = [
+        TranscriptToken(start=0.0, end=3.0, text=" larguisima", probability=1.0),
+        TranscriptToken(start=4.0, end=4.1, text=" a", probability=1.0),
+        TranscriptToken(start=4.1, end=4.2, text=" b", probability=1.0),
+        TranscriptToken(start=4.2, end=4.3, text=" c.", probability=1.0),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=3.5, speaker=2),
+        SpeakerSegment(start=3.9, end=5.0, speaker=3),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=5.0)
+    assert [w.speaker for w in result.word_segments] == ["2", "3", "3", "3"]
+    assert [s.speaker for s in result.segments] == ["2"]
+
+
+def test_a_mid_sentence_flicker_word_does_not_change_the_segment_label():
+    """A one-word diarization blip is a minority, so the majority absorbs it.
+
+    This is the exact ``A B A`` sandwich ``coro.core.realignment`` was written for
+    (island 0.8 s against 2.8 s of flanks), and the blip is long enough that
+    gap-bounded merging does not already swallow it. The word keeps its own ``2``
+    label: flicker is summarised away at *segment* granularity without
+    overwriting the per-word truth, which is what relabelling used to do and no
+    longer does.
+    """
+    tokens = [
+        TranscriptToken(start=0.0, end=1.0, text=" esto", probability=1.0),
+        TranscriptToken(start=1.0, end=2.0, text=" es", probability=1.0),
+        TranscriptToken(start=2.0, end=2.8, text=" una", probability=1.0),
+        TranscriptToken(start=2.8, end=3.6, text=" prueba.", probability=1.0),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=2.0, speaker=1),
+        SpeakerSegment(start=2.0, end=2.8, speaker=2),
+        SpeakerSegment(start=2.8, end=3.6, speaker=1),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.6)
+    assert [s.speaker for s in result.segments] == ["1"]
+    assert [w.speaker for w in result.word_segments] == ["1", "1", "2", "1"]
+
+
+def test_word_in_a_diarization_gap_is_marked_unknown():
+    """Words with no timeline support are unknown, not the first speaker."""
+    tokens = [
+        TranscriptToken(start=0.0, end=0.4, text=" dentro", probability=1.0),
+        TranscriptToken(start=5.0, end=5.4, text=" fuera.", probability=1.0),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.0, speaker=2),
+        SpeakerSegment(start=8.0, end=9.0, speaker=3),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=9.0)
+    assert [w.speaker for w in result.word_segments] == ["2", "-1"]
+
+
+def test_unknown_words_abstain_rather_than_outvote_a_real_speaker():
+    """An unknown majority by duration still loses to the one attributed word."""
+    tokens = [
+        TranscriptToken(start=0.0, end=0.4, text=" dentro", probability=1.0),
+        TranscriptToken(start=5.0, end=9.0, text=" fuera.", probability=1.0),
+    ]
+    timeline = [SpeakerSegment(start=0.0, end=1.0, speaker=2)]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=9.0)
+    assert [w.speaker for w in result.word_segments] == ["2", "-1"]
+    assert [s.speaker for s in result.segments] == ["2"]
+
+
+def test_segment_is_unknown_only_when_all_of_its_words_are():
+    """Every word unattributed is the one case that makes the segment ``-1``."""
+    tokens = [
+        TranscriptToken(start=5.0, end=5.4, text=" fuera", probability=1.0),
+        TranscriptToken(start=5.4, end=5.8, text=" tambien.", probability=1.0),
+    ]
+    timeline = [SpeakerSegment(start=0.0, end=1.0, speaker=2)]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=9.0)
+    assert [w.speaker for w in result.word_segments] == ["-1", "-1"]
+    assert [s.speaker for s in result.segments] == ["-1"]
+
+
+def test_a_duration_tie_breaks_on_the_lowest_speaker_label():
+    """Equal duration and equal word count resolve deterministically, low label first."""
+    tokens = [
+        TranscriptToken(start=0.0, end=1.0, text=" uno", probability=1.0),
+        TranscriptToken(start=2.0, end=3.0, text=" dos.", probability=1.0),
+    ]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.0, speaker=3),
+        SpeakerSegment(start=2.0, end=3.0, speaker=2),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.0)
+    assert [w.speaker for w in result.word_segments] == ["3", "2"]
+    assert [s.speaker for s in result.segments] == ["2"]
+
+
+def test_same_speaker_across_a_long_silence_does_not_swallow_the_gap():
+    """Gap-bounded merging keeps a mid-gap word attributable to its own speaker."""
+    tokens = [TranscriptToken(start=30.0, end=30.5, text=" medio.", probability=1.0)]
+    timeline = [
+        SpeakerSegment(start=0.0, end=1.0, speaker=1),
+        SpeakerSegment(start=29.0, end=31.0, speaker=2),
+        SpeakerSegment(start=59.0, end=60.0, speaker=1),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=60.0)
+    assert result.segments[0].speaker == "2"
+
+
+# ---------------------------------------------------------------------------
+# Overlapped speech
+# ---------------------------------------------------------------------------
+
+
+def test_overlapped_speech_is_flagged_on_words_and_segments():
+    tokens = [TranscriptToken(start=1.2, end=1.8, text=" cruzado.", probability=1.0)]
+    timeline = [
+        SpeakerSegment(start=0.0, end=2.0, speaker=1),
+        SpeakerSegment(start=1.0, end=3.0, speaker=2),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=3.0)
+    assert result.segments[0].overlap is True
+    assert result.segments[0].words[0].overlap is True
+
+
+def test_non_overlapped_speech_is_not_flagged():
+    tokens = [TranscriptToken(start=0.0, end=0.5, text=" limpio.", probability=1.0)]
+    timeline = [SpeakerSegment(start=0.0, end=2.0, speaker=1)]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=timeline, duration=2.0)
+    assert result.segments[0].overlap is False
+    assert result.segments[0].words[0].overlap is False
+
+
+# ---------------------------------------------------------------------------
+# Segmentation policy at the response level
+# ---------------------------------------------------------------------------
+
+
+def test_comma_does_not_split_a_response_segment():
+    tokens = [
+        TranscriptToken(start=0.0, end=0.4, text=" cuando,", probability=1.0),
+        TranscriptToken(start=0.4, end=0.8, text=" llegue.", probability=1.0),
+    ]
+    result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=0.8)
+    assert [s.text for s in result.segments] == ["cuando, llegue."]

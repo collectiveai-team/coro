@@ -24,7 +24,6 @@ from coro.core.models.response import (
 )
 from coro.core.models.transcript import (
     SpeakerSegment,
-    TranscriptSegment,
     TranscriptToken,
     TranscriptWord,
 )
@@ -40,7 +39,6 @@ __all__ = [
     "TranscriptDeltaEvent",
     "TranscriptDoneEvent",
     "TranscriptItem",
-    "TranscriptSegment",
     "TranscriptToken",
     "TranscriptWord",
     "TranscriptionResult",

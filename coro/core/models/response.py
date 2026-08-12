@@ -15,23 +15,35 @@ from coro.core.models.transcript import TranscriptWord
 
 @dataclass
 class RawWord:
-    """A raw ASR word before segment interpolation, in response shape."""
+    """A raw ASR word as the backend emitted it, in response shape.
+
+    ``score`` is ``None`` when the backend expresses no probability; it is never
+    stubbed (ADR 0015 rule 3).
+    """
 
     word: str
     start: float
     end: float
-    score: float
+    score: float | None
 
 
 @dataclass
 class ResponseSegment:
-    """A speaker-attributed, serialisable transcript segment with word timings."""
+    """A speaker-attributed, serialisable transcript segment with word timings.
+
+    Boundaries are sentence-shaped, so a segment may span a speaker turn and its
+    ``speaker`` is the duration-weighted *majority* of ``words`` — a summary, not
+    a homogeneity guarantee. ``words`` carries the per-word truth. ``overlap`` is
+    set when any of its words falls inside concurrently active speaker timeline
+    entries. See ADR 0014.
+    """
 
     start: float
     end: float
     text: str
     speaker: str
     words: list[TranscriptWord] = field(default_factory=list)
+    overlap: bool = False
 
 
 @dataclass

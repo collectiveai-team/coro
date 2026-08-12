@@ -1093,6 +1093,27 @@
       "code": "C21",
       "file": "tests/test_transcription_endpoint.py",
       "detail": ""
+    },
+    {
+      "fingerprint": "0b735473d51e48a2",
+      "code": "C16",
+      "file": "tests/test_listen_websocket_e2e.py",
+      "detail": "fixed timeout in concurrent wait",
+      "reason": "asyncio.wait_for timeouts in the real-socket e2e tests: the timeout is a failure bound on a live WebSocket read, not an input to the assertion \u2014 the test fails if it elapses, and no expected value depends on it. Same species as the C16 entries already baselined."
+    },
+    {
+      "fingerprint": "3ffe54dbac396b0f",
+      "code": "C16",
+      "file": "tests/test_listen_websocket_e2e.py",
+      "detail": "fixed timeout in concurrent wait",
+      "reason": "asyncio.wait_for timeouts in the real-socket e2e tests: the timeout is a failure bound on a live WebSocket read, not an input to the assertion \u2014 the test fails if it elapses, and no expected value depends on it. Same species as the C16 entries already baselined."
+    },
+    {
+      "fingerprint": "c367871162887c6d",
+      "code": "C16",
+      "file": "tests/test_listen_websocket_e2e.py",
+      "detail": "fixed timeout in concurrent wait",
+      "reason": "asyncio.wait_for timeouts in the real-socket e2e tests: the timeout is a failure bound on a live WebSocket read, not an input to the assertion \u2014 the test fails if it elapses, and no expected value depends on it. Same species as the C16 entries already baselined."
     }
   ]
 }

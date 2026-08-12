@@ -27,17 +27,17 @@ from coro.api.exceptions import (
     TranscriptionValidationError,
     UnsupportedStreamingError,
 )
-from coro.api.schemas import (
-    DiarizadJsonResponse,
-    DiarizadJsonSegment,
+from coro.api.schemas import TranscriptionResponse
+from coro.api.openai.schemas import (
+    DiarizedJsonResponse,
+    DiarizedJsonSegment,
     JsonResponse,
-    TranscriptionResponse,
     TranscriptionUsage,
     VerboseJsonResponse,
     VerboseJsonSegment,
     VerboseJsonWord,
 )
-from coro.api.sse import streaming_response
+from coro.api.openai.sse import streaming_response
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.concurrency import AsrCapacityError
 
@@ -184,14 +184,14 @@ def _verbose_json_response(
     )
 
 
-def _diarized_json_response(result: TranscriptionResponse) -> DiarizadJsonResponse:
+def _diarized_json_response(result: TranscriptionResponse) -> DiarizedJsonResponse:
     duration = _duration_from_result(result)
-    return DiarizadJsonResponse(
+    return DiarizedJsonResponse(
         task="transcribe",
         duration=duration,
         text=_text_from_result(result),
         segments=[
-            DiarizadJsonSegment(
+            DiarizedJsonSegment(
                 type="transcript.text.segment",
                 id=f"seg_{index + 1:03d}",
                 start=segment.start,
@@ -229,7 +229,7 @@ def _response_for_format(
     result: TranscriptionResponse,
     *,
     language: str | None,
-) -> DiarizadJsonResponse: ...
+) -> DiarizedJsonResponse: ...
 
 
 @overload
@@ -238,7 +238,7 @@ def _response_for_format(
     result: TranscriptionResponse,
     *,
     language: str | None,
-) -> JsonResponse | VerboseJsonResponse | DiarizadJsonResponse: ...
+) -> JsonResponse | VerboseJsonResponse | DiarizedJsonResponse: ...
 
 
 def _response_for_format(
@@ -246,7 +246,7 @@ def _response_for_format(
     result: TranscriptionResponse,
     *,
     language: str | None,
-) -> JsonResponse | VerboseJsonResponse | DiarizadJsonResponse:
+) -> JsonResponse | VerboseJsonResponse | DiarizedJsonResponse:
     match response_format:
         case ResponseFormat.JSON:
             return _json_response(result)
@@ -299,7 +299,7 @@ async def create_transcription(
         description="Accepted but ignored.",
     ),
     pipeline=Depends(get_pipeline),
-) -> Response | JsonResponse | VerboseJsonResponse | DiarizadJsonResponse:
+) -> Response | JsonResponse | VerboseJsonResponse | DiarizedJsonResponse:
     """Accept audio and return an OpenAI-shaped response.
 
     Supported response formats: json, verbose_json/json_verbose,

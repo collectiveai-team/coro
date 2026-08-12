@@ -13,6 +13,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from coro.bench.stm_deepgram import deepgram_word_segments
+
 if TYPE_CHECKING:
     from coro.core.models import SpeakerSegment
 
@@ -121,17 +123,26 @@ def hyp_response_to_stm(
 ) -> str:
     """Build the Hypothesis STM from the richest speaker source the response has.
 
-    Prefers ``word_segments`` — the per-word speaker labels — and falls back to
-    ``segments``. The preference is what keeps WDER measuring per-word
-    attribution: once a response segment's speaker becomes a duration-weighted
-    majority *summary* of its words (issue ``12``), scoring from ``segments``
-    would measure the summary instead, and abstention would vanish from the
-    hypothesis before it could be counted.
+    Prefers per-word speaker labels and falls back to ``segments``. The
+    preference is what keeps WDER measuring per-word attribution: once a
+    response segment's speaker becomes a duration-weighted majority *summary*
+    of its words (issue ``12``), scoring from ``segments`` would measure the
+    summary instead, and abstention would vanish from the hypothesis before it
+    could be counted.
+
+    Words are looked for in two places, because they arrive in two shapes: the
+    Deepgram-native nesting served by ``POST /v1/listen``, and a top-level
+    ``word_segments``/``words`` list. The vendor shape is checked first — it
+    carries no ``segments`` at all, so missing it does not merely degrade the
+    hypothesis, it empties it, and scoring reports that as a clean run.
 
     The fallback is not dead code: the ``diarized_json`` wire format carries no
-    word field today, so every response the benchmark currently receives takes
-    it. Both sources agree while a segment holds exactly one speaker.
+    word field, so every response from the OpenAI endpoint still takes it. Both
+    sources agree while a segment holds exactly one speaker.
     """
+    vendor_words = deepgram_word_segments(response, recording_id=recording_id)
+    if vendor_words:
+        return word_segments_to_stm(vendor_words, recording_id, channel=channel)
     word_segments = response.get("word_segments") or response.get("words") or []
     if word_segments and any(word.get("speaker") is not None for word in word_segments):
         return word_segments_to_stm(word_segments, recording_id, channel=channel)

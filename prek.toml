@@ -122,6 +122,38 @@ types = ["python"]
 pass_filenames = false
 priority = 2
 
+# MARK: adr-numbering
+# Repo-layout checks live here rather than in tests/, which is the package's own
+# suite: neither of the next two hooks imports coro or exercises any behaviour.
+# They read the tree, so they are lint, and putting them in pytest made the suite
+# fail for reasons that had nothing to do with the software.
+#
+# An ADR number is an identifier cited by number alone, so a duplicate makes every
+# citation ambiguous. This has happened six times; nothing checked for it.
+[[repos.hooks]]
+id = "adr-numbering"
+name = "adr numbering"
+entry = "uv run python scripts/check_adr_numbering.py"
+language = "system"
+files = "^docs/adr/"
+pass_filenames = false
+priority = 2
+
+# MARK: flicker-rule-rejected
+# ADR 0014 dropped the sandwich rule after measuring it. This asserts both halves
+# of that: the entry point may not be referenced outside its own module, its tests
+# and that ADR, and the module recording the measurement must not be deleted. The
+# script names the symbol; this comment deliberately does not, so the allow list
+# stays as small as the invariant needs.
+[[repos.hooks]]
+id = "flicker-rule-rejected"
+name = "flicker rule stays rejected"
+entry = "uv run python scripts/check_flicker_rule_rejected.py"
+language = "system"
+types_or = ["python", "markdown"]
+pass_filenames = false
+priority = 2
+
 # MARK: docker-check
 # Lint the runtime Dockerfile with buildx's built-in checker (BuildKit rules).
 # Uses the default cpu/ubuntu:noble build args; --check only parses, it does

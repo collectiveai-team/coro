@@ -1,15 +1,16 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/collectiveai-team/coro/main/assets/coro-logo.png" alt="Coro — OpenAI-compatible ASR + speaker diarization" style="width:600px; max-width:100%; height:auto;" />
+  <img src="https://raw.githubusercontent.com/collectiveai-team/coro/main/assets/coro-logo.png" alt="Coro — OpenAI- and Deepgram-compatible ASR + speaker diarization" style="width:600px; max-width:100%; height:auto;" />
 </p>
 
 <p align="center">
-  <em>Self-hosted, OpenAI-compatible speech-to-text that knows who said what.</em>
+  <em>Self-hosted speech-to-text that knows who said what — speaks both the OpenAI and Deepgram API contracts.</em>
 </p>
 
 <p align="center">
   <a href="https://github.com/collectiveai-team/coro/releases"><img alt="Release" src="https://img.shields.io/github/v/release/collectiveai-team/coro?logo=github" /></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white" alt="Python 3.12"></a>
   <a href="https://platform.openai.com/docs/api-reference/audio"><img src="https://img.shields.io/badge/API-OpenAI--compatible-412991?logo=openai&logoColor=white" alt="OpenAI-compatible API"></a>
+  <a href="https://developers.deepgram.com/reference/speech-to-text-api/listen"><img src="https://img.shields.io/badge/API-Deepgram--compatible-13EF93?logo=deepgram&logoColor=black" alt="Deepgram-compatible API"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
 
@@ -19,20 +20,35 @@
 
 ---
 
-Coro is an embedded ASR + speaker-diarization server that speaks the OpenAI
-transcription contract — point the official `openai` SDK at it and get back
-typed transcripts that know *who* said *what*, no custom schema package needed.
+Coro is an embedded ASR + speaker-diarization server that speaks **two industry
+API contracts natively** — OpenAI's and Deepgram's. Point the official `openai`
+SDK *or* the official `deepgram-sdk` at it and get back typed transcripts that
+know *who* said *what*, no custom schema package needed.
+
+Each provider gets its own endpoint implementing that provider's own contract.
+Coro never bolts one vendor's data onto another vendor's format:
+
+| you already use | point it at | and you get |
+|---|---|---|
+| `openai` SDK | `POST /v1/audio/transcriptions` | `Transcription` / `TranscriptionVerbose` / `TranscriptionDiarized`, plus OpenAI-exact SSE |
+| `deepgram-sdk` | `POST /v1/listen` | `ListenV1Response` — **a speaker on every word** |
+| `deepgram-sdk` | `WebSocket /v1/listen` | live `Results` / `Metadata` frames |
+
+Responses are validated against both vendors' own published SDK types in CI, so
+"compatible" is asserted rather than asserted-in-prose.
 
 The name nods to *coro* (Spanish for "chorus") — many voices, transcribed and
 attributed to who spoke them.
 
 The key features are:
+- **Two native API contracts** — OpenAI *and* Deepgram, each on its own endpoint with its own request shape, defaults and error format; neither is an approximation of the other
 - **OpenAI-compatible API** — drop-in `/v1/audio/transcriptions`; clients reuse the official `openai` SDK types (`Transcription` / `TranscriptionVerbose` / `TranscriptionDiarized`) with no custom schema
+- **Deepgram-compatible API** — drop-in `POST /v1/listen` and `WebSocket /v1/listen`; the only way to get **per-word speaker labels**, since no OpenAI type has a slot for one
 - **Audio *and* video input** — uploads are decoded through ffmpeg, so any container it supports works: audio (`.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`, …) and video (`.mp4`, `.mkv`, `.mov`, `.webm`, …); the audio track is extracted to 16 kHz mono PCM automatically — same endpoint, same response shapes
 - **Pluggable diarization backends** — pick per deployment: NVIDIA NeMo Sortformer (streaming-capable, **≤ 4 speakers**) or pyannote community-1 (batch/whole-file, **handles > 4 speakers**); both attribute every segment to a speaker (`diarized_json`), so you get *who spoke, when, and what*
 - **Pluggable ASR backends** — pick per deployment: onnx-asr Parakeet (the default — fastest on CPU *and* GPU, strongest on Spanish), Faster-Whisper (best English meeting accuracy, multilingual), or onnx-genai Nemotron (real-time streaming)
 - **Two transcription pipelines** — `full-memory` (default) decodes and holds the whole recording in RAM for lowest latency on short/medium clips; `streaming` streams 1 s PCM chunks off disk and spills the growing transcript to a per-request on-disk store, trading a little latency for **flat host RAM on arbitrarily long audio**. Select with `CORO_PIPELINE` / `--pipeline` — see [the pipeline comparison](#two-transcription-pipelines-full-memory-vs-streaming)
-- **Streaming over SSE** — OpenAI-exact `transcript.text.delta` / `transcript.text.done` / `[DONE]` events with `stream=true`
+- **Streaming both ways** — OpenAI-exact SSE (`transcript.text.delta` / `transcript.text.done` / `[DONE]`) with `stream=true`, *and* a Deepgram-compatible WebSocket at `/v1/listen` that pushes `Results` frames as audio arrives
 - **Flat-memory long audio** — the streaming pipeline spills the transcript to disk so host RSS stays flat from 11 s to multi-hour recordings
 - **CPU & GPU** — mutually-exclusive `cpu` / `cuda` extras carry the matching `onnxruntime` wheels; multilingual on either
 - **Run it your way** — ephemeral `uvx`, a standalone `uv tool install` command, or a full `uv sync` dev checkout
@@ -53,7 +69,8 @@ uvx --from "coro-asr[cuda]" coro --port 8000
 
 `uvx` builds a throwaway isolated environment and launches the `coro` command —
 no `uv sync`/`uv run` and nothing added to your current project. The server now
-speaks the OpenAI transcription contract at `http://127.0.0.1:8000/v1`.
+speaks both the OpenAI and Deepgram transcription contracts at
+`http://127.0.0.1:8000/v1`.
 
 Then write a tiny client with the official `openai` SDK, pointing `base_url` at
 your Coro server (`api_key` is required by the SDK but ignored by Coro):
@@ -71,14 +88,22 @@ client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="not-needed")
 with open("audio.wav", "rb") as f:
     result = client.audio.transcriptions.create(
         file=f,
-        model="whisper-1",                # accepted but ignored; server uses its backend
+        model="whisper-1",  # accepted but ignored; server uses its backend
         response_format="diarized_json",  # json | verbose_json | diarized_json
     )
 
 print(result.text)
-for segment in result.segments:          # who spoke, when, and what
+for segment in result.segments:  # who spoke, when, and what
     print(f"[{segment.start:.2f}-{segment.end:.2f}] {segment.speaker}: {segment.text}")
 ```
+
+> **`segments[].speaker` is a summary, not a guarantee.** Segment boundaries come
+> from sentence punctuation, never from a speaker change, so a segment can span a
+> speaker turn. Its `speaker` is the **duration-weighted majority** of its own
+> words — the right label for display, the wrong one to treat as exact for every
+> word inside it. For per-word truth use `POST /v1/listen`, which carries a
+> speaker on every word; `diarized_json` has no per-word slot. The JSON *shape*
+> is unchanged, so no schema diff will flag this. See ADR 0014.
 
 Or hit the endpoint directly with `curl` (the same OpenAI multipart contract):
 
@@ -202,10 +227,15 @@ ASR-only server, or swap `nemo` → `pyannote` (`--pipeline full-memory`, needs
 |--------|------|-------------|
 | `GET`  | `/health` | Readiness / capability status. |
 | `POST` | `/v1/audio/transcriptions` | OpenAI-compatible transcription (multipart). |
+| `POST` | `/v1/listen` | Deepgram-compatible transcription (raw body); per-word speakers. |
+| `WS`   | `/v1/listen` | Deepgram-compatible live transcription; `Results` frames as windows complete. |
 
 `response_format` accepts `json`, `verbose_json`, and `diarized_json`. With
 `stream=true` the endpoint emits OpenAI-exact SSE
 (`transcript.text.delta` / `transcript.text.done` / `[DONE]`).
+
+For a **speaker on every word**, use the Deepgram-native `POST /v1/listen`
+below — no OpenAI type has a slot for one.
 
 ### API docs and contracts
 
@@ -213,11 +243,12 @@ ASR-only server, or swap `nemo` → `pyannote` (`--pipeline full-memory`, needs
 |--------|------|-------------|
 | `GET`  | `/docs` | Scalar API reference — both contracts behind one document picker. |
 | `GET`  | `/openapi.json` | OpenAPI 3.1 contract for the request/response surface. |
-| `GET`  | `/asyncapi.json` | AsyncAPI 3.0 contract for the SSE event stream. |
+| `GET`  | `/asyncapi.json` | AsyncAPI 3.0 contract for the SSE stream and the `/v1/listen` socket. |
 
 Both documents are generated from the code — OpenAPI by FastAPI from the routes,
-AsyncAPI from the same dataclasses the SSE writer serialises — so neither is
-hand-maintained and neither is committed to the repo. CI exports both, lints
+AsyncAPI from the same types the SSE writer and the WebSocket handler serialise
+— so neither is hand-maintained and neither is committed to the repo. The
+socket is published only as AsyncAPI, because OpenAPI cannot describe one. CI exports both, lints
 them with `redocly`, and fails a PR that breaks the REST contract. Swagger UI
 and ReDoc are switched off: Scalar is the only renderer that can show the
 event-driven contract alongside the REST one. See
@@ -398,7 +429,8 @@ coro --port 8000 \
 ```
 
 Either way, request `response_format=diarized_json` to get per-segment speaker
-labels back. Sortformer handles **≤ 4 speakers**; for more, use pyannote below.
+labels back, or `POST /v1/listen?diarize=true` for per-*word* labels.
+Sortformer handles **≤ 4 speakers**; for more, use pyannote below.
 
 #### Sortformer post-processing (optional, see ADR 0010)
 
@@ -773,7 +805,7 @@ client = OpenAI(base_url="http://<host>:<port>/v1", api_key="not-needed")
 with open("audio.wav", "rb") as f:
     result = client.audio.transcriptions.create(
         file=f,
-        model="whisper-1",              # accepted but ignored; server uses its configured backend
+        model="whisper-1",  # accepted but ignored; server uses its configured backend
         response_format="diarized_json",  # -> openai.types.audio.TranscriptionDiarized
     )
 
@@ -786,8 +818,8 @@ for segment in result.segments:
 
 ```python
 from openai.types.audio import (
-    Transcription,          # response_format="json"
-    TranscriptionVerbose,   # response_format="verbose_json"
+    Transcription,  # response_format="json"
+    TranscriptionVerbose,  # response_format="verbose_json"
     TranscriptionDiarized,  # response_format="diarized_json"
 )
 
@@ -827,9 +859,131 @@ curl -N http://<host>:<port>/v1/audio/transcriptions \
 Conformance is enforced by `tests/test_openai_sdk_conformance.py`, which validates
 every server response against the SDK types.
 
-> Note: standard OpenAI types carry **segment-level** speaker labels only.
-> Word-level speaker/confidence is an internal detail and is not exposed at the
-> HTTP boundary.
+> Note: standard OpenAI types carry **segment-level** speaker labels only —
+> there is no OpenAI-compatible slot for a per-word speaker. Use the
+> Deepgram-native endpoint below to get one.
+
+## Per-word speakers: `POST /v1/listen` (Deepgram-compatible)
+
+Coro assigns a speaker to every word and keeps each word's real ASR timing and
+confidence. No OpenAI type can carry that, so rather than bending OpenAI's
+format, Coro implements **Deepgram's own endpoint contract**: raw audio body
+(not multipart), Deepgram's query parameters and defaults, and Deepgram's error
+shape.
+
+```bash
+curl -s "http://localhost:8000/v1/listen?diarize=true&utterances=true" \
+  -H "Authorization: Token any-value" \
+  -H "Content-Type: audio/wav" \
+  --data-binary @audio.wav
+```
+
+```json
+{
+  "results": {
+    "channels": [ { "alternatives": [ { "transcript": "hola mundo si",
+      "words": [ { "word": "hola", "start": 0.0, "end": 0.5,
+                   "confidence": 0.91, "speaker": 1 } ] } ] } ],
+    "utterances": [ { "speaker": 1, "transcript": "hola mundo",
+                      "start": 0.0, "end": 1.0, "confidence": 0.87,
+                      "words": [ ... ] } ]
+  }
+}
+```
+
+Responses parse with the official SDK, enforced by
+`tests/test_deepgram_sdk_conformance.py`:
+
+```python
+from deepgram.types.listen_v1response import ListenV1Response
+
+ListenV1Response.model_validate(response.json())
+```
+
+Behaviour worth knowing:
+
+- **`diarize` and `utterances` default to `false`**, exactly as at Deepgram, so
+  per-word speakers need `?diarize=true`. Coro does not override vendor
+  defaults to be more helpful.
+- Timestamps are float **seconds**; speaker numbering is Coro's (1-based),
+  passed through rather than renumbered, so labels stay comparable with
+  `diarized_json`.
+- A word the diarizer does not cover has **no `speaker` key** — Deepgram never
+  emits a null speaker, and inventing a label would be a guess.
+- `speaker_confidence` is **omitted**: Coro's diarizers binarize their
+  per-frame posteriors, so the value does not exist to report.
+- `Authorization` is accepted and never validated. Coro has no auth.
+- `?utterances=true` roughly doubles the body, because the shape carries every
+  word twice (flat and nested per utterance) — as the real API does.
+
+### What is and isn't supported
+
+This is a **documented subset**, not a full clone. Of Deepgram's 37
+pre-recorded parameters — 3 honoured, 16 refused, 18 ignored:
+
+| | parameters |
+|---|---|
+| **honoured** (3) | `diarize`, `utterances`, `language` |
+| **refused** with a `400` (3) | `redact`, `callback`, `callback_method` |
+| **accepted and ignored** (31) | everything else — `summarize`, `sentiment`, `topics`, `intents`, `detect_entities`, `paragraphs`, `search`, `multichannel`, `punctuate`, `smart_format`, `model`, … |
+
+Unhonoured parameters are **ignored**, each documented in the OpenAPI schema
+with what its absence means, so a standard parameter bundle still works and a
+future Deepgram flag will not break the endpoint. Features Coro does not
+compute simply produce no response key.
+
+Two are **refused**, because ignoring them fails silently instead of visibly:
+`redact` would return unredacted text under a redaction request (a compliance
+failure wearing a 200), and `callback` would leave a client waiting forever for
+a webhook that never fires. A missing `summary` key you can see; those two you
+cannot.
+
+Also not implemented:
+
+- **URL ingest.** `{"url": "..."}` bodies are refused with a clear message;
+  submit audio as the raw request body.
+- **`listen/v2`** — WebSocket-only, and its distinguishing feature is
+  contextual turn detection, which Coro has no equivalent of.
+- **`interim_results`, `vad_events`, `utterance_end_ms`** — Coro emits only
+  tokens it has already accepted, so every frame is final.
+
+## Live streaming: `WebSocket /v1/listen`
+
+Deepgram's streaming contract is a WebSocket, so Coro implements one. This is
+genuine live transcription — `Results` frames are pushed as windows complete,
+not after the client stops sending.
+
+```python
+import json, websockets
+
+async with websockets.connect(
+    "ws://localhost:8000/v1/listen?encoding=linear16&sample_rate=16000&diarize=true"
+) as ws:
+    await ws.send(pcm_chunk)  # binary frames: raw samples
+    await ws.send(json.dumps({"type": "KeepAlive"}))
+    print(json.loads(await ws.recv()))  # {"type": "Results", ...}
+    await ws.send(json.dumps({"type": "CloseStream"}))
+```
+
+- **Audio is declared, not sniffed.** A socket has no container, so
+  `encoding=linear16` is required; other encodings are refused at connect time
+  with an `Error` frame rather than after a minute of noise. Non-16 kHz rates
+  are resampled.
+- **Control frames:** `KeepAlive`, `Finalize`, `CloseStream`.
+- **Interim frames carry no speaker.** The diarization timeline is incomplete
+  while audio is arriving, so a mid-stream label would be a guess later frames
+  contradict. With `diarize=true` a final attributed frame is sent once the
+  timeline is complete — a deliberate deviation from Deepgram, which labels
+  interim words.
+- The stream always ends with a `Metadata` frame.
+
+See `docs/adr/0015-vendor-native-endpoints.md` for the fidelity policy.
+`/v1/audio/transcriptions` is byte-unchanged, asserted in
+`tests/test_openai_formats_unchanged.py`.
+
+> Coro currently speaks two vendor dialects — OpenAI and Deepgram. Whether a
+> further dialect is added is a question of whether that vendor's contract can be
+> met under the fidelity policy, not of a fixed count. See ADR 0015.
 
 ## Development
 

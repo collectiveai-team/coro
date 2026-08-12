@@ -1,4 +1,12 @@
-"""Boundary Response Schema models."""
+"""Strict Transcription Response Schema — the provider-agnostic boundary.
+
+The pipeline's own response shape, validated at the API boundary before any
+provider projection runs. Every vendor endpoint projects *from* this; none of
+them may leak into it, so nothing here is named after a provider.
+
+Provider-shaped models live beside their endpoint: ``coro/api/openai/schemas.py``
+and ``coro/api/deepgram/schemas.py``.
+"""
 
 from __future__ import annotations
 
@@ -6,20 +14,36 @@ from pydantic import BaseModel, ConfigDict
 
 
 # Item Models ---------------------------------------------------------------
-class WhisperWord(BaseModel):
-    """Word-level timestamp item in a segment."""
+class TranscriptWord(BaseModel):
+    """Word-level timestamp item in a segment.
+
+    ``start``/``end`` are the ASR backend's real per-word values, and ``speaker``
+    is decided for this word alone — the normative per-word speaker truth.
+    ``overlap`` flags a word whose span contains concurrently active speakers, so
+    the single-label collapse is visible rather than silent (see ADR 0014).
+
+    ``score`` is the backend's own probability, and ``None`` when the backend
+    expresses none. Unmeasured is never stubbed (ADR 0015 rule 3).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     word: str
     start: float
     end: float
-    score: float
+    score: float | None
     speaker: str
+    overlap: bool = False
 
 
-class WhisperSegment(BaseModel):
-    """Segment item in the Whisper Response Schema."""
+class ResponseSegment(BaseModel):
+    """Segment item in the Strict Transcription Response Schema.
+
+    Segments are sentence-shaped, so one may span a speaker turn; ``speaker`` is
+    the duration-weighted majority of ``words`` and is ``"-1"`` only when every
+    word is. ``overlap`` is true when any word in the segment falls in overlapped
+    speech (see ADR 0014).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -27,10 +51,11 @@ class WhisperSegment(BaseModel):
     end: float
     text: str
     speaker: str
-    words: list[WhisperWord]
+    words: list[TranscriptWord]
+    overlap: bool = False
 
 
-class WhisperTranscriptItem(BaseModel):
+class TranscriptItem(BaseModel):
     """Transcript convenience item."""
 
     model_config = ConfigDict(extra="forbid")
@@ -40,7 +65,7 @@ class WhisperTranscriptItem(BaseModel):
     text: str
 
 
-class WhisperDiarizationItem(BaseModel):
+class DiarizationItem(BaseModel):
     """Diarization convenience item."""
 
     model_config = ConfigDict(extra="forbid")
@@ -51,14 +76,17 @@ class WhisperDiarizationItem(BaseModel):
 
 
 class RawWord(BaseModel):
-    """Raw ASR word item before segment interpolation."""
+    """Raw ASR word item as the backend emitted it.
+
+    ``score`` is ``None`` when the backend expresses no probability.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     word: str
     start: float
     end: float
-    score: float
+    score: float | None
 
 
 # Response Model ------------------------------------------------------------
@@ -67,130 +95,8 @@ class TranscriptionResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    segments: list[WhisperSegment]
-    word_segments: list[WhisperWord]
-    transcript: list[WhisperTranscriptItem]
-    diarization: list[WhisperDiarizationItem]
+    segments: list[ResponseSegment]
+    word_segments: list[TranscriptWord]
+    transcript: list[TranscriptItem]
+    diarization: list[DiarizationItem]
     raw_words: list[RawWord]
-
-
-# MARK: OpenAI-Style Transcription Response Schemas
-class TranscriptionUsage(BaseModel):
-    """OpenAI-style transcription usage object."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    type: str
-    seconds: int
-
-
-class JsonResponse(BaseModel):
-    """Default OpenAI-style JSON transcription response."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    text: str
-    usage: TranscriptionUsage
-
-
-class VerboseJsonSegment(BaseModel):
-    """Segment item in an OpenAI-style verbose JSON response."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: int
-    seek: int
-    start: float
-    end: float
-    text: str
-    tokens: list[int]
-    temperature: float
-    avg_logprob: float
-    compression_ratio: float
-    no_speech_prob: float
-
-
-class VerboseJsonWord(BaseModel):
-    """Word item in an OpenAI-style verbose JSON response."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    word: str
-    start: float
-    end: float
-
-
-class VerboseJsonResponse(BaseModel):
-    """OpenAI-style verbose JSON transcription response."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    duration: float
-    language: str
-    text: str
-    segments: list[VerboseJsonSegment]
-    words: list[VerboseJsonWord]
-    usage: TranscriptionUsage
-
-
-class DiarizadJsonSegment(BaseModel):
-    """Speaker-annotated segment in a diarized JSON response."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    type: str
-    id: str
-    start: float
-    end: float
-    text: str
-    speaker: str
-
-
-class DiarizadJsonResponse(BaseModel):
-    """OpenAI-style diarized JSON transcription response."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    task: str
-    duration: float
-    text: str
-    segments: list[DiarizadJsonSegment]
-    usage: TranscriptionUsage
-
-
-DiarizedJsonResponse = DiarizadJsonResponse
-
-
-# MARK: OpenAI-Style Error Schema
-class OpenAIError(BaseModel):
-    """OpenAI-style error object."""
-
-    message: str
-    type: str
-    param: str | None = None
-    code: str | None = None
-
-
-# Error Response Model ------------------------------------------------------
-class OpenAIErrorResponse(BaseModel):
-    """OpenAI-style error response boundary schema."""
-
-    error: OpenAIError
-
-    @classmethod
-    def from_error(
-        cls,
-        *,
-        message: str,
-        error_type: str = "invalid_request_error",
-        param: str | None = None,
-        code: str | None = None,
-    ) -> OpenAIErrorResponse:
-        return cls(
-            error=OpenAIError(
-                message=message,
-                type=error_type,
-                param=param,
-                code=code,
-            )
-        )

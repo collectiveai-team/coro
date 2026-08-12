@@ -66,13 +66,19 @@ class Message(_Node):
 
 
 class Channel(_Node):
-    """An addressable stream messages are exchanged over."""
+    """An addressable stream messages are exchanged over.
+
+    ``bindings`` is where a protocol describes the connection itself — the
+    WebSocket binding's handshake method and query schema live here, not on the
+    operations, which the binding spec leaves empty.
+    """
 
     address: str
     title: str | None = None
     description: str | None = None
     messages: dict[str, Reference] = Field(default_factory=dict)
     servers: list[Reference] | None = None
+    bindings: dict[str, Any] | None = None
 
 
 class Operation(_Node):

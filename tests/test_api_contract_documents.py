@@ -13,8 +13,14 @@ from dataclasses import asdict
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from coro.api.asyncapi import ASYNCAPI_VERSION, STREAM_CHANNEL_ADDRESS, build_asyncapi_document
-from coro.api.sse import SSE_TERMINATOR
+from coro.api.asyncapi import (
+    ASYNCAPI_VERSION,
+    LISTEN_CHANNEL_ADDRESS,
+    STREAM_CHANNEL_ADDRESS,
+    build_asyncapi_document,
+)
+from coro.api.deepgram.listen_ws import CLOSE_STREAM, FINALIZE, KEEP_ALIVE
+from coro.api.openai.sse import SSE_TERMINATOR
 from coro.app import api_metadata, create_app
 from coro.core.models.events import TranscriptDeltaEvent, TranscriptDoneEvent
 from coro.settings import ServerSettings
@@ -106,7 +112,7 @@ def test_missing_metadata_omits_the_license_rather_than_publishing_it_blank():
     assert "/asyncapi.json" in description
 
 
-# MARK: The two contracts describe the same endpoint
+# MARK: The two contracts describe the same endpoints
 @pytest.mark.asyncio
 async def test_stream_channel_address_is_a_real_openapi_path(app):
     """The AsyncAPI channel address must name a path OpenAPI actually documents.
@@ -120,6 +126,56 @@ async def test_stream_channel_address_is_a_real_openapi_path(app):
 
     assert STREAM_CHANNEL_ADDRESS in paths
     assert "post" in paths[STREAM_CHANNEL_ADDRESS]
+
+
+def test_live_channel_address_is_a_real_websocket_route(app):
+    """The socket channel is pinned against the app's WebSocket routes.
+
+    It cannot be pinned against OpenAPI: FastAPI emits no path for a WebSocket
+    route, which is the whole reason this channel is the only published contract
+    the endpoint has. The guard is therefore the route table itself.
+    """
+    websocket_paths = {
+        route.path for route in app.routes if type(route).__name__ == "APIWebSocketRoute"
+    }
+
+    assert LISTEN_CHANNEL_ADDRESS in websocket_paths
+
+
+@pytest.mark.asyncio
+async def test_every_asyncapi_channel_is_pinned_to_a_route(app):
+    """No channel may name an address the app does not actually serve.
+
+    Without this, adding a channel with a typo'd or removed address publishes a
+    contract for an endpoint that does not exist.
+    """
+    async with _client(app) as client:
+        paths = set((await client.get("/openapi.json")).json()["paths"])
+    paths |= {route.path for route in app.routes if type(route).__name__ == "APIWebSocketRoute"}
+
+    addresses = {channel.address for channel in build_asyncapi_document().channels.values()}
+
+    assert addresses <= paths
+
+
+def test_live_control_vocabulary_is_the_handler_s_own(app):
+    """The published control frames are the ones the handler dispatches on."""
+    document = build_asyncapi_document()
+    payload = document.components.messages["deepgramControl"].payload
+
+    assert payload is not None
+    assert set(payload["properties"]["type"]["enum"]) == {KEEP_ALIVE, FINALIZE, CLOSE_STREAM}
+
+
+def test_live_results_payload_is_derived_from_the_frame_model(app):
+    """Every field of the emitted Results frame appears in the published payload."""
+    from coro.api.deepgram.live_schemas import DeepgramLiveResults
+
+    document = build_asyncapi_document()
+    payload = document.components.messages["deepgramResults"].payload
+
+    assert payload is not None
+    assert set(payload["properties"]) == set(DeepgramLiveResults.model_fields)
 
 
 # MARK: Payloads are derived from the wire types
@@ -136,7 +192,7 @@ def test_event_payload_matches_the_dataclass_that_produces_it(message_key, event
     payload = document.components.messages[message_key].payload
 
     assert payload is not None
-    # asdict() is exactly how coro.api.sse serialises the event onto the wire,
+    # asdict() is exactly how coro.api.openai.sse serialises the event onto the wire,
     # so its keys are the ground truth the contract has to cover.
     assert set(payload["properties"]) == set(asdict(_sample(event_type)))
 

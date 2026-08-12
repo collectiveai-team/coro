@@ -110,6 +110,15 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--der-collar", type=float, default=0.0)
     parser.add_argument("--der-regions", choices=["all", "nooverlap", "single"], default="all")
     parser.add_argument("--stream", action="store_true", default=False)
+    parser.add_argument(
+        "--deepgram",
+        action="store_true",
+        default=False,
+        help="Send audio to the Deepgram-native /v1/listen endpoint instead of the "
+        "OpenAI one. This is the only wire surface that carries per-word speaker "
+        "labels, so WDER scores per-word attribution rather than the segment-level "
+        "majority summary. Allowed on 'quality', unlike --stream.",
+    )
 
     spanish = parser.add_argument_group("Spanish workload set (public corpora)")
     spanish.add_argument(
@@ -181,9 +190,30 @@ def _validate_reference_args(
         parser.error("--spanish-fetch-plan requires --spanish-preset.")
 
 
-def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    if getattr(args, "stream", False) and args.subcommand == "quality":
+def _validate_transport_args(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Reject transport selections that cannot be honoured.
+
+    ``--deepgram`` is deliberately allowed on ``quality``, unlike ``--stream``:
+    quality is the subcommand that computes WDER, and the Deepgram endpoint is
+    the only surface carrying the per-word speakers WDER is meant to score.
+    """
+    stream = getattr(args, "stream", False)
+    deepgram = getattr(args, "deepgram", False)
+
+    if stream and args.subcommand == "quality":
         parser.error("--stream is not allowed for the 'quality' subcommand.")
+
+    if stream and deepgram:
+        parser.error(
+            "--stream and --deepgram select different endpoints; /v1/listen is not an SSE surface."
+        )
+
+
+def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    _validate_transport_args(args, parser)
 
     has_attached = args.server_url is not None
     has_managed_explicit = any(getattr(args, flag) is not None for flag in _MANAGED_FLAGS)
