@@ -87,13 +87,18 @@ class AudioInput:
       upload straight to a temp file so the encoded bytes are never fully
       resident.
 
-    Either way the instance owns any temp file it creates, so whichever
-    component consumes the audio must ``await cleanup()`` when it is done.
+    A third, **referenced** backing is produced by :meth:`from_path`, which
+    points at a file the caller already owns.
+
+    Cleanup deletes only files this instance created. That distinction is
+    load-bearing: both pipelines call ``cleanup()`` in a ``finally``, so without
+    it, transcribing a local file in place would delete the user's input.
     """
 
     def __init__(self, data: bytes, filename: str | None = None) -> None:
         self._data: bytes | None = data
         self._temp_path: str | None = None
+        self._owns_temp_path = False
         self._filename = filename
         self._size = len(data)
 
@@ -103,6 +108,34 @@ class AudioInput:
         audio = cls(b"", filename=filename)
         audio._data = None
         audio._temp_path = path
+        audio._owns_temp_path = True
+        audio._size = size
+        return audio
+
+    @classmethod
+    def from_path(cls, path: str | os.PathLike[str]) -> AudioInput:
+        """Wrap an existing file by reference, without taking ownership of it.
+
+        The file is neither copied nor read: pipelines decode straight from the
+        path. :meth:`cleanup` will not unlink it, so running against a local
+        file is never destructive.
+
+        Args:
+            path: Filesystem path to an existing audio or video file.
+
+        Returns:
+            An instance backed by, but not owning, ``path``.
+
+        Raises:
+            FileNotFoundError: If ``path`` does not exist.
+
+        """
+        resolved = Path(path)
+        size = resolved.stat().st_size
+        audio = cls(b"", filename=resolved.name)
+        audio._data = None
+        audio._temp_path = str(resolved)
+        audio._owns_temp_path = False
         audio._size = size
         return audio
 
@@ -175,14 +208,20 @@ class AudioInput:
                 raise RuntimeError("AudioInput has already been cleaned up.")
             suffix = _suffix_from_filename(self._filename)
             self._temp_path = _spool_to_temp(self._data, prefix="asr-upload-", suffix=suffix)
+            self._owns_temp_path = True
         return self._temp_path
 
     async def cleanup(self) -> None:
-        """Unlink the owned temp file, if any. Idempotent."""
-        if self._temp_path is not None:
+        """Unlink the temp file this instance created, if any. Idempotent.
+
+        A referenced file (see :meth:`from_path`) belongs to the caller and is
+        left in place; only the reference is dropped.
+        """
+        if self._temp_path is not None and self._owns_temp_path:
             with contextlib.suppress(FileNotFoundError):
                 Path(self._temp_path).unlink()
-            self._temp_path = None
+        self._temp_path = None
+        self._owns_temp_path = False
 
 
 # MARK: FFmpeg Configuration

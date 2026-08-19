@@ -110,9 +110,7 @@ class ASRCacheStore:
         """
         if self._max_bytes == 0:
             return 0
-        (total,) = self._conn.execute(
-            "SELECT COALESCE(SUM(size_bytes), 0) FROM windows"
-        ).fetchone()
+        (total,) = self._conn.execute("SELECT COALESCE(SUM(size_bytes), 0) FROM windows").fetchone()
         if total <= self._max_bytes:
             return 0
 

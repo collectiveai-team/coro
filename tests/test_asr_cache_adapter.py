@@ -28,7 +28,9 @@ class _RecordingASR:
 
     async def transcribe_pcm(self, pcm, *, language=None, prompt=None):
         self.calls.append((pcm, language, prompt))
-        return [TranscriptToken(start=0.0, end=1.0, text=f" call{len(self.calls)}", probability=0.5)]
+        return [
+            TranscriptToken(start=0.0, end=1.0, text=f" call{len(self.calls)}", probability=0.5)
+        ]
 
 
 @pytest.fixture

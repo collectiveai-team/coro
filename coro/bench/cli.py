@@ -231,8 +231,16 @@ def resolve_meetings(args: argparse.Namespace) -> list[str]:
     return meetings
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> None:
+    """Run the benchmark tooling.
+
+    Args:
+        argv: Arguments to parse. Defaults to ``sys.argv[1:]``, which is what
+            the ``coro-bench`` console script relies on; ``coro bench`` passes
+            the arguments that followed the subcommand.
+
+    """
+    args = parse_args(argv)
 
     if args.spanish_fetch_plan:
         print_spanish_fetch_plan(args)

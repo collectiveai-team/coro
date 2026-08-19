@@ -206,7 +206,7 @@ def _diarized_json_response(result: TranscriptionResponse) -> DiarizedJsonRespon
 
 
 @overload
-def _response_for_format(
+def response_for_format(
     response_format: Literal[ResponseFormat.JSON],
     result: TranscriptionResponse,
     *,
@@ -215,7 +215,7 @@ def _response_for_format(
 
 
 @overload
-def _response_for_format(
+def response_for_format(
     response_format: Literal[ResponseFormat.VERBOSE_JSON],
     result: TranscriptionResponse,
     *,
@@ -224,7 +224,7 @@ def _response_for_format(
 
 
 @overload
-def _response_for_format(
+def response_for_format(
     response_format: Literal[ResponseFormat.DIARIZED_JSON],
     result: TranscriptionResponse,
     *,
@@ -233,7 +233,7 @@ def _response_for_format(
 
 
 @overload
-def _response_for_format(
+def response_for_format(
     response_format: ResponseFormat,
     result: TranscriptionResponse,
     *,
@@ -241,12 +241,30 @@ def _response_for_format(
 ) -> JsonResponse | VerboseJsonResponse | DiarizedJsonResponse: ...
 
 
-def _response_for_format(
+def response_for_format(
     response_format: ResponseFormat,
     result: TranscriptionResponse,
     *,
     language: str | None,
 ) -> JsonResponse | VerboseJsonResponse | DiarizedJsonResponse:
+    """Render a transcription result in one of the supported response formats.
+
+    Public because the offline command renders through it too: `coro run` must
+    produce the same body the endpoint would for the same format, or its output
+    would silently be a fourth shape nobody documented.
+
+    Args:
+        response_format: The requested format.
+        result: The validated transcription response.
+        language: Language to report, for the formats that carry one.
+
+    Returns:
+        The rendered response model.
+
+    Raises:
+        TranscriptionValidationError: If the format is recognised but unsupported.
+
+    """
     match response_format:
         case ResponseFormat.JSON:
             return _json_response(result)
@@ -380,4 +398,4 @@ async def create_transcription(
         len(validated.diarization),
     )
 
-    return _response_for_format(response_format, validated, language=language)
+    return response_for_format(response_format, validated, language=language)

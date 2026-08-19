@@ -60,6 +60,9 @@ dependencies = [
     # py3.12 wheels so the backtrack can't reach the broken release.
     "numba>=0.61",
     "numpy>=1.26",
+    # `coro run --server-url` uploads to an already-running server; imported
+    # lazily, so it costs nothing on the in-process path.
+    "httpx>=0.27.0",
     "onnx-asr[hub]>=0.11.0",
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.27",

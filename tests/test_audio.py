@@ -358,3 +358,47 @@ async def test_convert_to_pcm_bytes_decodes_video_container(tmp_path):
     pcm = await convert_to_pcm_bytes(video_path.read_bytes())
 
     assert len(pcm) > SAMPLE_RATE * 2
+
+
+# ---------------------------------------------------------------------------
+# Referencing a file without owning it
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_from_path_cleanup_leaves_the_referenced_file_alone(tmp_path):
+    """The offline command depends on this: both pipelines clean up in a finally."""
+    source = tmp_path / "input.wav"
+    source.write_bytes(b"not really audio")
+
+    audio = AudioInput.from_path(source)
+    await audio.cleanup()
+
+    assert source.exists()
+
+
+@pytest.mark.asyncio
+async def test_from_path_exposes_the_file_without_copying_it(tmp_path):
+    source = tmp_path / "input.wav"
+    source.write_bytes(b"payload")
+
+    audio = AudioInput.from_path(source)
+
+    assert await audio.temp_path() == str(source)
+    assert await audio.read_bytes() == b"payload"
+    assert audio.size == len(b"payload")
+
+
+@pytest.mark.asyncio
+async def test_cleanup_still_removes_a_temp_file_this_instance_created(tmp_path):
+    audio = AudioInput(b"payload", filename="clip.wav")
+    spooled = Path(await audio.temp_path())
+    assert spooled.exists()
+
+    await audio.cleanup()
+
+    assert not spooled.exists()
+
+
+@pytest.mark.asyncio
+async def test_from_path_rejects_a_missing_file(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        AudioInput.from_path(tmp_path / "absent.wav")
