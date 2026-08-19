@@ -1,8 +1,4 @@
-"""Synthetic mount table used to exercise RAM-backed-filesystem rejection.
-
-Shared by the transcript spill store and the ASR Window Cache, which reject
-RAM-backed directories for the same reason and through the same probe.
-"""
+"""Synthetic mount table used to exercise RAM-backed-filesystem rejection."""
 
 from __future__ import annotations
 

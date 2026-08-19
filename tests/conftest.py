@@ -1,9 +1,4 @@
-"""Shared pytest fixtures, inherited by every directory below this one.
-
-Only fixtures live here. The pure factories, constants and stand-ins they build
-on live in the importable ``support`` package, so test modules reach them with a
-normal import instead of importing this file as a module.
-"""
+"""Shared pytest fixtures, inherited by every directory below this one."""
 
 from __future__ import annotations
 

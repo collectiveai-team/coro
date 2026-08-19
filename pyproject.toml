@@ -356,10 +356,7 @@ replace-imports-with-any = ["onnxruntime_genai", "pyannote.audio"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-# Makes the `support` helper package importable from every directory of the
-# mirrored test tree. Without it, only a test file's own directory is on
-# sys.path, so a helper import would break the moment a module moves down a
-# level.
+# Makes the `support` helper package importable from every directory of the tree.
 pythonpath = ["tests"]
 
 

@@ -1,8 +1,4 @@
-"""Transcription Response factories and boundary stand-ins.
-
-Equivalents of these app/result helpers are still duplicated in several older
-test modules; migrating those copies is deliberately out of scope here.
-"""
+"""Transcription Response factories and boundary stand-ins."""
 
 from __future__ import annotations
 

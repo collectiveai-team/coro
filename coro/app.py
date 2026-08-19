@@ -150,7 +150,6 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 )
                 runtime.diarization_latency = settings.diarization_latency
 
-        # Construct the pipeline
         runtime.pipeline = build_pipeline(
             settings,
             asr=asr_adapter,
