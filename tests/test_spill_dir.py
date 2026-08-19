@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from conftest import ROOT_MOUNT_ENTRY, mountinfo_line
+from support.mounts import ROOT_MOUNT_ENTRY, mountinfo_line
 
 from coro import fsinfo
 from coro.pipelines import spill

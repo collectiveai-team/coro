@@ -22,7 +22,7 @@ from coro.core.models import (
     TranscriptItem,
     TranscriptWord,
 )
-from conftest import make_app, make_wav
+from support.factories import make_app, make_wav
 
 _WORDS = [
     TranscriptWord(word="hola", start=0.0, end=0.5, score=0.91, speaker="1"),

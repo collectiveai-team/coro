@@ -14,7 +14,7 @@ import pytest
 from deepgram.types.listen_v1response import ListenV1Response
 from httpx import ASGITransport, AsyncClient
 
-from conftest import FakePipeline, make_app, make_wav
+from support.factories import FakePipeline, make_app, make_wav
 
 
 async def _listen(query: str = "") -> Any:

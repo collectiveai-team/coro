@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.settings import ServerSettings
-from conftest import make_app
+from support.factories import make_app
 
 # One second of silence at the canonical rate.
 ONE_SECOND = b"\x00\x00" * SAMPLE_RATE

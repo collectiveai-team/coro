@@ -13,7 +13,7 @@ import json
 from unittest.mock import patch
 
 import pytest
-from conftest import make_wav
+from support.factories import make_wav
 
 from coro.cli import main
 from coro.core.models import TranscriptToken
@@ -174,7 +174,7 @@ def test_its_output_matches_what_the_endpoint_would_return(audio_file, tmp_path,
     """Otherwise `coro run` is a fourth response shape nobody documented."""
     from starlette.testclient import TestClient
 
-    from conftest import make_app
+    from support.factories import make_app
     from coro.offline import DEFAULT_RESPONSE_FORMAT
     from coro.pipelines.factory import build_pipeline
     from coro.settings import ServerSettings

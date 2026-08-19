@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from conftest import FakePipeline, make_app, make_wav
+from support.factories import FakePipeline, make_app, make_wav
 from coro.bench.errors import UndiarizedResponseError
 from coro.bench.stm import hyp_response_to_stm, hyp_segments_to_stm
 

@@ -30,7 +30,7 @@ from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.bench.data import WARMUP_AUDIO_PATH
 from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.settings import ServerSettings
-from conftest import make_app
+from support.factories import make_app
 
 pytestmark = pytest.mark.asyncio
 

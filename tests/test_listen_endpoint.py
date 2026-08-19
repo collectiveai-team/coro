@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from conftest import UNSCORED_WORDS, FakePipeline, make_app, make_result, make_wav
+from support.factories import UNSCORED_WORDS, FakePipeline, make_app, make_result, make_wav
 
 
 async def _listen(
