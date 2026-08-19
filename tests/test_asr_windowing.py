@@ -55,6 +55,17 @@ class _OverlapEchoASR:
         return [TranscriptToken(start=0.0, end=0.25, text=f" word{call}", probability=1.0)]
 
 
+class _WindowRecordingASR:
+    """Record the exact window bytes handed to the adapter."""
+
+    def __init__(self) -> None:
+        self.windows: list[bytes] = []
+
+    async def transcribe_pcm(self, pcm: bytes, *, language=None, prompt=None):
+        self.windows.append(pcm)
+        return []
+
+
 def _pcm_seconds(seconds: float) -> bytes:
     return b"\x00\x00" * int(SAMPLE_RATE * seconds)
 
@@ -317,6 +328,46 @@ async def test_stream_chunks_event_equivalence_with_stream_pcm():
         assert [(t.start, t.end, t.text) for t in chunk_toks] == [
             (t.start, t.end, t.text) for t in pcm_toks
         ]
+
+
+@pytest.mark.parametrize(
+    ("seconds", "label"),
+    [
+        (0.5, "shorter than one window"),
+        (1.0, "exactly one window"),
+        (1.75, "one step past a full window"),
+        (2.5, "two steps past a full window"),
+        (2.0, "ragged tail"),
+        (3.0, "ragged tail, several windows"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_stream_chunks_dispatches_the_same_windows_as_stream_pcm(seconds, label):
+    """Both paths must hand the adapter byte-identical windows.
+
+    When the stream length is exactly ``window + k * step`` the buffered path
+    used to dispatch one extra window containing only the leftover overlap: a
+    wasted inference over a region the previous window already covered, with
+    the tail transcribed as an isolated overlap-length fragment rather than in
+    the context of its full window. Reconciliation discarded the duplicate
+    tokens, so the response still looked correct and only the window sequence
+    reveals it — which is why this compares windows rather than output.
+    """
+    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
+    pcm = _pcm_seconds(seconds)
+
+    from_pcm = _WindowRecordingASR()
+    async for _ in windowing.stream_pcm(pcm, asr=from_pcm, language="es", prompt=None):
+        pass
+
+    from_chunks = _WindowRecordingASR()
+    async for _ in windowing.stream_chunks(
+        _async_chunks(_grid_chunks(pcm)), asr=from_chunks, language="es", prompt=None
+    ):
+        pass
+
+    assert [len(w) for w in from_chunks.windows] == [len(w) for w in from_pcm.windows], label
+    assert from_chunks.windows == from_pcm.windows, label
 
 
 @pytest.mark.asyncio

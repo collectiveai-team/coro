@@ -227,6 +227,21 @@ class ASRWindowing:
         language: str | None = None,
         prompt: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
+        """Window a chunk stream, matching the plan `_plan_windows` would produce.
+
+        A window is only dispatched once at least one byte beyond it has
+        arrived, which is what proves it is not the final window. Emitting as
+        soon as the buffer merely *reached* `window_bytes` could not know that,
+        so a stream whose length was an exact multiple of the step dispatched
+        the last full window as non-final and then ran a second window over the
+        leftover overlap alone: a wasted inference whose region had already been
+        covered, with the tail of the audio transcribed as an isolated
+        overlap-length fragment instead of in the context of its full window.
+
+        The cost is one chunk of lookahead. That is free while decoding a file
+        (the next chunk is already available) and one client frame on the live
+        socket, which pushes frames through unchanged.
+        """
         buffer = bytearray()
         consumed_bytes = 0
         carry = _PromptCarry(text=prompt)
@@ -242,7 +257,7 @@ class ASRWindowing:
             if len(buffer) > max_buffer:
                 max_buffer = len(buffer)
 
-            while len(buffer) >= self.window_bytes:
+            while len(buffer) > self.window_bytes:
                 window_count += 1
                 plan = self._plan(window_count, consumed_bytes, is_final=False)
                 window = bytes(buffer[: self.window_bytes])
