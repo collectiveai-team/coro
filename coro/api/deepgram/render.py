@@ -48,6 +48,7 @@ from coro.core.transcript_source import (
     response_duration,
 )
 
+
 def _mean_word_confidence(source: TranscriptSource) -> float | None:
     """Mean of the words' measured confidences, over its own pass."""
     return mean_measured(word.score for word in source.iter_words())

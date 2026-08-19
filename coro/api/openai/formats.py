@@ -12,15 +12,19 @@ from enum import StrEnum
 class ResponseFormat(StrEnum):
     """All OpenAI response_format values this server recognises.
 
-    JSON-like formats are implemented; ``json_verbose`` is a typo-tolerant alias
-    of ``verbose_json``. The text output formats are recognised so they fail with
-    an OpenAI-style 400 (param ``response_format``) rather than a generic
-    validation error.
+    Exactly the values OpenAI's own ``AudioResponseFormat`` defines, minus the
+    ones it defines that coro does not implement — the text output formats are
+    recognised so they fail with an OpenAI-style 400 (param ``response_format``)
+    rather than a generic validation error.
+
+    coro-invented spellings are deliberately absent. ``json_verbose`` and
+    ``dirized_json`` were once accepted as typo-tolerant aliases; a misspelling
+    that silently succeeds trains clients to depend on it, and the server can
+    never afterwards tell a typo from an intent (ADR 0018).
     """
 
     JSON = "json"
     VERBOSE_JSON = "verbose_json"
-    JSON_VERBOSE = "json_verbose"
     DIARIZED_JSON = "diarized_json"
 
     # Unsupported OpenAI formats (recognised but not implemented → 400)
@@ -36,7 +40,6 @@ JSON_LIKE_FORMATS = frozenset(
     {
         ResponseFormat.JSON,
         ResponseFormat.VERBOSE_JSON,
-        ResponseFormat.JSON_VERBOSE,
         ResponseFormat.DIARIZED_JSON,
     }
 )

@@ -99,6 +99,21 @@ async def test_openai_formats_carry_no_per_word_speaker(fmt: str):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("alias,canonical", [("json_verbose", "verbose_json")])
-async def test_typo_aliases_stay_byte_identical_to_their_canonical_format(alias, canonical):
-    assert await _raw_body(alias) == _GOLDEN[canonical]
+@pytest.mark.parametrize("alias", ["json_verbose", "dirized_json"])
+async def test_invented_typo_aliases_are_refused(alias: str):
+    """A misspelling must fail rather than quietly succeed.
+
+    Both spellings were once accepted as aliases. Neither appears in OpenAI's
+    ``AudioResponseFormat``, and an alias that silently works trains clients to
+    depend on it while leaving the server unable to tell a typo from an intent
+    (ADR 0018).
+    """
+    app = make_app(_FakePipeline())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("t.wav", make_wav(), "audio/wav")},
+            data={"response_format": alias},
+        )
+
+    assert response.status_code == 422

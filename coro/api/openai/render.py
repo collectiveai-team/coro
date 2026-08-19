@@ -63,9 +63,7 @@ def _timed_words(source: TranscriptSource) -> Iterator:
 
 def render_json(source: TranscriptSource) -> Iterator[str]:
     """Render the default ``json`` body: the transcript text and its usage."""
-    envelope = dump_model(
-        JsonResponse(text=TEXT_SENTINEL, usage=_usage(response_duration(source)))
-    )
+    envelope = dump_model(JsonResponse(text=TEXT_SENTINEL, usage=_usage(response_duration(source))))
     yield from splice(envelope, [text_slot(iter_text_fragments(source))])
 
 
@@ -138,7 +136,9 @@ def render_diarized_json(source: TranscriptSource) -> Iterator[str]:
         )
         for index, segment in enumerate(source.iter_segments())
     )
-    yield from splice(envelope, [text_slot(iter_text_fragments(source)), array_slot("segments", segments)])
+    yield from splice(
+        envelope, [text_slot(iter_text_fragments(source)), array_slot("segments", segments)]
+    )
 
 
 def render_for_format(
@@ -168,7 +168,7 @@ def render_for_format(
     match response_format:
         case ResponseFormat.JSON:
             return render_json(source)
-        case ResponseFormat.VERBOSE_JSON | ResponseFormat.JSON_VERBOSE:
+        case ResponseFormat.VERBOSE_JSON:
             return render_verbose_json(source, language=language)
         case ResponseFormat.DIARIZED_JSON:
             return render_diarized_json(source)

@@ -88,11 +88,13 @@ The pipeline runs to completion and fills the source before any body byte is wri
 
 The elements are rendered with `json.dumps` under Starlette's exact keywords — compact separators, `ensure_ascii=False`, `allow_nan=False` — because that is what `JSONResponse` uses and therefore what both routes already emit. Pydantic's own serialiser is **not** interchangeable with it: `model_dump_json` writes `1e-7` where `json.dumps` writes `1e-07`. Rendering elements per item through `model_dump_json` was the first design, and it would have produced identical bytes for almost every transcript and different bytes for some — the worst way for a byte-identity guarantee to fail. Which serialiser the routes actually used was settled by sending a `1e-7` timestamp through the live endpoint rather than by reading the framework's source.
 
-## The `dirized_json` alias is removed
+## The invented `response_format` spellings are removed
 
-`dirized_json` was accepted as a typo-tolerant alias of `diarized_json`. It is removed: a misspelling that silently succeeds trains clients to depend on the misspelling, and the server cannot later tell a typo from an intent. `json_verbose` is retained, because unlike a dropped letter it is a plausible reordering of a real OpenAI name.
+`response_format` accepted two values that were never OpenAI's: `dirized_json` and `json_verbose`, carried as typo-tolerant aliases of `diarized_json` and `verbose_json`. Both are removed.
 
-This is the one deliberate contract *narrowing* here. `response_format` is published as an enum in `/openapi.json`, so removing a member is a breaking change that the `oasdiff` gate will and should flag — unlike everything else in this ADR, which leaves the generated document byte-identical.
+The rule already existed and this simply applies it. `test_response_format_carries_only_values_openai_defines` asserts exact membership on the grounds that "`response_format` is OpenAI's parameter; its values are OpenAI's to define" — and then listed two values OpenAI does not define. OpenAI's own `AudioResponseFormat` is `Literal["json", "text", "srt", "verbose_json", "vtt", "diarized_json"]`; neither alias appears in it. A misspelling that silently succeeds trains clients to depend on the misspelling, and leaves the server permanently unable to distinguish a typo from an intent. Both now fail with the same OpenAI-style 400 any other unrecognised value gets, and a test pins that they are refused rather than merely absent.
+
+This is the one deliberate contract *narrowing* here. `response_format` is published as an enum in `/openapi.json`, so removing members is a breaking change that the `oasdiff` gate will and should flag — unlike everything else in this ADR, which leaves the generated document unchanged apart from docstrings.
 
 ## What is unchanged
 

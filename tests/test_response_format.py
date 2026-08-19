@@ -29,7 +29,6 @@ def test_response_format_enum_has_json_members():
     """ResponseFormat Enum exposes expected JSON-like and unsupported members."""
     assert ResponseFormat.JSON.value == "json"
     assert ResponseFormat.VERBOSE_JSON.value == "verbose_json"
-    assert ResponseFormat.JSON_VERBOSE.value == "json_verbose"
     assert ResponseFormat.DIARIZED_JSON.value == "diarized_json"
 
 
@@ -47,11 +46,15 @@ def test_response_format_carries_only_values_openai_defines():
     An exact-membership assertion, not a spot check: a vendor value added here
     would extend a format a third party owns, which is what ADR 0015 rules out.
     Vendor contracts get their own endpoint instead.
+
+    A coro-*invented* value is ruled out by the same principle, which this
+    assertion once violated with two typo-tolerant aliases — ``json_verbose``
+    and ``dirized_json``, neither of which appears in OpenAI's own
+    ``AudioResponseFormat`` (ADR 0018).
     """
     assert {member.value for member in ResponseFormat} == {
         "json",
         "verbose_json",
-        "json_verbose",
         "diarized_json",
         "text",
         "srt",
@@ -66,7 +69,6 @@ def test_response_format_enum_json_like_is_iterable():
 
     assert ResponseFormat.JSON in _JSON_LIKE_FORMATS
     assert ResponseFormat.VERBOSE_JSON in _JSON_LIKE_FORMATS
-    assert ResponseFormat.JSON_VERBOSE in _JSON_LIKE_FORMATS
     assert ResponseFormat.DIARIZED_JSON in _JSON_LIKE_FORMATS
 
 
@@ -131,7 +133,6 @@ async def test_unsupported_format_returns_openai_error(route, fmt):
     [
         ("whisper-1", "json"),
         ("whisper-1", "verbose_json"),
-        ("anything", "json_verbose"),
         ("gpt-4o-transcribe-diarize", "diarized_json"),
         ("whisper-1", ""),
         ("whisper-1", None),

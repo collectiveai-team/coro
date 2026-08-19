@@ -112,9 +112,9 @@ async def create_transcription(
 ) -> Response:
     """Accept audio and return an OpenAI-shaped response.
 
-    Supported response formats: json, verbose_json/json_verbose and
-    diarized_json (and empty). Other OpenAI text output formats are recognised
-    but not implemented.
+    Supported response formats: json, verbose_json and diarized_json (and
+    empty). Other OpenAI text output formats are recognised but not
+    implemented.
 
     The body is rendered incrementally from a Transcript Source and spooled to
     disk, so it is served with a real ``Content-Length`` without ever being

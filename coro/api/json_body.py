@@ -86,7 +86,7 @@ class Slot:
 
 
 def array_slot(name: str, elements: Iterator[str]) -> Slot:
-    """A slot replacing an empty JSON array with its streamed elements."""
+    """Build a slot replacing an empty JSON array with its streamed elements."""
     key = f"{dumps(name)}:"
     return Slot(
         marker=f"{key}[]",
@@ -97,7 +97,7 @@ def array_slot(name: str, elements: Iterator[str]) -> Slot:
 
 
 def text_slot(fragments: Iterator[str]) -> Slot:
-    """A slot replacing the sentinel string with streamed, escaped text."""
+    """Build a slot replacing the sentinel string with streamed, escaped text."""
     return Slot(
         marker=dumps(TEXT_SENTINEL),
         opening='"',
