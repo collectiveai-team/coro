@@ -44,9 +44,7 @@ def audio_file(tmp_path):
 def fake_asr():
     """Patch the ASR Backend Adapter Factory so no model is constructed."""
     adapter = _FakeASR()
-    with patch(
-        "coro.backends.asr.factory.build_asr_adapter", autospec=True, return_value=adapter
-    ):
+    with patch("coro.backends.asr.factory.build_asr_adapter", autospec=True, return_value=adapter):
         yield adapter
 
 
@@ -156,9 +154,7 @@ def test_a_fully_cached_run_is_byte_identical_to_the_cold_one(
     assert (tmp_path / "warm.json").read_text() == (tmp_path / "cold.json").read_text()
 
 
-def test_a_fully_cached_run_never_builds_the_adapter(
-    audio_file, tmp_path, undetectable_filesystem
-):
+def test_a_fully_cached_run_never_builds_the_adapter(audio_file, tmp_path, undetectable_filesystem):
     """The point of the fast path is skipping the model load, not just inference."""
     cache_dir = str(tmp_path / "cache")
     arguments = (str(audio_file), "--asr-cache", "enabled", "--asr-cache-dir", cache_dir)

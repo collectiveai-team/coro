@@ -124,9 +124,7 @@ def render_result(result: Any, *, response_format: str, language: str | None) ->
     from coro.api.schemas import TranscriptionResponse
 
     validated = TranscriptionResponse.model_validate(asdict(result))
-    rendered = response_for_format(
-        ResponseFormat(response_format), validated, language=language
-    )
+    rendered = response_for_format(ResponseFormat(response_format), validated, language=language)
     return rendered.model_dump_json()
 
 

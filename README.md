@@ -51,6 +51,8 @@ The key features are:
 - **Streaming both ways** — OpenAI-exact SSE (`transcript.text.delta` / `transcript.text.done` / `[DONE]`) with `stream=true`, *and* a Deepgram-compatible WebSocket at `/v1/listen` that pushes `Results` frames as audio arrives
 - **Flat-memory long audio** — the streaming pipeline spills the transcript to disk so host RSS stays flat from 11 s to multi-hour recordings
 - **CPU & GPU** — mutually-exclusive `cpu` / `cuda` extras carry the matching `onnxruntime` wheels; multilingual on either
+- **Offline transcription** — `coro run FILE` transcribes a local file with no server and no upload, so a multi-gigabyte recording never goes through a socket; your input file is never touched — see [Command-line interface](#command-line-interface)
+- **ASR window cache** — opt-in, content-addressed reuse of per-window results, so re-running the same audio skips the model entirely (30 min of audio: 392.8 s → 0.31 s on CPU). Stores digests and tokens, never audio — see [ASR window cache](#asr-window-cache)
 - **Run it your way** — ephemeral `uvx`, a standalone `uv tool install` command, or a full `uv sync` dev checkout
 
 ## Quickstart
@@ -61,10 +63,10 @@ your machine:
 
 ```bash
 # CPU-only
-uvx --from "coro-asr[cpu]" coro --port 8000
+uvx --from "coro-asr[cpu]" coro serve --port 8000
 
 # NVIDIA GPU
-uvx --from "coro-asr[cuda]" coro --port 8000
+uvx --from "coro-asr[cuda]" coro serve --port 8000
 ```
 
 `uvx` builds a throwaway isolated environment and launches the `coro` command —
@@ -134,7 +136,7 @@ uv tool install "coro-asr[cuda]"   # NVIDIA GPU
 Then run the server directly (no `uv run`):
 
 ```bash
-coro --port 8000
+coro serve --port 8000
 ```
 
 Upgrade with `uv tool upgrade coro`; uninstall with `uv tool uninstall coro`.
@@ -146,20 +148,21 @@ For a throwaway run without installing at all, use `uvx` (see
 
 Prebuilt images are published to GHCR with `-cpu` / `-gpu` flavour suffixes
 (`latest`, the release version, and `sha-…` tags). The image entrypoint is
-`coro`, so append any `--flag` or `CORO_*` env var just like the CLI; the server
-binds `0.0.0.0:8000` inside the container.
+`coro` and its default command is `serve`, so anything you append replaces that
+command and must start with a subcommand. The server binds `0.0.0.0:8000`
+inside the container.
 
 ```bash
 # CPU
 docker run --rm -p 8000:8000 \
   ghcr.io/collectiveai-team/coro:latest-cpu \
-  --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 --asr-device cpu \
+  serve --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 --asr-device cpu \
   --backend-diarization nemo
 
 # NVIDIA GPU (needs the NVIDIA Container Toolkit)
 docker run --rm --gpus all -p 8000:8000 \
   ghcr.io/collectiveai-team/coro:latest-gpu \
-  --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
+  serve --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
   --backend-diarization nemo
 ```
 
@@ -173,7 +176,7 @@ volume (avoids re-downloading on every container start):
 ```bash
 docker run --rm -p 8000:8000 \
   -v coro-hf-cache:/root/.cache/huggingface \
-  ghcr.io/collectiveai-team/coro:latest-cpu --port 8000
+  ghcr.io/collectiveai-team/coro:latest-cpu serve --port 8000
 ```
 
 To build the image yourself instead of pulling, pass the matching
@@ -190,6 +193,98 @@ docker build -t coro:gpu \
   --build-arg EXTRA=cuda .
 ```
 
+## Command-line interface
+
+`coro` takes a subcommand. There is no bare invocation — see
+[ADR 0017](docs/adr/0017-cli-subcommands.md).
+
+| Command | What it does |
+|---------|--------------|
+| `coro serve` | Start the HTTP transcription server. |
+| `coro run FILE` | Transcribe a local file with no server and no upload. |
+| `coro bench …` | Benchmark tooling (the same as `coro-bench`). |
+
+`coro serve` and `coro run` share one flag vocabulary, so anything you can
+configure on the server you can configure on an offline run.
+
+### Transcribe a local file: `coro run`
+
+```bash
+coro run recording.m4a                          # JSON to stdout
+coro run recording.m4a -o transcript.json       # …or to a file
+coro run recording.m4a --backend-diarization nemo --language es
+```
+
+It runs the pipeline **in-process, directly against the path** — no server, no
+port, and nothing pushed through a socket, which matters once a recording is
+measured in gigabytes. Your input file is never modified or removed. Output is
+rendered by the same code the transcription endpoint uses, so it is byte-for-byte
+what the server would return for the same file and `--response-format` (default
+`diarized_json`).
+
+If a server is already running with a warm model, point at it **explicitly**:
+
+```bash
+coro run recording.m4a --server-url http://127.0.0.1:8000
+```
+
+Coro never probes for a listening server: a command that changed behaviour
+depending on what happened to be bound to a port would not be reproducible. An
+attached run is governed by that server's configuration, so the local flags are
+ignored — and the run reports which configuration actually produced the result:
+
+```
+coro run: mode=in-process pipeline=full-memory asr=onnx-asr:nemo-parakeet-tdt-0.6b-v3 \
+  diarization=none cache=enabled windows=65 hits=65 misses=0
+```
+
+## ASR window cache
+
+Transcribing the same recording twice costs the same full ASR pass twice, even
+when nothing that affects the result has changed. Enable the cache and the
+second run skips the model entirely:
+
+```bash
+coro run recording.m4a --asr-cache enabled       # or CORO_ASR_CACHE=enabled
+coro serve --asr-cache enabled
+```
+
+Measured on 30 minutes of audio, default backend, CPU:
+
+| | Cold | Fully cached |
+|---|---|---|
+| Wall time | 392.8 s | **0.31 s** |
+
+The floor is ffmpeg decode, which is paid on every re-run: 0.38 s, or 0.1% of
+the cold run. A fully-cached offline run never loads the model at all.
+
+**What it stores.** Per-window transcript tokens and digests. Never audio, never
+decoded PCM — a few megabytes per hour of audio.
+
+**What still hits.** Each window is keyed on its canonical PCM (post-decode,
+post-resample), so the same audio in a different container, at a different
+declared sample rate, or under a different filename hits the same entry.
+Changing `response_format`, `stream`, `diarize`, `temperature` or the
+concurrency settings still hits too — none of them can change what the model
+returns. Changing the backend, model, quantization, VAD settings, device or
+runtime version does *not* hit: those are all fingerprinted, so an upgrade can
+never serve you results the new build would not produce.
+
+**Settings.**
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `CORO_ASR_CACHE` | `disabled` | Off by default — it introduces disk growth. |
+| `CORO_ASR_CACHE_DIR` | user cache dir | Must be on real disk; a tmpfs path is rejected at startup. |
+| `CORO_ASR_CACHE_MAX_MB` | `1024` | Size cap; least-recently-used entries are evicted on write. `0` disables. |
+| `CORO_ASR_CACHE_TTL_DAYS` | `30` | Expiry, applied on lookup. `0` disables. |
+
+Each window is committed as it completes, so a long run that dies part-way keeps
+everything it already transcribed and the next attempt resumes from there. There
+is no per-request cache control: neither vendor API has one, and adding it would
+break the fidelity those endpoints are held to. Design notes and the evidence
+behind them are in [ADR 0016](docs/adr/0016-asr-window-cache.md).
+
 ## Configuration
 
 Coro can be configured two equivalent ways — use whichever fits your
@@ -198,7 +293,7 @@ deployment, or mix both:
 - **Environment variables** — `CORO_`-prefixed (host, port, backends, devices,
   etc.).
 - **CLI flags** — every setting is also a `--kebab-case` flag, auto-derived
-  from `ServerSettings` via pydantic-settings. Run `coro --help` to list them.
+  from `ServerSettings` via pydantic-settings. Run `coro serve --help` to list them.
 
 Each `ServerSettings` field maps to both forms, e.g. `backend_asr` →
 `CORO_BACKEND_ASR` (env) or `--backend-asr` (CLI). Precedence is **CLI flags >
@@ -208,10 +303,10 @@ environment variables > defaults**. See `coro/settings.py` for the full list.
 # Env vars (add CORO_BACKEND_DIARIZATION to enable speaker labels; omit for ASR-only)
 CORO_BACKEND_ASR=onnx-asr CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3 \
   CORO_ASR_DEVICE=cuda CORO_BACKEND_DIARIZATION=nemo \
-  coro --port 8000
+  coro serve --port 8000
 
 # Equivalent CLI flags
-coro --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
+coro serve --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
   --asr-device cuda --backend-diarization nemo --port 8000
 ```
 
@@ -321,7 +416,7 @@ CORO_ASR_DEVICE=cuda           # fp32 (leave CORO_ASR_QUANTIZATION unset)
 ```
 Or as a CLI flag:
 ```bash
-coro --asr-device cuda --port 8000
+coro serve --asr-device cuda --port 8000
 ```
 Fastest by a wide margin with near-best accuracy. Use `faster-whisper` +
 `float16` if you want the top English-meeting accuracy point; use `onnx-genai`
@@ -405,15 +500,15 @@ downloaded on first run.
 
 ```bash
 # Batch (full-memory pipeline, the default) — env-var form
-CORO_BACKEND_DIARIZATION=nemo coro --port 8000
+CORO_BACKEND_DIARIZATION=nemo coro serve --port 8000
 # equivalent CLI form:
-coro --backend-diarization nemo --port 8000
+coro serve --backend-diarization nemo --port 8000
 ```
 
 Combine with an ASR backend and pin the device as usual:
 
 ```bash
-coro --port 8000 \
+coro serve --port 8000 \
   --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
   --backend-diarization nemo --diarization-device cuda
 ```
@@ -422,7 +517,7 @@ Sortformer is the **only streaming-capable** backend. To diarize live as audio
 arrives, switch the pipeline to `streaming` (optionally tune the latency tier):
 
 ```bash
-coro --port 8000 \
+coro serve --port 8000 \
   --backend-diarization nemo \
   --pipeline streaming \
   --diarization-latency very-high   # very-high | high | low | ultra-low
@@ -441,8 +536,8 @@ uses NeMo's own unconfigured baseline — no smoothing, no padding. Set
 to a path to a custom YAML in the same schema, to override it:
 
 ```bash
-coro --backend-diarization nemo --diarization-postprocessing dihard3-dev
-coro --backend-diarization nemo --diarization-postprocessing none  # explicit baseline
+coro serve --backend-diarization nemo --diarization-postprocessing dihard3-dev
+coro serve --backend-diarization nemo --diarization-postprocessing none  # explicit baseline
 ```
 
 | Preset | Optimized on | Target scoring collar | NVIDIA's domain description |
@@ -512,8 +607,8 @@ ceiling is a setting rather than a constant for the same reason.
 3. Run with the full-memory pipeline:
 
    ```bash
-   CORO_BACKEND_DIARIZATION=pyannote CORO_PIPELINE=full-memory coro --port 8000
-   # equivalent CLI: coro --backend-diarization pyannote --pipeline full-memory
+   CORO_BACKEND_DIARIZATION=pyannote CORO_PIPELINE=full-memory coro serve --port 8000
+   # equivalent CLI: coro serve --backend-diarization pyannote --pipeline full-memory
    ```
 
 > Without a valid token (or before accepting the model conditions) the pyannote
@@ -726,7 +821,7 @@ To measure a server you started yourself (a *bench-attached* server), pass
 `--server-url`; the `--server-*` flags are then rejected as mutually exclusive:
 
 ```bash
-uv run --group bench coro --port 8123 &     # server under test (add --extra cuda for GPU)
+uv run --group bench coro serve --port 8123 &     # server under test (add --extra cuda for GPU)
 uv run --group bench coro-bench all --server-url http://127.0.0.1:8123 ...
 ```
 
