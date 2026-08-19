@@ -83,9 +83,9 @@ class _StreamingDiarizer:
         return list(_TIMELINE)
 
 
-async def _identity_pcm(data: bytes) -> bytes:
-    """Stand in for ffmpeg decoding: the fixture is already PCM."""
-    return data
+async def _identity_pcm(_path: str) -> bytes:
+    """Stand in for ffmpeg decoding the spooled upload: the fixture is already PCM."""
+    return _PCM
 
 
 async def _feed_pcm(path: str, chunk_seconds: float = 1.0):
@@ -116,7 +116,7 @@ def _streaming_pipeline(spill_dir: str, *, diarization: bool) -> StreamingPipeli
 
 
 async def _full_memory_response_json(*, diarization: bool) -> str:
-    with patch("coro.pipelines.full_memory.convert_to_pcm_bytes", new=_identity_pcm):
+    with patch("coro.pipelines.full_memory.convert_path_to_pcm_bytes", new=_identity_pcm):
         result = await _full_memory_pipeline(diarization=diarization).transcribe(AudioInput(_PCM))
     return json.dumps(asdict(result))
 
@@ -131,7 +131,7 @@ async def _streaming_response_json(spill_dir: str, *, diarization: bool) -> str:
 
 async def _full_memory_sse(*, diarization: bool) -> str:
     pipeline = _full_memory_pipeline(diarization=diarization)
-    with patch("coro.pipelines.full_memory.convert_to_pcm_bytes", new=_identity_pcm):
+    with patch("coro.pipelines.full_memory.convert_path_to_pcm_bytes", new=_identity_pcm):
         return "".join([line async for line in _sse_generator(pipeline.stream(AudioInput(_PCM)))])
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -18,17 +19,21 @@ class _FakeASR:
 
 
 @pytest.mark.asyncio
-async def test_full_memory_pipeline_uses_audio_input_bytes_and_windowing():
+async def test_full_memory_pipeline_decodes_the_spooled_upload_and_windows_it():
     pipeline = FullMemoryPipeline(asr=_FakeASR())
     audio = AudioInput(b"encoded")
 
     with patch(
-        "coro.pipelines.full_memory.convert_to_pcm_bytes",
+        "coro.pipelines.full_memory.convert_path_to_pcm_bytes",
         new=AsyncMock(return_value=b"\x00\x00" * 16000),
     ) as convert:
         result = await pipeline.transcribe(audio, prompt="hint")
 
-    convert.assert_awaited_once_with(b"encoded")
+    # ffmpeg decodes from the spooled path, so the encoded upload never has to
+    # be read back into memory just to be handed to the converter.
+    convert.assert_awaited_once()
+    (decoded_path,) = convert.await_args.args
+    assert Path(decoded_path).name.startswith("asr-upload-")
     assert result.segments[0].text == "hello."
 
 
@@ -38,7 +43,7 @@ async def test_pipeline_stream_emits_delta_and_done():
     audio = AudioInput(b"encoded")
 
     with patch(
-        "coro.pipelines.full_memory.convert_to_pcm_bytes",
+        "coro.pipelines.full_memory.convert_path_to_pcm_bytes",
         new=AsyncMock(return_value=b"\x00\x00" * 16000),
     ):
         events = [event async for event in pipeline.stream(audio)]

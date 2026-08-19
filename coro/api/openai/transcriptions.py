@@ -322,15 +322,18 @@ async def create_transcription(
     language = _validate_language(language)
     prompt_value = _normalize_optional(prompt)
     audio = await AudioInput.from_upload(file)
-    audio_bytes = await audio.read_bytes()
-    logger.info("transcription[%s] upload read bytes=%d", request_id, len(audio_bytes))
-    if not audio_bytes:
+    # Size comes from the spool counter, never from reading the upload back: a
+    # multi-gigabyte upload must not be materialised just to be measured.
+    logger.info("transcription[%s] upload spooled bytes=%d", request_id, audio.size)
+    if not audio.size:
+        await audio.cleanup()
         raise TranscriptionValidationError("Empty audio file.", param="file")
 
     # Streaming Response ----------------------------------------------------
     if stream:
         stream_method = getattr(pipeline, "stream", None)
         if stream_method is None:
+            await audio.cleanup()
             raise UnsupportedStreamingError("Configured pipeline does not support streaming.")
         logger.info("transcription[%s] handing off to streaming response", request_id)
         return streaming_response(stream_method(audio, language=language, prompt=prompt_value))

@@ -7,7 +7,8 @@ Public surface:
     SAMPLE_RATE          — canonical 16 kHz.
     BYTES_PER_SAMPLE     — 2 (16-bit little-endian).
     iter_aligned_pcm_chunks — synchronous aligned-chunk iterator.
-    convert_to_pcm_bytes — async full-memory ffmpeg conversion.
+    convert_to_pcm_bytes — async full-memory ffmpeg conversion from bytes.
+    convert_path_to_pcm_bytes — async full-memory ffmpeg conversion from a path.
     stream_pcm_from_file — async generator that streams PCM chunks from a path.
 """
 
@@ -34,6 +35,9 @@ DEFAULT_MEDIA_SUFFIX: str = ".media"
 
 _SAFE_SUFFIX = re.compile(r"\A\.[A-Za-z0-9][A-Za-z0-9]{0,11}\Z")
 """A short, alphanumeric file extension (e.g. ``.mp4``, ``.webm``, ``.m4a``)."""
+
+_UPLOAD_CHUNK_BYTES: int = 1024 * 1024
+"""Read granularity when spooling an upload to disk; also the peak RAM it costs."""
 
 
 # MARK: Errors
@@ -73,33 +77,108 @@ def _spool_to_temp(data: bytes, *, prefix: str, suffix: str) -> str:
 
 # MARK: Audio Input
 class AudioInput:
-    """Package-owned uploaded audio or video representation with cleanup ownership."""
+    """Package-owned uploaded audio or video representation with cleanup ownership.
+
+    Two backings exist:
+
+    * **In-memory** — constructed directly from ``bytes`` (raw-body routes,
+      warmup, tests). ``temp_path`` spools a copy on demand.
+    * **File-backed** — constructed by :meth:`from_upload`, which streams the
+      upload straight to a temp file so the encoded bytes are never fully
+      resident.
+
+    Either way the instance owns any temp file it creates, so whichever
+    component consumes the audio must ``await cleanup()`` when it is done.
+    """
 
     def __init__(self, data: bytes, filename: str | None = None) -> None:
-        self._data = data
+        self._data: bytes | None = data
         self._temp_path: str | None = None
         self._filename = filename
+        self._size = len(data)
+
+    @classmethod
+    def _file_backed(cls, path: str, *, filename: str | None, size: int) -> AudioInput:
+        """Wrap an already-spooled upload without holding its bytes in memory."""
+        audio = cls(b"", filename=filename)
+        audio._data = None
+        audio._temp_path = path
+        audio._size = size
+        return audio
 
     @classmethod
     async def from_upload(cls, upload: Any) -> AudioInput:
-        chunks: list[bytes] = []
-        while True:
-            chunk = await upload.read(1024 * 1024)
-            if not chunk:
-                break
-            chunks.append(chunk)
-        return cls(b"".join(chunks), filename=getattr(upload, "filename", None))
+        """Spool an upload to a temp file one chunk at a time.
+
+        Peak memory is one ``_UPLOAD_CHUNK_BYTES`` chunk regardless of upload
+        size. Accumulating the chunks and joining them instead cost roughly
+        twice the upload size in resident RAM before any decoding started,
+        which made multi-gigabyte uploads fail on hosts that could otherwise
+        have transcribed them.
+
+        Args:
+            upload: Any object exposing ``async read(size)`` and, optionally, a
+                ``filename`` attribute (e.g. a Starlette ``UploadFile``).
+
+        Returns:
+            A file-backed instance owning the spooled temp file.
+
+        """
+        filename = getattr(upload, "filename", None)
+        fd, path = tempfile.mkstemp(prefix="asr-upload-", suffix=_suffix_from_filename(filename))
+        size = 0
+        try:
+            with os.fdopen(fd, "wb") as tmp:
+                while True:
+                    chunk = await upload.read(_UPLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    tmp.write(chunk)
+                    size += len(chunk)
+        except BaseException:
+            # Nothing else holds the path yet, so a failed spool must not leak it.
+            with contextlib.suppress(FileNotFoundError):
+                Path(path).unlink()
+            raise
+        return cls._file_backed(path, filename=filename, size=size)
+
+    @property
+    def size(self) -> int:
+        """Encoded upload size in bytes, without materialising the upload."""
+        return self._size
 
     async def read_bytes(self) -> bytes:
-        return self._data
+        """Return the whole encoded upload, materialising it when file-backed.
+
+        Prefer :attr:`size` or :meth:`temp_path`: this is O(upload) in resident
+        memory by definition.
+
+        Raises:
+            RuntimeError: If the instance has already been cleaned up.
+
+        """
+        if self._data is not None:
+            return self._data
+        if self._temp_path is None:
+            raise RuntimeError("AudioInput has already been cleaned up.")
+        return await asyncio.to_thread(Path(self._temp_path).read_bytes)
 
     async def temp_path(self) -> str:
+        """Return a filesystem path to the encoded upload, spooling if needed.
+
+        Raises:
+            RuntimeError: If the instance has already been cleaned up.
+
+        """
         if self._temp_path is None:
+            if self._data is None:
+                raise RuntimeError("AudioInput has already been cleaned up.")
             suffix = _suffix_from_filename(self._filename)
             self._temp_path = _spool_to_temp(self._data, prefix="asr-upload-", suffix=suffix)
         return self._temp_path
 
     async def cleanup(self) -> None:
+        """Unlink the owned temp file, if any. Idempotent."""
         if self._temp_path is not None:
             with contextlib.suppress(FileNotFoundError):
                 Path(self._temp_path).unlink()
@@ -171,13 +250,48 @@ def iter_aligned_pcm_chunks(
 
 
 # MARK: FFmpeg Conversion
-async def convert_to_pcm_bytes(audio_bytes: bytes) -> bytes:
-    """Convert any audio or video format to PCM s16le mono 16 kHz using ffmpeg.
+async def convert_path_to_pcm_bytes(path: str) -> bytes:
+    """Convert an audio or video file to PCM s16le mono 16 kHz using ffmpeg.
 
-    Decodes through a seekable temporary file (not ``pipe:0``) so ffmpeg can
-    probe container formats whose index lives at the end of the stream (e.g.
-    MP4 ``moov`` atoms). ffmpeg auto-detects the container from the file
-    content, so no extension hint is required.
+    Decodes from a seekable path (not ``pipe:0``) so ffmpeg can probe container
+    formats whose index lives at the end of the stream (e.g. MP4 ``moov``
+    atoms). ffmpeg auto-detects the container from the file content, so no
+    extension hint is required.
+
+    Args:
+        path: Filesystem path to the audio or video file.
+
+    Returns:
+        Raw PCM bytes (s16le mono 16 kHz).
+
+    Raises:
+        AudioConversionError: If ffmpeg fails, or succeeds but decodes no audio
+            (e.g. the input has no decodable audio stream).
+
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-i",
+        path,
+        *_FFMPEG_PCM_ARGS,
+        "pipe:1",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise _conversion_error(stderr)
+    if not stdout:
+        raise _conversion_error(stderr, empty_output=True)
+    return stdout
+
+
+async def convert_to_pcm_bytes(audio_bytes: bytes) -> bytes:
+    """Convert in-memory audio or video bytes to PCM s16le mono 16 kHz.
+
+    Spools to a temp file and delegates to :func:`convert_path_to_pcm_bytes`.
+    Callers that already hold a path should use that directly rather than
+    reading the file in just to have it written back out.
 
     Args:
         audio_bytes: Raw audio or video data in any format supported by ffmpeg.
@@ -192,21 +306,7 @@ async def convert_to_pcm_bytes(audio_bytes: bytes) -> bytes:
     """
     tmp_path = _spool_to_temp(audio_bytes, prefix="asr-conv-", suffix=DEFAULT_MEDIA_SUFFIX)
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "ffmpeg",
-            "-i",
-            tmp_path,
-            *_FFMPEG_PCM_ARGS,
-            "pipe:1",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise _conversion_error(stderr)
-        if not stdout:
-            raise _conversion_error(stderr, empty_output=True)
-        return stdout
+        return await convert_path_to_pcm_bytes(tmp_path)
     finally:
         with contextlib.suppress(FileNotFoundError):
             Path(tmp_path).unlink()
