@@ -14,14 +14,14 @@ from __future__ import annotations
 
 import inspect
 import re
-from pathlib import Path
 
 import pytest
 from deepgram.listen.v1.media.client import MediaClient
+from support.paths import DOCS_ADR
 
 from coro.api.deepgram.listen import _UNSUPPORTED_PARAMS
 
-_ADR = Path(__file__).resolve().parents[1] / "docs/adr/0015-vendor-native-endpoints.md"
+_ADR = DOCS_ADR / "0015-vendor-native-endpoints.md"
 
 # `request` is the audio body itself, not a query parameter.
 VENDOR_PARAMS = {

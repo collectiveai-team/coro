@@ -37,7 +37,7 @@ SYMBOL = "realign_speaker_flicker"
 ALLOWED_REFERENCES = frozenset(
     {
         "coro/core/realignment.py",
-        "tests/test_core_realignment.py",
+        "tests/core/test_core_realignment.py",
         "docs/adr/0014-response-segmentation-and-per-word-speakers.md",
         "scripts/check_flicker_rule_rejected.py",
     }
@@ -45,7 +45,7 @@ ALLOWED_REFERENCES = frozenset(
 
 MUST_EXIST = (
     "coro/core/realignment.py",
-    "tests/test_core_realignment.py",
+    "tests/core/test_core_realignment.py",
 )
 
 SCANNED_SUFFIXES = frozenset({".py", ".md", ".toml", ".yml", ".yaml", ".sh", ".cfg", ".txt"})

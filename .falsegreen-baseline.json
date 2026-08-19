@@ -3,6 +3,1044 @@
   "tool": "falsegreen",
   "findings": [
     {
+      "fingerprint": "5007e02cff03beb5",
+      "code": "C16",
+      "file": "tests/api/deepgram/test_listen_websocket_e2e.py",
+      "detail": "fixed timeout in concurrent wait"
+    },
+    {
+      "fingerprint": "8c14c577627c6d34",
+      "code": "C16",
+      "file": "tests/api/deepgram/test_listen_websocket_e2e.py",
+      "detail": "fixed timeout in concurrent wait"
+    },
+    {
+      "fingerprint": "e7a24bd976b872aa",
+      "code": "C16",
+      "file": "tests/api/deepgram/test_listen_websocket_e2e.py",
+      "detail": "fixed timeout in concurrent wait"
+    },
+    {
+      "fingerprint": "1da2e4d8af330ea6",
+      "code": "C2b",
+      "file": "tests/api/openai/test_openai_sdk_conformance.py",
+      "detail": "if the check lives in a helper called here, ignore"
+    },
+    {
+      "fingerprint": "c2f91026f5785e06",
+      "code": "C2b",
+      "file": "tests/api/openai/test_openai_sdk_conformance.py",
+      "detail": "if the check lives in a helper called here, ignore"
+    },
+    {
+      "fingerprint": "16a75d6a8764c6fc",
+      "code": "C21",
+      "file": "tests/api/openai/test_transcription_endpoint.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "a381de5d6e7e79cc",
+      "code": "C11a",
+      "file": "tests/api/test_health.py",
+      "detail": "literal assigned earlier in this test"
+    },
+    {
+      "fingerprint": "7abe24e9338d30a5",
+      "code": "C13b",
+      "file": "tests/backends/asr/test_asr_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "7abe24e9338d30a5",
+      "code": "C13b",
+      "file": "tests/backends/asr/test_asr_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "7abe24e9338d30a5",
+      "code": "C13b",
+      "file": "tests/backends/asr/test_asr_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "b5acb89804c831f2",
+      "code": "C13b",
+      "file": "tests/backends/asr/test_asr_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "20768aab5e4215c6",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "d800fa53eacd3ef1",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "5628660eaf8d8eda",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "8447871e7b316d26",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "f9b72e04cf5a7209",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "ee4021648f2e4bd4",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "630b845c91bd02a5",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "25ec2ebbc12eef50",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "bec567200658168a",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "26c3b09cccddc00e",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "d8b6710fcfe50ed6",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "118950b7396e60ec",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "bec567200658168a",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "61ecedd7d4cc344d",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "f9b72e04cf5a7209",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "630b845c91bd02a5",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "2de7cde48397b6e7",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "bec567200658168a",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "4200581954e655e2",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "83aa97bcfe71d359",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "bec567200658168a",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "aa7d72cfa9c67a05",
+      "code": "C8b",
+      "file": "tests/backends/asr/test_onnx_asr_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "1b8ba0c1c7b20868",
+      "code": "C11a",
+      "file": "tests/backends/diarization/nemo/test_latency_factory.py",
+      "detail": "literal assigned earlier in this test"
+    },
+    {
+      "fingerprint": "b0b4ae54aa95b03c",
+      "code": "C1",
+      "file": "tests/backends/diarization/nemo/test_streaming_diarizer.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "6bbb9064bd04d88f",
+      "code": "C6",
+      "file": "tests/backends/diarization/nemo/test_streaming_diarizer.py",
+      "detail": "only checks it is not empty"
+    },
+    {
+      "fingerprint": "376b458fc24a77f9",
+      "code": "C1",
+      "file": "tests/backends/diarization/nemo/test_streaming_diarizer.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "cfbdfb1125e76bad",
+      "code": "C6",
+      "file": "tests/backends/diarization/nemo/test_streaming_diarizer.py",
+      "detail": "only checks it is not empty"
+    },
+    {
+      "fingerprint": "5d90affabbe7c2ec",
+      "code": "C16",
+      "file": "tests/backends/diarization/nemo/test_streaming_diarizer.py",
+      "detail": "PyTorch randomness without torch.manual_seed"
+    },
+    {
+      "fingerprint": "b0b4ae54aa95b03c",
+      "code": "C1",
+      "file": "tests/backends/diarization/nemo/test_streaming_diarizer.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "b0b4ae54aa95b03c",
+      "code": "C1",
+      "file": "tests/backends/diarization/nemo/test_streaming_diarizer.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "4c8669d34fe6c8c1",
+      "code": "C13b",
+      "file": "tests/backends/diarization/test_diarization_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "4c8669d34fe6c8c1",
+      "code": "C13b",
+      "file": "tests/backends/diarization/test_diarization_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "4c8669d34fe6c8c1",
+      "code": "C13b",
+      "file": "tests/backends/diarization/test_diarization_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "4c8669d34fe6c8c1",
+      "code": "C13b",
+      "file": "tests/backends/diarization/test_diarization_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "4c8669d34fe6c8c1",
+      "code": "C13b",
+      "file": "tests/backends/diarization/test_diarization_factory.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "56923054af6e90e8",
+      "code": "C18",
+      "file": "tests/backends/diarization/test_pyannote_backend.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "e751a80ba9ad6f13",
+      "code": "C8b",
+      "file": "tests/backends/diarization/test_pyannote_backend.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "b994051064c545e9",
+      "code": "C13b",
+      "file": "tests/backends/diarization/test_pyannote_backend.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "f5a192157b7ef574",
+      "code": "C13b",
+      "file": "tests/backends/diarization/test_pyannote_backend.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "2e5bae38187ffcf0",
+      "code": "C8b",
+      "file": "tests/backends/test_backends.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "cf8ec0587f1b3c53",
+      "code": "C8b",
+      "file": "tests/backends/test_backends.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "b4b14b0b34f42fd8",
+      "code": "C8b",
+      "file": "tests/backends/test_backends.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "595bacbca2a1fa03",
+      "code": "C21",
+      "file": "tests/bench/test_bench.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "8240ee891ee7914f",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "761f1fa22b13e520",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "a8a6fe30dd7bc79b",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "44bff80f2bee8451",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "761f1fa22b13e520",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "8b2ce2e08aac08d2",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "e6f56fdefef106ac",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "24a03c4f4f4318c0",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "1be5830fc278ed35",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "e6f56fdefef106ac",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "45ca052a63eba406",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "838c230cf771915a",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "44bff80f2bee8451",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "761f1fa22b13e520",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "170d9a347674ed11",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "1c7441a90b70ee50",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "bf69cf8364355adc",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "838c230cf771915a",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "64c19991dd59a86a",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "da3b19e9c7dadde4",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "1c7441a90b70ee50",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "e664641c85b5b8b9",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "838c230cf771915a",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "64c19991dd59a86a",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "da3b19e9c7dadde4",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "1c7441a90b70ee50",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "e664641c85b5b8b9",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "838c230cf771915a",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_ami.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "cb89232112e7a1c7",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_e2e.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "3d3d5811941c75c4",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_e2e.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "cb89232112e7a1c7",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_e2e.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "3d3d5811941c75c4",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_e2e.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "c546cf71a3a84eba",
+      "code": "M2",
+      "file": "tests/bench/test_bench_e2e.py",
+      "detail": "67 lines (threshold: 50)"
+    },
+    {
+      "fingerprint": "cb89232112e7a1c7",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_e2e.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "3d3d5811941c75c4",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_e2e.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "650daac0d46b9c12",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "04534cb18e07ddfc",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "d1d779ea40a012f8",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "dea5ebd20492cdca",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "f05f29d4ca86cff8",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "7f7e08a5102e9635",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "d25e436e2d05001a",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "286b1cda12a9569c",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "9507ed3c097b8da4",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "885c4cfa687217ff",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "04534cb18e07ddfc",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "bc8cb6b66081cf2a",
+      "code": "C8",
+      "file": "tests/bench/test_bench_gpu.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "076fb5f87af417b1",
+      "code": "C6",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": "truthiness of a value, not compared to an expected result"
+    },
+    {
+      "fingerprint": "65313551cea187dc",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "96e2efc6109022fa",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "739f25115fda3ea3",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "f9477a6b278b381f",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "1bb15efdf4ef1304",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "1b126dc3a53e4b80",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "4a81bf65b3616494",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "f9477a6b278b381f",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "7208b97751180759",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "04003d5271b62330",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "ae1937619751414f",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "ca1b7217050eafd1",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_lifecycle.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "806fb472ad839f3c",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "412a873c59e1e55f",
+      "code": "C16",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": "fixed sleep"
+    },
+    {
+      "fingerprint": "20f7489fd39e92d0",
+      "code": "C16",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": "fixed sleep"
+    },
+    {
+      "fingerprint": "dea02fd10fbc88ce",
+      "code": "C21",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "20f7489fd39e92d0",
+      "code": "C16",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": "fixed sleep"
+    },
+    {
+      "fingerprint": "abb2ef730ae38765",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "f2804f40e7d65ddd",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "40eac8cc29951f96",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "1ba132496f6e7cd9",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "5b84f5c0d0d293bf",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "fcaa11179a9907b2",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "902e69ed8088b685",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "fc6f5cde14587fd7",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "1ef4ee4d32b19902",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "87dd06d3f14feeda",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "07ab209546b40126",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "66fdbf0f88c5bc0c",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "bb141cfcd454a76c",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "ff7668909a4be38e",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "c0d67fd4d5909285",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "b906ed928f28adcf",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "b5f3ed4b45a01c83",
+      "code": "C8",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "f15b9fbc323c6f69",
+      "code": "M2",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": "53 lines (threshold: 50)"
+    },
+    {
+      "fingerprint": "22c512f1e67e6cf7",
+      "code": "C1",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "90983dd37ea64062",
+      "code": "C6",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": "only checks it is not empty"
+    },
+    {
+      "fingerprint": "90983dd37ea64062",
+      "code": "C6",
+      "file": "tests/bench/test_bench_performance.py",
+      "detail": "only checks it is not empty"
+    },
+    {
+      "fingerprint": "e975b55aa8a6fa9f",
+      "code": "C6",
+      "file": "tests/bench/test_bench_process_lookup.py",
+      "detail": "substring search in stringified output, not the exact content"
+    },
+    {
+      "fingerprint": "6a774cb9e7cd9872",
+      "code": "C8",
+      "file": "tests/bench/test_bench_quality.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "7542b3ace9456d09",
+      "code": "C8",
+      "file": "tests/bench/test_bench_quality.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "eef1b9f45b9a46df",
+      "code": "M2",
+      "file": "tests/bench/test_bench_quality.py",
+      "detail": "66 lines (threshold: 50)"
+    },
+    {
+      "fingerprint": "79393ef2288bf997",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_quality.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "94eb29fab21e89c1",
+      "code": "C23",
+      "file": "tests/bench/test_bench_quality.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "de118d2fa470b714",
+      "code": "C2b",
+      "file": "tests/bench/test_bench_report.py",
+      "detail": "if the check lives in a helper called here, ignore"
+    },
+    {
+      "fingerprint": "c2c066e57b0fe0e6",
+      "code": "C2b",
+      "file": "tests/bench/test_bench_report.py",
+      "detail": "if the check lives in a helper called here, ignore"
+    },
+    {
+      "fingerprint": "9c2df995b344926f",
+      "code": "M2",
+      "file": "tests/bench/test_bench_report.py",
+      "detail": "65 lines (threshold: 50)"
+    },
+    {
+      "fingerprint": "b74d102c02735a00",
+      "code": "M2",
+      "file": "tests/bench/test_bench_report.py",
+      "detail": "51 lines (threshold: 50)"
+    },
+    {
+      "fingerprint": "c4a64683792b0fbe",
+      "code": "C8",
+      "file": "tests/bench/test_bench_report.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "55fc6d07b64d3350",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_viz.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "55fc6d07b64d3350",
+      "code": "C13b",
+      "file": "tests/bench/test_bench_viz.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "72279ab04f46ae62",
+      "code": "C21",
+      "file": "tests/bench/test_stm.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "fc83a7bd68cdee2c",
+      "code": "C21",
+      "file": "tests/bench/test_stm.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "fed0d19637d6cb48",
+      "code": "C13b",
+      "file": "tests/bench/utils/test_bench_rttm_clip.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "34597e3f4f74acf5",
+      "code": "C13b",
+      "file": "tests/bench/utils/test_bench_rttm_clip.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "e8d67cdec0d3f7cd",
+      "code": "C6",
+      "file": "tests/core/test_core_response.py",
+      "detail": "only checks it is not empty"
+    },
+    {
+      "fingerprint": "c823e52870878a80",
+      "code": "C1",
+      "file": "tests/core/test_core_response.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "230afa830960ac6e",
+      "code": "C21",
+      "file": "tests/core/test_core_response.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "fb619124599c4963",
+      "code": "C21",
+      "file": "tests/core/test_core_response.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "c6f369188b0affb6",
+      "code": "C8b",
+      "file": "tests/core/test_core_response.py",
+      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
+    },
+    {
+      "fingerprint": "9e0a7922534f559e",
+      "code": "C1",
+      "file": "tests/pipelines/test_asr_windowing.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "4b5f3cb81c0c5bfc",
+      "code": "C13b",
+      "file": "tests/pipelines/test_pipelines.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "4b5f3cb81c0c5bfc",
+      "code": "C13b",
+      "file": "tests/pipelines/test_pipelines.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "e24635f964b69d56",
+      "code": "C6",
+      "file": "tests/pipelines/test_streaming_pipeline.py",
+      "detail": "only checks it is not empty"
+    },
+    {
+      "fingerprint": "2014c8400ce85bcd",
+      "code": "C1",
+      "file": "tests/pipelines/test_streaming_pipeline.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "438eab31f19b60c1",
+      "code": "C13b",
+      "file": "tests/pipelines/test_streaming_pipeline.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "3b02d8653bba8c92",
+      "code": "C6",
+      "file": "tests/pipelines/test_streaming_pipeline_asr_only.py",
+      "detail": "only checks it is not empty"
+    },
+    {
+      "fingerprint": "2bb43873f7ead0a9",
+      "code": "C6",
+      "file": "tests/pipelines/test_streaming_pipeline_real_model.py",
+      "detail": "only checks it is not empty"
+    },
+    {
+      "fingerprint": "e49854ef75c0e52f",
+      "code": "C6",
+      "file": "tests/pipelines/test_streaming_pipeline_real_model.py",
+      "detail": "only checks it is not empty"
+    },
+    {
+      "fingerprint": "6955a34ba8b5396d",
+      "code": "C13b",
+      "file": "tests/pipelines/test_streaming_pipeline_real_model.py",
+      "detail": ""
+    },
+    {
+      "fingerprint": "f60db680e46f08f2",
+      "code": "C8",
+      "file": "tests/pipelines/test_transcript_store.py",
+      "detail": ""
+    },
+    {
       "fingerprint": "40cd0a2cbaa3d57d",
       "code": "C13b",
       "file": "tests/test_app_factory.py",
@@ -39,36 +1077,6 @@
       "detail": ""
     },
     {
-      "fingerprint": "8435c0c0f07f6cfa",
-      "code": "C13b",
-      "file": "tests/test_asr_factory.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "8435c0c0f07f6cfa",
-      "code": "C13b",
-      "file": "tests/test_asr_factory.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "8435c0c0f07f6cfa",
-      "code": "C13b",
-      "file": "tests/test_asr_factory.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "4fe41643b409fc95",
-      "code": "C13b",
-      "file": "tests/test_asr_factory.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "e742f6b1a117ef9c",
-      "code": "C1",
-      "file": "tests/test_asr_windowing.py",
-      "detail": ""
-    },
-    {
       "fingerprint": "db0c9744301232d1",
       "code": "C21",
       "file": "tests/test_audio.py",
@@ -78,894 +1086,6 @@
       "fingerprint": "54f1cf70d91f2a29",
       "code": "C21",
       "file": "tests/test_audio.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "3730ac2fe469a3e2",
-      "code": "C8b",
-      "file": "tests/test_backends.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "a11947620d356c25",
-      "code": "C8b",
-      "file": "tests/test_backends.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "0269c95e8afd090a",
-      "code": "C8b",
-      "file": "tests/test_backends.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "c4229a1defe92263",
-      "code": "C21",
-      "file": "tests/test_bench.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "be85de3a694e591b",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "0fd3ed1b9119ae38",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "232aee48acb7eae5",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "56fa84d5c33491e7",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "0fd3ed1b9119ae38",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "cec923168253bb12",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "704739ac184bc75c",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "64fde75066143e92",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "ef33a4a8ada2d626",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "704739ac184bc75c",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "502dcadd122501e4",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "aa736d289e1eaf8b",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "56fa84d5c33491e7",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "0fd3ed1b9119ae38",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "b1a1a16bf91dbd1b",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "e4a5f81d24f3bf54",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "6b1e93094773e2b5",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "aa736d289e1eaf8b",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "0922b46b952adfec",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "a3579ed32d8a5f1a",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "e4a5f81d24f3bf54",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "17ab97567b68e758",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "aa736d289e1eaf8b",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "0922b46b952adfec",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "a3579ed32d8a5f1a",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "e4a5f81d24f3bf54",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "17ab97567b68e758",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "aa736d289e1eaf8b",
-      "code": "C13b",
-      "file": "tests/test_bench_ami.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "3915ac7f4e5c8cb7",
-      "code": "C13b",
-      "file": "tests/test_bench_common_voice.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "aae07a53157f625a",
-      "code": "C13b",
-      "file": "tests/test_bench_common_voice.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "097a8f56dd63e4cf",
-      "code": "C13b",
-      "file": "tests/test_bench_common_voice.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "9ec8633e76a2fc6c",
-      "code": "C13b",
-      "file": "tests/test_bench_e2e.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "6c612c5edd39172a",
-      "code": "C13b",
-      "file": "tests/test_bench_e2e.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "2c303ee4bf9b05fd",
-      "code": "C13b",
-      "file": "tests/test_bench_e2e.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "9ec8633e76a2fc6c",
-      "code": "C13b",
-      "file": "tests/test_bench_e2e.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "6c612c5edd39172a",
-      "code": "C13b",
-      "file": "tests/test_bench_e2e.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "944da25f10d0f82f",
-      "code": "M2",
-      "file": "tests/test_bench_e2e.py",
-      "detail": "67 lines (threshold: 50)"
-    },
-    {
-      "fingerprint": "9ec8633e76a2fc6c",
-      "code": "C13b",
-      "file": "tests/test_bench_e2e.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "6c612c5edd39172a",
-      "code": "C13b",
-      "file": "tests/test_bench_e2e.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "a24fc86d085f2d3b",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "dd29c57280ff37f6",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "77440ea800f97889",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "016aef153621d56a",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "30f4f0f03d8f271d",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "1c64420784957168",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "16ecb050ccb844c7",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "43d6cc3a6035ea61",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "3d6b1574c3f2fc39",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "ed9637f7ffb45bcf",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "dd29c57280ff37f6",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "3b391a757e3acb01",
-      "code": "C8",
-      "file": "tests/test_bench_gpu.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "3ac830c68ccbfba3",
-      "code": "C6",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": "truthiness of a value, not compared to an expected result"
-    },
-    {
-      "fingerprint": "c3fd4726698d7a53",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "6cf07f2defd80991",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "1e053f1310fc42b0",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "229500ab1e83a200",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "635d557daeec56db",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "b1e12d3d17f4bfe6",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "fdb8641838b9922b",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "229500ab1e83a200",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "2a847c0dc3145d2b",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "a7b9198718c60fc6",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "5f6424026630289d",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "b03db3f089ec34a0",
-      "code": "C13b",
-      "file": "tests/test_bench_lifecycle.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "1baeed265f76cdd1",
-      "code": "C13b",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "356af9b3e6e9a1de",
-      "code": "C16",
-      "file": "tests/test_bench_performance.py",
-      "detail": "fixed sleep"
-    },
-    {
-      "fingerprint": "00fa9896f6af7114",
-      "code": "C16",
-      "file": "tests/test_bench_performance.py",
-      "detail": "fixed sleep"
-    },
-    {
-      "fingerprint": "86934cc0e17d93b4",
-      "code": "C21",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "00fa9896f6af7114",
-      "code": "C16",
-      "file": "tests/test_bench_performance.py",
-      "detail": "fixed sleep"
-    },
-    {
-      "fingerprint": "e41ff3feb50fa1a5",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "ee6e8c4ff9f282d9",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "17f3665e012ba037",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "e6ee323c75b986ae",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "8d39d8bf763feb5c",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "2c821d0c5d502bd6",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "22498809bbb26525",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "5d56aae620b0b5de",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "edd844939a538b40",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "791845670401a014",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "6b92f6b484475029",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "ade94b718dfa1b93",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "85af65b3d81dccfb",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "9e7604e1d4f7054e",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "fe623c9936789e33",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "dfedc631d33966d1",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "49cf44bd6ea65bfb",
-      "code": "C8",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "9e6deffe653f4d07",
-      "code": "M2",
-      "file": "tests/test_bench_performance.py",
-      "detail": "53 lines (threshold: 50)"
-    },
-    {
-      "fingerprint": "55af81e6deaace63",
-      "code": "C1",
-      "file": "tests/test_bench_performance.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "d20f174f9a77ca1e",
-      "code": "C6",
-      "file": "tests/test_bench_performance.py",
-      "detail": "only checks it is not empty"
-    },
-    {
-      "fingerprint": "d20f174f9a77ca1e",
-      "code": "C6",
-      "file": "tests/test_bench_performance.py",
-      "detail": "only checks it is not empty"
-    },
-    {
-      "fingerprint": "9612ea17b6526475",
-      "code": "C6",
-      "file": "tests/test_bench_process_lookup.py",
-      "detail": "substring search in stringified output, not the exact content"
-    },
-    {
-      "fingerprint": "25e87ad6c6145dee",
-      "code": "C8",
-      "file": "tests/test_bench_quality.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "31f4052fcd0cfaee",
-      "code": "C8",
-      "file": "tests/test_bench_quality.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "b3f6a712acd08f92",
-      "code": "M2",
-      "file": "tests/test_bench_quality.py",
-      "detail": "66 lines (threshold: 50)"
-    },
-    {
-      "fingerprint": "a9c6f85b2de33240",
-      "code": "C13b",
-      "file": "tests/test_bench_quality.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "405398ab1f867361",
-      "code": "C23",
-      "file": "tests/test_bench_quality.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "7e3e1554143d4416",
-      "code": "C2b",
-      "file": "tests/test_bench_report.py",
-      "detail": "if the check lives in a helper called here, ignore"
-    },
-    {
-      "fingerprint": "a9c18515ebc4861d",
-      "code": "C2b",
-      "file": "tests/test_bench_report.py",
-      "detail": "if the check lives in a helper called here, ignore"
-    },
-    {
-      "fingerprint": "cffb2a03490e3e67",
-      "code": "M2",
-      "file": "tests/test_bench_report.py",
-      "detail": "65 lines (threshold: 50)"
-    },
-    {
-      "fingerprint": "af2915a9b2e4afd6",
-      "code": "M2",
-      "file": "tests/test_bench_report.py",
-      "detail": "51 lines (threshold: 50)"
-    },
-    {
-      "fingerprint": "898d81dd567343af",
-      "code": "C8",
-      "file": "tests/test_bench_report.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "02dff02d84ac9e47",
-      "code": "C13b",
-      "file": "tests/test_bench_rttm_clip.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "05be394c146c28ee",
-      "code": "C13b",
-      "file": "tests/test_bench_rttm_clip.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "fe1934aeb8480407",
-      "code": "C13b",
-      "file": "tests/test_bench_viz.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "fe1934aeb8480407",
-      "code": "C13b",
-      "file": "tests/test_bench_viz.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "38880810266566b7",
-      "code": "C6",
-      "file": "tests/test_core_response.py",
-      "detail": "only checks it is not empty"
-    },
-    {
-      "fingerprint": "104b093530cc94d7",
-      "code": "C1",
-      "file": "tests/test_core_response.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "441ab78ff398ce8d",
-      "code": "C21",
-      "file": "tests/test_core_response.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "a7aa383f7ffa48ab",
-      "code": "C21",
-      "file": "tests/test_core_response.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "b1743950dbd4b28c",
-      "code": "C8b",
-      "file": "tests/test_core_response.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "54fd078bf8f0f50a",
-      "code": "C13b",
-      "file": "tests/test_diarization_factory.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "54fd078bf8f0f50a",
-      "code": "C13b",
-      "file": "tests/test_diarization_factory.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "aa388138e0129de6",
-      "code": "C11a",
-      "file": "tests/test_health.py",
-      "detail": "literal assigned earlier in this test"
-    },
-    {
-      "fingerprint": "bd0dd79ca7c5bf0e",
-      "code": "C11a",
-      "file": "tests/test_latency_factory.py",
-      "detail": "literal assigned earlier in this test"
-    },
-    {
-      "fingerprint": "389f3f5f25b90676",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "62b29c7fbc4c1d53",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "093e1d00ddd8cfe4",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "36f8be4dd172d892",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "b4ee8fd0fc54e710",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "184cb3aa21da8e76",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "2d7fa3c7cee5031d",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "7ed0f981813ab068",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "5e6d2ab5d6a5c6f7",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "cddf357a3ad1f980",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "4b91a44891126219",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "2d80c5b1376f500a",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "5e6d2ab5d6a5c6f7",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "b0d09f8fa91058d3",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "b4ee8fd0fc54e710",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "2d7fa3c7cee5031d",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "1c963e97cf0cc65a",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "5e6d2ab5d6a5c6f7",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "b007fef030a1bb41",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "0f000bcd2611e436",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "5e6d2ab5d6a5c6f7",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "e375ec8885fe09d5",
-      "code": "C8b",
-      "file": "tests/test_onnx_asr_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "f27f9e19e15e3144",
-      "code": "C2b",
-      "file": "tests/test_openai_sdk_conformance.py",
-      "detail": "if the check lives in a helper called here, ignore"
-    },
-    {
-      "fingerprint": "712482e0ebcd8f6c",
-      "code": "C2b",
-      "file": "tests/test_openai_sdk_conformance.py",
-      "detail": "if the check lives in a helper called here, ignore"
-    },
-    {
-      "fingerprint": "c599ebc74ab6874f",
-      "code": "C13b",
-      "file": "tests/test_pipelines.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "c599ebc74ab6874f",
-      "code": "C13b",
-      "file": "tests/test_pipelines.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "dd602555f182d4c4",
-      "code": "C18",
-      "file": "tests/test_pyannote_backend.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "072d3fb25d3f3f2f",
-      "code": "C8b",
-      "file": "tests/test_pyannote_backend.py",
-      "detail": "pytest.approx() with no rel=/abs= uses the 1e-6 default"
-    },
-    {
-      "fingerprint": "703ca11dfb4cca80",
-      "code": "C13b",
-      "file": "tests/test_pyannote_backend.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "39464ca09c4c0046",
-      "code": "C13b",
-      "file": "tests/test_pyannote_backend.py",
       "detail": ""
     },
     {
@@ -991,129 +1111,6 @@
       "code": "C11a",
       "file": "tests/test_settings.py",
       "detail": "literal assigned earlier in this test"
-    },
-    {
-      "fingerprint": "9faa80a2cf017080",
-      "code": "C21",
-      "file": "tests/test_stm.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "01ef6fea73d9ea08",
-      "code": "C21",
-      "file": "tests/test_stm.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "9d11c1ac04f68388",
-      "code": "C1",
-      "file": "tests/test_streaming_diarizer.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "494acd4086aef16b",
-      "code": "C6",
-      "file": "tests/test_streaming_diarizer.py",
-      "detail": "only checks it is not empty"
-    },
-    {
-      "fingerprint": "d18723be62b4d233",
-      "code": "C1",
-      "file": "tests/test_streaming_diarizer.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "66da7b7f2c9f6e34",
-      "code": "C6",
-      "file": "tests/test_streaming_diarizer.py",
-      "detail": "only checks it is not empty"
-    },
-    {
-      "fingerprint": "58f9ad8be9ab2a32",
-      "code": "C16",
-      "file": "tests/test_streaming_diarizer.py",
-      "detail": "PyTorch randomness without torch.manual_seed"
-    },
-    {
-      "fingerprint": "9d11c1ac04f68388",
-      "code": "C1",
-      "file": "tests/test_streaming_diarizer.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "10e34ea2723ed55f",
-      "code": "C6",
-      "file": "tests/test_streaming_pipeline.py",
-      "detail": "only checks it is not empty"
-    },
-    {
-      "fingerprint": "b553e4fe24cb1440",
-      "code": "C1",
-      "file": "tests/test_streaming_pipeline.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "51fd6b1e815af278",
-      "code": "C13b",
-      "file": "tests/test_streaming_pipeline.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "034c1a470f663160",
-      "code": "C6",
-      "file": "tests/test_streaming_pipeline_asr_only.py",
-      "detail": "only checks it is not empty"
-    },
-    {
-      "fingerprint": "dec4d91f1d243c3b",
-      "code": "C6",
-      "file": "tests/test_streaming_pipeline_real_model.py",
-      "detail": "only checks it is not empty"
-    },
-    {
-      "fingerprint": "804abeb04afffa86",
-      "code": "C6",
-      "file": "tests/test_streaming_pipeline_real_model.py",
-      "detail": "only checks it is not empty"
-    },
-    {
-      "fingerprint": "e351aa4be8376e3d",
-      "code": "C13b",
-      "file": "tests/test_streaming_pipeline_real_model.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "0dd196b1b46ccd07",
-      "code": "C8",
-      "file": "tests/test_transcript_store.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "1780aca443a3774b",
-      "code": "C21",
-      "file": "tests/test_transcription_endpoint.py",
-      "detail": ""
-    },
-    {
-      "fingerprint": "0b735473d51e48a2",
-      "code": "C16",
-      "file": "tests/test_listen_websocket_e2e.py",
-      "detail": "fixed timeout in concurrent wait",
-      "reason": "asyncio.wait_for timeouts in the real-socket e2e tests: the timeout is a failure bound on a live WebSocket read, not an input to the assertion \u2014 the test fails if it elapses, and no expected value depends on it. Same species as the C16 entries already baselined."
-    },
-    {
-      "fingerprint": "3ffe54dbac396b0f",
-      "code": "C16",
-      "file": "tests/test_listen_websocket_e2e.py",
-      "detail": "fixed timeout in concurrent wait",
-      "reason": "asyncio.wait_for timeouts in the real-socket e2e tests: the timeout is a failure bound on a live WebSocket read, not an input to the assertion \u2014 the test fails if it elapses, and no expected value depends on it. Same species as the C16 entries already baselined."
-    },
-    {
-      "fingerprint": "c367871162887c6d",
-      "code": "C16",
-      "file": "tests/test_listen_websocket_e2e.py",
-      "detail": "fixed timeout in concurrent wait",
-      "reason": "asyncio.wait_for timeouts in the real-socket e2e tests: the timeout is a failure bound on a live WebSocket read, not an input to the assertion \u2014 the test fails if it elapses, and no expected value depends on it. Same species as the C16 entries already baselined."
     }
   ]
 }

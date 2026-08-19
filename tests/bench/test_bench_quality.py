@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from support.paths import PYPROJECT
 
 from coro.bench.models.quality import ScoreError, ScoreResult
 
@@ -85,8 +86,7 @@ def e2e_server():
 
 class TestPyprojectBenchExtra:
     def test_pyproject_declares_bench_optional_extra(self):
-        toml_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
-        text = toml_path.read_text()
+        text = PYPROJECT.read_text()
         assert "[project.optional-dependencies]" in text
         assert "bench = [" in text
         assert "meeteval" in text
