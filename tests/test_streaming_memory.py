@@ -19,16 +19,29 @@ from unittest.mock import patch
 import pytest
 
 from coro.audio import SAMPLE_RATE, AudioInput
+from coro.cache.adapter import CachingASRAdapter
+from coro.cache.store import ASRCacheStore
 from coro.core.models import TranscriptToken
 from coro.pipelines.done_frame import StreamingDoneFrame
 from coro.pipelines.streaming import StreamingPipeline
 from coro.pipelines.windowing import ASRWindowing
 
-_ONE_SECOND_PCM = struct.pack(f"<{SAMPLE_RATE}h", *([0] * SAMPLE_RATE))
+
+def _one_second_pcm(index: int) -> bytes:
+    """Return one second of PCM whose bytes depend on ``index``.
+
+    Distinct per chunk so that with the ASR window cache enabled every window
+    gets its own key and its own row, which is the configuration whose memory
+    behaviour is actually in question — identical chunks would collapse into a
+    single entry and prove nothing.
+    """
+    return struct.pack(f"<{SAMPLE_RATE}h", *([index % 4096] * SAMPLE_RATE))
 
 
 class _PunctuatingASR:
     """Emits one punctuation-terminated token per window so segments finalize."""
+
+    honours_prompt = False
 
     def __init__(self) -> None:
         self.n = 0
@@ -40,8 +53,8 @@ class _PunctuatingASR:
 
 def _mock_chunks(num_chunks: int):
     async def _gen(path, chunk_seconds: float = 1.0):
-        for _ in range(num_chunks):
-            yield _ONE_SECOND_PCM
+        for index in range(num_chunks):
+            yield _one_second_pcm(index)
 
     return patch("coro.pipelines.streaming.stream_pcm_from_file", new=_gen)
 
@@ -53,9 +66,13 @@ async def _drain(pipeline: StreamingPipeline) -> None:
                 pass
 
 
-async def _peak_heap_bytes(num_chunks: int, spill_dir: str) -> int:
+async def _peak_heap_bytes(num_chunks: int, spill_dir: str, *, cache: bool = False) -> int:
+    asr = _PunctuatingASR()
+    if cache:
+        store = ASRCacheStore(f"{spill_dir}/asr-cache", max_bytes=0, ttl_seconds=0.0)
+        asr = CachingASRAdapter(asr, store=store, fingerprint="fp", honours_prompt=False)
     pipeline = StreamingPipeline(
-        asr=_PunctuatingASR(),
+        asr=asr,
         windowing=ASRWindowing(window_seconds=1.0, overlap_seconds=0.0),
         spill_dir=spill_dir,
     )
@@ -75,14 +92,22 @@ async def _peak_heap_bytes(num_chunks: int, spill_dir: str) -> int:
     return peak
 
 
+@pytest.mark.parametrize("cache", [False, True], ids=["cache-disabled", "cache-enabled"])
 @pytest.mark.asyncio
-async def test_streaming_peak_heap_is_flat_in_audio_length(tmp_path):
+async def test_streaming_peak_heap_is_flat_in_audio_length(tmp_path, cache: bool):
+    """The bounded-memory guarantee must hold for the configuration actually deployed.
+
+    Running this with the ASR window cache enabled as well as disabled is what
+    stops the cache from quietly reintroducing O(audio length) resident state —
+    it commits a row per window, so an implementation that buffered rows instead
+    of committing them would show up here and nowhere else.
+    """
     short_dir = tmp_path / "a"
     long_dir = tmp_path / "b"
     short_dir.mkdir()
     long_dir.mkdir()
-    short = await _peak_heap_bytes(50, str(short_dir))
-    long = await _peak_heap_bytes(2000, str(long_dir))
+    short = await _peak_heap_bytes(50, str(short_dir), cache=cache)
+    long = await _peak_heap_bytes(2000, str(long_dir), cache=cache)
 
     # 40x more audio (50 -> 2000 windows) must not grow the peak heap
     # proportionally. Linear accumulation of ~2000 tokens/segments would add

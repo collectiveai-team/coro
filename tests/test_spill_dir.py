@@ -12,12 +12,14 @@ logic without depending on how the host happens to be mounted.
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+from conftest import ROOT_MOUNT_ENTRY, mountinfo_line
+
+from coro import fsinfo
 from coro.pipelines import spill
 from coro.pipelines.spill import (
     SpillDirectoryError,
@@ -26,46 +28,6 @@ from coro.pipelines.spill import (
     resolve_spill_dir,
 )
 from coro.settings import ServerSettings
-
-_ROOT_ENTRY = "25 30 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw"
-
-
-def _mountinfo_line(index: int, mount_point: Path, fs_type: str) -> str:
-    """Render one /proc/self/mountinfo line for a mount point and filesystem."""
-    escaped = str(mount_point).replace(" ", r"\040")
-    return f"{index} 25 0:{index} / {escaped} rw,relatime shared:{index} - {fs_type} {fs_type} rw"
-
-
-@dataclass
-class _FakeMounts:
-    """Directories installed into a synthetic mount table, addressable by name."""
-
-    directories: dict[str, Path] = field(default_factory=dict)
-
-    def path(self, name: str) -> Path:
-        """Return the real directory registered under ``name``."""
-        return self.directories[name]
-
-
-@pytest.fixture
-def fake_mounts(monkeypatch, tmp_path):
-    """Install a synthetic mount table describing directories under tmp_path."""
-
-    def _install(**fs_type_by_name: str) -> _FakeMounts:
-        mounts = _FakeMounts()
-        lines = [_ROOT_ENTRY]
-        for index, (name, fs_type) in enumerate(fs_type_by_name.items(), start=26):
-            directory = (tmp_path / name).resolve()
-            directory.mkdir(parents=True, exist_ok=True)
-            mounts.directories[name] = directory
-            lines.append(_mountinfo_line(index, directory, fs_type))
-        mountinfo = tmp_path / "mountinfo"
-        mountinfo.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        monkeypatch.setattr(spill, "_MOUNTINFO_PATH", mountinfo)
-        return mounts
-
-    return _install
-
 
 # ---------------------------------------------------------------------------
 # Detection
@@ -100,7 +62,7 @@ def test_is_ram_backed_is_false_on_real_disk(fake_mounts):
 
 
 def test_is_ram_backed_is_undetermined_without_a_mount_table(monkeypatch, tmp_path):
-    monkeypatch.setattr(spill, "_MOUNTINFO_PATH", tmp_path / "absent")
+    monkeypatch.setattr(fsinfo, "_MOUNTINFO_PATH", tmp_path / "absent")
     assert is_ram_backed(tmp_path) is None
 
 
@@ -109,10 +71,10 @@ def test_mount_points_containing_spaces_are_decoded(monkeypatch, tmp_path):
     directory.mkdir()
     mountinfo = tmp_path / "mountinfo"
     mountinfo.write_text(
-        "\n".join([_ROOT_ENTRY, _mountinfo_line(26, directory, "tmpfs")]) + "\n",
+        "\n".join([ROOT_MOUNT_ENTRY, mountinfo_line(26, directory, "tmpfs")]) + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(spill, "_MOUNTINFO_PATH", mountinfo)
+    monkeypatch.setattr(fsinfo, "_MOUNTINFO_PATH", mountinfo)
     assert is_ram_backed(directory) is True
 
 

@@ -196,6 +196,15 @@ class OnnxAsrASRAdapter:
     retry hint rather than queued without limit.
     """
 
+    honours_prompt: bool = False
+    """A transducer has no text input port, so the carried prompt cannot reach it.
+
+    This is architectural rather than a gap in the integration, and it was
+    confirmed by measurement. The ASR window cache uses it to give this backend
+    independent per-window keys, which is the best hit rate available: a missing
+    window is purely local, recomputed without disturbing its neighbours.
+    """
+
     def __init__(
         self,
         model,

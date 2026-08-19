@@ -96,6 +96,16 @@ class OnnxGenaiASRAdapter:
     model; nothing else in this adapter requires the restriction.
     """
 
+    honours_prompt: bool = False
+    """The GenAI streaming API exposes no prompt input, so the carried prompt is inert.
+
+    Unlike the transducer backend this is an integration gap rather than an
+    architectural limit, so it could change. That is exactly why the capability
+    is part of the ASR window cache fingerprint: were it ever to start honouring
+    prompts, existing entries would be invalidated rather than silently served
+    under assumptions that no longer hold.
+    """
+
     def __init__(
         self,
         model,

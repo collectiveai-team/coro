@@ -24,6 +24,12 @@ BYTES_PER_SECOND = SAMPLE_RATE * BYTES_PER_SAMPLE
 PROMPT_TOKEN_LIMIT = 50
 PROMPT_CHAR_LIMIT = 200
 
+DEFAULT_WINDOW_SECONDS = 30.0
+"""Window length every pipeline uses; part of the ASR window cache fingerprint."""
+
+DEFAULT_OVERLAP_SECONDS = 2.0
+"""Window overlap every pipeline uses; part of the ASR window cache fingerprint."""
+
 
 # MARK: Result Model
 @dataclass
@@ -102,7 +108,12 @@ def _reconcile(window_tokens: list[Any], plan: _WindowPlan) -> list[TranscriptTo
 class ASRWindowing:
     """Transcribe PCM in overlapping windows behind a small interface."""
 
-    def __init__(self, *, window_seconds: float = 30.0, overlap_seconds: float = 2.0) -> None:
+    def __init__(
+        self,
+        *,
+        window_seconds: float = DEFAULT_WINDOW_SECONDS,
+        overlap_seconds: float = DEFAULT_OVERLAP_SECONDS,
+    ) -> None:
         if overlap_seconds >= window_seconds:
             raise ValueError("overlap_seconds must be less than window_seconds")
         self.window_seconds = window_seconds

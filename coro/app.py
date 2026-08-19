@@ -95,10 +95,10 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
-        from coro.backends.asr.factory import build_asr_adapter
+        from coro.backends.asr.factory import build_asr_adapter_stack
         from coro.backends.diarization import factory as diarization_factory
-        from coro.pipelines.streaming import StreamingPipeline
-        from coro.pipelines.full_memory import FullMemoryPipeline
+        from coro.cache.adapter import unwrap_asr_adapter
+        from coro.pipelines.factory import build_pipeline
 
         application.state.settings = settings
         application.state.runtime = runtime
@@ -110,8 +110,9 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             settings.model_dump(mode="json"),
         )
 
-        # Build ASR adapter (always required) via the ASR Backend Adapter Factory.
-        asr_adapter = build_asr_adapter(settings)
+        # Build ASR adapter (always required) via the ASR Backend Adapter Factory,
+        # wrapped by the ASR window cache when that is enabled.
+        asr_adapter = build_asr_adapter_stack(settings)
         runtime.asr_adapter = asr_adapter
 
         # Build optional diarization adapter via the diarization Backend Adapter Factory.
@@ -150,22 +151,30 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 runtime.diarization_latency = settings.diarization_latency
 
         # Construct the pipeline
-        if settings.pipeline == "streaming":
-            runtime.pipeline = StreamingPipeline(
-                asr=asr_adapter,
-                streaming_diarizer_factory=runtime.streaming_diarizer_factory,
-                spill_dir=settings.transcript_spill_dir,
-            )
-        else:
-            runtime.pipeline = FullMemoryPipeline(asr=asr_adapter, diarization=diarization_adapter)
+        runtime.pipeline = build_pipeline(
+            settings,
+            asr=asr_adapter,
+            diarization=diarization_adapter,
+            streaming_diarizer_factory=runtime.streaming_diarizer_factory,
+        )
 
         # Server Warmup
         if settings.warmup == "enabled":
             from coro.audio import AudioInput
             from coro.bench.data import WARMUP_AUDIO_PATH
 
+            # Warmup runs against the *wrapped* adapter, never the ASR window
+            # cache: its whole purpose is to prove the model loads and runs, and
+            # a cached warmup would let readiness report success on every start
+            # after the first without anything having been loaded.
+            warmup_pipeline = build_pipeline(
+                settings,
+                asr=unwrap_asr_adapter(asr_adapter),
+                diarization=diarization_adapter,
+                streaming_diarizer_factory=runtime.streaming_diarizer_factory,
+            )
             warmup_audio = AudioInput(WARMUP_AUDIO_PATH.read_bytes())
-            await runtime.pipeline.transcribe(warmup_audio)
+            await warmup_pipeline.transcribe(warmup_audio)
             runtime.warmup_ready = True
         else:
             logger.warning("Server Warmup is disabled — first request may pay cold-model costs.")
