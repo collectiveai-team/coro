@@ -106,11 +106,11 @@ def _report_from_settings(settings: ServerSettings, asr: Any) -> OfflineRunRepor
     )
 
 
-def render_result(result: Any, *, response_format: str, language: str | None) -> str:
-    """Render a pipeline result exactly as the transcription endpoint would.
+def render_source(source: Any, *, response_format: str, language: str | None) -> str:
+    """Render a Transcript Source exactly as the transcription endpoint would.
 
     Args:
-        result: The pipeline's ``TranscriptionResult``.
+        source: The transcription's Transcript Source.
         response_format: One of the endpoint's supported ``response_format`` values.
         language: Language to report, for the formats that carry one.
 
@@ -118,10 +118,10 @@ def render_result(result: Any, *, response_format: str, language: str | None) ->
         The response body as JSON text.
 
     """
-    from coro.api.openai.transcriptions import ResponseFormat, response_for_format
+    from coro.api.openai.formats import ResponseFormat
+    from coro.api.openai.render import render_for_format
 
-    rendered = response_for_format(ResponseFormat(response_format), result, language=language)
-    return rendered.model_dump_json()
+    return "".join(render_for_format(ResponseFormat(response_format), source, language=language))
 
 
 async def transcribe_in_process(
@@ -151,6 +151,7 @@ async def transcribe_in_process(
     from coro.backends.asr.factory import build_asr_adapter_stack
     from coro.backends.diarization import factory as diarization_factory
     from coro.pipelines.factory import build_pipeline
+    from coro.pipelines.source import transcript_source
 
     asr = build_asr_adapter_stack(settings, lazy=True)
 
@@ -183,8 +184,11 @@ async def transcribe_in_process(
     # from_path references the file without owning it: both pipelines call
     # cleanup() in a finally, and an owning AudioInput would delete the input.
     audio = AudioInput.from_path(path)
-    result = await pipeline.transcribe(audio, language=language, prompt=prompt)
-    body = render_result(result, response_format=response_format, language=language)
+    source = await transcript_source(pipeline, audio, language=language, prompt=prompt)
+    try:
+        body = render_source(source, response_format=response_format, language=language)
+    finally:
+        source.close()
     return body, _report_from_settings(settings, asr)
 
 

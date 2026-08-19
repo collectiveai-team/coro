@@ -20,10 +20,13 @@ from unittest.mock import patch
 
 import pytest
 
+from coro.api.openai.formats import ResponseFormat
+from coro.api.openai.render import render_for_format
 from coro.api.openai.sse import _sse_generator
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput
 from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.pipelines.full_memory import FullMemoryPipeline
+from coro.pipelines.source import transcript_source
 from coro.pipelines.streaming import StreamingPipeline
 from coro.pipelines.windowing import ASRWindowing
 
@@ -129,6 +132,26 @@ async def _streaming_response_json(spill_dir: str, *, diarization: bool) -> str:
     return json.dumps(asdict(result))
 
 
+async def _full_memory_rendered(fmt: ResponseFormat, *, diarization: bool) -> str:
+    pipeline = _full_memory_pipeline(diarization=diarization)
+    with patch("coro.pipelines.full_memory.convert_path_to_pcm_bytes", new=_identity_pcm):
+        source = await transcript_source(pipeline, AudioInput(_PCM))
+    try:
+        return "".join(render_for_format(fmt, source, language="es"))
+    finally:
+        source.close()
+
+
+async def _streaming_rendered(fmt: ResponseFormat, spill_dir: str, *, diarization: bool) -> str:
+    pipeline = _streaming_pipeline(spill_dir, diarization=diarization)
+    with patch("coro.pipelines.streaming.stream_pcm_from_file", new=_feed_pcm):
+        source = await transcript_source(pipeline, AudioInput(_PCM))
+    try:
+        return "".join(render_for_format(fmt, source, language="es"))
+    finally:
+        source.close()
+
+
 async def _full_memory_sse(*, diarization: bool) -> str:
     pipeline = _full_memory_pipeline(diarization=diarization)
     with patch("coro.pipelines.full_memory.convert_path_to_pcm_bytes", new=_identity_pcm):
@@ -154,6 +177,26 @@ async def test_batch_response_json_is_byte_identical(tmp_path, diarization: bool
 async def test_sse_stream_is_byte_identical(tmp_path, diarization: bool):
     full_memory = await _full_memory_sse(diarization=diarization)
     streaming = await _streaming_sse(str(tmp_path), diarization=diarization)
+    assert streaming == full_memory
+
+
+@pytest.mark.parametrize("diarization", [False, True])
+@pytest.mark.parametrize(
+    "fmt",
+    [ResponseFormat.JSON, ResponseFormat.VERBOSE_JSON, ResponseFormat.DIARIZED_JSON],
+    ids=lambda f: f.value,
+)
+@pytest.mark.asyncio
+async def test_rendered_vendor_body_is_byte_identical(tmp_path, fmt, diarization: bool):
+    """One renderer, two Transcript Sources: the vendor bodies must not differ.
+
+    The pipelines reach the wire through different sources — the Streaming
+    Pipeline reads through its spill store, the Full-Memory Pipeline over lists
+    it already holds — so this is the assertion that the incremental renderer
+    cannot see which one it is walking (ADR 0018).
+    """
+    full_memory = await _full_memory_rendered(fmt, diarization=diarization)
+    streaming = await _streaming_rendered(fmt, str(tmp_path), diarization=diarization)
     assert streaming == full_memory
 
 

@@ -26,7 +26,17 @@ Decomposing that 7.9 KiB shows the cost is **not** mostly where it was assumed t
 
 Four fifths of it is a round-trip through a Pydantic mirror of a type the pipeline already produced. `asdict()` is doubly wasteful here: `segments[].words` and `word_segments` hold the *same* `TranscriptWord` objects by reference, and `asdict()` expands both, so every word becomes two dicts before Pydantic copies it a third time.
 
-Deleting that round-trip **measured a 60% reduction** — 7.9 KiB per item down to 3.1 KiB, and 62,108 KiB down to 24,837 KiB at 8,000 windows. Less than the 80% the decomposition projected, because removing the largest contributor simply moves the peak to the next-largest moment rather than subtracting cleanly from it. The remaining cost is still **linear in audio length**, which is why it is not the whole change.
+Deleting that round-trip **measured a 60% reduction** — 7.9 KiB per item down to 3.1 KiB, and 62,108 KiB down to 24,837 KiB at 8,000 windows. Less than the 80% the decomposition projected, because removing the largest contributor simply moves the peak to the next-largest moment rather than subtracting cleanly from it. The remaining cost was still **linear in audio length**, which is why it was not the whole change.
+
+Rendering incrementally removed the rest. The JSON path now matches the SSE path exactly:
+
+| windows | `stream()` | `transcribe()` before | `transcribe()` after |
+|---|---|---|---|
+| 50 | 346 KiB | 432 KiB | 344 KiB |
+| 2,000 | 493 KiB | 15,882 KiB | 493 KiB |
+| 8,000 | 506 KiB | 62,108 KiB | 506 KiB |
+
+A 123× reduction at 8,000 windows, and — the point — **bounded** rather than merely smaller.
 
 ## Correcting the record on the motivating figures
 
@@ -73,6 +83,16 @@ Rendering the body twice — once to count bytes, once to send — would also ha
 ## Errors still precede the first byte
 
 The pipeline runs to completion and fills the source before any body byte is written, so capacity rejections, undecodable audio and processing failures still map to an **OpenAI-Style Error** or a Deepgram `err_code` body exactly as before. Rendering concurrently with transcription was rejected: no ordinary JSON client consumes a body incrementally, so it would buy no latency while making mid-render failures unreportable.
+
+## One serialiser, chosen by experiment
+
+The elements are rendered with `json.dumps` under Starlette's exact keywords — compact separators, `ensure_ascii=False`, `allow_nan=False` — because that is what `JSONResponse` uses and therefore what both routes already emit. Pydantic's own serialiser is **not** interchangeable with it: `model_dump_json` writes `1e-7` where `json.dumps` writes `1e-07`. Rendering elements per item through `model_dump_json` was the first design, and it would have produced identical bytes for almost every transcript and different bytes for some — the worst way for a byte-identity guarantee to fail. Which serialiser the routes actually used was settled by sending a `1e-7` timestamp through the live endpoint rather than by reading the framework's source.
+
+## The `dirized_json` alias is removed
+
+`dirized_json` was accepted as a typo-tolerant alias of `diarized_json`. It is removed: a misspelling that silently succeeds trains clients to depend on the misspelling, and the server cannot later tell a typo from an intent. `json_verbose` is retained, because unlike a dropped letter it is a plausible reordering of a real OpenAI name.
+
+This is the one deliberate contract *narrowing* here. `response_format` is published as an enum in `/openapi.json`, so removing a member is a breaking change that the `oasdiff` gate will and should flag — unlike everything else in this ADR, which leaves the generated document byte-identical.
 
 ## What is unchanged
 

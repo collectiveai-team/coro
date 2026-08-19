@@ -32,6 +32,7 @@ from coro.pipelines.finalizer import (
     StreamingTranscriptFinalizer,
     build_streaming_response,
 )
+from coro.pipelines.spill_source import SpillTranscriptSource
 from coro.pipelines.transcript_store import TranscriptSpillStore
 from coro.pipelines.windowing import ASRWindowing
 
@@ -83,7 +84,14 @@ class StreamingPipeline:
         language: str | None = None,
         prompt: str | None = None,
     ) -> TranscriptionResult:
-        """Transcribe an upload and assemble the response in one call."""
+        """Transcribe an upload and assemble the response in one call.
+
+        Materialises the whole transcript, so it is O(audio length) by
+        construction. Kept because it is the shape the Full-Memory Pipeline also
+        returns, which is what lets the two be compared byte for byte; callers
+        that only need to *render* a response should use
+        :meth:`transcribe_source` instead, which stays flat (ADR 0018).
+        """
         store = TranscriptSpillStore(directory=self._spill_dir)
         outcome = _RunOutcome()
         try:
@@ -93,6 +101,31 @@ class StreamingPipeline:
         finally:
             store.close()
             await audio.cleanup()
+
+    async def transcribe_source(
+        self,
+        audio: AudioInput,
+        *,
+        language: str | None = None,
+        prompt: str | None = None,
+    ) -> SpillTranscriptSource:
+        """Transcribe an upload and hand back a store-backed Transcript Source.
+
+        Ownership of the spill store passes to the returned source, which the
+        caller must close. Nothing is materialised: the transcript stays on disk
+        and the response projection reads through it.
+        """
+        store = TranscriptSpillStore(directory=self._spill_dir)
+        outcome = _RunOutcome()
+        try:
+            async for _ in self._run(audio, store, outcome, language=language, prompt=prompt):
+                pass
+        except BaseException:
+            store.close()
+            raise
+        finally:
+            await audio.cleanup()
+        return SpillTranscriptSource(store, outcome.timeline)
 
     # Streaming Transcription ----------------------------------------------
     async def stream(

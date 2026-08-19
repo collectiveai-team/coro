@@ -29,12 +29,14 @@ from unittest.mock import patch
 
 import pytest
 
-from coro.api.openai.transcriptions import ResponseFormat, response_for_format
+from coro.api.openai.formats import ResponseFormat
+from coro.api.openai.render import render_for_format
 from coro.audio import SAMPLE_RATE, AudioInput
 from coro.cache.adapter import CachingASRAdapter
 from coro.cache.store import ASRCacheStore
 from coro.core.models import TranscriptToken
 from coro.pipelines.done_frame import StreamingDoneFrame
+from coro.pipelines.source import transcript_source
 from coro.pipelines.streaming import StreamingPipeline
 from coro.pipelines.windowing import ASRWindowing
 
@@ -100,9 +102,12 @@ async def _drain_json(pipeline: StreamingPipeline) -> None:
     carrying both segments and words — so it is the format the guarantee has to
     hold for.
     """
-    result = await pipeline.transcribe(AudioInput(b"x"))
-    body = response_for_format(ResponseFormat.VERBOSE_JSON, result, language="en")
-    body.model_dump_json()
+    source = await transcript_source(pipeline, AudioInput(b"x"))
+    try:
+        for _ in render_for_format(ResponseFormat.VERBOSE_JSON, source, language="en"):
+            pass  # render to fragments, discard (flat)
+    finally:
+        source.close()
 
 
 Drain = Callable[[StreamingPipeline], Awaitable[None]]

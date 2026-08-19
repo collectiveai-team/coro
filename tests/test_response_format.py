@@ -13,7 +13,7 @@ import wave
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from coro.api.openai.transcriptions import ResponseFormat
+from coro.api.openai.formats import ResponseFormat
 from coro.app import create_app
 from coro.core.models import (
     ResponseSegment,
@@ -31,7 +31,6 @@ def test_response_format_enum_has_json_members():
     assert ResponseFormat.VERBOSE_JSON.value == "verbose_json"
     assert ResponseFormat.JSON_VERBOSE.value == "json_verbose"
     assert ResponseFormat.DIARIZED_JSON.value == "diarized_json"
-    assert ResponseFormat.DIRIZED_JSON.value == "dirized_json"
 
 
 def test_response_format_enum_has_unsupported_members():
@@ -54,7 +53,6 @@ def test_response_format_carries_only_values_openai_defines():
         "verbose_json",
         "json_verbose",
         "diarized_json",
-        "dirized_json",
         "text",
         "srt",
         "vtt",
@@ -64,13 +62,12 @@ def test_response_format_carries_only_values_openai_defines():
 
 def test_response_format_enum_json_like_is_iterable():
     """JSON-like formats can be determined from the Enum without a hard-coded set."""
-    from coro.api.openai.transcriptions import _JSON_LIKE_FORMATS
+    from coro.api.openai.formats import JSON_LIKE_FORMATS as _JSON_LIKE_FORMATS
 
     assert ResponseFormat.JSON in _JSON_LIKE_FORMATS
     assert ResponseFormat.VERBOSE_JSON in _JSON_LIKE_FORMATS
     assert ResponseFormat.JSON_VERBOSE in _JSON_LIKE_FORMATS
     assert ResponseFormat.DIARIZED_JSON in _JSON_LIKE_FORMATS
-    assert ResponseFormat.DIRIZED_JSON in _JSON_LIKE_FORMATS
 
 
 def _minimal_wav() -> bytes:
@@ -136,7 +133,6 @@ async def test_unsupported_format_returns_openai_error(route, fmt):
         ("whisper-1", "verbose_json"),
         ("anything", "json_verbose"),
         ("gpt-4o-transcribe-diarize", "diarized_json"),
-        ("ignored-model", "dirized_json"),
         ("whisper-1", ""),
         ("whisper-1", None),
     ],

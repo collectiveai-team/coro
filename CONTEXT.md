@@ -273,8 +273,16 @@ A Pydantic model used to serialize successful transcription responses and OpenAI
 _Avoid_: Internal pipeline model, request form model
 
 **Strict Transcription Response Schema**:
-The boundary response schema containing only the public transcription fields.
-_Avoid_: Backend-native extras, permissive response object
+The property that only public transcription fields can reach a response, now carried by the **Project-Owned Transcript Model** dataclasses themselves rather than by a pydantic mirror validated per request: a dataclass rejects unknown fields at construction, which is stronger than `extra="forbid"` and costs nothing. Pinned by test rather than enforced per request (ADR 0018).
+_Avoid_: Backend-native extras, permissive response object, a second pydantic copy of `TranscriptionResult`
+
+**Transcript Source**:
+The read interface every response projection renders from: restartable iterators over the five response arrays, plus the scalars derived from them. The **Streaming Pipeline** supplies one backed by the **Transcript Spill Store**, the **Full-Memory Pipeline** one over the lists it already holds, so a single implementation of each response format serves both. See ADR 0018.
+_Avoid_: Passing `TranscriptionResult` to a projection, a per-pipeline response renderer
+
+**Flat-Memory Response Rendering**:
+Rendering a response body incrementally from a **Transcript Source** into a disk spool, then serving that spool with a real `Content-Length`, so no response array is ever fully resident and the HTTP framing is unchanged.
+_Avoid_: Chunked transfer-encoding, materialising the body to measure it
 
 **OpenAI-Compatible Request**:
 A transcription form request that accepts OpenAI-style parameters for client compatibility without requiring every OpenAI response format.
@@ -453,6 +461,8 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - A **Transcription API Contract** is preserved by the **Transcription Endpoint** unless a new public contract is intentionally introduced.
 - A **Boundary Response Schema** defines response and error JSON shapes without replacing multipart form parsing with a request body model.
 - A **Strict Transcription Response Schema** prevents backend-native fields from leaking into public transcription responses.
+- A **Transcription Pipeline** exposes its transcript as a **Transcript Source**; every **Vendor-Native Endpoint** projection renders from that interface, never from a pipeline-specific type, so the two pipelines emit byte-identical bodies by construction.
+- **Flat-Memory Response Rendering** applies to both the SSE and the non-SSE JSON paths, so the **Streaming Pipeline**'s bounded-memory guarantee holds on every request rather than only when `stream=true`.
 - An **OpenAI-Compatible Request** returns a **Transcription Response** in the current package contract.
 - Supported **JSON Response Format Alias** values do not change the response schema.
 - A **Compatibility Model Field** never overrides **Server Startup Selection**.
@@ -652,7 +662,13 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "No — use **Boundary Response Schema** models for successful and error JSON responses, while the route keeps multipart form parsing."
 
 > **Dev:** "Can backend-specific fields pass through the response model as extras?"
-> **Domain expert:** "No — use a **Strict Transcription Response Schema** so backend-native data is converted or dropped intentionally."
+> **Domain expert:** "No — the **Strict Transcription Response Schema** property means a backend-native field cannot be constructed onto a response type at all. It used to be checked by validating into a pydantic mirror on every request; that mirror was most of the response path's memory cost, and a dataclass already refuses unknown fields, so the check moved to a test."
+
+> **Dev:** "The JSON response is only built once at the end — surely materialising it there is harmless?"
+> **Domain expert:** "It is O(audio length) with no ceiling, which is exactly what the **Streaming Pipeline** exists to avoid, and `stream=false` is the default on both vendor endpoints — so without **Flat-Memory Response Rendering** the guarantee applied to a minority of requests."
+
+> **Dev:** "If we stream the body out, we lose `Content-Length` — that's just how streaming works, right?"
+> **Domain expert:** "Only if you stream it straight to the socket. Render it into a spool first and the size is a `stat` away, so the framing stays exactly what both vendors emit. The cost is one write and read of a body far smaller than the transcript spill beside it."
 
 > **Dev:** "Can v2 remove ignored form fields while adding Pydantic request models?"
 > **Domain expert:** "No — v1 and v2 preserve the same **Transcription API Contract** request fields for now."

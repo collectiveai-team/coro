@@ -2,18 +2,15 @@
 
 Accepts OpenAI-compatible form parameters and returns OpenAI-shaped JSON
 transcription responses. The route handler stays thin; orchestration delegates
-to the configured pipeline.
+to the configured pipeline and rendering to the incremental renderers.
 """
 
 from __future__ import annotations
 
 import re
-import math
 import logging
 import time
 from uuid import uuid4
-from enum import StrEnum
-from typing import Literal, overload
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import Response
@@ -26,19 +23,13 @@ from coro.api.exceptions import (
     TranscriptionValidationError,
     UnsupportedStreamingError,
 )
-from coro.api.openai.schemas import (
-    DiarizedJsonResponse,
-    DiarizedJsonSegment,
-    JsonResponse,
-    TranscriptionUsage,
-    VerboseJsonResponse,
-    VerboseJsonSegment,
-    VerboseJsonWord,
-)
+from coro.api.json_body import spooled_json_response
+from coro.api.openai.formats import ResponseFormat
+from coro.api.openai.render import render_for_format
 from coro.api.openai.sse import streaming_response
 from coro.audio import AudioConversionError, AudioInput
-from coro.core.models import TranscriptionResult
 from coro.backends.asr.concurrency import AsrCapacityError
+from coro.pipelines.source import transcript_source
 
 
 # MARK: Router Configuration
@@ -80,207 +71,6 @@ def _validate_language(language: str | None) -> str | None:
     return normalized
 
 
-# MARK: Response
-class ResponseFormat(StrEnum):
-    """All OpenAI response_format values this server recognises.
-
-    JSON-like formats are implemented; ``json_verbose``/``dirized_json`` are
-    typo-tolerant aliases of ``verbose_json``/``diarized_json``. The text output
-    formats are recognised so they fail with an OpenAI-style 400 (param
-    ``response_format``) rather than a generic validation error.
-    """
-
-    JSON = "json"
-    VERBOSE_JSON = "verbose_json"
-    JSON_VERBOSE = "json_verbose"
-    DIARIZED_JSON = "diarized_json"
-    DIRIZED_JSON = "dirized_json"
-
-    # Unsupported OpenAI formats (recognised but not implemented → 400)
-    TEXT = "text"
-    SRT = "srt"
-    VTT = "vtt"
-    TSV = "tsv"
-
-
-# JSON-like formats this server actually renders (vs. the recognised-but-
-# unsupported text outputs above).
-_JSON_LIKE_FORMATS = frozenset(
-    {
-        ResponseFormat.JSON,
-        ResponseFormat.VERBOSE_JSON,
-        ResponseFormat.JSON_VERBOSE,
-        ResponseFormat.DIARIZED_JSON,
-        ResponseFormat.DIRIZED_JSON,
-    }
-)
-
-
-def _text_from_result(result: TranscriptionResult) -> str:
-    if result.transcript:
-        return " ".join(item.text.strip() for item in result.transcript).strip()
-    return " ".join(segment.text.strip() for segment in result.segments).strip()
-
-
-def _duration_from_result(result: TranscriptionResult) -> float:
-    return max(
-        [
-            item.end
-            for items in (
-                result.segments,
-                result.word_segments,
-                result.raw_words,
-                result.transcript,
-                result.diarization,
-            )
-            for item in items
-        ],
-        default=0.0,
-    )
-
-
-def _usage(duration: float) -> TranscriptionUsage:
-    return TranscriptionUsage(type="duration", seconds=math.ceil(duration))
-
-
-def _json_response(result: TranscriptionResult) -> JsonResponse:
-    duration = _duration_from_result(result)
-    return JsonResponse(text=_text_from_result(result), usage=_usage(duration))
-
-
-def _verbose_json_response(
-    result: TranscriptionResult, *, language: str | None
-) -> VerboseJsonResponse:
-    duration = _duration_from_result(result)
-    return VerboseJsonResponse(
-        duration=duration,
-        language=language or "unknown",
-        text=_text_from_result(result),
-        segments=[
-            VerboseJsonSegment(
-                id=index,
-                seek=int(segment.start * 100),
-                start=segment.start,
-                end=segment.end,
-                text=segment.text,
-                tokens=[],
-                temperature=0.0,
-                avg_logprob=0.0,
-                compression_ratio=0.0,
-                no_speech_prob=0.0,
-            )
-            for index, segment in enumerate(result.segments)
-        ],
-        words=[
-            VerboseJsonWord(
-                word=word.word,
-                start=word.start,
-                end=word.end,
-            )
-            for word in result.word_segments or result.raw_words
-        ],
-        usage=_usage(duration),
-    )
-
-
-def _diarized_json_response(result: TranscriptionResult) -> DiarizedJsonResponse:
-    duration = _duration_from_result(result)
-    return DiarizedJsonResponse(
-        task="transcribe",
-        duration=duration,
-        text=_text_from_result(result),
-        segments=[
-            DiarizedJsonSegment(
-                type="transcript.text.segment",
-                id=f"seg_{index + 1:03d}",
-                start=segment.start,
-                end=segment.end,
-                text=segment.text,
-                speaker=segment.speaker,
-            )
-            for index, segment in enumerate(result.segments)
-        ],
-        usage=_usage(duration),
-    )
-
-
-@overload
-def response_for_format(
-    response_format: Literal[ResponseFormat.JSON],
-    result: TranscriptionResult,
-    *,
-    language: str | None,
-) -> JsonResponse: ...
-
-
-@overload
-def response_for_format(
-    response_format: Literal[ResponseFormat.VERBOSE_JSON],
-    result: TranscriptionResult,
-    *,
-    language: str | None,
-) -> VerboseJsonResponse: ...
-
-
-@overload
-def response_for_format(
-    response_format: Literal[ResponseFormat.DIARIZED_JSON],
-    result: TranscriptionResult,
-    *,
-    language: str | None,
-) -> DiarizedJsonResponse: ...
-
-
-@overload
-def response_for_format(
-    response_format: ResponseFormat,
-    result: TranscriptionResult,
-    *,
-    language: str | None,
-) -> JsonResponse | VerboseJsonResponse | DiarizedJsonResponse: ...
-
-
-def response_for_format(
-    response_format: ResponseFormat,
-    result: TranscriptionResult,
-    *,
-    language: str | None,
-) -> JsonResponse | VerboseJsonResponse | DiarizedJsonResponse:
-    """Render a transcription result in one of the supported response formats.
-
-    Public because the offline command renders through it too: `coro run` must
-    produce the same body the endpoint would for the same format, or its output
-    would silently be a fourth shape nobody documented.
-
-    Args:
-        response_format: The requested format.
-        result: The pipeline's Project-Owned transcription result, read directly.
-            It is not re-validated into a boundary mirror first: the dataclass
-            tree is already closed to backend-native extras by construction, and
-            the round-trip cost grew with audio length (ADR 0018).
-        language: Language to report, for the formats that carry one.
-
-    Returns:
-        The rendered response model.
-
-    Raises:
-        TranscriptionValidationError: If the format is recognised but unsupported.
-
-    """
-    match response_format:
-        case ResponseFormat.JSON:
-            return _json_response(result)
-        case ResponseFormat.VERBOSE_JSON | ResponseFormat.JSON_VERBOSE:
-            return _verbose_json_response(result, language=language)
-        case ResponseFormat.DIARIZED_JSON | ResponseFormat.DIRIZED_JSON:
-            return _diarized_json_response(result)
-
-    raise TranscriptionValidationError(
-        f"Unsupported response_format '{response_format}'.",
-        param="response_format",
-    )
-
-
 # MARK: Transcription Endpoint
 @router.post("/audio/transcriptions", response_model=None)
 async def create_transcription(
@@ -319,12 +109,16 @@ async def create_transcription(
         description="Accepted but ignored.",
     ),
     pipeline=Depends(get_pipeline),
-) -> Response | JsonResponse | VerboseJsonResponse | DiarizedJsonResponse:
+) -> Response:
     """Accept audio and return an OpenAI-shaped response.
 
-    Supported response formats: json, verbose_json/json_verbose,
-    diarized_json/dirized_json (and empty). Other OpenAI text output formats
-    are recognised but not implemented.
+    Supported response formats: json, verbose_json/json_verbose and
+    diarized_json (and empty). Other OpenAI text output formats are recognised
+    but not implemented.
+
+    The body is rendered incrementally from a Transcript Source and spooled to
+    disk, so it is served with a real ``Content-Length`` without ever being
+    fully resident (ADR 0018).
     """
     # Request Validation ----------------------------------------------------
     request_id = uuid4().hex[:8]
@@ -360,7 +154,7 @@ async def create_transcription(
 
     # JSON Response ---------------------------------------------------------
     try:
-        result = await pipeline.transcribe(audio, language=language, prompt=prompt_value)
+        source = await transcript_source(pipeline, audio, language=language, prompt=prompt_value)
     except TranscriptionValidationError:
         raise
     except AsrCapacityError as exc:
@@ -390,13 +184,26 @@ async def create_transcription(
             time.perf_counter() - started,
         )
         raise TranscriptionProcessingError("Transcription processing failed.") from exc
+
+    # The body is rendered before the response exists, so a projection failure is
+    # still a 500 with an OpenAI-Style Error rather than a truncated 200.
+    try:
+        response = spooled_json_response(
+            render_for_format(response_format, source, language=language)
+        )
+    except TranscriptionValidationError:
+        raise
+    except Exception as exc:
+        logger.exception("transcription[%s] response rendering failed", request_id)
+        raise TranscriptionProcessingError("Transcription processing failed.") from exc
+    finally:
+        source.close()
+
     logger.info(
-        "transcription[%s] request complete elapsed=%.3fs segments=%d words=%d diarization=%d",
+        "transcription[%s] request complete elapsed=%.3fs format=%s body_bytes=%s",
         request_id,
         time.perf_counter() - started,
-        len(result.segments),
-        len(result.word_segments or result.raw_words),
-        len(result.diarization),
+        response_format,
+        response.headers.get("content-length"),
     )
-
-    return response_for_format(response_format, result, language=language)
+    return response
