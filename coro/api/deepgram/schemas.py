@@ -25,12 +25,12 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from coro.api.schemas import TranscriptionResponse, TranscriptWord
 from coro.api.utterances import (
     UNKNOWN_SPEAKER_LABEL,
     group_words_into_utterances,
     mean_confidence,
 )
+from coro.core.models import TranscriptionResult, TranscriptWord
 
 MONO_CHANNEL_COUNT = 1
 """Uploads are converted to mono before transcription."""
@@ -172,7 +172,7 @@ def _word(word: TranscriptWord, *, diarize: bool) -> DeepgramWord:
 
 
 def deepgram_response(
-    result: TranscriptionResponse,
+    result: TranscriptionResult,
     *,
     text: str,
     duration: float,
@@ -187,7 +187,10 @@ def deepgram_response(
     """Project the internal result onto Deepgram's pre-recorded response shape.
 
     Args:
-        result: The validated Strict Transcription Response Schema instance.
+        result: The pipeline's Project-Owned transcription result, read directly.
+            It is not re-validated into a boundary mirror first: the dataclass
+            tree is already closed to backend-native extras by construction, and
+            the round-trip cost grew with audio length (ADR 0018).
         text: The full transcript text, already assembled by the caller.
         duration: Audio duration in seconds.
         request_id: The server's request id.

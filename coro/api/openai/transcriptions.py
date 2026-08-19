@@ -11,7 +11,6 @@ import re
 import math
 import logging
 import time
-from dataclasses import asdict
 from uuid import uuid4
 from enum import StrEnum
 from typing import Literal, overload
@@ -27,7 +26,6 @@ from coro.api.exceptions import (
     TranscriptionValidationError,
     UnsupportedStreamingError,
 )
-from coro.api.schemas import TranscriptionResponse
 from coro.api.openai.schemas import (
     DiarizedJsonResponse,
     DiarizedJsonSegment,
@@ -39,6 +37,7 @@ from coro.api.openai.schemas import (
 )
 from coro.api.openai.sse import streaming_response
 from coro.audio import AudioConversionError, AudioInput
+from coro.core.models import TranscriptionResult
 from coro.backends.asr.concurrency import AsrCapacityError
 
 
@@ -117,13 +116,13 @@ _JSON_LIKE_FORMATS = frozenset(
 )
 
 
-def _text_from_result(result: TranscriptionResponse) -> str:
+def _text_from_result(result: TranscriptionResult) -> str:
     if result.transcript:
         return " ".join(item.text.strip() for item in result.transcript).strip()
     return " ".join(segment.text.strip() for segment in result.segments).strip()
 
 
-def _duration_from_result(result: TranscriptionResponse) -> float:
+def _duration_from_result(result: TranscriptionResult) -> float:
     return max(
         [
             item.end
@@ -144,13 +143,13 @@ def _usage(duration: float) -> TranscriptionUsage:
     return TranscriptionUsage(type="duration", seconds=math.ceil(duration))
 
 
-def _json_response(result: TranscriptionResponse) -> JsonResponse:
+def _json_response(result: TranscriptionResult) -> JsonResponse:
     duration = _duration_from_result(result)
     return JsonResponse(text=_text_from_result(result), usage=_usage(duration))
 
 
 def _verbose_json_response(
-    result: TranscriptionResponse, *, language: str | None
+    result: TranscriptionResult, *, language: str | None
 ) -> VerboseJsonResponse:
     duration = _duration_from_result(result)
     return VerboseJsonResponse(
@@ -184,7 +183,7 @@ def _verbose_json_response(
     )
 
 
-def _diarized_json_response(result: TranscriptionResponse) -> DiarizedJsonResponse:
+def _diarized_json_response(result: TranscriptionResult) -> DiarizedJsonResponse:
     duration = _duration_from_result(result)
     return DiarizedJsonResponse(
         task="transcribe",
@@ -208,7 +207,7 @@ def _diarized_json_response(result: TranscriptionResponse) -> DiarizedJsonRespon
 @overload
 def response_for_format(
     response_format: Literal[ResponseFormat.JSON],
-    result: TranscriptionResponse,
+    result: TranscriptionResult,
     *,
     language: str | None,
 ) -> JsonResponse: ...
@@ -217,7 +216,7 @@ def response_for_format(
 @overload
 def response_for_format(
     response_format: Literal[ResponseFormat.VERBOSE_JSON],
-    result: TranscriptionResponse,
+    result: TranscriptionResult,
     *,
     language: str | None,
 ) -> VerboseJsonResponse: ...
@@ -226,7 +225,7 @@ def response_for_format(
 @overload
 def response_for_format(
     response_format: Literal[ResponseFormat.DIARIZED_JSON],
-    result: TranscriptionResponse,
+    result: TranscriptionResult,
     *,
     language: str | None,
 ) -> DiarizedJsonResponse: ...
@@ -235,7 +234,7 @@ def response_for_format(
 @overload
 def response_for_format(
     response_format: ResponseFormat,
-    result: TranscriptionResponse,
+    result: TranscriptionResult,
     *,
     language: str | None,
 ) -> JsonResponse | VerboseJsonResponse | DiarizedJsonResponse: ...
@@ -243,7 +242,7 @@ def response_for_format(
 
 def response_for_format(
     response_format: ResponseFormat,
-    result: TranscriptionResponse,
+    result: TranscriptionResult,
     *,
     language: str | None,
 ) -> JsonResponse | VerboseJsonResponse | DiarizedJsonResponse:
@@ -255,7 +254,10 @@ def response_for_format(
 
     Args:
         response_format: The requested format.
-        result: The validated transcription response.
+        result: The pipeline's Project-Owned transcription result, read directly.
+            It is not re-validated into a boundary mirror first: the dataclass
+            tree is already closed to backend-native extras by construction, and
+            the round-trip cost grew with audio length (ADR 0018).
         language: Language to report, for the formats that carry one.
 
     Returns:
@@ -388,14 +390,13 @@ async def create_transcription(
             time.perf_counter() - started,
         )
         raise TranscriptionProcessingError("Transcription processing failed.") from exc
-    validated = TranscriptionResponse.model_validate(asdict(result))
     logger.info(
         "transcription[%s] request complete elapsed=%.3fs segments=%d words=%d diarization=%d",
         request_id,
         time.perf_counter() - started,
-        len(validated.segments),
-        len(validated.word_segments or validated.raw_words),
-        len(validated.diarization),
+        len(result.segments),
+        len(result.word_segments or result.raw_words),
+        len(result.diarization),
     )
 
-    return response_for_format(response_format, validated, language=language)
+    return response_for_format(response_format, result, language=language)

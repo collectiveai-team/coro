@@ -16,7 +16,6 @@ import hashlib
 import logging
 import time
 from collections.abc import Mapping
-from dataclasses import asdict
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -24,9 +23,9 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
 
 from coro.api.dependencies import get_pipeline, get_settings
-from coro.api.schemas import TranscriptionResponse
 from coro.api.deepgram.schemas import DeepgramErrorResponse, deepgram_response
 from coro.audio import AudioConversionError, AudioInput
+from coro.core.models import TranscriptionResult
 from coro.settings import ServerSettings
 
 router = APIRouter(prefix="/v1")
@@ -105,13 +104,13 @@ def _error(*, err_code: str, err_msg: str, request_id: str, status_code: int) ->
     return JSONResponse(body.model_dump(), status_code=status_code)
 
 
-def _text_from_result(result: TranscriptionResponse) -> str:
+def _text_from_result(result: TranscriptionResult) -> str:
     if result.transcript:
         return " ".join(item.text.strip() for item in result.transcript).strip()
     return " ".join(segment.text.strip() for segment in result.segments).strip()
 
 
-def _duration_from_result(result: TranscriptionResponse) -> float:
+def _duration_from_result(result: TranscriptionResult) -> float:
     return max(
         [
             item.end
@@ -253,11 +252,10 @@ async def listen(
             status_code=500,
         )
 
-    validated = TranscriptionResponse.model_validate(asdict(result))
     response = deepgram_response(
-        validated,
-        text=_text_from_result(validated),
-        duration=_duration_from_result(validated),
+        result,
+        text=_text_from_result(result),
+        duration=_duration_from_result(result),
         request_id=request_id,
         audio_sha256=hashlib.sha256(audio_bytes).hexdigest(),
         created=datetime.now(tz=UTC).isoformat(),
@@ -270,7 +268,7 @@ async def listen(
         "listen[%s] request complete elapsed=%.3fs words=%d",
         request_id,
         time.perf_counter() - started,
-        len(validated.word_segments),
+        len(result.word_segments),
     )
     # exclude_none keeps undiarized responses free of null speaker keys, which
     # Deepgram never emits, and drops `utterances` when it was not requested.

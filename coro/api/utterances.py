@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
-from coro.api.schemas import TranscriptWord
+from coro.core.models import TranscriptWord
 
 UNKNOWN_SPEAKER_LABEL = "-1"
 """Speaker label for words the diarization timeline does not support."""

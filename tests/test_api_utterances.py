@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from coro.api.schemas import TranscriptWord
+from coro.core.models import TranscriptWord
 from coro.api.utterances import group_words_into_utterances, mean_confidence
 
 

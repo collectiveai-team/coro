@@ -1,128 +1,85 @@
-"""Boundary Response Schema behavior."""
+"""The internal transcription result is closed, and its field order is the wire order.
+
+These properties used to be enforced per request by validating the pipeline's
+result into a pydantic mirror with ``extra="forbid"``. That mirror was 80% of
+the audio-proportional heap on the JSON path and is gone (ADR 0018), so the
+guarantees it carried are asserted here instead — once, in CI, rather than on
+every request in proportion to how long the audio was.
+
+Two things are pinned:
+
+- **Closure.** A backend-native extra cannot reach a public response, because a
+  dataclass rejects unknown fields at construction. That is strictly stronger
+  than ``extra="forbid"``, which only rejects them when validating from a dict.
+- **Field order.** ``StreamingDoneFrame`` derives the done event's JSON key
+  order from these declarations, so reordering a field silently reorders
+  published output. The order is therefore part of the contract, not an
+  implementation detail.
+"""
 
 from __future__ import annotations
 
+from dataclasses import fields, is_dataclass
+
 import pytest
-from pydantic import ValidationError
 
-from coro.api.schemas import TranscriptionResponse
 from coro.api.openai.schemas import OpenAIErrorResponse
+from coro.core.models import (
+    DiarizationItem,
+    RawWord,
+    ResponseSegment,
+    TranscriptionResult,
+    TranscriptItem,
+    TranscriptWord,
+)
+
+# The published shape of every type reachable in a transcription response, in
+# serialisation order. Spelled out rather than derived so that changing the
+# model has to change this list too — a test that reads the answer off the code
+# it is testing would pass for any answer.
+_PUBLIC_FIELDS = {
+    TranscriptionResult: ["segments", "word_segments", "transcript", "diarization", "raw_words"],
+    ResponseSegment: ["start", "end", "text", "speaker", "words", "overlap"],
+    TranscriptWord: ["word", "start", "end", "score", "speaker", "overlap"],
+    TranscriptItem: ["start", "end", "text"],
+    DiarizationItem: ["start", "end", "speaker"],
+    RawWord: ["word", "start", "end", "score"],
+}
 
 
-def test_transcription_response_rejects_backend_native_extras():
-    with pytest.raises(ValidationError):
-        TranscriptionResponse.model_validate(
-            {
-                "segments": [],
-                "word_segments": [],
-                "transcript": [],
-                "diarization": [],
-                "raw_words": [],
-                "backend_debug": {"native": True},
-            }
-        )
+@pytest.mark.parametrize(
+    ("model", "expected"),
+    list(_PUBLIC_FIELDS.items()),
+    ids=[model.__name__ for model in _PUBLIC_FIELDS],
+)
+def test_response_models_declare_exactly_the_public_fields_in_wire_order(model, expected):
+    assert is_dataclass(model)
+    assert [f.name for f in fields(model)] == expected
 
 
-def test_transcription_response_serializes_public_keys_only():
-    response = TranscriptionResponse.model_validate(
-        {
-            "segments": [],
-            "word_segments": [],
-            "transcript": [],
-            "diarization": [],
-            "raw_words": [],
-        }
+@pytest.mark.parametrize(
+    "model",
+    list(_PUBLIC_FIELDS),
+    ids=[model.__name__ for model in _PUBLIC_FIELDS],
+)
+def test_response_models_reject_backend_native_extras(model):
+    """A backend-native field cannot be smuggled into a public response type."""
+    with pytest.raises(TypeError):
+        model(backend_debug={"native": True})
+
+
+def test_segment_and_word_overlap_default_to_false():
+    """The additive overlap flag (ADR 0014) stays optional to construct."""
+    segment = ResponseSegment(
+        start=0.0,
+        end=1.0,
+        text="hola",
+        speaker="1",
+        words=[TranscriptWord(word="hola", start=0.0, end=1.0, score=1.0, speaker="1")],
     )
 
-    assert set(response.model_dump()) == {
-        "segments",
-        "word_segments",
-        "transcript",
-        "diarization",
-        "raw_words",
-    }
-
-
-def test_transcription_response_rejects_extra_fields_inside_items():
-    with pytest.raises(ValidationError):
-        TranscriptionResponse.model_validate(
-            {
-                "segments": [
-                    {
-                        "start": 0.0,
-                        "end": 1.0,
-                        "text": "hello",
-                        "speaker": "1",
-                        "words": [],
-                        "native_segment": {"leaked": True},
-                    }
-                ],
-                "word_segments": [],
-                "transcript": [],
-                "diarization": [],
-                "raw_words": [],
-            }
-        )
-
-
-def test_segment_and_word_overlap_defaults_to_false():
-    """The additive overlap flag (ADR 0014) is optional on input."""
-    response = TranscriptionResponse.model_validate(
-        {
-            "segments": [
-                {
-                    "start": 0.0,
-                    "end": 1.0,
-                    "text": "hola",
-                    "speaker": "1",
-                    "words": [
-                        {"word": "hola", "start": 0.0, "end": 1.0, "score": 1.0, "speaker": "1"}
-                    ],
-                }
-            ],
-            "word_segments": [],
-            "transcript": [],
-            "diarization": [],
-            "raw_words": [],
-        }
-    )
-
-    assert response.segments[0].overlap is False
-    assert response.segments[0].words[0].overlap is False
-
-
-def test_segment_and_word_overlap_round_trips():
-    response = TranscriptionResponse.model_validate(
-        {
-            "segments": [
-                {
-                    "start": 0.0,
-                    "end": 1.0,
-                    "text": "hola",
-                    "speaker": "1",
-                    "words": [
-                        {
-                            "word": "hola",
-                            "start": 0.0,
-                            "end": 1.0,
-                            "score": 1.0,
-                            "speaker": "1",
-                            "overlap": True,
-                        }
-                    ],
-                    "overlap": True,
-                }
-            ],
-            "word_segments": [],
-            "transcript": [],
-            "diarization": [],
-            "raw_words": [],
-        }
-    )
-
-    dumped = response.model_dump()["segments"][0]
-    assert dumped["overlap"] is True
-    assert dumped["words"][0]["overlap"] is True
+    assert segment.overlap is False
+    assert segment.words[0].overlap is False
 
 
 def test_openai_error_response_shape():
