@@ -141,3 +141,25 @@ def test_the_cli_attaches_when_a_server_url_is_given(server, audio_file, tmp_pat
 
     assert server.uploads == [audio_file.stat().st_size]
     assert "mode=attached" in capsys.readouterr().err
+
+
+def test_settings_flags_are_reported_as_ignored_when_attached(server, audio_file, tmp_path, capsys):
+    """Silently ignoring them would let someone believe they ran a backend they did not."""
+    from coro.cli import main
+
+    main(
+        [
+            "run",
+            str(audio_file),
+            "--server-url",
+            "http://server",
+            "--backend-asr",
+            "faster-whisper",
+            "-o",
+            str(tmp_path / "o.json"),
+        ]
+    )
+
+    message = capsys.readouterr().err
+    assert "ignoring" in message
+    assert "faster-whisper" in message

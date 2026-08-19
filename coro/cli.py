@@ -199,6 +199,14 @@ def run(argv: list[str]) -> None:
         raise SystemExit(2)
 
     if args.server_url is not None:
+        if remaining:
+            # An attached run is governed by the server's own configuration, so
+            # these cannot take effect. Saying so beats letting someone believe
+            # they benchmarked a backend they never actually selected.
+            sys.stderr.write(
+                f"coro run: ignoring {' '.join(remaining)} — an attached run uses the "
+                f"server's configuration, not local flags.\n"
+            )
         body, report = asyncio.run(
             transcribe_attached(
                 str(source),
