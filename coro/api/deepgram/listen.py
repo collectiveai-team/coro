@@ -16,17 +16,19 @@ import hashlib
 import logging
 import time
 from collections.abc import Mapping
-from dataclasses import asdict
 from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from coro.api.dependencies import get_pipeline, get_settings
-from coro.api.schemas import TranscriptionResponse
-from coro.api.deepgram.schemas import DeepgramErrorResponse, deepgram_response
+from coro.api.deepgram.render import render_deepgram
+from coro.api.deepgram.schemas import DeepgramErrorResponse
+from coro.api.json_body import spooled_json_response
 from coro.audio import AudioConversionError, AudioInput
+from coro.core.transcript_source import TranscriptSource
+from coro.pipelines.source import transcript_source
 from coro.settings import ServerSettings
 
 router = APIRouter(prefix="/v1")
@@ -105,27 +107,9 @@ def _error(*, err_code: str, err_msg: str, request_id: str, status_code: int) ->
     return JSONResponse(body.model_dump(), status_code=status_code)
 
 
-def _text_from_result(result: TranscriptionResponse) -> str:
-    if result.transcript:
-        return " ".join(item.text.strip() for item in result.transcript).strip()
-    return " ".join(segment.text.strip() for segment in result.segments).strip()
-
-
-def _duration_from_result(result: TranscriptionResponse) -> float:
-    return max(
-        [
-            item.end
-            for items in (
-                result.segments,
-                result.word_segments,
-                result.raw_words,
-                result.transcript,
-                result.diarization,
-            )
-            for item in items
-        ],
-        default=0.0,
-    )
+def _word_count(source: TranscriptSource) -> int:
+    """Count the per-word entries for the completion log, without holding them."""
+    return sum(1 for _ in source.iter_words())
 
 
 # MARK: Deepgram Pre-Recorded Endpoint
@@ -174,7 +158,7 @@ async def listen(
     authorization: str | None = Header(default=None, description="Accepted but not validated."),
     pipeline=Depends(get_pipeline),
     settings: ServerSettings = Depends(get_settings),
-) -> JSONResponse:
+) -> Response:
     """Transcribe a raw audio body and return Deepgram's pre-recorded shape.
 
     ``diarize`` and ``utterances`` default to ``false``, as they do at
@@ -233,7 +217,7 @@ async def listen(
 
     audio = AudioInput(audio_bytes)
     try:
-        result = await pipeline.transcribe(audio, language=language, prompt=None)
+        source = await transcript_source(pipeline, audio, language=language, prompt=None)
     except AudioConversionError as exc:
         logger.info("listen[%s] undecodable upload: %s", request_id, exc)
         return _error(
@@ -253,25 +237,39 @@ async def listen(
             status_code=500,
         )
 
-    validated = TranscriptionResponse.model_validate(asdict(result))
-    response = deepgram_response(
-        validated,
-        text=_text_from_result(validated),
-        duration=_duration_from_result(validated),
-        request_id=request_id,
-        audio_sha256=hashlib.sha256(audio_bytes).hexdigest(),
-        created=datetime.now(tz=UTC).isoformat(),
-        asr_model=settings.model_asr,
-        asr_backend=settings.backend_asr,
-        diarize=diarize,
-        utterances=utterances,
-    )
+    # The body is rendered before the response exists, so a projection failure is
+    # still a Deepgram-shaped 500 rather than a truncated 200. exclude_none keeps
+    # undiarized responses free of null speaker keys, which Deepgram never emits,
+    # and drops `utterances` when it was not requested.
+    try:
+        words = _word_count(source)
+        response = spooled_json_response(
+            render_deepgram(
+                source,
+                request_id=request_id,
+                audio_sha256=hashlib.sha256(audio_bytes).hexdigest(),
+                created=datetime.now(tz=UTC).isoformat(),
+                asr_model=settings.model_asr,
+                asr_backend=settings.backend_asr,
+                diarize=diarize,
+                utterances=utterances,
+            )
+        )
+    except Exception:
+        logger.exception("listen[%s] response rendering failed", request_id)
+        return _error(
+            err_code=_INTERNAL_ERROR,
+            err_msg="Transcription processing failed.",
+            request_id=request_id,
+            status_code=500,
+        )
+    finally:
+        source.close()
+
     logger.info(
         "listen[%s] request complete elapsed=%.3fs words=%d",
         request_id,
         time.perf_counter() - started,
-        len(validated.word_segments),
+        words,
     )
-    # exclude_none keeps undiarized responses free of null speaker keys, which
-    # Deepgram never emits, and drops `utterances` when it was not requested.
-    return JSONResponse(response.model_dump(exclude_none=True))
+    return response

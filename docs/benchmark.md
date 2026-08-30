@@ -274,7 +274,7 @@ python -m coro.bench.utils.make_ami_clip IB4001 \
 CORO_BACKEND_ASR=faster-whisper CORO_MODEL_ASR=openai/whisper-large-v3-turbo \
 CORO_ASR_DEVICE=cuda CORO_ASR_COMPUTE_TYPE=float16 \
 CORO_BACKEND_DIARIZATION=nemo CORO_PIPELINE=full-memory \
-  coro --port 8123
+  coro serve --port 8123
 
 # 3) Run the full benchmark (quality + performance):
 coro-bench all --clips-dir clips --server-url http://127.0.0.1:8123 \

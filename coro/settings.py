@@ -124,6 +124,38 @@ class ServerSettings(BaseSettings):
         "never exceed 4. See ADR 0010.",
     )
 
+    # ASR Window Cache ------------------------------------------------------
+    asr_cache: Literal["enabled", "disabled"] = Field(
+        default="disabled",
+        description="Reuse previously-computed ASR window results from disk, so "
+        "re-running audio that has already been transcribed skips the model "
+        "entirely. Keyed on the canonical PCM of each window plus everything "
+        "that can change a prediction; response-formatting and diarization "
+        "options are excluded, so changing those still hits. Disabled by "
+        "default because it introduces disk growth to a service that has none.",
+    )
+    asr_cache_dir: str | None = Field(
+        default=None,
+        description="Directory for the ASR window cache. MUST be on real disk: a "
+        "tmpfs path both competes for the memory the cache saves and loses every "
+        "entry on restart. None uses a directory under the user cache root.",
+    )
+    asr_cache_max_mb: int = Field(
+        default=1024,
+        ge=0,
+        description="Size cap for the ASR window cache, in megabytes. Least-"
+        "recently-accessed entries are evicted on write once the cap is exceeded. "
+        "0 disables the cap. Only digests and transcript tokens are stored — "
+        "never audio — so a few megabytes covers an hour of audio.",
+    )
+    asr_cache_ttl_days: float = Field(
+        default=30.0,
+        ge=0,
+        description="Lifetime of an ASR window cache entry, in days, applied "
+        "lazily on lookup: an expired entry is a miss and is removed. 0 disables "
+        "expiry, leaving the size cap as the only bound.",
+    )
+
     # Server Warmup ---------------------------------------------------------
     warmup: Literal["enabled", "disabled"] = Field(
         default="enabled",
@@ -189,6 +221,22 @@ class ServerSettings(BaseSettings):
         from coro.pipelines.spill import resolve_spill_dir
 
         self.transcript_spill_dir = resolve_spill_dir(self.transcript_spill_dir)
+        return self
+
+    @model_validator(mode="after")
+    def resolve_asr_cache_dir(self) -> ServerSettings:
+        """Resolve the ASR window cache directory to real disk, when enabled.
+
+        Strict Startup Validation, not lazy validation on first request: an
+        operator who mistypes a cache directory should find out when the server
+        starts. The Streaming Pipeline's spill resolution cannot cover this — it
+        only runs for one pipeline selector, while the cache applies to all.
+        """
+        if self.asr_cache != "enabled":
+            return self
+        from coro.cache.directory import resolve_cache_dir
+
+        self.asr_cache_dir = resolve_cache_dir(self.asr_cache_dir)
         return self
 
     @model_validator(mode="after")

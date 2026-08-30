@@ -153,6 +153,11 @@ ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.12/site-packages/nvidia/cublas/lib:$L
 
 EXPOSE 8000
 
-# Defaults bind 0.0.0.0:8000 (coro/settings.py). Override behaviour with
-# CORO_* env vars or CLI flags appended after the entrypoint.
+# Defaults bind 0.0.0.0:8000 (coro/settings.py). Override behaviour with CORO_*
+# env vars, or by appending a full command after the image name — which replaces
+# CMD, so it must start with a subcommand:
+#   docker run img                        -> coro serve
+#   docker run img serve --port 9000      -> coro serve --port 9000
+#   docker run img run /data/clip.wav     -> coro run /data/clip.wav
 ENTRYPOINT ["coro"]
+CMD ["serve"]

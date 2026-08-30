@@ -60,6 +60,9 @@ dependencies = [
     # py3.12 wheels so the backtrack can't reach the broken release.
     "numba>=0.61",
     "numpy>=1.26",
+    # `coro run --server-url` uploads to an already-running server; imported
+    # lazily, so it costs nothing on the in-process path.
+    "httpx>=0.27.0",
     "onnx-asr[hub]>=0.11.0",
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.27",
@@ -286,10 +289,10 @@ max-complexity = 10
 "coro/bench/cli_args.py" = ["S108", "DTZ005"]
 # Mirrors coro/bench/run.py: the sampler's tests must spawn a real process tree
 # (`sh`, and `pgrep` as the reference implementation) to have anything to walk.
-"tests/test_bench_run.py" = ["S603", "S607"]
+"tests/bench/test_bench_run.py" = ["S603", "S607"]
 # Decodes the bundled public recording with the system ffmpeg by name — the same
 # convention as the clip utilities below, on a fixed local path with no shell.
-"tests/test_listen_websocket_e2e.py" = ["S607"]
+"tests/api/deepgram/test_listen_websocket_e2e.py" = ["S607"]
 # Asks git for the tracked-file list by name, with no shell and no interpolated
 # input. Reading the index is the point: it is what excludes untracked scratch
 # output and virtualenvs from the call-site scan by construction.
@@ -353,6 +356,8 @@ replace-imports-with-any = ["onnxruntime_genai", "pyannote.audio"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Makes the `support` helper package importable from every directory of the tree.
+pythonpath = ["tests"]
 
 
 # MARK: falsegreen

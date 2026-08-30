@@ -1,9 +1,17 @@
 """Transcription Response Model.
 
-Project-owned, API-agnostic response model. The pipeline boundary returns
-``TranscriptionResult``; the API boundary serialises it (``dataclasses.asdict``)
-into the strict pydantic Boundary Response Schema. Field order mirrors that
-schema so JSON output is byte-identical between batch and streaming paths.
+Project-owned, API-agnostic response model and the *single* internal
+representation of a transcription: the pipeline boundary returns
+``TranscriptionResult`` and every vendor projection reads it directly. It was
+formerly copied into a field-for-field pydantic mirror at the API boundary,
+which cost more heap than everything else on the JSON path combined and grew
+with audio length; the mirror is gone (ADR 0018).
+
+Nothing is lost by dropping that validation step, because a dataclass is closed
+to unknown fields by construction — the structural form of ``extra="forbid"``.
+Field order is the wire key order for the streamed done frame, which derives it
+from these declarations, so reordering a field here reorders published JSON.
+Both properties are pinned by ``tests/test_boundary_schemas.py``.
 """
 
 from __future__ import annotations

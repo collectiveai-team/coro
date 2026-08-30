@@ -233,8 +233,28 @@ A package-owned representation of an uploaded audio file that can provide bytes 
 _Avoid_: FastAPI UploadFile, raw bytes, temp path only
 
 **Audio Input Cleanup**:
-The audio-input-owned lifecycle that removes temporary files after transcription or streaming completes.
-_Avoid_: Pipeline unlink, endpoint unlink
+The audio-input-owned lifecycle that removes temporary files after transcription or streaming completes. Deletes only files the **Audio Input** itself created; a **Referenced Audio Input** is left in place.
+_Avoid_: Pipeline unlink, endpoint unlink, unconditional unlink
+
+**Referenced Audio Input**:
+An **Audio Input** that points at a file the caller already owns, rather than at a spooled copy. Used by the **Offline Transcription Command**, where an owning input would delete the user's file, since both pipelines call cleanup in a `finally`.
+_Avoid_: Spooled copy of a local file, owning input over a user path
+
+**ASR Window Cache**:
+A content-addressed, persistent store of per-window ASR results, keyed on each **ASR Windowing** window's canonical PCM plus an **ASR Fingerprint**. Stores only digests and transcript tokens — never audio and never decoded PCM. Disabled by default. See ADR 0016.
+_Avoid_: Audio cache, PCM cache, response cache, per-request cache control
+
+**ASR Fingerprint**:
+The digest of everything outside a request that can change an ASR prediction: **Backend Provider**, **ASR Model Selection**, the provider-specific knobs that provider honours, the *resolved* device, inference runtime version, accelerator identity, **ASR Windowing** geometry, **Prompt Capability**, and a cache format version. A mismatch is a miss, never a migration.
+_Avoid_: Model name alone, the `auto` device selector, including formatting parameters
+
+**Prompt Capability**:
+The explicit declaration by an **ASR Adapter** of whether its backend consumes the `prompt` argument. `faster-whisper` honours it natively; `onnx-asr` cannot (a transducer has no text input port) and `onnx-genai` does not (a GenAI streaming API gap). Prompt-honouring backends get chained **ASR Window Cache** keys, prompt-inert ones get independent per-window keys.
+_Avoid_: Assuming every adapter honours the prompt because every adapter accepts one
+
+**Offline Transcription Command**:
+`coro run FILE` — transcribes a local file through the **Configured Transcription Pipeline** with no server and no upload. In-process by default; attaching to a running server is explicit via `--server-url` and never auto-probed. See ADR 0017.
+_Avoid_: Auto-probing a port, spawning a server to upload to it, a second configuration vocabulary
 
 **Pipeline Module**:
 The package area that orchestrates audio IO, ASR adapters, diarization adapters, and core response transformations for a transcription pipeline.
@@ -253,8 +273,16 @@ A Pydantic model used to serialize successful transcription responses and OpenAI
 _Avoid_: Internal pipeline model, request form model
 
 **Strict Transcription Response Schema**:
-The boundary response schema containing only the public transcription fields.
-_Avoid_: Backend-native extras, permissive response object
+The property that only public transcription fields can reach a response, now carried by the **Project-Owned Transcript Model** dataclasses themselves rather than by a pydantic mirror validated per request: a dataclass rejects unknown fields at construction, which is stronger than `extra="forbid"` and costs nothing. Pinned by test rather than enforced per request (ADR 0018).
+_Avoid_: Backend-native extras, permissive response object, a second pydantic copy of `TranscriptionResult`
+
+**Transcript Source**:
+The read interface every response projection renders from: restartable iterators over the five response arrays, plus the scalars derived from them. The **Streaming Pipeline** supplies one backed by the **Transcript Spill Store**, the **Full-Memory Pipeline** one over the lists it already holds, so a single implementation of each response format serves both. See ADR 0018.
+_Avoid_: Passing `TranscriptionResult` to a projection, a per-pipeline response renderer
+
+**Flat-Memory Response Rendering**:
+Rendering a response body incrementally from a **Transcript Source** into a disk spool, then serving that spool with a real `Content-Length`, so no response array is ever fully resident and the HTTP framing is unchanged.
+_Avoid_: Chunked transfer-encoding, materialising the body to measure it
 
 **OpenAI-Compatible Request**:
 A transcription form request that accepts OpenAI-style parameters for client compatibility without requiring every OpenAI response format.
@@ -423,11 +451,18 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - `/health` reports **Server Startup Selection**, **Capability Readiness**, and **Warmup Readiness** rather than one ambiguous backend field.
 - The **Full-Memory Pipeline** and **Streaming Pipeline** both use shared **ASR Windowing**; they differ in how PCM is sourced.
 - A **Transcription Pipeline** receives **Audio Input** rather than FastAPI upload objects, raw bytes only, or temporary file paths only.
-- **Audio Input** owns **Audio Input Cleanup** for any temporary file it creates.
+- **Audio Input** owns **Audio Input Cleanup** for any temporary file it creates, and a **Referenced Audio Input** owns none.
+- The **ASR Window Cache** wraps the **ASR Adapter** as a decorator built by the **Backend Adapter Factory**, so it applies identically to the **Full-Memory Pipeline**, the **Streaming Pipeline** and the live socket.
+- **Server Warmup** runs against the unwrapped **ASR Adapter**, never through the **ASR Window Cache**, so **Warmup Readiness** still means a model loaded and ran.
+- An **ASR Window Cache** key combines a window's canonical PCM, a normalised language, the prompt when the **Prompt Capability** is present, and the **ASR Fingerprint**; response-formatting, diarization and concurrency settings are excluded by design.
+- The **ASR Window Cache** directory is resolved and rejected for RAM-backed filesystems during **Strict Startup Validation**, using the same probe as the transcript spill directory.
+- The **Offline Transcription Command** uses a **Referenced Audio Input** and a lazily-constructed **ASR Adapter**, so a fully-cached run neither deletes the input nor loads a model.
 - A **Pipeline Module** owns orchestration for one or more **Transcription Pipeline** implementations.
 - A **Transcription API Contract** is preserved by the **Transcription Endpoint** unless a new public contract is intentionally introduced.
 - A **Boundary Response Schema** defines response and error JSON shapes without replacing multipart form parsing with a request body model.
 - A **Strict Transcription Response Schema** prevents backend-native fields from leaking into public transcription responses.
+- A **Transcription Pipeline** exposes its transcript as a **Transcript Source**; every **Vendor-Native Endpoint** projection renders from that interface, never from a pipeline-specific type, so the two pipelines emit byte-identical bodies by construction.
+- **Flat-Memory Response Rendering** applies to both the SSE and the non-SSE JSON paths, so the **Streaming Pipeline**'s bounded-memory guarantee holds on every request rather than only when `stream=true`.
 - An **OpenAI-Compatible Request** returns a **Transcription Response** in the current package contract.
 - Supported **JSON Response Format Alias** values do not change the response schema.
 - A **Compatibility Model Field** never overrides **Server Startup Selection**.
@@ -554,6 +589,21 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Dev:** "Should the merged endpoint read uploads into bytes before calling the configured pipeline?"
 > **Domain expert:** "No — wrap the upload as **Audio Input** so the **Full-Memory Pipeline** can read bytes and the **Streaming Pipeline** can spool to a path."
 
+> **Dev:** "Can `coro run` wrap the user's file in an **Audio Input** like an upload?"
+> **Domain expert:** "Only as a **Referenced Audio Input**. Both pipelines call **Audio Input Cleanup** in a `finally`, so an owning input over a user path deletes their file on every successful run."
+
+> **Dev:** "Changing `response_format` gives a different response — shouldn't it be in the **ASR Window Cache** key?"
+> **Domain expert:** "No. It changes only how the same tokens are rendered, and the **ASR Adapter** never sees it. Including it would halve the hit rate for no correctness gain — same for `diarize`, `stream`, `temperature` and the concurrency knobs."
+
+> **Dev:** "The device setting is unchanged between the two hosts, so can they share a cache?"
+> **Domain expert:** "Not if it says `auto`. `auto` is not a device — it resolves to CPU on one host and CUDA on another, and those disagree on token probabilities by up to 4e-4. The **ASR Fingerprint** records the *resolved* device plus the accelerator identity for exactly this reason."
+
+> **Dev:** "The default backend ignores the prompt, so should we drop the prompt from the key everywhere?"
+> **Domain expert:** "Only where the **Prompt Capability** says it is inert. `faster-whisper` honours `initial_prompt`, so dropping it there would serve results computed under a different prompt. And the capability itself belongs in the **ASR Fingerprint**, so a backend that later gains it invalidates rather than reuses."
+
+> **Dev:** "Should `coro run` check whether a server is already listening and use it if so?"
+> **Domain expert:** "No — attaching is explicit via `--server-url`. A command that behaves differently depending on what happens to be bound to a port is not reproducible, and an attached run is governed by the server's configuration, so it would silently ignore the flags you passed."
+
 > **Dev:** "Should the chunked pipeline delete the temporary upload path when it finishes?"
 > **Domain expert:** "No — **Audio Input Cleanup** owns temporary file removal, including after streaming completes."
 
@@ -612,7 +662,13 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 > **Domain expert:** "No — use **Boundary Response Schema** models for successful and error JSON responses, while the route keeps multipart form parsing."
 
 > **Dev:** "Can backend-specific fields pass through the response model as extras?"
-> **Domain expert:** "No — use a **Strict Transcription Response Schema** so backend-native data is converted or dropped intentionally."
+> **Domain expert:** "No — the **Strict Transcription Response Schema** property means a backend-native field cannot be constructed onto a response type at all. It used to be checked by validating into a pydantic mirror on every request; that mirror was most of the response path's memory cost, and a dataclass already refuses unknown fields, so the check moved to a test."
+
+> **Dev:** "The JSON response is only built once at the end — surely materialising it there is harmless?"
+> **Domain expert:** "It is O(audio length) with no ceiling, which is exactly what the **Streaming Pipeline** exists to avoid, and `stream=false` is the default on both vendor endpoints — so without **Flat-Memory Response Rendering** the guarantee applied to a minority of requests."
+
+> **Dev:** "If we stream the body out, we lose `Content-Length` — that's just how streaming works, right?"
+> **Domain expert:** "Only if you stream it straight to the socket. Render it into a spool first and the size is a `stat` away, so the framing stays exactly what both vendors emit. The cost is one write and read of a body far smaller than the transcript spill beside it."
 
 > **Dev:** "Can v2 remove ignored form fields while adding Pydantic request models?"
 > **Domain expert:** "No — v1 and v2 preserve the same **Transcription API Contract** request fields for now."

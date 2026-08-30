@@ -15,10 +15,25 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from coro.core.models import TranscriptToken
     from coro.core.protocols import ASRAdapter
     from coro.settings import ServerSettings
 
 logger = logging.getLogger(__name__)
+
+
+# MARK: Prompt Capability
+# Whether each ASR Backend Provider honours the prompt, known without building
+# the adapter. The ASR window cache needs this before any model is loaded, since
+# a fully-cached run must never load one. ``test_asr_factory`` asserts it agrees
+# with the ``honours_prompt`` each adapter class declares, so the two cannot drift.
+PROVIDER_HONOURS_PROMPT: dict[str, bool] = {
+    "onnx-asr": False,
+    "onnx-genai": False,
+    "faster-whisper": True,
+}
 
 
 # MARK: Cross-Provider Setting Leakage
@@ -122,3 +137,102 @@ def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
 
     msg = f"Unknown ASR backend provider: {provider!r}"
     raise ValueError(msg)
+
+
+# MARK: Deferred Construction
+class LazyASRAdapter:
+    """An ASR Adapter that builds the real one on first inference.
+
+    Loading a model costs seconds and hundreds of megabytes, and a fully-cached
+    run needs neither: every window is answered from disk. Deferring construction
+    is what makes such a run genuinely fast rather than merely inference-free.
+
+    Server startup keeps eager construction so Server Warmup and readiness
+    semantics are unchanged; this is for the offline command.
+    """
+
+    def __init__(self, build: Callable[[], ASRAdapter], *, honours_prompt: bool) -> None:
+        """Defer adapter construction.
+
+        Args:
+            build: Zero-argument builder returning the real ASR Adapter.
+            honours_prompt: The provider's declared prompt capability, known
+                without building, so a cache fingerprint can be derived first.
+
+        """
+        self._build = build
+        self._adapter: ASRAdapter | None = None
+        self.honours_prompt = honours_prompt
+
+    @property
+    def loaded(self) -> bool:
+        """Whether the real adapter has been constructed."""
+        return self._adapter is not None
+
+    def resolve(self) -> ASRAdapter:
+        """Return the real adapter, constructing it on first call."""
+        if self._adapter is None:
+            self._adapter = self._build()
+        return self._adapter
+
+    async def transcribe_pcm(
+        self,
+        pcm: bytes,
+        *,
+        language: str | None = None,
+        prompt: str | None = None,
+    ) -> list[TranscriptToken]:
+        """Build the adapter if needed, then transcribe through it."""
+        return await self.resolve().transcribe_pcm(pcm, language=language, prompt=prompt)
+
+
+# MARK: ASR Adapter Stack
+def build_asr_adapter_stack(settings: ServerSettings, *, lazy: bool = False) -> ASRAdapter:
+    """Build the ASR Adapter, wrapped by the ASR window cache when it is enabled.
+
+    This is the cache's only integration point. Every pipeline and every route
+    reaches the model through the returned object, so the cache cannot drift out
+    of sync with them.
+
+    Args:
+        settings: Server Startup Selection.
+        lazy: Defer construction of the real adapter until the first window that
+            actually misses the cache.
+
+    Returns:
+        An ASR Adapter, possibly a ``CachingASRAdapter`` decorator.
+
+    """
+    provider = settings.backend_asr
+    honours_prompt = PROVIDER_HONOURS_PROMPT.get(provider, True)
+
+    inner: ASRAdapter
+    if lazy:
+        inner = LazyASRAdapter(lambda: build_asr_adapter(settings), honours_prompt=honours_prompt)
+    else:
+        inner = build_asr_adapter(settings)
+
+    if settings.asr_cache != "enabled":
+        return inner
+
+    from coro.cache.adapter import CachingASRAdapter
+    from coro.cache.fingerprint import asr_fingerprint
+    from coro.cache.store import ASRCacheStore
+
+    directory = settings.asr_cache_dir or ""
+    store = ASRCacheStore(
+        directory,
+        max_bytes=settings.asr_cache_max_mb * 1024 * 1024,
+        ttl_seconds=settings.asr_cache_ttl_days * 86400.0,
+    )
+    fingerprint = asr_fingerprint(settings, honours_prompt=honours_prompt)
+    logger.info(
+        "ASR window cache enabled dir=%s fingerprint=%s entries=%d bytes=%d",
+        directory,
+        fingerprint,
+        store.entry_count(),
+        store.total_bytes(),
+    )
+    return CachingASRAdapter(
+        inner, store=store, fingerprint=fingerprint, honours_prompt=honours_prompt
+    )

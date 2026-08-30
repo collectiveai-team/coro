@@ -16,7 +16,17 @@ from coro.core.models import (
 
 # MARK: Backend Adapter Protocols
 class ASRAdapter(Protocol):
-    """Protocol for ASR adapters used by transcription pipelines."""
+    """Protocol for ASR adapters used by transcription pipelines.
+
+    ``honours_prompt`` declares whether the backend actually consumes the
+    ``prompt`` argument. Every adapter accepts one for protocol uniformity, but
+    a transducer has no text input port at all, so for those the argument is
+    inert. The ASR window cache reads this to decide whether the prompt belongs
+    in a window's key, and folds it into its fingerprint so a backend that
+    later gains the capability invalidates rather than reuses old entries.
+    """
+
+    honours_prompt: bool
 
     async def transcribe_pcm(
         self,

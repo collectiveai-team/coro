@@ -78,6 +78,15 @@ class FasterWhisperASRAdapter:
     and per-worker threads stays near the core count.
     """
 
+    honours_prompt: bool = True
+    """Whisper takes ``initial_prompt`` natively, so the carried prompt changes output.
+
+    The ASR window cache therefore chains this backend's keys: a window's key
+    depends on the previous windows' tokens. That is still self-healing, because
+    recomputing a missing window yields identical tokens and so leaves the
+    following window's key unchanged.
+    """
+
     def __init__(self, model, *, admission: AdmissionController | None = None) -> None:
         self._model = model
         self._admission = admission or build_admission_controller(

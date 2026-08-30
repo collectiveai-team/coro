@@ -25,12 +25,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from coro.api.schemas import TranscriptionResponse, TranscriptWord
-from coro.api.utterances import (
-    UNKNOWN_SPEAKER_LABEL,
-    group_words_into_utterances,
-    mean_confidence,
-)
+from coro.api.utterances import UNKNOWN_SPEAKER_LABEL
+from coro.core.models import TranscriptWord
 
 MONO_CHANNEL_COUNT = 1
 """Uploads are converted to mono before transcription."""
@@ -39,7 +35,7 @@ PRIMARY_CHANNEL = 0
 """Deepgram channel index for the single audio channel coro produces."""
 
 
-def _speaker_label(speaker: str) -> int | None:
+def speaker_label(speaker: str) -> int | None:
     """Map a coro speaker label onto Deepgram's optional integer speaker field.
 
     coro's ``-1`` sentinel means the diarization timeline does not support the
@@ -161,89 +157,16 @@ class DeepgramErrorResponse(BaseModel):
     request_id: str
 
 
-def _word(word: TranscriptWord, *, diarize: bool) -> DeepgramWord:
+def deepgram_word(word: TranscriptWord, *, diarize: bool) -> DeepgramWord:
+    """Project one per-word entry onto Deepgram's word shape.
+
+    Public because the incremental renderer builds words one at a time rather
+    than projecting a materialised list (ADR 0018).
+    """
     return DeepgramWord(
         word=word.word,
         start=word.start,
         end=word.end,
         confidence=word.score,
-        speaker=_speaker_label(word.speaker) if diarize else None,
-    )
-
-
-def deepgram_response(
-    result: TranscriptionResponse,
-    *,
-    text: str,
-    duration: float,
-    request_id: str,
-    audio_sha256: str,
-    created: str,
-    asr_model: str,
-    asr_backend: str,
-    diarize: bool = True,
-    utterances: bool = True,
-) -> DeepgramResponse:
-    """Project the internal result onto Deepgram's pre-recorded response shape.
-
-    Args:
-        result: The validated Strict Transcription Response Schema instance.
-        text: The full transcript text, already assembled by the caller.
-        duration: Audio duration in seconds.
-        request_id: The server's request id.
-        audio_sha256: Hex SHA-256 of the uploaded audio bytes.
-        created: ISO 8601 completion timestamp.
-        asr_model: The configured ASR Model Selection.
-        asr_backend: The configured ASR Backend Provider.
-        diarize: Whether the request asked for speaker labels. When false, no
-            word carries a speaker, matching Deepgram's default.
-        utterances: Whether the request asked for the speaker-turn view.
-
-    Returns:
-        The Deepgram-shaped response. Fields left as ``None`` are omitted at
-        serialization, so an undiarized response has no ``speaker`` keys rather
-        than null ones — Deepgram never emits a null speaker.
-
-    """
-    words = [_word(word, diarize=diarize) for word in result.word_segments]
-    turns = (
-        [
-            DeepgramUtterance(
-                start=utterance.start,
-                end=utterance.end,
-                confidence=utterance.confidence,
-                channel=PRIMARY_CHANNEL,
-                transcript=utterance.text,
-                words=[_word(word, diarize=diarize) for word in utterance.words],
-                speaker=_speaker_label(utterance.speaker) if diarize else None,
-            )
-            for utterance in group_words_into_utterances(result.word_segments)
-        ]
-        if utterances
-        else None
-    )
-    return DeepgramResponse(
-        metadata=DeepgramMetadata(
-            request_id=request_id,
-            sha256=audio_sha256,
-            created=created,
-            duration=duration,
-            channels=MONO_CHANNEL_COUNT,
-            models=[asr_model],
-            model_info={asr_model: {"name": asr_model, "arch": asr_backend}},
-        ),
-        results=DeepgramResults(
-            channels=[
-                DeepgramChannel(
-                    alternatives=[
-                        DeepgramAlternative(
-                            transcript=text,
-                            confidence=mean_confidence(result.word_segments),
-                            words=words,
-                        )
-                    ]
-                )
-            ],
-            utterances=turns,
-        ),
+        speaker=speaker_label(word.speaker) if diarize else None,
     )

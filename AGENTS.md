@@ -46,19 +46,25 @@ Verify written code by:
 ## Dev Workflow
 
 Dependencies are managed with **uv**; the `cpu` and `cuda` extras are mutually
-exclusive (pick one):
+exclusive (pick one). The `bench` dependency group is not optional for
+development: the Quality Benchmark tests import `meeteval`, so omitting it fails
+tests and the `pyrefly` hook. This is the command CI runs:
 
 ```sh
-uv sync --extra cpu        # or: uv sync --extra cuda (GPU host)
+uv sync --extra cpu --group bench   # or: --extra cuda (GPU host)
 ```
+
+Pass `--extra cpu` (or `--extra cuda`) to **every** `uv run` as well. A bare
+`uv run` re-syncs the environment to the default extra and uninstalls
+`onnxruntime`, which breaks unrelated tests.
 
 Lint, format and type checks are centralized in `prek.toml` and run with
 **prek** (a faster pre-commit). CI runs the exact same config, so local == CI:
 
 ```sh
-uvx prek install           # install the git pre-commit hook (once)
-uvx prek run --all-files   # ruff-format, ruff, pyrefly + hygiene hooks
-uv run pytest              # tests (not part of prek)
+uvx prek install               # install the git pre-commit hook (once)
+uvx prek run --all-files       # ruff-format, ruff, pyrefly + hygiene hooks
+uv run --extra cpu pytest      # tests (not part of prek)
 ```
 
 ## Releasing
