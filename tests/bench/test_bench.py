@@ -99,6 +99,16 @@ def test_parse_args_audio_defaults_none():
     assert args.audio is None
 
 
+def test_parse_args_accepts_language_hint():
+    args = parse_args(["quality", "--language", "es-US"])
+    assert args.language == "es-US"
+
+
+def test_parse_args_language_defaults_to_auto_detection():
+    args = parse_args(["quality"])
+    assert args.language is None
+
+
 @contextmanager
 def _stubbed_main(subcommand: str, runner: str, handle):
     """Run `coro-bench <subcommand>` with AMI IO and the server handle stubbed out."""

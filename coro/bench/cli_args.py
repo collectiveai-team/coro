@@ -109,6 +109,12 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--der-collar", type=float, default=0.0)
     parser.add_argument("--der-regions", choices=["all", "nooverlap", "single"], default="all")
+    parser.add_argument(
+        "--language",
+        default=None,
+        help="Language hint sent with every transcription request (for example es, "
+        "es-US, or es-ES). Omit it to benchmark automatic language detection.",
+    )
     parser.add_argument("--stream", action="store_true", default=False)
     parser.add_argument(
         "--deepgram",

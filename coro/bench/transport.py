@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from coro.bench.errors import ServerUnreachableError
 
@@ -42,26 +43,30 @@ def _is_connection_refused(exc: BaseException) -> bool:
     return False
 
 
+def _multipart_body(audio_path: Path, boundary: str, fields: dict[str, str]) -> bytes:
+    """Build an OpenAI-style multipart body from form fields plus the audio file."""
+    parts = [_form_field(boundary, name, value) for name, value in fields.items()]
+    mime_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
+    parts.append(_form_file(boundary, "file", audio_path.name, mime_type, audio_path.read_bytes()))
+    return b"".join(parts) + f"--{boundary}--\r\n".encode()
+
+
 def transcribe_audio(
     base_url: str,
     audio_path: Path,
     *,
+    language: str | None = None,
     timeout_seconds: float = 14400.0,
 ) -> Any:
     import urllib.request
 
     url = f"{base_url.rstrip('/')}/v1/audio/transcriptions"
     boundary = uuid.uuid4().hex
-    parts = []
+    fields: dict[str, str] = {"response_format": "diarized_json"}
+    if language:
+        fields["language"] = language
 
-    parts.append(_form_field(boundary, "response_format", "diarized_json"))
-
-    mime_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
-    filename = audio_path.name
-    audio_bytes = audio_path.read_bytes()
-    parts.append(_form_file(boundary, "file", filename, mime_type, audio_bytes))
-
-    body = b"".join(parts) + f"--{boundary}--\r\n".encode()
+    body = _multipart_body(audio_path, boundary, fields)
     content_type = f"multipart/form-data; boundary={boundary}"
 
     req = urllib.request.Request(
@@ -79,7 +84,7 @@ def transcribe_audio(
         raise
 
 
-DEEPGRAM_QUERY = "diarize=true&utterances=true"
+DEEPGRAM_QUERY = {"diarize": "true", "utterances": "true"}
 """Not configurable, and deliberately so.
 
 Both default to ``false`` at the endpoint, as they do at Deepgram, and an
@@ -94,6 +99,7 @@ def transcribe_audio_deepgram(
     base_url: str,
     audio_path: Path,
     *,
+    language: str | None = None,
     timeout_seconds: float = 14400.0,
 ) -> Any:
     """POST the audio to the Deepgram-native ``/v1/listen`` endpoint.
@@ -108,7 +114,10 @@ def transcribe_audio_deepgram(
     """
     import urllib.request
 
-    url = f"{base_url.rstrip('/')}/v1/listen?{DEEPGRAM_QUERY}"
+    query = dict(DEEPGRAM_QUERY)
+    if language:
+        query["language"] = language
+    url = f"{base_url.rstrip('/')}/v1/listen?{urlencode(query)}"
     mime_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
     req = urllib.request.Request(
         url,
@@ -125,10 +134,41 @@ def transcribe_audio_deepgram(
         raise
 
 
+def _parse_sse_events(resp) -> tuple[Any, float]:
+    """Parse an SSE response stream; return (done_payload, time_to_first_delta_s).
+
+    ``time_to_first_delta_s`` falls back to total stream time when no delta
+    event was observed, so the caller always gets a real latency.
+    """
+    start_time = time.monotonic()
+    first_delta_time: float | None = None
+    done_payload: Any | None = None
+    event_type = ""
+
+    for raw_line in resp:
+        line = raw_line.decode("utf-8").rstrip("\n\r")
+        if line.startswith("event:"):
+            event_type = line[6:].strip()
+        elif line.startswith("data:"):
+            data = json.loads(line[5:].strip())
+            if event_type == "transcript.text.delta" and first_delta_time is None:
+                first_delta_time = time.monotonic() - start_time
+            elif event_type == "transcript.text.done":
+                done_payload = json.loads(data["text"])
+
+    if first_delta_time is None:
+        first_delta_time = time.monotonic() - start_time
+    if done_payload is None:
+        raise RuntimeError("SSE stream ended without a transcript.text.done event")
+
+    return done_payload, first_delta_time
+
+
 def transcribe_audio_sse(
     base_url: str,
     audio_path: Path,
     *,
+    language: str | None = None,
     timeout_seconds: float = 14400.0,
 ) -> tuple[Any, float]:
     """POST with stream=true, parse SSE events.
@@ -139,16 +179,11 @@ def transcribe_audio_sse(
 
     url = f"{base_url.rstrip('/')}/v1/audio/transcriptions"
     boundary = uuid.uuid4().hex
-    parts = []
+    fields: dict[str, str] = {"stream": "true"}
+    if language:
+        fields["language"] = language
 
-    parts.append(_form_field(boundary, "stream", "true"))
-
-    mime_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
-    filename = audio_path.name
-    audio_bytes = audio_path.read_bytes()
-    parts.append(_form_file(boundary, "file", filename, mime_type, audio_bytes))
-
-    body = b"".join(parts) + f"--{boundary}--\r\n".encode()
+    body = _multipart_body(audio_path, boundary, fields)
     content_type = f"multipart/form-data; boundary={boundary}"
 
     req = urllib.request.Request(
@@ -158,11 +193,6 @@ def transcribe_audio_sse(
         method="POST",
     )
 
-    start_time = time.monotonic()
-    first_delta_time: float | None = None
-    done_payload: Any | None = None
-    event_type: str = ""
-
     try:
         resp_cm = urllib.request.urlopen(req, timeout=timeout_seconds)
     except Exception as exc:
@@ -171,26 +201,12 @@ def transcribe_audio_sse(
         raise
 
     with resp_cm as resp:
-        for raw_line in resp:
-            line = raw_line.decode("utf-8").rstrip("\n\r")
-            if line.startswith("event:"):
-                event_type = line[6:].strip()
-            elif line.startswith("data:"):
-                data = json.loads(line[5:].strip())
-                if event_type == "transcript.text.delta" and first_delta_time is None:
-                    first_delta_time = time.monotonic() - start_time
-                elif event_type == "transcript.text.done":
-                    done_payload = json.loads(data["text"])
-
-    if first_delta_time is None:
-        first_delta_time = time.monotonic() - start_time
-    if done_payload is None:
-        raise RuntimeError("SSE stream ended without a transcript.text.done event")
-
-    return done_payload, first_delta_time
+        return _parse_sse_events(resp)
 
 
-def select_transport(*, stream: bool = False, deepgram: bool = False) -> TranscribeFn:
+def select_transport(
+    *, stream: bool = False, deepgram: bool = False, language: str | None = None
+) -> TranscribeFn:
     """Return the transport a run's configuration asks for.
 
     The workloads differ in what they measure but not in how they choose an
@@ -207,6 +223,7 @@ def select_transport(*, stream: bool = False, deepgram: bool = False) -> Transcr
         stream: Use the OpenAI SSE path and record time-to-first-delta.
         deepgram: Use the Deepgram-native endpoint, the only wire surface that
             carries per-word speaker labels.
+        language: Optional language hint sent to the selected endpoint.
 
     Raises:
         ValueError: If both are requested. The Deepgram endpoint is not an SSE
@@ -220,12 +237,17 @@ def select_transport(*, stream: bool = False, deepgram: bool = False) -> Transcr
         )
     if deepgram:
         return lambda base_url, audio_path: (
-            transcribe_audio_deepgram(base_url, audio_path),
+            transcribe_audio_deepgram(base_url, audio_path, language=language),
             None,
         )
     if stream:
-        return transcribe_audio_sse
-    return lambda base_url, audio_path: (transcribe_audio(base_url, audio_path), None)
+        return lambda base_url, audio_path: transcribe_audio_sse(
+            base_url, audio_path, language=language
+        )
+    return lambda base_url, audio_path: (
+        transcribe_audio(base_url, audio_path, language=language),
+        None,
+    )
 
 
 def _form_field(boundary: str, name: str, value: str) -> bytes:

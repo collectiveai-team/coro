@@ -115,6 +115,7 @@ def _run_performance(
         cli_args=args.cli_args,
         stream=args.stream,
         deepgram=args.deepgram,
+        language=args.language,
         warmup_audio=args.warmup_audio or WARMUP_AUDIO_PATH,
     )
 
@@ -141,6 +142,7 @@ def _run_quality(
         der_collar=args.der_collar,
         der_regions=args.der_regions,
         deepgram=args.deepgram,
+        language=args.language,
     )
 
     _render_report(out_dir)
@@ -170,6 +172,7 @@ def _run_all(
         warmup_audio=args.warmup_audio or WARMUP_AUDIO_PATH,
         stream=args.stream,
         deepgram=args.deepgram,
+        language=args.language,
     )
 
     _render_report(out_dir)

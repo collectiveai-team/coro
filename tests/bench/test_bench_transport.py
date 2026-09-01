@@ -90,6 +90,15 @@ class TestTranscribeAudio:
 
         assert b"diarized_json" in _StubHandler.captured_body
 
+    def test_sends_language_form_field(self, stub_server, tmp_path: Path):
+        audio = tmp_path / "test.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 100)
+
+        transcribe_audio(stub_server, audio, language="es-US")
+
+        assert b'name="language"' in _StubHandler.captured_body
+        assert b"es-US" in _StubHandler.captured_body
+
     def test_timeout_raises_on_unreachable(self, tmp_path: Path):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind(("127.0.0.1", 0))
@@ -167,6 +176,15 @@ class TestTranscribeAudioSSE:
         transcribe_audio_sse(sse_stub_server, audio)
 
         assert b"stream" in _SSEStubHandler.captured_body
+
+    def test_sends_language_form_field(self, sse_stub_server, tmp_path: Path):
+        audio = tmp_path / "test.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 100)
+
+        transcribe_audio_sse(sse_stub_server, audio, language="es-ES")
+
+        assert b'name="language"' in _SSEStubHandler.captured_body
+        assert b"es-ES" in _SSEStubHandler.captured_body
 
     def test_records_time_to_first_delta(self, sse_stub_server, tmp_path: Path):
         audio = tmp_path / "test.wav"
