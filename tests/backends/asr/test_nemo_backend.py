@@ -5,17 +5,33 @@ The model is faked throughout: these tests cover the language ->
 word-token conversion (SentencePiece grouping, end-time synthesis, absent
 probability), the serialised Adapter Concurrency Policy, and the builder's
 checkpoint/device wiring. No NeMo checkpoint is downloaded.
+
+The fake model's ``transcribe`` mirrors the real
+``EncDecHybridRNNTCTCBPEModelWithPrompt.transcribe`` signature closely enough
+for ``_resolve_override_config_type``'s introspection to work (a typed,
+optional ``override_config`` parameter) -- this is what makes the
+forced-language tests below meaningful: they exercise the same code path
+that discovered, against the real checkpoint, that a bare ``target_lang``
+kwarg is silently ignored (see ``coro/backends/asr/nemo.py``'s module
+docstring and ``.scratch/issue-64-language-constrained-asr/findings.md``).
 """
 
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
-from coro.backends.asr.nemo import NemoASRAdapter, resolve_target_language
+from coro.backends.asr.nemo import (
+    NemoASRAdapter,
+    _build_forced_language_config,
+    _resolve_override_config_type,
+    _tokens_from_hypothesis,
+    resolve_target_language,
+)
 
 _SAMPLE_RATE = 16000
 
@@ -30,6 +46,19 @@ class _FakeTokenizer:
         return [_PIECES[i] for i in ids]
 
 
+@dataclass
+class _FakeTranscribeConfig:
+    """Mirrors the fields of NeMo's real (base + Prompt-subclass) dataclass."""
+
+    use_lhotse: bool = True
+    batch_size: int = 4
+    return_hypotheses: bool = False
+    num_workers: int | None = None
+    timestamps: bool | None = None
+    verbose: bool = True
+    target_lang: str = "en-US"
+
+
 class _FakePromptModel:
     """Records transcribe kwargs; returns one timestamped hypothesis."""
 
@@ -38,18 +67,33 @@ class _FakePromptModel:
         self.written: tuple[int, int] | None = None
         self._timestamps = timestamps
         self.hypothesis = SimpleNamespace(
-            y=(11, 12, 13, 14),
+            y_sequence=(11, 12, 13, 14),  # real NeMo Hypothesis field name
             timestamp=[0.1, 0.2, 0.5, 0.6] if timestamps else None,
             text="hola, mundo.",
         )
 
-    def transcribe(self, paths, **kwargs):
+    def transcribe(self, paths, *, override_config: _FakeTranscribeConfig | None = None, **kwargs):
         import soundfile as sf
 
         info = sf.info(paths[0])
         self.written = (int(info.samplerate), int(info.frames))
-        self.calls.append({"paths": list(paths), **kwargs})
+        call: dict = {"paths": list(paths), **kwargs}
+        if override_config is not None:
+            call["override_config"] = override_config
+        self.calls.append(call)
         return [self.hypothesis]
+
+
+class _FakeNoOverrideConfigModel:
+    """A model whose ``transcribe`` has no typed ``override_config`` param.
+
+    Represents a plain (non-prompt) checkpoint, or an unusual Prompt subclass
+    that doesn't declare the parameter -- ``_build_forced_language_config``
+    must raise loudly rather than silently drop the language request.
+    """
+
+    def transcribe(self, paths, **kwargs):
+        raise AssertionError("should not be called: override_config resolution must fail first")
 
 
 def _pcm(seconds: float = 1.0) -> bytes:
@@ -77,15 +121,67 @@ class TestResolveTargetLanguage:
 
 
 class TestNemoASRAdapter:
-    async def test_language_is_passed_as_target_lang(self):
+    async def test_language_is_forced_via_override_config(self):
+        """A bare target_lang kwarg is silently ignored by NeMo's Lhotse-backed
+        default dataloader (verified against a real checkpoint) -- language
+        forcing must go through override_config with use_lhotse=False, or the
+        request has no effect at all. num_workers=0 avoids a DataLoader
+        multiprocessing crash (AF_UNIX path too long) under long checkout
+        paths.
+        """
         model = _FakePromptModel()
         await _transcribe(model, "es-US")
-        assert model.calls[0]["target_lang"] == "es-US"
+        call = model.calls[0]
+        assert "target_lang" not in call  # never a bare kwarg
+        override_config = call["override_config"]
+        assert override_config.target_lang == "es-US"
+        assert override_config.use_lhotse is False
+        assert override_config.num_workers == 0
 
-    async def test_none_language_omits_target_lang(self):
+    async def test_forced_language_requests_no_timestamps(self):
+        """timestamps=True crashes downstream (process_timestamp_outputs)
+        on the forced-language / use_lhotse=False path -- a NeMo bug, not
+        yet root-caused. Locks in the timestamps=False workaround so a NeMo
+        upgrade that fixes the crash is a deliberate change, not an
+        accidental regression back into it.
+
+        timestamps=False must be set BOTH as a bare kwarg and inside
+        override_config: transcribe()'s decoding-strategy reset
+        (compute_timestamps/preserve_alignments) is gated on the top-level
+        `timestamps is not None` check, evaluated before override_config is
+        consulted at all -- override_config.timestamps alone leaves stale
+        decoding state in place and hyp.timestamp comes back as a raw
+        multi-element Tensor (crashing `getattr(hyp, "timestamp", None) or
+        []`), verified against the real checkpoint.
+        """
+        model = _FakePromptModel()
+        await _transcribe(model, "es-US")
+        call = model.calls[0]
+        assert call["override_config"].timestamps is False
+        assert call["timestamps"] is False
+
+    async def test_none_language_uses_plain_kwargs_not_override_config(self):
         model = _FakePromptModel()
         await _transcribe(model, None)
-        assert "target_lang" not in model.calls[0]
+        call = model.calls[0]
+        assert "target_lang" not in call
+        assert "override_config" not in call
+        assert call["timestamps"] is True
+
+    async def test_forced_language_discards_hypothesis_timestamp(self):
+        """Verified against the real checkpoint: even with timestamps=False
+        requested at both levels, hyp.timestamp still comes back as raw,
+        untrustworthy per-token frame-index data (not seconds) -- so the
+        forced-language path must discard it outright, even when (as here)
+        the returned hypothesis carries what looks like valid timestamp +
+        token data. Falls back to the same evenly-spaced text timing as the
+        no-timestamps case, not (silently wrong) per-token grouping.
+        """
+        model = _FakePromptModel()  # hypothesis carries timestamp + y_sequence
+        tokens = await _transcribe(model, "es-US")
+        assert [t.text for t in tokens] == [" hola,", " mundo."]
+        assert tokens[0].start == 0.0
+        assert tokens[-1].end <= 1.0
 
     async def test_language_without_prompt_dictionary_raises(self):
         model = _FakePromptModel()
@@ -127,6 +223,80 @@ class TestNemoASRAdapter:
     def test_admission_is_serialised_to_one_permit(self):
         adapter = NemoASRAdapter(_FakePromptModel())
         assert adapter.admission.max_concurrency == 1
+
+
+class _FakeTensorTimestamp:
+    """Duck-types a torch.Tensor closely enough to trip the guard in
+    ``_tokens_from_hypothesis`` (has ``.numel()``) without a torch dependency
+    in this test module. Deliberately not iterable -- the guard must
+    short-circuit on the ``numel`` check alone, matching the real bug: the
+    original code crashed evaluating ``X or []`` truthiness *before* ever
+    reaching iteration.
+    """
+
+    def numel(self) -> int:
+        return 37
+
+
+class TestTokensFromHypothesis:
+    def test_tensor_timestamp_is_discarded_not_treated_as_seconds(self):
+        """A raw per-token frame-index Tensor (verified shape from the real
+        checkpoint) must never be treated as flat per-token seconds -- that
+        would silently produce garbled word timing. Falls back to
+        evenly-spaced text timing instead.
+        """
+        hyp = SimpleNamespace(
+            y_sequence=(11, 12, 13, 14),
+            timestamp=_FakeTensorTimestamp(),
+            text="hola, mundo.",
+        )
+        tokens = _tokens_from_hypothesis(hyp, _FakeTokenizer(), span_end=1.0)
+        assert [t.text for t in tokens] == [" hola,", " mundo."]
+        assert tokens[0].start == 0.0
+
+    def test_prefers_y_sequence_over_legacy_y_attribute(self):
+        """y_sequence is the real NeMo Hypothesis field; a stale/wrong ``y``
+        value (99s aren't in the fake tokenizer's piece table) proves
+        ``y_sequence`` -- not ``y`` -- is what actually gets read.
+        """
+        hyp = SimpleNamespace(
+            y_sequence=(11, 12, 13, 14),
+            y=(99, 99, 99, 99),
+            timestamp=[0.1, 0.2, 0.5, 0.6],
+            text="hola, mundo.",
+        )
+        tokens = _tokens_from_hypothesis(hyp, _FakeTokenizer(), span_end=1.0)
+        assert [t.text for t in tokens] == [" hola,", " mundo."]
+
+    def test_falls_back_to_legacy_y_attribute_when_y_sequence_absent(self):
+        hyp = SimpleNamespace(
+            y=(11, 12, 13, 14), timestamp=[0.1, 0.2, 0.5, 0.6], text="hola, mundo."
+        )
+        tokens = _tokens_from_hypothesis(hyp, _FakeTokenizer(), span_end=1.0)
+        assert [t.text for t in tokens] == [" hola,", " mundo."]
+
+
+class TestResolveOverrideConfigType:
+    def test_discovers_type_from_typed_optional_parameter(self):
+        assert _resolve_override_config_type(_FakePromptModel()) is _FakeTranscribeConfig
+
+    def test_returns_none_when_parameter_is_untyped(self):
+        assert _resolve_override_config_type(_FakeNoOverrideConfigModel()) is None
+
+
+class TestBuildForcedLanguageConfig:
+    def test_forces_use_lhotse_false_and_zero_workers(self):
+        config = _build_forced_language_config(_FakePromptModel(), "es-US")
+        assert isinstance(config, _FakeTranscribeConfig)
+        assert config.target_lang == "es-US"
+        assert config.use_lhotse is False
+        assert config.num_workers == 0
+        assert config.timestamps is False
+        assert config.return_hypotheses is True
+
+    def test_raises_loudly_when_no_override_config_type_is_discoverable(self):
+        with pytest.raises(ValueError, match="override_config"):
+            _build_forced_language_config(_FakeNoOverrideConfigModel(), "es")
 
 
 class TestBuildNemoAsrAdapter:
