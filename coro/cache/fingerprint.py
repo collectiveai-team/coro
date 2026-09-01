@@ -113,6 +113,8 @@ def runtime_identity(provider: str) -> str:
         names = ("onnxruntime-gpu", "onnxruntime")
     elif provider == "faster-whisper":
         names = ("faster-whisper", "ctranslate2")
+    elif provider == "nemo":
+        names = ("torch", "nemo-toolkit")
     else:
         names = ()
 
@@ -148,7 +150,7 @@ def _cuda_is_available(provider: str) -> bool:
     """Return whether the configured provider would pick CUDA under ``auto``."""
     if provider in _ONNX_PROVIDERS:
         return _module_version("onnxruntime-gpu") is not None and bool(_nvidia_gpu_names())
-    if provider == "faster-whisper":
+    if provider in ("faster-whisper", "nemo"):
         return bool(_nvidia_gpu_names())
     return False
 
