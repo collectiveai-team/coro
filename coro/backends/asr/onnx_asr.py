@@ -23,86 +23,15 @@ import numpy as np
 
 from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
 from coro.backends.asr.onnx_session import build_asr_session_options
+from coro.backends.asr.subword_tokens import LAST_WORD_PAD, group_subwords, words_from_text
 from coro.core.models import TranscriptToken
 
 logger = logging.getLogger(__name__)
 
-# SentencePiece word-start marker used by NeMo models (Parakeet/Canary/GigaAM).
-_SP_SPACE = "\u2581"
-# Synthesised duration (seconds) for the final word, which has no following token.
-_LAST_WORD_PAD = 0.2
 _SAMPLE_RATE = 16000
 # Admission queue depth used when an adapter is built without explicit settings
 # (direct construction in tests and tooling); the factory always passes one.
 _DEFAULT_QUEUE_DEPTH = 32
-
-
-def _group_subwords(
-    tokens: list[str],
-    timestamps: list[float],
-    logprobs: list[float] | None,
-) -> list[dict]:
-    """Group subword tokens into words on the word-start marker.
-
-    A token starts a new word when it is prefixed by a space or the SentencePiece
-    ``\u2581`` marker; otherwise it continues the current word (this also keeps
-    leading punctuation tokens, e.g. ``","``, attached to the preceding word).
-
-    Args:
-        tokens: Subword token strings (a leading space or ``\u2581`` prefixes a new word).
-        timestamps: One emission time per token, parallel to ``tokens``.
-        logprobs: One log-probability per token, parallel to ``tokens``, or None.
-
-    Returns:
-        List of ``{"text": str, "start": float, "logprobs": list[float]}`` word groups,
-        where ``text`` keeps the leading space of a word start so that
-        ``"".join(token.text ...)`` in the response builder reconstructs spaced text.
-
-    """
-    groups: list[dict] = []
-    n = len(tokens)
-    for i in range(n):
-        token = tokens[i]
-        if not token:
-            continue
-        ts = float(timestamps[i])
-        lp = float(logprobs[i]) if logprobs is not None and i < len(logprobs) else None
-        is_word_start = token.startswith((" ", _SP_SPACE))
-        piece = token.replace(_SP_SPACE, " ")
-        if is_word_start or not groups:
-            groups.append({"text": piece, "start": ts, "logprobs": []})
-        else:
-            groups[-1]["text"] += piece
-        if lp is not None:
-            groups[-1]["logprobs"].append(lp)
-    return groups
-
-
-def _words_from_text(text: str, start: float, span_end: float | None) -> list[TranscriptToken]:
-    """Synthesise word-level tokens from a text-only result (no token timestamps).
-
-    onnx-asr's Whisper exposes ``text`` but leaves ``tokens``/``timestamps`` None, so
-    word timings are spread evenly across ``[start, span_end]`` (the VAD segment span,
-    or the whole clip). Each word keeps a leading space so the response builder's
-    ``"".join(...)`` reconstructs spaced text.
-    """
-    words = text.split()
-    if not words:
-        return []
-    step = (span_end - start) / len(words) if span_end and span_end > start else _LAST_WORD_PAD
-    out: list[TranscriptToken] = []
-    for i, word in enumerate(words):
-        word_start = start + i * step
-        word_end = start + (i + 1) * step
-        out.append(
-            TranscriptToken(
-                start=round(word_start, 3),
-                end=round(max(word_end, word_start), 3),
-                text=" " + word,
-                probability=None,
-            )
-        )
-    return out
 
 
 def convert_onnx_asr_result(
@@ -112,7 +41,7 @@ def convert_onnx_asr_result(
 
     NeMo models (Parakeet/Canary) emit parallel ``tokens``/``timestamps`` lists that
     are grouped into words. onnx-asr's Whisper instead leaves those None and only
-    fills ``text``; that case falls back to ``_words_from_text`` (timings spread over
+    fills ``text``; that case falls back to ``words_from_text`` (timings spread over
     ``[offset_seconds, span_end]``).
 
     Args:
@@ -123,7 +52,7 @@ def convert_onnx_asr_result(
     Returns:
         List of TranscriptToken (one per reconstructed word). For the token path each
         word's ``start`` is its first subword's emission time and its ``end`` is the next
-        word's start (final word padded by ``_LAST_WORD_PAD``); ``probability`` is
+        word's start (final word padded by ``LAST_WORD_PAD``); ``probability`` is
         ``exp(mean(logprobs))`` or None.
 
     """
@@ -132,7 +61,7 @@ def convert_onnx_asr_result(
     logprobs = getattr(result, "logprobs", None)
 
     if tokens and timestamps:
-        groups = _group_subwords(tokens, timestamps, logprobs)
+        groups = group_subwords(tokens, timestamps, logprobs)
         if groups:
             out: list[TranscriptToken] = []
             for i, group in enumerate(groups):
@@ -140,7 +69,7 @@ def convert_onnx_asr_result(
                 if i + 1 < len(groups):
                     end = groups[i + 1]["start"] + offset_seconds
                 else:
-                    end = group["start"] + _LAST_WORD_PAD + offset_seconds
+                    end = group["start"] + LAST_WORD_PAD + offset_seconds
                 end = max(end, start)
 
                 word_logprobs = group["logprobs"]
@@ -160,7 +89,7 @@ def convert_onnx_asr_result(
 
     # Text-only result (e.g. onnx-asr Whisper): no token timestamps.
     text = (getattr(result, "text", "") or "").strip()
-    return _words_from_text(text, offset_seconds, span_end)
+    return words_from_text(text, offset_seconds, span_end)
 
 
 def convert_onnx_asr_segments(segments) -> list[TranscriptToken]:

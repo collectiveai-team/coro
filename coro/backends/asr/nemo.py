@@ -100,7 +100,7 @@ from typing import Any
 import numpy as np
 
 from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
-from coro.backends.asr.onnx_asr import _LAST_WORD_PAD, _group_subwords, _words_from_text
+from coro.backends.asr.subword_tokens import LAST_WORD_PAD, group_subwords, words_from_text
 from coro.core.models import TranscriptToken
 
 logger = logging.getLogger(__name__)
@@ -312,7 +312,7 @@ def _tokens_from_hypothesis(hyp, tokenizer, *, span_end: float) -> list[Transcri
     subword token (SentencePiece pieces using the ``▁`` word-start marker),
     so words are reconstructed with the same grouping as the onnx-asr
     converter: a word's ``start`` is its first subword's time, its ``end``
-    the next word's start (final word padded by ``_LAST_WORD_PAD``). No
+    the next word's start (final word padded by ``LAST_WORD_PAD``). No
     per-word probability source exists on the hypothesis, so ``probability``
     stays None rather than being manufactured. When the checkpoint emits no
     timestamps, timings are spread evenly over the clip span via the shared
@@ -350,11 +350,11 @@ def _tokens_from_hypothesis(hyp, tokenizer, *, span_end: float) -> list[Transcri
         if tokenizer is not None and token_ids:
             pieces = list(tokenizer.ids_to_tokens(token_ids))
     if pieces and len(pieces) == len(timestamps):
-        groups = _group_subwords(pieces, timestamps, None)
+        groups = group_subwords(pieces, timestamps, None)
         out: list[TranscriptToken] = []
         for i, group in enumerate(groups):
             start = group["start"]
-            end = groups[i + 1]["start"] if i + 1 < len(groups) else start + _LAST_WORD_PAD
+            end = groups[i + 1]["start"] if i + 1 < len(groups) else start + LAST_WORD_PAD
             out.append(
                 TranscriptToken(
                     start=round(start, 3),
@@ -366,7 +366,7 @@ def _tokens_from_hypothesis(hyp, tokenizer, *, span_end: float) -> list[Transcri
         return out
 
     text = (getattr(hyp, "text", "") or "").strip()
-    return _words_from_text(text, 0.0, span_end or None)
+    return words_from_text(text, 0.0, span_end or None)
 
 
 class NemoASRAdapter:
