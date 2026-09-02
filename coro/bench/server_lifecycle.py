@@ -132,7 +132,7 @@ class BenchManagedServer:
         logger.info("Starting bench-managed server on %s", self.base_url)
         try:
             self._proc = subprocess.Popen(
-                ["coro", "--port", str(self._port)],
+                ["coro", "serve", "--port", str(self._port)],
                 env=env,
                 stdout=output,
                 stderr=subprocess.STDOUT,
