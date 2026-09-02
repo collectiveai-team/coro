@@ -48,17 +48,30 @@ shape how this adapter must call ``transcribe()``:
    top-level kwarg alone, evaluated before ``override_config`` is even
    consulted), the crash is avoided but ``hyp.timestamp`` still comes back
    as that same raw frame-index ``Tensor``, verified directly against the
-   checkpoint -- not None, not seconds, not the structured dict. Treating
-   those frame indices as seconds would silently produce garbled word
-   timing, so this adapter explicitly discards ``hyp.timestamp`` on the
-   forced-language path and relies on :func:`_tokens_from_hypothesis`'s
-   evenly-spaced text fallback, trading true per-word timing for
-   correctness (no crash, no garbled timing) until NeMo's timestamp
-   post-processing is fixed upstream for this checkpoint class. The
-   auto-detection path (no ``language`` requested) is unaffected and keeps
-   true timestamps -- though it has not been exercised against a real
-   checkpoint this session (this Prompt checkpoint has no ``"auto"``
-   dictionary entry and cannot use it at all).
+   checkpoint -- not None, not seconds, not the structured dict.
+   :func:`_frame_timestamps_to_seconds` converts these frame indices to
+   real per-word timing (``frame_idx * window_stride * subsampling_factor``,
+   the same formula NeMo's own ``timestamp_utils.process_timestamp`` uses),
+   using conversion factors resolved once at build time by
+   :func:`_resolve_frame_conversion_factors` -- verified end-to-end against
+   the real checkpoint (5.85s clip, 37 emitted tokens, frame indices
+   ``[7, 9, ..., 72]`` -> seconds ``[0.56, 0.72, ..., 5.76]``, all bounded by
+   the clip's own duration). When those factors cannot be resolved (an
+   unusual checkpoint class lacking ``model.cfg.preprocessor.window_stride``
+   or ``model.encoder.subsampling_factor``), the frame indices cannot be
+   trusted as seconds, so this adapter falls back to
+   :func:`_tokens_from_hypothesis`'s evenly-spaced text timing rather than
+   guessing. The auto-detection path (no ``language`` requested) is
+   unaffected and keeps NeMo's own timestamps -- though it has not been
+   exercised against a real checkpoint this session (this Prompt checkpoint
+   has no ``"auto"`` dictionary entry and cannot use it at all); NeMo's
+   ``process_timestamp_outputs`` normally returns a structured
+   ``{"word": ..., "char": ..., "segment": ...}`` dict on that path, a
+   different shape from the forced path's flat frame-index sequence --
+   :func:`_frame_timestamps_to_seconds` is never invoked there, and
+   :func:`_tokens_from_hypothesis` now also discards a dict-shaped
+   ``hyp.timestamp`` defensively (see its docstring) rather than crashing
+   iterating over dict keys as floats.
 
 Accepted trade-off: PyTorch eager CPU inference of a 1.1B checkpoint is far
 slower than ONNX Runtime with int8 quantisation. This backend exists to
@@ -212,6 +225,86 @@ def _build_forced_language_config(model: Any, target_lang: str) -> Any:
     )
 
 
+def _resolve_frame_conversion_factors(model: Any) -> tuple[float, int] | None:
+    """Discover a model's frame-index -> seconds conversion factors.
+
+    Needed to convert the forced-language path's raw per-token frame-index
+    ``hyp.timestamp`` into seconds:
+    ``frame_idx * window_stride * subsampling_factor`` (the same formula
+    NeMo's own ``timestamp_utils.process_timestamp`` applies internally).
+
+    ``window_stride`` comes from the preprocessor config
+    (``model.cfg.preprocessor.window_stride``). ``subsampling_factor`` comes
+    from the encoder module's own instance attribute
+    (``model.encoder.subsampling_factor``) -- *not*
+    ``model.cfg.subsampling_factor`` or
+    ``model.cfg.model_defaults.subsampling_factor``, both of which were
+    tried against the real checkpoint and don't exist: the
+    ``subsampling_factor: 8`` line visible in NeMo's own config-dump log at
+    load time is nested inside the train/validation/test dataset configs
+    (a dataloader-side duplicate used for prompt one-hot bucketing), not
+    the architectural source of truth. The encoder attribute is also
+    ``struct``-mode-safe, unlike probing arbitrary nested ``cfg`` paths.
+
+    Returns:
+        ``(window_stride, subsampling_factor)``, or None if either is
+        missing -- callers must degrade to text-fallback timing rather
+        than guess at a conversion.
+
+    """
+    try:
+        window_stride = float(model.cfg.preprocessor.window_stride)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    subsampling_factor = getattr(getattr(model, "encoder", None), "subsampling_factor", None)
+    if subsampling_factor is None:
+        return None
+    try:
+        return window_stride, int(subsampling_factor)
+    except (TypeError, ValueError):
+        return None
+
+
+def _frame_timestamps_to_seconds(
+    raw_timestamp: Any, frame_conversion: tuple[float, int] | None
+) -> list[float] | None:
+    """Convert the forced-language path's raw per-token frame indices to seconds.
+
+    Verified against the real checkpoint (5.85s clip, 37 emitted tokens):
+    ``hyp.timestamp`` on this path is a flat per-token frame-index
+    Tensor/sequence -- one index per ``hyp.y_sequence`` entry, monotonically
+    non-decreasing, e.g. ``[7, 9, 10, ..., 72]`` -- not seconds, and not the
+    structured ``{"word": ..., "char": ..., "segment": ...}`` dict NeMo's
+    normal timestamp post-processing produces on the auto-detection path.
+
+    Args:
+        raw_timestamp: ``hyp.timestamp`` as returned by the forced-language
+            ``transcribe()`` call -- a Tensor, a plain sequence of frame
+            indices, None, or (defensively) a structured dict.
+        frame_conversion: ``(window_stride, subsampling_factor)`` from
+            :func:`_resolve_frame_conversion_factors`, or None.
+
+    Returns:
+        A plain list of per-token seconds, or None when ``raw_timestamp``
+        is absent/unconvertible or ``frame_conversion`` is unavailable --
+        callers must degrade to text-fallback timing rather than treat
+        unconverted frame indices as seconds.
+
+    """
+    if raw_timestamp is None or frame_conversion is None:
+        return None
+    if hasattr(raw_timestamp, "tolist"):  # torch.Tensor, no top-level torch import
+        raw_timestamp = raw_timestamp.tolist()
+    if isinstance(raw_timestamp, dict):  # auto-path's structured shape, not this path's
+        return None
+    try:
+        frame_indices = [float(f) for f in raw_timestamp]
+    except TypeError:
+        return None
+    window_stride, subsampling_factor = frame_conversion
+    return [f * window_stride * subsampling_factor for f in frame_indices]
+
+
 def _tokens_from_hypothesis(hyp, tokenizer, *, span_end: float) -> list[TranscriptToken]:
     """Convert one NeMo RNNT hypothesis into word-level TranscriptTokens.
 
@@ -225,20 +318,25 @@ def _tokens_from_hypothesis(hyp, tokenizer, *, span_end: float) -> list[Transcri
     timestamps, timings are spread evenly over the clip span via the shared
     text fallback.
 
-    A raw ``Tensor`` on ``hyp.timestamp`` (rather than None, a flat sequence
-    of second-valued floats, or a structured dict) is treated as untrusted
-    and discarded -- verified against a real checkpoint, this holds
-    per-token *frame indices*, not seconds; converting the two would need
-    the model's ``window_stride``/``subsampling_factor``, and this
-    model-agnostic helper doesn't have access to either, so treating the raw
-    values as seconds would silently produce garbled (not just imprecise)
-    word timing. Falling back to evenly-spaced text timing is the safe
-    choice, matching how callers already discard ``hyp.timestamp``
-    proactively on paths known to return this shape (see
-    :func:`NemoASRAdapter._transcribe`).
+    By the time a hypothesis reaches this helper, the forced-language path
+    (:func:`NemoASRAdapter._transcribe`) has already converted any raw
+    per-token frame-index ``hyp.timestamp`` to seconds via
+    :func:`_frame_timestamps_to_seconds` (or set it to None when conversion
+    factors were unavailable) -- so a raw ``Tensor`` should not normally
+    appear here. It is still guarded defensively (rather than assumed
+    impossible): a Tensor is treated as untrusted and discarded, as is a
+    dict (the structured ``{"word": ..., "char": ..., "segment": ...}``
+    shape NeMo's normal timestamp post-processing produces on the
+    auto-detection path, which this model-agnostic helper does not parse) --
+    both would otherwise crash or silently produce garbled word timing.
+    Falling back to evenly-spaced text timing is the safe choice in either
+    case.
     """
     raw_timestamp = getattr(hyp, "timestamp", None)
-    if hasattr(raw_timestamp, "numel"):  # torch.Tensor duck-type, no top-level torch import
+    if hasattr(raw_timestamp, "numel") or isinstance(raw_timestamp, dict):
+        # torch.Tensor duck-type (no top-level torch import) or the
+        # auto-path's structured dict -- neither is a flat per-token
+        # seconds sequence this helper knows how to consume.
         raw_timestamp = None
     timestamps = [float(t) for t in (raw_timestamp or [])]
     pieces: list[str] = []
@@ -250,7 +348,7 @@ def _tokens_from_hypothesis(hyp, tokenizer, *, span_end: float) -> list[Transcri
             list(token_ids.tolist()) if hasattr(token_ids, "tolist") else list(token_ids or ())
         )
         if tokenizer is not None and token_ids:
-            pieces = list(tokenizer.convert_ids_to_tokens(token_ids))
+            pieces = list(tokenizer.ids_to_tokens(token_ids))
     if pieces and len(pieces) == len(timestamps):
         groups = _group_subwords(pieces, timestamps, None)
         out: list[TranscriptToken] = []
@@ -297,11 +395,13 @@ class NemoASRAdapter:
         *,
         tokenizer=None,
         prompt_dictionary: dict[str, int] | None = None,
+        frame_conversion: tuple[float, int] | None = None,
         admission: AdmissionController | None = None,
     ) -> None:
         self._model = model
         self._tokenizer = tokenizer
         self._prompt_dictionary = prompt_dictionary
+        self._frame_conversion = frame_conversion
         self._admission = admission or build_admission_controller(
             max_concurrency=1, max_queue_depth=_DEFAULT_QUEUE_DEPTH, serialized=True
         )
@@ -310,6 +410,16 @@ class NemoASRAdapter:
     def admission(self) -> AdmissionController:
         """Admission controller implementing this adapter's concurrency policy."""
         return self._admission
+
+    @property
+    def frame_conversion(self) -> tuple[float, int] | None:
+        """The ``(window_stride, subsampling_factor)`` frame conversion.
+
+        Used to recover true per-word timestamps on the forced-language
+        path, or None when the checkpoint didn't expose the needed
+        cfg/encoder attributes (see :func:`_resolve_frame_conversion_factors`).
+        """
+        return self._frame_conversion
 
     async def transcribe_pcm(
         self,
@@ -383,15 +493,20 @@ class NemoASRAdapter:
                     [path], timestamps=False, override_config=override_config
                 )
                 # Even with timestamps=False at both levels, hyp.timestamp
-                # still comes back as that same raw per-token frame-index
-                # Tensor rather than None -- verified directly. Discard it
-                # explicitly (rather than relying solely on
-                # _tokens_from_hypothesis's defensive Tensor guard) so the
-                # intent is unambiguous at the call site: these values are
-                # known-untrustworthy on this path, not merely "unusual
-                # shape, handle defensively".
+                # still comes back as a raw per-token frame-index Tensor
+                # rather than None -- verified directly. Convert it to real
+                # per-word seconds here (rather than leaving it for
+                # _tokens_from_hypothesis, which is model-agnostic and has
+                # no access to window_stride/subsampling_factor) so the
+                # intent is unambiguous at the call site: these are known
+                # frame indices on this path, not merely "unusual shape,
+                # handle defensively". Falls back to None (-> the
+                # evenly-spaced text fallback) when this checkpoint's
+                # conversion factors couldn't be resolved at build time.
                 for hyp in hypotheses or []:
-                    hyp.timestamp = None
+                    hyp.timestamp = _frame_timestamps_to_seconds(
+                        getattr(hyp, "timestamp", None), self._frame_conversion
+                    )
         finally:
             Path(path).unlink(missing_ok=True)
 
@@ -438,18 +553,38 @@ def build_nemo_asr_adapter(
 
     model_defaults = model.cfg.get("model_defaults", {}) or {}
     prompt_dictionary = dict(model_defaults.get("prompt_dictionary", {}) or {}) or None
-    tokenizer = getattr(model.tokenizer, "tokenizer", model.tokenizer)
+    # model.tokenizer is NeMo's own TokenizerSpec wrapper (SentencePieceTokenizer,
+    # AutoTokenizer, ...), which always implements the abstract `ids_to_tokens`
+    # method -- unwrapping to `model.tokenizer.tokenizer` (as this line
+    # previously did) reaches into an implementation-specific inner object
+    # (the raw `sentencepiece.SentencePieceProcessor` on this checkpoint's
+    # SentencePieceTokenizer) that has no such method at all, verified
+    # directly against the real checkpoint (AttributeError: 'SentencePieceProcessor'
+    # object has no attribute 'convert_ids_to_tokens') -- a latent bug that
+    # only surfaced once the forced-language path stopped discarding every
+    # timestamp outright.
+    tokenizer = model.tokenizer
+    frame_conversion = _resolve_frame_conversion_factors(model)
+    if frame_conversion is None:
+        logger.warning(
+            "Could not resolve window_stride/subsampling_factor for '%s'; "
+            "forced-language transcriptions will use evenly-spaced text "
+            "timing instead of true per-word timestamps.",
+            model_asr,
+        )
 
     logger.info(
-        "Loaded NeMo ASR model '%s' (device=%s, prompt_dictionary=%s).",
+        "Loaded NeMo ASR model '%s' (device=%s, prompt_dictionary=%s, frame_conversion=%s).",
         model_asr,
         resolved,
         sorted(prompt_dictionary) if prompt_dictionary else None,
+        frame_conversion,
     )
     return NemoASRAdapter(
         model,
         tokenizer=tokenizer,
         prompt_dictionary=prompt_dictionary,
+        frame_conversion=frame_conversion,
         admission=build_admission_controller(
             max_concurrency=1, max_queue_depth=max_queue_depth, serialized=True
         ),

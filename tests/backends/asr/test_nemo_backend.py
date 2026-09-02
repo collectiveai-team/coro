@@ -28,10 +28,16 @@ import pytest
 from coro.backends.asr.nemo import (
     NemoASRAdapter,
     _build_forced_language_config,
+    _frame_timestamps_to_seconds,
+    _resolve_frame_conversion_factors,
     _resolve_override_config_type,
     _tokens_from_hypothesis,
     resolve_target_language,
 )
+
+# (window_stride, subsampling_factor) verified against the real checkpoint:
+# 5.85s clip, frame indices [7, 9, ..., 72] -> seconds [0.56, 0.72, ..., 5.76].
+_REAL_FRAME_CONVERSION = (0.01, 8)
 
 _SAMPLE_RATE = 16000
 
@@ -42,7 +48,7 @@ _PIECES = {11: "▁hola", 12: ",", 13: "▁mundo", 14: "."}
 
 
 class _FakeTokenizer:
-    def convert_ids_to_tokens(self, ids):
+    def ids_to_tokens(self, ids):
         return [_PIECES[i] for i in ids]
 
 
@@ -168,17 +174,41 @@ class TestNemoASRAdapter:
         assert "override_config" not in call
         assert call["timestamps"] is True
 
-    async def test_forced_language_discards_hypothesis_timestamp(self):
+    async def test_forced_language_converts_frame_indices_to_seconds(self):
         """Verified against the real checkpoint: even with timestamps=False
-        requested at both levels, hyp.timestamp still comes back as raw,
-        untrustworthy per-token frame-index data (not seconds) -- so the
-        forced-language path must discard it outright, even when (as here)
-        the returned hypothesis carries what looks like valid timestamp +
-        token data. Falls back to the same evenly-spaced text timing as the
+        requested at both levels, hyp.timestamp still comes back as a raw
+        per-token frame-index sequence (not seconds) -- when the
+        checkpoint's window_stride/subsampling_factor are resolvable
+        (frame_conversion is not None), the forced-language path now
+        recovers true per-word timing from those frame indices instead of
+        discarding them, using the same formula NeMo's own
+        timestamp_utils.process_timestamp applies internally.
+        """
+        model = _FakePromptModel()
+        model.hypothesis.timestamp = [7, 9, 10, 11]  # real frame indices, see findings.md
+        adapter = NemoASRAdapter(
+            model,
+            tokenizer=_FakeTokenizer(),
+            prompt_dictionary=_PROMPT_DICTIONARY,
+            frame_conversion=_REAL_FRAME_CONVERSION,
+        )
+        tokens = await adapter.transcribe_pcm(_pcm(), language="es-US")
+        assert [t.text for t in tokens] == [" hola,", " mundo."]
+        # word starts = first subword's converted time (frame_idx * 0.08):
+        # "hola," starts at frame 7 -> 0.56s, "mundo." at frame 10 -> 0.8s.
+        assert tokens[0].start == pytest.approx(0.56, abs=1e-9)
+        assert tokens[1].start == pytest.approx(0.8, abs=1e-9)
+
+    async def test_forced_language_falls_back_to_text_timing_without_frame_conversion(self):
+        """A checkpoint whose window_stride/subsampling_factor could not be
+        resolved at build time (frame_conversion=None, the adapter's
+        default) must not have its raw frame indices misread as seconds --
+        falls back to the same evenly-spaced text timing as the
         no-timestamps case, not (silently wrong) per-token grouping.
         """
-        model = _FakePromptModel()  # hypothesis carries timestamp + y_sequence
-        tokens = await _transcribe(model, "es-US")
+        model = _FakePromptModel()
+        model.hypothesis.timestamp = [7, 9, 10, 11]  # real frame indices, see findings.md
+        tokens = await _transcribe(model, "es-US")  # default adapter: frame_conversion=None
         assert [t.text for t in tokens] == [" hola,", " mundo."]
         assert tokens[0].start == 0.0
         assert tokens[-1].end <= 1.0
@@ -276,6 +306,62 @@ class TestTokensFromHypothesis:
         assert [t.text for t in tokens] == [" hola,", " mundo."]
 
 
+class TestFrameTimestampsToSeconds:
+    def test_converts_frame_indices_using_window_stride_and_subsampling(self):
+        """Matches values verified directly against the real checkpoint."""
+        seconds = _frame_timestamps_to_seconds([7, 9, 10, 72], _REAL_FRAME_CONVERSION)
+        assert seconds == pytest.approx([0.56, 0.72, 0.8, 5.76], abs=1e-9)
+
+    def test_returns_none_when_raw_timestamp_is_none(self):
+        assert _frame_timestamps_to_seconds(None, _REAL_FRAME_CONVERSION) is None
+
+    def test_returns_none_when_frame_conversion_is_none(self):
+        assert _frame_timestamps_to_seconds([7, 9], None) is None
+
+    def test_unwraps_tensor_like_via_tolist(self):
+        class _FakeTensor:
+            def tolist(self):
+                return [7, 9]
+
+        seconds = _frame_timestamps_to_seconds(_FakeTensor(), _REAL_FRAME_CONVERSION)
+        assert seconds == pytest.approx([0.56, 0.72], abs=1e-9)
+
+    def test_discards_structured_dict_shape(self):
+        """The auto-detection path's {"word": ..., "char": ..., "segment":
+        ...} shape must never be misread as a flat frame-index sequence.
+        """
+        assert _frame_timestamps_to_seconds({"word": []}, _REAL_FRAME_CONVERSION) is None
+
+
+class TestResolveFrameConversionFactors:
+    def test_reads_window_stride_and_encoder_subsampling_factor(self):
+        model = SimpleNamespace(
+            cfg=SimpleNamespace(preprocessor=SimpleNamespace(window_stride=0.01)),
+            encoder=SimpleNamespace(subsampling_factor=8),
+        )
+        assert _resolve_frame_conversion_factors(model) == (0.01, 8)
+
+    def test_returns_none_when_window_stride_is_missing(self):
+        model = SimpleNamespace(
+            cfg=SimpleNamespace(preprocessor=SimpleNamespace()),
+            encoder=SimpleNamespace(subsampling_factor=8),
+        )
+        assert _resolve_frame_conversion_factors(model) is None
+
+    def test_returns_none_when_encoder_has_no_subsampling_factor(self):
+        model = SimpleNamespace(
+            cfg=SimpleNamespace(preprocessor=SimpleNamespace(window_stride=0.01)),
+            encoder=SimpleNamespace(),
+        )
+        assert _resolve_frame_conversion_factors(model) is None
+
+    def test_returns_none_when_model_has_no_encoder(self):
+        model = SimpleNamespace(
+            cfg=SimpleNamespace(preprocessor=SimpleNamespace(window_stride=0.01))
+        )
+        assert _resolve_frame_conversion_factors(model) is None
+
+
 class TestResolveOverrideConfigType:
     def test_discovers_type_from_typed_optional_parameter(self):
         assert _resolve_override_config_type(_FakePromptModel()) is _FakeTranscribeConfig
@@ -299,38 +385,80 @@ class TestBuildForcedLanguageConfig:
             _build_forced_language_config(_FakeNoOverrideConfigModel(), "es")
 
 
-class TestBuildNemoAsrAdapter:
-    def test_builds_adapter_with_checkpoint_metadata(self):
-        fake_model = SimpleNamespace(
-            cfg={"model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}},
-            tokenizer=SimpleNamespace(tokenizer=_FakeTokenizer()),
-        )
-        fake_model.eval = lambda: fake_model
-        fake_model.to = lambda device: fake_model
-        asr_mod = SimpleNamespace(
-            models=SimpleNamespace(
-                ASRModel=SimpleNamespace(
-                    from_pretrained=lambda name: fake_model,
-                    restore_from=lambda path: fake_model,
-                )
+def _build_fake_asr_model(fake_model):
+    """Wire a fake NeMo model behind the module-patching build_nemo_asr_adapter needs."""
+    fake_model.eval = lambda: fake_model
+    fake_model.to = lambda device: fake_model
+    asr_mod = SimpleNamespace(
+        models=SimpleNamespace(
+            ASRModel=SimpleNamespace(
+                from_pretrained=lambda name: fake_model,
+                restore_from=lambda path: fake_model,
             )
         )
-        coll_mod = SimpleNamespace(asr=asr_mod)
-        nemo_mod = SimpleNamespace(collections=coll_mod)
-        torch_mod = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
+    )
+    coll_mod = SimpleNamespace(asr=asr_mod)
+    nemo_mod = SimpleNamespace(collections=coll_mod)
+    torch_mod = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
+    return patch.dict(
+        sys.modules,
+        {
+            "nemo": nemo_mod,
+            "nemo.collections": coll_mod,
+            "nemo.collections.asr": asr_mod,
+            "torch": torch_mod,
+        },
+    )
+
+
+class TestBuildNemoAsrAdapter:
+    def test_builds_adapter_with_checkpoint_metadata(self):
+        # model.tokenizer is used directly (not unwrapped via a `.tokenizer`
+        # inner attribute) -- see the module docstring's note on why
+        # unwrapping reaches into an implementation-specific inner object
+        # lacking `ids_to_tokens` on a real SentencePieceTokenizer checkpoint.
+        fake_model = SimpleNamespace(
+            cfg={"model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}},
+            tokenizer=_FakeTokenizer(),
+        )
 
         from coro.backends.asr.nemo import build_nemo_asr_adapter
 
-        with patch.dict(
-            sys.modules,
-            {
-                "nemo": nemo_mod,
-                "nemo.collections": coll_mod,
-                "nemo.collections.asr": asr_mod,
-                "torch": torch_mod,
-            },
-        ):
+        with _build_fake_asr_model(fake_model):
             adapter = build_nemo_asr_adapter("nvidia/parakeet-rnnt-1.1b-prompt", device="cpu")
 
         assert isinstance(adapter, NemoASRAdapter)
         assert adapter.admission.max_concurrency == 1
+        assert adapter._tokenizer is fake_model.tokenizer
+
+    def test_resolves_frame_conversion_when_cfg_and_encoder_expose_it(self):
+        fake_model = SimpleNamespace(
+            cfg=SimpleNamespace(
+                get=lambda key, default=None: {
+                    "model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}
+                }.get(key, default),
+                preprocessor=SimpleNamespace(window_stride=0.01),
+            ),
+            encoder=SimpleNamespace(subsampling_factor=8),
+            tokenizer=_FakeTokenizer(),
+        )
+
+        from coro.backends.asr.nemo import build_nemo_asr_adapter
+
+        with _build_fake_asr_model(fake_model):
+            adapter = build_nemo_asr_adapter("nvidia/parakeet-rnnt-1.1b-prompt", device="cpu")
+
+        assert adapter.frame_conversion == (0.01, 8)
+
+    def test_frame_conversion_is_none_when_checkpoint_lacks_the_attributes(self):
+        fake_model = SimpleNamespace(
+            cfg={"model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}},
+            tokenizer=_FakeTokenizer(),
+        )
+
+        from coro.backends.asr.nemo import build_nemo_asr_adapter
+
+        with _build_fake_asr_model(fake_model):
+            adapter = build_nemo_asr_adapter("nvidia/parakeet-rnnt-1.1b-prompt", device="cpu")
+
+        assert adapter.frame_conversion is None
