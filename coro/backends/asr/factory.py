@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 PROVIDER_HONOURS_PROMPT: dict[str, bool] = {
     "onnx-asr": False,
     "onnx-genai": False,
+    "nemo": False,
     "faster-whisper": True,
 }
 
@@ -121,6 +122,15 @@ def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
             settings.model_asr,
             device=settings.asr_device,
             quantization=settings.asr_quantization,
+            max_queue_depth=settings.asr_max_queue_depth,
+        )
+
+    if provider == "nemo":
+        from coro.backends.asr.nemo import build_nemo_asr_adapter
+
+        return build_nemo_asr_adapter(
+            settings.model_asr,
+            device=settings.asr_device,
             max_queue_depth=settings.asr_max_queue_depth,
         )
 

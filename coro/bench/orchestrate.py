@@ -62,6 +62,7 @@ def run_workload(
     der_collar: float = 0.0,
     der_regions: str = "all",
     deepgram: bool = False,
+    language: str | None = None,
 ) -> None:
     resp_dir = out_dir / "responses"
     hyp_dir = out_dir / "hyp"
@@ -70,7 +71,7 @@ def run_workload(
     hyp_dir.mkdir(parents=True, exist_ok=True)
     ref_dir.mkdir(parents=True, exist_ok=True)
 
-    transcribe = select_transport(deepgram=deepgram)
+    transcribe = select_transport(deepgram=deepgram, language=language)
     server_health = _fetch_health(base_url)
 
     for item in items:
@@ -105,6 +106,7 @@ def run_workload(
         reps=reps,
         subcommand=subcommand,
         deepgram=deepgram,
+        language=language,
     )
 
 
@@ -123,6 +125,7 @@ def run_all_workload(
     warmup_audio: Path | None = None,
     stream: bool = False,
     deepgram: bool = False,
+    language: str | None = None,
 ) -> None:
     import time
 
@@ -135,7 +138,7 @@ def run_all_workload(
     hyp_dir.mkdir(parents=True, exist_ok=True)
     ref_dir.mkdir(parents=True, exist_ok=True)
 
-    transcribe = select_transport(stream=stream, deepgram=deepgram)
+    transcribe = select_transport(stream=stream, deepgram=deepgram, language=language)
     server_health = _fetch_health(base_url)
 
     # Warm up over the same endpoint the run will measure, so the first
@@ -224,6 +227,7 @@ def run_all_workload(
         subcommand="all",
         stream=stream,
         deepgram=deepgram,
+        language=language,
         warmup=warmup_audio is not None,
     )
 
@@ -380,6 +384,7 @@ def _write_manifest(
     subcommand: str,
     stream: bool = False,
     deepgram: bool = False,
+    language: str | None = None,
     warmup: bool = False,
 ) -> None:
     git_sha = _git_sha()
@@ -395,6 +400,9 @@ def _write_manifest(
         # Which wire surface produced the responses: the Deepgram endpoint
         # carries per-word speakers, the OpenAI one only a segment summary.
         "deepgram": deepgram,
+        # Experimental decoder condition. None deliberately means automatic
+        # language detection and must remain distinguishable from forced runs.
+        "language": language,
         "workload_set": [
             {
                 "item_id": it["item_id"],
@@ -462,6 +470,7 @@ def run_performance_workload(
     cli_args: list[str] | None = None,
     stream: bool = False,
     deepgram: bool = False,
+    language: str | None = None,
     warmup_audio: Path | None = None,
 ) -> None:
     import time
@@ -471,7 +480,7 @@ def run_performance_workload(
     resp_dir.mkdir(parents=True, exist_ok=True)
     perf_dir.mkdir(parents=True, exist_ok=True)
 
-    transcribe = select_transport(stream=stream, deepgram=deepgram)
+    transcribe = select_transport(stream=stream, deepgram=deepgram, language=language)
     server_health = _fetch_health(base_url)
     # Warm up over the same endpoint the run will measure.
     if warmup_audio is not None:
@@ -544,6 +553,7 @@ def run_performance_workload(
         subcommand="performance",
         stream=stream,
         deepgram=deepgram,
+        language=language,
         warmup=warmup_audio is not None,
     )
 

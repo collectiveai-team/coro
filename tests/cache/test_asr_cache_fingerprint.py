@@ -126,6 +126,13 @@ def test_the_fingerprint_records_runtime_and_accelerator_identity():
     assert components.accelerator == "cpu"
 
 
+def test_nemo_runtime_identity_covers_torch_and_nemo_toolkit():
+    """The PyTorch backend's determinism rides on torch and nemo-toolkit."""
+    identity = runtime_identity("nemo")
+    assert "torch" in identity
+    assert "nemo-toolkit" in identity
+
+
 # MARK: Language Normalisation
 @pytest.mark.parametrize(
     ("left", "right"),

@@ -106,6 +106,15 @@ class TestTranscribeAudioDeepgram:
         assert query["diarize"] == ["true"]
         assert query["utterances"] == ["true"]
 
+    def test_sends_language_query_parameter(self, listen_stub_server, tmp_path: Path):
+        audio = tmp_path / "test.wav"
+        audio.write_bytes(AUDIO_BYTES)
+
+        transcribe_audio_deepgram(listen_stub_server, audio, language="es-US")
+
+        query = parse_qs(urlparse(_ListenStubHandler.captured_path).query)
+        assert query["language"] == ["es-US"]
+
     def test_does_not_send_a_json_content_type(self, listen_stub_server, tmp_path: Path):
         """/v1/listen reads application/json as Deepgram URL ingest and refuses it.
 

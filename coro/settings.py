@@ -15,7 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # MARK: Startup Selector Types
 PipelineSelector = Literal["full-memory", "streaming"]
-ASRBackendProvider = Literal["faster-whisper", "onnx-asr", "onnx-genai"]
+ASRBackendProvider = Literal["faster-whisper", "onnx-asr", "onnx-genai", "nemo"]
 DiarizationBackendProvider = Literal["none", "nemo", "pyannote"]
 ASRDevice = Literal["auto", "cuda", "cpu"]
 OnnxVadSelector = Literal["enabled", "disabled"]

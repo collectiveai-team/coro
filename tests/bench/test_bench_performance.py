@@ -647,3 +647,48 @@ class TestStreamingPerformanceRun:
 
         manifest = json.loads((out_dir / "manifest.json").read_text())
         assert manifest["stream"] is False
+
+    def test_manifest_records_a_forced_language(self, stub_server, tmp_path: Path):
+        from coro.bench.orchestrate import run_performance_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
+
+        run_performance_workload(
+            items=items,
+            base_url=stub_server,
+            out_dir=out_dir,
+            reps=1,
+            server_pid=1,
+            sample_fn=_mock_sample_fn,
+            sample_interval=0.05,
+            language="es-US",
+        )
+
+        manifest = json.loads((out_dir / "manifest.json").read_text())
+        assert manifest["language"] == "es-US"
+
+    def test_manifest_records_none_for_auto_language_detection(self, stub_server, tmp_path: Path):
+        from coro.bench.orchestrate import run_performance_workload
+
+        audio = tmp_path / "meeting1.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 200)
+        out_dir = tmp_path / "results"
+        out_dir.mkdir()
+        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
+
+        run_performance_workload(
+            items=items,
+            base_url=stub_server,
+            out_dir=out_dir,
+            reps=1,
+            server_pid=1,
+            sample_fn=_mock_sample_fn,
+            sample_interval=0.05,
+        )
+
+        manifest = json.loads((out_dir / "manifest.json").read_text())
+        assert manifest["language"] is None

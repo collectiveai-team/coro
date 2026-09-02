@@ -63,12 +63,14 @@ class _RecordingHandler(BaseHTTPRequestHandler):
     """Serves all three shapes and records what was asked for."""
 
     requests: ClassVar[list[tuple[str, str]]] = []
+    bodies: ClassVar[list[bytes]] = []
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
         path = self.path
         _RecordingHandler.requests.append((path, self.headers.get("Content-Type", "")))
+        _RecordingHandler.bodies.append(body)
 
         if path.split("?")[0] == LISTEN_PATH:
             self._json(DEEPGRAM_RESPONSE)
@@ -96,6 +98,7 @@ class _RecordingHandler(BaseHTTPRequestHandler):
 @pytest.fixture()
 def recording_server():
     _RecordingHandler.requests = []
+    _RecordingHandler.bodies = []
     server = HTTPServer(("127.0.0.1", 0), _RecordingHandler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -139,3 +142,20 @@ class TestSelectTransport:
         assert _paths() == [LISTEN_PATH]
         assert ttft is None
         assert result["results"]["channels"][0]["alternatives"][0]["words"][0]["word"] == "hello"
+
+    def test_language_reaches_the_default_multipart_body(self, recording_server, audio):
+        select_transport(language="es-US")(recording_server, audio)
+
+        assert b'name="language"' in _RecordingHandler.bodies[0]
+        assert b"es-US" in _RecordingHandler.bodies[0]
+
+    def test_language_reaches_the_sse_body(self, recording_server, audio):
+        select_transport(stream=True, language="es-US")(recording_server, audio)
+
+        assert b'name="language"' in _RecordingHandler.bodies[0]
+        assert b"es-US" in _RecordingHandler.bodies[0]
+
+    def test_language_reaches_the_listen_query(self, recording_server, audio):
+        select_transport(deepgram=True, language="es-US")(recording_server, audio)
+
+        assert "language=es-US" in _RecordingHandler.requests[0][0]

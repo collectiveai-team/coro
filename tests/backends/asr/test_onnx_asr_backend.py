@@ -20,10 +20,10 @@ import pytest
 
 from coro.backends.asr.onnx_asr import (
     OnnxAsrASRAdapter,
-    _LAST_WORD_PAD,
     convert_onnx_asr_result,
     convert_onnx_asr_segments,
 )
+from coro.backends.asr.subword_tokens import LAST_WORD_PAD
 from coro.core.models import TranscriptToken
 
 _SP = "\u2581"
@@ -91,11 +91,11 @@ def test_word_end_is_next_word_start():
 
 
 def test_final_word_end_is_padded():
-    """The final word, having no successor, is padded by _LAST_WORD_PAD."""
+    """The final word, having no successor, is padded by LAST_WORD_PAD."""
     result = _result(tokens=[" solo"], timestamps=[3.0])
     tokens = convert_onnx_asr_result(result)
     assert tokens[0].start == pytest.approx(3.0)
-    assert tokens[0].end == pytest.approx(3.0 + _LAST_WORD_PAD)
+    assert tokens[0].end == pytest.approx(3.0 + LAST_WORD_PAD)
 
 
 def test_applies_offset_seconds():
@@ -153,10 +153,10 @@ def test_text_only_result_spreads_words_across_span():
 
 
 def test_text_only_result_without_span_uses_pad_steps():
-    """Without a span, words step by _LAST_WORD_PAD so timings stay monotonic."""
+    """Without a span, words step by LAST_WORD_PAD so timings stay monotonic."""
     tokens = convert_onnx_asr_result(_text_result("uno dos"))
     assert tokens[0].start == pytest.approx(0.0)
-    assert tokens[1].start == pytest.approx(_LAST_WORD_PAD)
+    assert tokens[1].start == pytest.approx(LAST_WORD_PAD)
 
 
 def test_text_only_empty_text_yields_no_tokens():

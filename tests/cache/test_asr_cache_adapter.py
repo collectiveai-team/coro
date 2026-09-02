@@ -165,12 +165,14 @@ def test_an_undeclared_capability_is_read_pessimistically():
 def test_every_provider_capability_matches_its_adapter_class():
     """The provider table and the adapter classes must not drift apart."""
     from coro.backends.asr.faster_whisper import FasterWhisperASRAdapter
+    from coro.backends.asr.nemo import NemoASRAdapter
     from coro.backends.asr.onnx_asr import OnnxAsrASRAdapter
     from coro.backends.asr.onnx_genai import OnnxGenaiASRAdapter
 
     declared = {
         "onnx-asr": OnnxAsrASRAdapter.honours_prompt,
         "onnx-genai": OnnxGenaiASRAdapter.honours_prompt,
+        "nemo": NemoASRAdapter.honours_prompt,
         "faster-whisper": FasterWhisperASRAdapter.honours_prompt,
     }
     assert declared == PROVIDER_HONOURS_PROMPT

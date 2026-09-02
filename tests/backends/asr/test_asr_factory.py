@@ -63,6 +63,23 @@ def test_dispatches_to_onnx_genai():
     mock_build.assert_called_once()
 
 
+def test_dispatches_to_nemo():
+    """The nemo provider routes to its builder without provider-specific knobs."""
+    settings = ServerSettings(backend_asr="nemo", model_asr="m")
+    sentinel = object()
+    with patch(
+        "coro.backends.asr.nemo.build_nemo_asr_adapter", return_value=sentinel
+    ) as mock_build:
+        adapter = build_asr_adapter(settings)
+
+    assert adapter is sentinel
+    mock_build.assert_called_once_with(
+        "m",
+        device=settings.asr_device,
+        max_queue_depth=settings.asr_max_queue_depth,
+    )
+
+
 def test_unknown_provider_raises():
     """An unknown ASR Backend Provider fails fast."""
     settings = ServerSettings(model_asr="m")
@@ -83,6 +100,7 @@ def test_unknown_provider_raises():
         ("onnx-genai", {"asr_compute_type": "int8"}, ["asr_compute_type"]),
         ("faster-whisper", {"asr_quantization": "int8"}, ["asr_quantization"]),
         ("onnx-genai", {"asr_quantization": "int8"}, ["asr_quantization"]),
+        ("nemo", {"asr_quantization": "int8"}, ["asr_quantization"]),
         ("faster-whisper", {"asr_onnx_vad": "enabled"}, ["asr_onnx_vad"]),
         ("faster-whisper", {"asr_onnx_vad_threshold": 0.4}, ["asr_onnx_vad_threshold"]),
         ("onnx-genai", {"asr_max_concurrency": 8}, ["asr_max_concurrency"]),
