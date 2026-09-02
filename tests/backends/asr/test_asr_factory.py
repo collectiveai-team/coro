@@ -50,6 +50,27 @@ def test_dispatches_to_onnx_asr():
     assert kwargs["vad_enabled"] is True
 
 
+def test_dispatches_to_onnx_parakeet_prompt():
+    """The onnx-parakeet-prompt provider routes to its builder with quantization."""
+    settings = ServerSettings(
+        backend_asr="onnx-parakeet-prompt", model_asr="m", asr_quantization="static_qdq_v3"
+    )
+    sentinel = object()
+    with patch(
+        "coro.backends.asr.onnx_parakeet_prompt.build_onnx_parakeet_prompt_adapter",
+        return_value=sentinel,
+    ) as mock_build:
+        adapter = build_asr_adapter(settings)
+
+    assert adapter is sentinel
+    mock_build.assert_called_once_with(
+        "m",
+        device=settings.asr_device,
+        quantization="static_qdq_v3",
+        max_queue_depth=settings.asr_max_queue_depth,
+    )
+
+
 def test_dispatches_to_onnx_genai():
     """The onnx-genai provider routes to its builder."""
     settings = ServerSettings(backend_asr="onnx-genai", model_asr="m")
@@ -101,6 +122,7 @@ def test_unknown_provider_raises():
         ("faster-whisper", {"asr_quantization": "int8"}, ["asr_quantization"]),
         ("onnx-genai", {"asr_quantization": "int8"}, ["asr_quantization"]),
         ("nemo", {"asr_quantization": "int8"}, ["asr_quantization"]),
+        ("onnx-parakeet-prompt", {"asr_compute_type": "int8"}, ["asr_compute_type"]),
         ("faster-whisper", {"asr_onnx_vad": "enabled"}, ["asr_onnx_vad"]),
         ("faster-whisper", {"asr_onnx_vad_threshold": 0.4}, ["asr_onnx_vad_threshold"]),
         ("onnx-genai", {"asr_max_concurrency": 8}, ["asr_max_concurrency"]),
@@ -122,6 +144,7 @@ def test_warns_when_a_setting_is_ignored_by_the_provider(provider, overrides, ex
     [
         ("faster-whisper", {"asr_compute_type": "int8"}),
         ("onnx-asr", {"asr_quantization": "int8"}),
+        ("onnx-parakeet-prompt", {"asr_quantization": "static_qdq_v3"}),
         ("onnx-asr", {"asr_onnx_vad": "enabled", "asr_onnx_vad_threshold": 0.4}),
         ("onnx-asr", {"asr_max_concurrency": 8}),
     ],

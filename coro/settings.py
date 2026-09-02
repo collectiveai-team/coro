@@ -15,7 +15,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # MARK: Startup Selector Types
 PipelineSelector = Literal["full-memory", "streaming"]
-ASRBackendProvider = Literal["faster-whisper", "onnx-asr", "onnx-genai", "nemo"]
+ASRBackendProvider = Literal[
+    "faster-whisper", "onnx-asr", "onnx-genai", "nemo", "onnx-parakeet-prompt"
+]
 DiarizationBackendProvider = Literal["none", "nemo", "pyannote"]
 ASRDevice = Literal["auto", "cuda", "cpu"]
 OnnxVadSelector = Literal["enabled", "disabled"]
@@ -44,7 +46,11 @@ class ServerSettings(BaseSettings):
     pipeline: PipelineSelector = Field(
         default="full-memory", description="Configured Transcription Pipeline selector."
     )
-    backend_asr: ASRBackendProvider = Field(
+    # pyrefly mis-widens the declared type to `str` once ASRBackendProvider's
+    # Literal grows past 4 members (reproduced in isolation, unrelated to
+    # pydantic-settings specifics) -- verified false positive, not a real
+    # type error: "onnx-asr" is one of the Literal's own members.
+    backend_asr: ASRBackendProvider = Field(  # pyrefly: ignore[bad-assignment]
         default="onnx-asr", description="ASR Backend Provider selector."
     )
     model_asr: str = Field(default="nemo-parakeet-tdt-0.6b-v3", description="ASR Model Selection.")

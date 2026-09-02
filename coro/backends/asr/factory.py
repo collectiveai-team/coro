@@ -33,6 +33,7 @@ PROVIDER_HONOURS_PROMPT: dict[str, bool] = {
     "onnx-asr": False,
     "onnx-genai": False,
     "nemo": False,
+    "onnx-parakeet-prompt": False,
     "faster-whisper": True,
 }
 
@@ -42,7 +43,7 @@ PROVIDER_HONOURS_PROMPT: dict[str, bool] = {
 # actually honour it. Anything set for a provider outside its set is a no-op.
 _PROVIDER_SPECIFIC_SETTINGS: tuple[tuple[str, frozenset[str]], ...] = (
     ("asr_compute_type", frozenset({"faster-whisper"})),
-    ("asr_quantization", frozenset({"onnx-asr"})),
+    ("asr_quantization", frozenset({"onnx-asr", "onnx-parakeet-prompt"})),
     ("asr_onnx_vad", frozenset({"onnx-asr"})),
     ("asr_onnx_vad_threshold", frozenset({"onnx-asr"})),
     ("asr_max_concurrency", frozenset({"faster-whisper", "onnx-asr"})),
@@ -112,6 +113,16 @@ def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
             vad_enabled=settings.asr_onnx_vad == "enabled",
             vad_threshold=settings.asr_onnx_vad_threshold,
             max_concurrency=settings.asr_max_concurrency,
+            max_queue_depth=settings.asr_max_queue_depth,
+        )
+
+    if provider == "onnx-parakeet-prompt":
+        from coro.backends.asr.onnx_parakeet_prompt import build_onnx_parakeet_prompt_adapter
+
+        return build_onnx_parakeet_prompt_adapter(
+            settings.model_asr,
+            device=settings.asr_device,
+            quantization=settings.asr_quantization,
             max_queue_depth=settings.asr_max_queue_depth,
         )
 
