@@ -333,6 +333,31 @@ class TestBenchManagedServer:
             mock_proc.terminate.assert_called()
             mock_proc.wait.assert_called()
 
+    def test_spawns_the_serve_subcommand(self):
+        """coro's CLI requires a subcommand (`coro serve --port ...`); a bare
+        `coro --port ...` fails immediately with "unknown command '--port'".
+        """
+        from coro.bench.server_lifecycle import BenchManagedServer
+
+        managed = BenchManagedServer(
+            asr_backend="faster-whisper",
+            asr_model="openai/whisper-medium",
+            diar_backend="none",
+            diar_model=None,
+            pipeline="full-memory",
+            port=18888,
+        )
+        mock_proc = MagicMock()
+        mock_proc.pid = 55555
+        mock_proc.poll.return_value = None
+        popen = "coro.bench.server_lifecycle.subprocess.Popen"
+        health = "coro.bench.server_lifecycle.poll_health"
+        with patch(popen, return_value=mock_proc) as mock_popen, patch(health), managed:
+            pass
+
+        argv = mock_popen.call_args.args[0]
+        assert argv == ["coro", "serve", "--port", "18888"]
+
     def test_terminates_on_exception(self):
         from coro.bench.server_lifecycle import BenchManagedServer
 
