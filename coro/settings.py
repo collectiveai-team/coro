@@ -15,6 +15,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # MARK: Startup Selector Types
 PipelineSelector = Literal["full-memory", "streaming"]
+# License note (see CONTEXT.md's Sortformer-v1 precedent for the same policy
+# applied to a Diarization Model Selection): "nemo" and "onnx-parakeet-prompt"
+# both exist to drive parakeet-rnnt-1.1b-multilingual-prompt, which is
+# licensed under the NVIDIA Community Model License and gated behind an
+# NVIDIA NIM runtime / AI Enterprise subscription for production use -- see
+# ``coro/backends/asr/nemo.py``'s and ``coro/backends/asr/onnx_parakeet_prompt.py``'s
+# module docstrings. Comparative-reference backends only: never the default
+# (``onnx-asr`` is), never recommended, and their weights/derivative ONNX
+# exports must not be redistributed.
 ASRBackendProvider = Literal[
     "faster-whisper", "onnx-asr", "onnx-genai", "nemo", "onnx-parakeet-prompt"
 ]

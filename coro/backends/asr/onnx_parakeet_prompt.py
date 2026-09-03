@@ -46,6 +46,20 @@ never need regenerating or renaming to be usable:
   is this adapter's single source of truth for both).
 
 Concurrency: see :class:`OnnxParakeetPromptASRAdapter`'s docstring.
+
+License:
+    This backend's artifacts are a derivative ONNX export of
+    ``parakeet-rnnt-1.1b-multilingual-prompt``, licensed under the **NVIDIA
+    Community Model License** and gated behind an NVIDIA NIM runtime / AI
+    Enterprise subscription for production use -- see ``coro/backends/asr/nemo.py``'s
+    module docstring for the full license summary and CONTEXT.md precedent
+    this policy follows. **Comparative reference only**: never the default
+    (`onnx-asr` is, and stays), never recommended, and these exported weights
+    must not be uploaded/redistributed -- doing so would defeat the NIM/AI-
+    Enterprise production gate the source license exists to enforce. The
+    graph-surgery/quantization *code* that produced them has no such
+    restriction and may be published freely; only the resulting weights are
+    constrained.
 """
 
 from __future__ import annotations

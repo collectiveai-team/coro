@@ -85,6 +85,26 @@ Note:
     sends none) fails loudly. Run such checkpoints with ``CORO_WARMUP=disabled``
     until a language-aware warmup exists.
 
+License:
+    ``parakeet-rnnt-1.1b-multilingual-prompt`` -- the checkpoint this backend
+    exists to drive -- is licensed under the **NVIDIA Community Model
+    License**, not extracted as a normal Hugging Face download but from
+    inside an NVIDIA NIM container. Production use requires an NVIDIA NIM
+    runtime under an NVIDIA AI Enterprise subscription; the license is
+    revocable, non-sublicensable, and terminates on any dispute with NVIDIA.
+    This is incompatible with distributing coro to run without a dependency
+    on an external vendor. Per the same policy already applied to
+    ``nvidia/diar_sortformer_4spk-v1`` (CONTEXT.md's Diarization Model
+    Selection precedent, itself only CC-BY-NC-4.0 -- weaker restrictions than
+    this checkpoint's NIM gate): this backend is a **comparative reference
+    only**. It must never be `backend_asr`'s default (``onnx-asr`` is, and
+    stays), never recommended to operators, and its weights (or any
+    derivative ONNX export of them, e.g. ``onnx-parakeet-prompt``'s
+    artifacts) must not be redistributed. See
+    ``.scratch/issue-64-language-constrained-asr/findings.md`` for the
+    licensing finding and the open, shippable alternative
+    (``nvidia/canary-1b-v2``, CC-BY-4.0) under evaluation.
+
 """
 
 from __future__ import annotations
