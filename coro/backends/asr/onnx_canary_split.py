@@ -9,7 +9,7 @@ investigation this backend implements.
 `decoder-model.onnx` has no cross-attention K/V cache: 16 nodes (8 decoder
 layers x {key, value} cross-attention projections) consume the encoder's
 output directly and are recomputed unchanged on every decode step, even
-though their result never changes within a window. `.tmp/split_canary_decoder.py`
+though their result never changes within a window. `coro/recipes/canary_split_decoder/`
 cuts the fused graph in two via `onnx.utils.extract_model`
 (`xattn_kv.onnx` computes the 16 K/V tensors once per window; `decoder_step.onnx`
 takes them as extra inputs alongside `input_ids`/`encoder_mask`/`decoder_mems`)
@@ -41,8 +41,9 @@ following the same convention ``onnx-parakeet-prompt`` already established:
   is plumbed through here regardless of whether that artifact exists yet, per
   the PRD's append-only shared-surface convention).
 - ``xattn_kv.onnx``: the cross-attention K/V graph from
-  ``.tmp/split_canary_decoder.py``. Never quantized -- it runs once per
-  window, not once per decode step, so it is not a meaningful cost target.
+  ``coro/recipes/canary_split_decoder/`` (see that package's README.md).
+  Never quantized -- it runs once per window, not once per decode step, so
+  it is not a meaningful cost target.
 - ``decoder_step.onnx``: the per-token decode graph from the same split.
   ``decoder_step.<decoder_quantization>.onnx`` is loaded instead when
   ``decoder_quantization`` is given. Ticket 04's *static-QDQ* INT8 attempt on
@@ -61,7 +62,8 @@ following the same convention ``onnx-parakeet-prompt`` already established:
   short-clip microbenchmark actually came in slower than fp32 at full scale
   -- do not trust short-clip numbers alone for this graph). The artifact this
   selector expects, ``decoder_step.dynamic_v1_quint8.onnx``, is produced by
-  ``.tmp/quantize_canary_decoder_dynamic.py``.
+  ``coro/recipes/canary_decoder_dynamic_quantization/`` (see that package's
+  README.md).
 - ``vocab.txt``: onnx_asr's own ``<token> <id>`` format.
 - ``config.json``: optional; ``max_sequence_length`` etc, same as plain
   ``onnx-asr``'s Canary config.

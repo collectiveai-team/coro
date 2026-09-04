@@ -40,3 +40,8 @@ coro/static/
 .tmp/
 .scratch/
 .journals/
+
+# Generated output of coro/recipes/ scripts (ONNX exports, calibration
+# corpora, quantized weights) — regenerable by re-running the recipe that
+# produced it, never committed. See coro/recipes/paths.py.
+/recipe-artifacts/

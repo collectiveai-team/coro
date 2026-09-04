@@ -22,9 +22,11 @@ scripts (and this adapter) replicate it in NumPy from the checkpoint's
 ``state_dict()`` rather than exporting a second ONNX graph.
 
 Artifact directory contract (``model_asr`` is a directory, not a single file).
-Filenames match ``.tmp/quantize_static_encoder.py``'s and ``.tmp/cache_prompt_kernel.py``'s
-existing output exactly (see ``.scratch/issue-64-language-constrained-asr/``) rather
-than a new convention invented here, so the ~1.1 GB of already-exported artifacts
+Filenames match ``coro/recipes/parakeet_prompt_encoder_static_qdq/``'s and
+``coro/recipes/parakeet_prompt_kernel_cache/``'s output exactly (see each
+package's README.md, ``coro/recipes/__init__.py``, and
+``.scratch/issue-64-language-constrained-asr/``) rather than a new
+convention invented here, so the ~1.1 GB of already-exported artifacts
 never need regenerating or renaming to be usable:
 
 - ``encoder-encoder.onnx``: fp32 encoder. ``encoder-encoder.<quantization>.onnx``

@@ -115,6 +115,21 @@ cuda = [
 diar-pyannote = [
     "pyannote.audio>=4.0",
 ]
+# coro.recipes: reproducible ONNX export/quantization scripts that feed the
+# comparative-reference ASR backends' artifact-directory contracts (see
+# coro/recipes/__init__.py). Dev/export-time tooling, never imported by the
+# server itself -- kept out of the core install with its own extra.
+# `onnx` is already pulled in transitively today (nemo-toolkit -> onnx), but
+# these recipes depend on it structurally (onnx.utils.extract_model,
+# onnx.shape_inference), not incidentally, so it is declared directly here
+# rather than relying on another package's transitive dependency to keep
+# providing it. `pyarrow` powers coro.recipes.calibration_corpus's streaming
+# Parquet reads via coro.bench.utils.hf_parquet (duplicated from the `bench`
+# group, which is uv-only and not installable via pip extras).
+recipes = [
+    "onnx>=1.21.0",
+    "pyarrow>=17.0.0",
+]
 
 # Internal-only groups (PEP 735). Not exposed via pip; uv-native.
 [dependency-groups]
@@ -131,6 +146,12 @@ dev = [
     "deepgram-sdk>=7.6.0",
 ]
 bench = [
+    # Sliding-window language detection for coro/bench/language_drift.py's
+    # four-signal drift metric (issue #64). Import name is `lingua`; was used
+    # unconditionally by that module since its introduction (commit 9abf522)
+    # but never actually declared here -- a gap this closes rather than
+    # scope this session added.
+    "lingua-language-detector>=2.0.0",
     "meeteval>=0.4.3",
     "nvidia-ml-py>=12.0.0",
     # Row-group-granular reads of the Hugging Face Parquet corpora behind the
