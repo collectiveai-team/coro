@@ -71,6 +71,27 @@ def test_dispatches_to_onnx_parakeet_prompt():
     )
 
 
+def test_dispatches_to_onnx_canary_split():
+    """The onnx-canary-split provider routes to its builder with quantization."""
+    settings = ServerSettings(
+        backend_asr="onnx-canary-split", model_asr="m", asr_quantization="static_qdq_v3"
+    )
+    sentinel = object()
+    with patch(
+        "coro.backends.asr.onnx_canary_split.build_onnx_canary_split_adapter",
+        return_value=sentinel,
+    ) as mock_build:
+        adapter = build_asr_adapter(settings)
+
+    assert adapter is sentinel
+    mock_build.assert_called_once_with(
+        "m",
+        device=settings.asr_device,
+        quantization="static_qdq_v3",
+        max_queue_depth=settings.asr_max_queue_depth,
+    )
+
+
 def test_dispatches_to_onnx_genai():
     """The onnx-genai provider routes to its builder."""
     settings = ServerSettings(backend_asr="onnx-genai", model_asr="m")
@@ -145,6 +166,7 @@ def test_warns_when_a_setting_is_ignored_by_the_provider(provider, overrides, ex
         ("faster-whisper", {"asr_compute_type": "int8"}),
         ("onnx-asr", {"asr_quantization": "int8"}),
         ("onnx-parakeet-prompt", {"asr_quantization": "static_qdq_v3"}),
+        ("onnx-canary-split", {"asr_quantization": "static_qdq_v3"}),
         ("onnx-asr", {"asr_onnx_vad": "enabled", "asr_onnx_vad_threshold": 0.4}),
         ("onnx-asr", {"asr_max_concurrency": 8}),
     ],

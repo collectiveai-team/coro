@@ -52,12 +52,12 @@ costs one recomputation rather than a wrong answer.
 # them would cost hit rate for no correctness gain.
 PREDICTION_AFFECTING_SETTINGS: tuple[tuple[str, frozenset[str]], ...] = (
     ("asr_compute_type", frozenset({"faster-whisper"})),
-    ("asr_quantization", frozenset({"onnx-asr", "onnx-parakeet-prompt"})),
+    ("asr_quantization", frozenset({"onnx-asr", "onnx-parakeet-prompt", "onnx-canary-split"})),
     ("asr_onnx_vad", frozenset({"onnx-asr"})),
     ("asr_onnx_vad_threshold", frozenset({"onnx-asr"})),
 )
 
-_ONNX_PROVIDERS = frozenset({"onnx-asr", "onnx-genai", "onnx-parakeet-prompt"})
+_ONNX_PROVIDERS = frozenset({"onnx-asr", "onnx-genai", "onnx-parakeet-prompt", "onnx-canary-split"})
 _NVIDIA_PROC_ROOT = Path("/proc/driver/nvidia/gpus")
 
 

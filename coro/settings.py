@@ -23,9 +23,12 @@ PipelineSelector = Literal["full-memory", "streaming"]
 # ``coro/backends/asr/nemo.py``'s and ``coro/backends/asr/onnx_parakeet_prompt.py``'s
 # module docstrings. Comparative-reference backends only: never the default
 # (``onnx-asr`` is), never recommended, and their weights/derivative ONNX
-# exports must not be redistributed.
+# exports must not be redistributed. "onnx-canary-split" is also comparative-
+# reference only (issue #64's Canary decode-loop RTF fix), but drives
+# `nvidia/canary-1b-v2` (CC-BY-4.0, no NIM/redistribution restriction) -- see
+# ``coro/backends/asr/onnx_canary_split.py``'s module docstring.
 ASRBackendProvider = Literal[
-    "faster-whisper", "onnx-asr", "onnx-genai", "nemo", "onnx-parakeet-prompt"
+    "faster-whisper", "onnx-asr", "onnx-genai", "nemo", "onnx-parakeet-prompt", "onnx-canary-split"
 ]
 DiarizationBackendProvider = Literal["none", "nemo", "pyannote"]
 ASRDevice = Literal["auto", "cuda", "cpu"]

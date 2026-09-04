@@ -167,6 +167,7 @@ def test_every_provider_capability_matches_its_adapter_class():
     from coro.backends.asr.faster_whisper import FasterWhisperASRAdapter
     from coro.backends.asr.nemo import NemoASRAdapter
     from coro.backends.asr.onnx_asr import OnnxAsrASRAdapter
+    from coro.backends.asr.onnx_canary_split import OnnxCanarySplitASRAdapter
     from coro.backends.asr.onnx_genai import OnnxGenaiASRAdapter
     from coro.backends.asr.onnx_parakeet_prompt import OnnxParakeetPromptASRAdapter
 
@@ -175,6 +176,7 @@ def test_every_provider_capability_matches_its_adapter_class():
         "onnx-genai": OnnxGenaiASRAdapter.honours_prompt,
         "nemo": NemoASRAdapter.honours_prompt,
         "onnx-parakeet-prompt": OnnxParakeetPromptASRAdapter.honours_prompt,
+        "onnx-canary-split": OnnxCanarySplitASRAdapter.honours_prompt,
         "faster-whisper": FasterWhisperASRAdapter.honours_prompt,
     }
     assert declared == PROVIDER_HONOURS_PROMPT
