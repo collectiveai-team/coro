@@ -40,9 +40,28 @@ following the same convention ``onnx-parakeet-prompt`` already established:
   ``.tmp/quantize_canary_encoder.py`` -- see the PRD's ticket 04; the selector
   is plumbed through here regardless of whether that artifact exists yet, per
   the PRD's append-only shared-surface convention).
-- ``xattn_kv.onnx`` / ``decoder_step.onnx``: the two split-decoder graphs from
-  ``.tmp/split_canary_decoder.py``. Never quantized -- ticket 04 quantizes
-  only the encoder.
+- ``xattn_kv.onnx``: the cross-attention K/V graph from
+  ``.tmp/split_canary_decoder.py``. Never quantized -- it runs once per
+  window, not once per decode step, so it is not a meaningful cost target.
+- ``decoder_step.onnx``: the per-token decode graph from the same split.
+  ``decoder_step.<decoder_quantization>.onnx`` is loaded instead when
+  ``decoder_quantization`` is given. Ticket 04's *static-QDQ* INT8 attempt on
+  this graph was rejected (real word-level WER damage, e.g. "fell-Americans"
+  for "fellow Americans" -- see
+  ``.journals/2026-09-04/2026-09-04_canary-decode-loop-rtf_decoder-quant-static-qdq-rejected-plus-research/``).
+  Dynamic quantization (``onnxruntime.quantization.quantize_dynamic``,
+  ``QuantType.QUInt8``, MatMul-only, no calibration data) is the technique
+  that actually works here -- full 48-window mTEDx validation: norm cpWER
+  0.0529 vs the fp32 decoder's 0.0513 (+3.1% relative, an order of magnitude
+  smaller than ticket 04's rejected encoder-INT8 cost of +34.5%), RTFx 2.33
+  vs the fp32 split-decode baseline's 1.62 (+43.8%). See
+  ``.journals/2026-09-04/2026-09-04_canary-decode-loop-rtf_decoder-dynamic-quantization-accepted/``
+  for the full experiment (including why static QDQ specifically fails on an
+  autoregressive decoder, and why a QInt8 variant that looked *better* on a
+  short-clip microbenchmark actually came in slower than fp32 at full scale
+  -- do not trust short-clip numbers alone for this graph). The artifact this
+  selector expects, ``decoder_step.dynamic_v1_quint8.onnx``, is produced by
+  ``.tmp/quantize_canary_decoder_dynamic.py``.
 - ``vocab.txt``: onnx_asr's own ``<token> <id>`` format.
 - ``config.json``: optional; ``max_sequence_length`` etc, same as plain
   ``onnx-asr``'s Canary config.
@@ -100,7 +119,7 @@ _DEFAULT_QUEUE_DEPTH = 32
 # repo's own filenames exactly (not a convention invented here).
 _ENCODER_BASENAME = "encoder-model"
 _XATTN_KV_FILENAME = "xattn_kv.onnx"
-_DECODER_STEP_FILENAME = "decoder_step.onnx"
+_DECODER_STEP_BASENAME = "decoder_step"
 _VOCAB_FILENAME = "vocab.txt"
 _CONFIG_FILENAME = "config.json"
 
@@ -119,6 +138,13 @@ def _encoder_filename(quantization: str | None) -> str:
     if quantization:
         return f"{_ENCODER_BASENAME}.{quantization}.onnx"
     return f"{_ENCODER_BASENAME}.onnx"
+
+
+def _decoder_step_filename(decoder_quantization: str | None) -> str:
+    """Return the decoder_step ONNX filename for a decoder quantization selector."""
+    if decoder_quantization:
+        return f"{_DECODER_STEP_BASENAME}.{decoder_quantization}.onnx"
+    return f"{_DECODER_STEP_BASENAME}.onnx"
 
 
 def _split_canary_asr_class() -> type:
@@ -312,6 +338,7 @@ def build_onnx_canary_split_adapter(
     *,
     device: str = "auto",
     quantization: str | None = None,
+    decoder_quantization: str | None = None,
     providers: Sequence[str] | None = None,
     max_queue_depth: int = _DEFAULT_QUEUE_DEPTH,
 ) -> OnnxCanarySplitASRAdapter:
@@ -324,8 +351,11 @@ def build_onnx_canary_split_adapter(
         device: Device selector (``"auto"``, ``"cuda"``, ``"cpu"``) used to
             derive providers when ``providers`` is not given explicitly.
         quantization: Encoder quantization selector (e.g. an encoder INT8
-            static-QDQ variant); ``None`` loads the fp32 encoder. The split
-            decoder graphs are never quantized -- see the module docstring.
+            static-QDQ variant); ``None`` loads the fp32 encoder.
+        decoder_quantization: ``decoder_step.onnx`` quantization selector
+            (e.g. ``"dynamic_v1_quint8"``, the accepted dynamic-INT8 variant
+            -- see the module docstring for why static QDQ was rejected for
+            this graph); ``None`` loads the fp32 decoder step.
         providers: Explicit onnxruntime providers; overrides ``device`` when supplied.
         max_queue_depth: Calls allowed to wait for the single permit before
             rejection. The permit count is fixed at 1 by this backend's
@@ -343,7 +373,7 @@ def build_onnx_canary_split_adapter(
     directory = Path(model_asr)
     encoder_path = directory / _encoder_filename(quantization)
     xattn_kv_path = directory / _XATTN_KV_FILENAME
-    decoder_step_path = directory / _DECODER_STEP_FILENAME
+    decoder_step_path = directory / _decoder_step_filename(decoder_quantization)
     vocab_path = directory / _VOCAB_FILENAME
     for path in (encoder_path, xattn_kv_path, decoder_step_path, vocab_path):
         if not path.is_file():
@@ -363,9 +393,11 @@ def build_onnx_canary_split_adapter(
     resolved_providers = providers if providers is not None else _providers_for_device(device)
     session_options = build_asr_session_options()
     logger.info(
-        "Loading onnx-canary-split model from '%s' (quantization=%s, providers=%s).",
+        "Loading onnx-canary-split model from '%s' (quantization=%s, "
+        "decoder_quantization=%s, providers=%s).",
         model_asr,
         quantization,
+        decoder_quantization,
         resolved_providers,
     )
     manager = Manager(sess_options=session_options, providers=resolved_providers)

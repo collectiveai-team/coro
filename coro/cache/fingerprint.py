@@ -53,6 +53,7 @@ costs one recomputation rather than a wrong answer.
 PREDICTION_AFFECTING_SETTINGS: tuple[tuple[str, frozenset[str]], ...] = (
     ("asr_compute_type", frozenset({"faster-whisper"})),
     ("asr_quantization", frozenset({"onnx-asr", "onnx-parakeet-prompt", "onnx-canary-split"})),
+    ("asr_decoder_quantization", frozenset({"onnx-canary-split"})),
     ("asr_onnx_vad", frozenset({"onnx-asr"})),
     ("asr_onnx_vad_threshold", frozenset({"onnx-asr"})),
 )

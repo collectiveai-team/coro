@@ -175,3 +175,47 @@ class TestBuildOnnxCanarySplitAdapter:
         _build_artifact_dir(tmp_path)
         with pytest.raises(FileNotFoundError):
             build_onnx_canary_split_adapter(str(tmp_path), quantization="does-not-exist")
+
+    def test_quantized_decoder_step_filename_is_selected(self, tmp_path):
+        _build_artifact_dir(tmp_path)
+        (tmp_path / "decoder_step.dynamic_v1_quint8.onnx").write_bytes(b"")
+        session_paths: list[str] = []
+
+        def _fake_session(path, **_kwargs):
+            session_paths.append(str(path))
+            return MagicMock()
+
+        with patch("onnxruntime.InferenceSession", autospec=True, side_effect=_fake_session):
+            build_onnx_canary_split_adapter(
+                str(tmp_path), device="cpu", decoder_quantization="dynamic_v1_quint8"
+            )
+
+        assert any("decoder_step.dynamic_v1_quint8.onnx" in p for p in session_paths)
+        assert not any(p.endswith("decoder_step.onnx") for p in session_paths)
+
+    def test_missing_quantized_decoder_step_raises_file_not_found(self, tmp_path):
+        _build_artifact_dir(tmp_path)
+        with pytest.raises(FileNotFoundError):
+            build_onnx_canary_split_adapter(str(tmp_path), decoder_quantization="does-not-exist")
+
+    def test_encoder_and_decoder_quantization_selectors_are_independent(self, tmp_path):
+        """The two selectors pick their own artifacts without interfering."""
+        _build_artifact_dir(tmp_path)
+        (tmp_path / "encoder-model.static_qdq_v3.onnx").write_bytes(b"")
+        (tmp_path / "decoder_step.dynamic_v1_quint8.onnx").write_bytes(b"")
+        session_paths: list[str] = []
+
+        def _fake_session(path, **_kwargs):
+            session_paths.append(str(path))
+            return MagicMock()
+
+        with patch("onnxruntime.InferenceSession", autospec=True, side_effect=_fake_session):
+            build_onnx_canary_split_adapter(
+                str(tmp_path),
+                device="cpu",
+                quantization="static_qdq_v3",
+                decoder_quantization="dynamic_v1_quint8",
+            )
+
+        assert any("encoder-model.static_qdq_v3.onnx" in p for p in session_paths)
+        assert any("decoder_step.dynamic_v1_quint8.onnx" in p for p in session_paths)

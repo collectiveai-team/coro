@@ -45,6 +45,7 @@ PROVIDER_HONOURS_PROMPT: dict[str, bool] = {
 _PROVIDER_SPECIFIC_SETTINGS: tuple[tuple[str, frozenset[str]], ...] = (
     ("asr_compute_type", frozenset({"faster-whisper"})),
     ("asr_quantization", frozenset({"onnx-asr", "onnx-parakeet-prompt", "onnx-canary-split"})),
+    ("asr_decoder_quantization", frozenset({"onnx-canary-split"})),
     ("asr_onnx_vad", frozenset({"onnx-asr"})),
     ("asr_onnx_vad_threshold", frozenset({"onnx-asr"})),
     ("asr_max_concurrency", frozenset({"faster-whisper", "onnx-asr"})),
@@ -134,6 +135,7 @@ def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
             settings.model_asr,
             device=settings.asr_device,
             quantization=settings.asr_quantization,
+            decoder_quantization=settings.asr_decoder_quantization,
             max_queue_depth=settings.asr_max_queue_depth,
         )
 

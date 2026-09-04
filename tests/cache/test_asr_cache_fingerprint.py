@@ -65,6 +65,19 @@ def test_quantization_changes_the_fingerprint_for_the_backend_that_honours_it():
     )
 
 
+def test_decoder_quantization_changes_the_fingerprint_for_the_backend_that_honours_it():
+    assert _fingerprint(
+        backend_asr="onnx-canary-split", asr_decoder_quantization="dynamic_v1_quint8"
+    ) != _fingerprint(backend_asr="onnx-canary-split")
+
+
+def test_decoder_quantization_is_a_no_op_for_a_provider_that_ignores_it():
+    """asr_decoder_quantization only affects onnx-canary-split's decoder_step.onnx."""
+    assert _fingerprint(
+        backend_asr="onnx-asr", asr_decoder_quantization="dynamic_v1_quint8"
+    ) == _fingerprint(backend_asr="onnx-asr")
+
+
 def test_vad_configuration_changes_the_fingerprint():
     baseline = _fingerprint(backend_asr="onnx-asr")
     assert _fingerprint(backend_asr="onnx-asr", asr_onnx_vad="enabled") != baseline

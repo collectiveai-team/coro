@@ -78,6 +78,18 @@ class ServerSettings(BaseSettings):
         "tool for the default transducer ASR Model Selection, not a speed tool "
         "(measured: no throughput gain, small WER cost). See docs/benchmark.md.",
     )
+    asr_decoder_quantization: str | None = Field(
+        default=None,
+        description="onnx-canary-split decoder_step.onnx quantization selector (e.g. "
+        "'dynamic_v1_quint8'); ignored by every other ASR Backend Provider. Distinct "
+        "from asr_quantization (which selects the encoder's quantization for this "
+        "same backend) because the decoder graph needed a different technique: "
+        "static-QDQ INT8 (usable for the encoder) caused real word-level WER damage "
+        "on the autoregressive decoder, while dynamic INT8 did not. See "
+        "coro/backends/asr/onnx_canary_split.py's module docstring for the measured "
+        "quality/speed numbers. Left unset by default: onnx-canary-split itself is "
+        "comparative reference only, never the default ASR Backend Provider.",
+    )
     asr_onnx_vad: OnnxVadSelector = Field(
         default="disabled",
         description="Enable Silero VAD speech segmentation for the onnx-asr backend "

@@ -72,9 +72,12 @@ def test_dispatches_to_onnx_parakeet_prompt():
 
 
 def test_dispatches_to_onnx_canary_split():
-    """The onnx-canary-split provider routes to its builder with quantization."""
+    """The onnx-canary-split provider routes to its builder with both quantization selectors."""
     settings = ServerSettings(
-        backend_asr="onnx-canary-split", model_asr="m", asr_quantization="static_qdq_v3"
+        backend_asr="onnx-canary-split",
+        model_asr="m",
+        asr_quantization="static_qdq_v3",
+        asr_decoder_quantization="dynamic_v1_quint8",
     )
     sentinel = object()
     with patch(
@@ -88,6 +91,7 @@ def test_dispatches_to_onnx_canary_split():
         "m",
         device=settings.asr_device,
         quantization="static_qdq_v3",
+        decoder_quantization="dynamic_v1_quint8",
         max_queue_depth=settings.asr_max_queue_depth,
     )
 
@@ -144,6 +148,16 @@ def test_unknown_provider_raises():
         ("onnx-genai", {"asr_quantization": "int8"}, ["asr_quantization"]),
         ("nemo", {"asr_quantization": "int8"}, ["asr_quantization"]),
         ("onnx-parakeet-prompt", {"asr_compute_type": "int8"}, ["asr_compute_type"]),
+        (
+            "onnx-asr",
+            {"asr_decoder_quantization": "dynamic_v1_quint8"},
+            ["asr_decoder_quantization"],
+        ),
+        (
+            "onnx-parakeet-prompt",
+            {"asr_decoder_quantization": "dynamic_v1_quint8"},
+            ["asr_decoder_quantization"],
+        ),
         ("faster-whisper", {"asr_onnx_vad": "enabled"}, ["asr_onnx_vad"]),
         ("faster-whisper", {"asr_onnx_vad_threshold": 0.4}, ["asr_onnx_vad_threshold"]),
         ("onnx-genai", {"asr_max_concurrency": 8}, ["asr_max_concurrency"]),
@@ -167,6 +181,7 @@ def test_warns_when_a_setting_is_ignored_by_the_provider(provider, overrides, ex
         ("onnx-asr", {"asr_quantization": "int8"}),
         ("onnx-parakeet-prompt", {"asr_quantization": "static_qdq_v3"}),
         ("onnx-canary-split", {"asr_quantization": "static_qdq_v3"}),
+        ("onnx-canary-split", {"asr_decoder_quantization": "dynamic_v1_quint8"}),
         ("onnx-asr", {"asr_onnx_vad": "enabled", "asr_onnx_vad_threshold": 0.4}),
         ("onnx-asr", {"asr_max_concurrency": 8}),
     ],
