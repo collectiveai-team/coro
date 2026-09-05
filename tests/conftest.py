@@ -7,12 +7,12 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from support.corpus import SPANISH_CORPUS_ROWS, write_silent_wav
+from support.corpus import SPANISH_CORPUS_ROWS, synthetic_fleurs_rows, write_silent_wav
 from support.factories import make_app, make_wav
 from support.mounts import ROOT_MOUNT_ENTRY, FakeMounts, mountinfo_line
 
 from coro import fsinfo
-from coro.bench import spanish
+from coro.bench import code_switch, spanish
 
 
 @pytest.fixture
@@ -49,6 +49,35 @@ def fake_spanish_corpus(monkeypatch):
         spanish,
         "transcode_bytes_to_wav",
         lambda data, dst: write_silent_wav(dst),
+    )
+
+
+@pytest.fixture
+def fake_code_switch_corpus(monkeypatch):
+    """Serve canned FLEURS-shaped rows and fake ffmpeg transcoding.
+
+    Keeps the code-switch corpus builder's tests offline and free of an
+    ffmpeg dependency, the same way ``fake_spanish_corpus`` does for
+    ``bench.spanish``. Unlike that fixture's fixed 2-3 row lists, row
+    generation here scales to whatever ``limit`` a preset's item count asks
+    for (``synthetic_fleurs_rows``), since a code-switch preset's default
+    item counts are much larger than the Spanish Workload Set's.
+    """
+    monkeypatch.setattr(
+        code_switch,
+        "resolve_shard_urls",
+        lambda dataset, config, split: [f"https://example.invalid/{config}/{split}.parquet"],
+    )
+
+    def fake_iter(urls, *, limit, columns=None, timeout=60):
+        language = "es" if "es_419" in urls[0] else "en"
+        yield from synthetic_fleurs_rows(language, limit)
+
+    monkeypatch.setattr(code_switch, "iter_parquet_rows", fake_iter)
+    monkeypatch.setattr(
+        code_switch,
+        "transcode_bytes_to_wav",
+        lambda data, dst: write_silent_wav(dst, seconds=1.0),
     )
 
 
