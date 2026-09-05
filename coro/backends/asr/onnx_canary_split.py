@@ -36,10 +36,16 @@ following the same convention ``onnx-parakeet-prompt`` already established:
 - ``encoder-model.onnx`` (+ ``.onnx.data`` external-data sidecar, when
   present): fp32 encoder, unmodified from `istupakov/canary-1b-v2-onnx`.
   ``encoder-model.<quantization>.onnx`` is loaded instead when ``quantization``
-  is given (e.g. the encoder INT8 static-QDQ variant from
-  ``.tmp/quantize_canary_encoder.py`` -- see the PRD's ticket 04; the selector
-  is plumbed through here regardless of whether that artifact exists yet, per
-  the PRD's append-only shared-surface convention).
+  is given. The accepted INT8 selector is ``static_qdq_v4_pct_excl``, produced
+  by ``coro/recipes/canary_encoder_static_qdq/`` (see that package's
+  README.md): full 48-window mTEDx validation put it at norm cpWER 0.0508 vs
+  the fp32 encoder's 0.0513 in the same run, at +4.0% RTFx. Ticket 04's first
+  attempt at this graph (``static_qdq_v3``, MinMax activation calibration,
+  every Conv/MatMul/Gemm quantized) was **rejected** at +34.5% relative cpWER,
+  and percentile calibration *alone* still failed at +19.9% -- what closes the
+  gap is excluding the 32 nodes an ``onnxruntime.quantization.qdq_loss_debug``
+  sensitivity pass measured as worst (overwhelmingly the last eight conformer
+  layers' convolution module). Do not "simplify" that exclusion list away.
 - ``xattn_kv.onnx``: the cross-attention K/V graph from
   ``coro/recipes/canary_split_decoder/`` (see that package's README.md).
   Never quantized -- it runs once per window, not once per decode step, so
@@ -352,8 +358,10 @@ def build_onnx_canary_split_adapter(
             files, vocab.txt, optional config.json).
         device: Device selector (``"auto"``, ``"cuda"``, ``"cpu"``) used to
             derive providers when ``providers`` is not given explicitly.
-        quantization: Encoder quantization selector (e.g. an encoder INT8
-            static-QDQ variant); ``None`` loads the fp32 encoder.
+        quantization: Encoder quantization selector (e.g.
+            ``"static_qdq_v4_pct_excl"``, the accepted static-QDQ INT8 variant
+            -- see the module docstring for the two earlier variants of it that
+            were rejected); ``None`` loads the fp32 encoder.
         decoder_quantization: ``decoder_step.onnx`` quantization selector
             (e.g. ``"dynamic_v1_quint8"``, the accepted dynamic-INT8 variant
             -- see the module docstring for why static QDQ was rejected for

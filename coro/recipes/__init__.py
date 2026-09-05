@@ -14,14 +14,18 @@ Only *accepted* techniques live here -- a recipe module existing is itself a
 claim "this is what the backend referenced by its docstring actually
 expects." Rejected experiments (e.g. Canary's static-QDQ decoder INT8,
 real word-level WER damage -- see
-``.journals/2026-09-04/2026-09-04_canary-decode-loop-rtf_decoder-quant-static-qdq-rejected-plus-research/``;
-Canary's static-QDQ *encoder* INT8, which passed a 3-clip screen but
-regressed cpWER +34.5% relative at full 48-window mTEDx scale -- see
-``.scratch/issue-64-language-constrained-asr/findings.md``'s ticket 05) stay
-in ``.tmp/`` as research artifacts, not promoted here. Extend this rule
+``.journals/2026-09-04/2026-09-04_canary-decode-loop-rtf_decoder-quant-static-qdq-rejected-plus-research/``)
+stay in ``.tmp/`` as research artifacts, not promoted here. Extend this rule
 forward: a recipe only moves into this package once the backend it feeds
 has actually adopted its output as a real, wired selector -- do not migrate
 speculatively ahead of that.
+
+The rule cuts both ways, and ``canary_encoder_static_qdq`` is the worked
+example: Canary's static-QDQ *encoder* INT8 was rejected once (+34.5%
+relative cpWER at full 48-window mTEDx scale) and correctly left in ``.tmp/``,
+then redone with percentile calibration and a measured ``nodes_to_exclude``
+list, re-validated on the same gate, and only *then* promoted. A rejection
+here is a statement about a technique, not about a target.
 
 Recipes (each its own subpackage -- see the layout note below):
 
@@ -30,8 +34,11 @@ Recipes (each its own subpackage -- see the layout note below):
 - ``canary_decoder_dynamic_quantization``: dynamic INT8 quantization of
   ``decoder_step.onnx`` (this session's accepted decoder-quantization
   result).
+- ``canary_encoder_static_qdq``: static-QDQ INT8 quantization of the Canary
+  encoder (percentile calibration + a measured per-node exclusion list; the
+  artifact ``onnx-canary-split``'s ``quantization`` selector loads).
 - ``calibration_corpus``: multi-language acoustic calibration corpus builder
-  (FLEURS), used by static-QDQ encoder quantization.
+  (FLEURS), used by both static-QDQ encoder quantization recipes.
 - ``parakeet_prompt_kernel_cache``: extracts ``model.prompt_kernel``'s
   weights + prompt/vocab metadata from the original NeMo checkpoint (numpy
   arrays only -- the checkpoint itself is never redistributed, see the

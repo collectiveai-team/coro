@@ -73,10 +73,15 @@ class ServerSettings(BaseSettings):
     )
     asr_quantization: str | None = Field(
         default=None,
-        description="onnx-asr model quantization selector (e.g. 'int8'); ignored by "
-        "the faster-whisper backend. Left unset on purpose: int8 is a memory-fitting "
+        description="Encoder quantization selector (e.g. 'int8' for onnx-asr, "
+        "'static_qdq_v4_pct_excl' for onnx-canary-split); ignored by the "
+        "faster-whisper backend. Left unset on purpose: int8 is a memory-fitting "
         "tool for the default transducer ASR Model Selection, not a speed tool "
-        "(measured: no throughput gain, small WER cost). See docs/benchmark.md.",
+        "(measured: no throughput gain, small WER cost). See docs/benchmark.md. "
+        "The onnx-canary-split selector is a different story -- it is a small but "
+        "real win (norm cpWER 0.0508 vs fp32's 0.0513 at +4.0% RTFx) -- but that "
+        "backend is comparative reference only, never the default, so this stays "
+        "unset. See coro/backends/asr/onnx_canary_split.py's module docstring.",
     )
     asr_decoder_quantization: str | None = Field(
         default=None,
