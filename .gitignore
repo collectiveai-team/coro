@@ -45,3 +45,12 @@ coro/static/
 # corpora, quantized weights) — regenerable by re-running the recipe that
 # produced it, never committed. See coro/recipes/paths.py.
 /recipe-artifacts/
+.orquestalite/
+team.json
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+.mypy_cache/
+.ruff_cache/
