@@ -39,7 +39,7 @@ coro/static/
 !.env.example
 .tmp/
 .scratch/
-.journals/
+.journals
 
 # Generated output of coro/recipes/ scripts (ONNX exports, calibration
 # corpora, quantized weights) — regenerable by re-running the recipe that
