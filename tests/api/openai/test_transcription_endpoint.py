@@ -268,6 +268,31 @@ async def test_transcription_endpoint_sheds_load_at_asr_capacity():
 
 
 @pytest.mark.asyncio
+async def test_transcription_endpoint_rejects_unsupported_language():
+    """An unsupported Canary language is a 400 naming the supported set, not a 500."""
+    from coro.backends.asr.errors import AsrUnsupportedLanguageError
+
+    class _UnsupportedLanguagePipeline:
+        async def transcribe(self, audio, *, language=None, prompt=None):
+            raise AsrUnsupportedLanguageError("ja", supported_languages=["en", "es", "fr"])
+
+    app = _app_with_pipeline(_UnsupportedLanguagePipeline())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+            data={"model": "whisper-1", "language": "ja"},
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["type"] == "invalid_request_error"
+    assert body["error"]["param"] == "language"
+    assert "ja" in body["error"]["message"]
+    assert "en" in body["error"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_transcription_endpoint_returns_diarized_json():
     """diarized_json returns speaker-annotated OpenAI segments."""
     app = _app_with_fake_pipeline()
@@ -282,3 +307,48 @@ async def test_transcription_endpoint_returns_diarized_json():
     assert body["task"] == "transcribe"
     assert body["segments"][0]["type"] == "transcript.text.segment"
     assert body["segments"][0]["speaker"] == "agent"
+
+
+@pytest.mark.asyncio
+async def test_verbose_json_reports_the_auto_detected_language_for_an_undeclared_request():
+    """An undeclared-language Spanish clip reports 'language': 'es' via auto-LID.
+
+    Exercises the real chain end to end: FullMemoryPipeline -> ASRWindowing's
+    sticky LanguageState -> TranscriptionResult.detected_language ->
+    MemoryTranscriptSource -> render_for_format's verbose_json body -- not a
+    pipeline stub, so a wiring break anywhere in that chain fails this test.
+    """
+    from unittest.mock import patch
+
+    from coro.core.models import TranscriptToken
+    from coro.pipelines.full_memory import FullMemoryPipeline
+
+    class _AutoLIDSpanishASR:
+        honours_prompt = False
+
+        async def detect_language(self, pcm: bytes) -> str | None:
+            return "es"
+
+        async def transcribe_pcm(self, pcm: bytes, *, language=None, prompt=None):
+            return [TranscriptToken(start=0.0, end=1.0, text=" hola mundo", probability=0.9)]
+
+    pipeline = FullMemoryPipeline(asr=_AutoLIDSpanishASR(), diarization=None)
+    app = _app_with_pipeline(pipeline)
+
+    raw_pcm = struct.pack("<1600h", *([0] * 1600))  # 100 ms silence, s16le mono
+    with patch(
+        "coro.pipelines.full_memory.convert_path_to_pcm_bytes",
+        autospec=True,
+        return_value=raw_pcm,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/v1/audio/transcriptions",
+                files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+                data={"model": "whisper-1", "response_format": "verbose_json"},
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["language"] == "es"
+    assert body["text"] == "hola mundo"

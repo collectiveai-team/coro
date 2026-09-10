@@ -23,8 +23,16 @@ import pytest
 from coro.audio import AudioInput
 from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.pipelines.full_memory import FullMemoryPipeline
+from coro.pipelines.windowing import ASRWindowing
 
-RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
+RESPONSE_KEYS = {
+    "segments",
+    "word_segments",
+    "transcript",
+    "diarization",
+    "raw_words",
+    "detected_language",
+}
 
 _FAKE_PCM = struct.pack("<1600h", *([0] * 1600))
 
@@ -150,3 +158,82 @@ async def test_full_memory_pipeline_stream_cleans_up_the_upload_temp_file():
             pass
 
     assert audio._temp_path is None
+
+
+# ---------------------------------------------------------------------------
+# Sticky auto-LID (ticket 05, core + Full-Memory Pipeline slice)
+# ---------------------------------------------------------------------------
+
+
+class _FakeAutoLIDAsr:
+    """A canary-like fake exposing ``detect_language``, scripted per call.
+
+    Mirrors what ``OnnxCanarySplitASRAdapter.detect_language`` promises: a
+    per-window detection result (or ``None``), independent of
+    ``transcribe_pcm``'s own language handling.
+    """
+
+    def __init__(
+        self, detections: list[str | None], *, tokens: list[TranscriptToken] | None = None
+    ):
+        self._detections = list(detections)
+        self._tokens = tokens or []
+        self.detect_calls = 0
+        self.transcribe_languages: list[str | None] = []
+
+    async def detect_language(self, pcm: bytes) -> str | None:
+        detected = self._detections[self.detect_calls]
+        self.detect_calls += 1
+        return detected
+
+    async def transcribe_pcm(self, pcm: bytes, *, language=None, prompt=None):
+        self.transcribe_languages.append(language)
+        return list(self._tokens)
+
+
+def _three_window_pcm() -> bytes:
+    """2.5 s of PCM: with 1.0 s windows and no overlap, this plans exactly 3
+    windows (a whole-multiple duration would add a razor-thin trailing window
+    -- the windowing byte-alignment floor never lets overlap_bytes reach
+    exactly zero, see ``ASRWindowing._seconds_to_bytes``)."""
+    return struct.pack("<40000h", *([0] * 40000))
+
+
+@pytest.mark.asyncio
+async def test_undeclared_language_sticks_after_the_first_successful_detection():
+    """window 1 -> fallback, window 2 -> es (sticky), window 3 would say en but is forced es."""
+    asr = _FakeAutoLIDAsr([None, "es"])
+    pipeline = FullMemoryPipeline(
+        asr=asr, diarization=None, windowing=ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
+    )
+    with _mock_convert(_three_window_pcm()):
+        result = await pipeline.transcribe(AudioInput(b"audio"))
+
+    assert asr.detect_calls == 2  # window 3 never re-runs detection
+    assert asr.transcribe_languages == [None, "es", "es"]
+    assert result.detected_language == "es"
+
+
+@pytest.mark.asyncio
+async def test_explicit_language_skips_detection_entirely():
+    """A forced request language never calls detect_language, on any window."""
+    asr = _FakeAutoLIDAsr(["es", "es"])  # would detect if ever consulted
+    pipeline = FullMemoryPipeline(
+        asr=asr, diarization=None, windowing=ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
+    )
+    with _mock_convert(_three_window_pcm()):
+        result = await pipeline.transcribe(AudioInput(b"audio"), language="fr")
+
+    assert asr.detect_calls == 0
+    assert asr.transcribe_languages == ["fr", "fr", "fr"]
+    assert result.detected_language is None
+
+
+@pytest.mark.asyncio
+async def test_a_backend_without_detect_language_reports_no_detected_language():
+    """Every backend but onnx-canary-split (no auto-LID) is unaffected."""
+    pipeline = FullMemoryPipeline(asr=_FakeASRAdapter(), diarization=None)
+    with _mock_convert(_FAKE_PCM):
+        result = await pipeline.transcribe(AudioInput(b"audio"))
+
+    assert result.detected_language is None

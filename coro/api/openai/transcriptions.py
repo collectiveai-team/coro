@@ -29,6 +29,7 @@ from coro.api.openai.render import render_for_format
 from coro.api.openai.sse import streaming_response
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.concurrency import AsrCapacityError
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.pipelines.source import transcript_source
 
 
@@ -69,6 +70,62 @@ def _validate_language(language: str | None) -> str | None:
             param="language",
         )
     return normalized
+
+
+async def _transcribe_or_raise(
+    pipeline,
+    audio: AudioInput,
+    *,
+    language: str | None,
+    prompt: str | None,
+    request_id: str,
+    started: float,
+):
+    """Call the pipeline and translate its typed failures into ``TranscriptionError``.
+
+    Extracted from :func:`create_transcription` so each backend failure mode
+    (capacity, unsupported language, undecodable media, anything else) is one
+    branch here rather than inflating that route handler's complexity.
+    """
+    try:
+        return await transcript_source(pipeline, audio, language=language, prompt=prompt)
+    except TranscriptionValidationError:
+        raise
+    except AsrCapacityError as exc:
+        # Admission control rejected the call: shed load with a retry hint rather
+        # than reporting it as a server fault.
+        logger.info(
+            "transcription[%s] rejected at ASR capacity after %.3fs: %s",
+            request_id,
+            time.perf_counter() - started,
+            exc,
+        )
+        raise TranscriptionCapacityError(
+            exc.message, retry_after_seconds=exc.retry_after_seconds
+        ) from exc
+    except AsrUnsupportedLanguageError as exc:
+        logger.info(
+            "transcription[%s] rejected unsupported language after %.3fs: %s",
+            request_id,
+            time.perf_counter() - started,
+            exc,
+        )
+        raise TranscriptionValidationError(exc.message, param="language") from exc
+    except AudioConversionError as exc:
+        logger.info(
+            "transcription[%s] undecodable upload after %.3fs: %s",
+            request_id,
+            time.perf_counter() - started,
+            exc,
+        )
+        raise TranscriptionValidationError(UNDECODABLE_MEDIA_MESSAGE, param="file") from exc
+    except Exception as exc:
+        logger.exception(
+            "transcription[%s] pipeline failed after %.3fs",
+            request_id,
+            time.perf_counter() - started,
+        )
+        raise TranscriptionProcessingError("Transcription processing failed.") from exc
 
 
 # MARK: Transcription Endpoint
@@ -153,37 +210,14 @@ async def create_transcription(
         return streaming_response(stream_method(audio, language=language, prompt=prompt_value))
 
     # JSON Response ---------------------------------------------------------
-    try:
-        source = await transcript_source(pipeline, audio, language=language, prompt=prompt_value)
-    except TranscriptionValidationError:
-        raise
-    except AsrCapacityError as exc:
-        # Admission control rejected the call: shed load with a retry hint rather
-        # than reporting it as a server fault.
-        logger.info(
-            "transcription[%s] rejected at ASR capacity after %.3fs: %s",
-            request_id,
-            time.perf_counter() - started,
-            exc,
-        )
-        raise TranscriptionCapacityError(
-            exc.message, retry_after_seconds=exc.retry_after_seconds
-        ) from exc
-    except AudioConversionError as exc:
-        logger.info(
-            "transcription[%s] undecodable upload after %.3fs: %s",
-            request_id,
-            time.perf_counter() - started,
-            exc,
-        )
-        raise TranscriptionValidationError(UNDECODABLE_MEDIA_MESSAGE, param="file") from exc
-    except Exception as exc:
-        logger.exception(
-            "transcription[%s] pipeline failed after %.3fs",
-            request_id,
-            time.perf_counter() - started,
-        )
-        raise TranscriptionProcessingError("Transcription processing failed.") from exc
+    source = await _transcribe_or_raise(
+        pipeline,
+        audio,
+        language=language,
+        prompt=prompt_value,
+        request_id=request_id,
+        started=started,
+    )
 
     # The body is rendered before the response exists, so a projection failure is
     # still a 500 with an OpenAI-Style Error rather than a truncated 200.

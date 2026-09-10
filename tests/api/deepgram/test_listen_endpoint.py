@@ -169,6 +169,26 @@ class TestDeepgramErrors:
         assert response.status_code == 500
         assert set(response.json()) == {"err_code", "err_msg", "request_id"}
 
+    async def test_unsupported_language_returns_a_deepgram_shaped_400(self):
+        from coro.backends.asr.errors import AsrUnsupportedLanguageError
+
+        class _UnsupportedLanguage:
+            async def transcribe(self, audio, *, language=None, prompt=None):
+                raise AsrUnsupportedLanguageError("ja", supported_languages=["en", "es", "fr"])
+
+        app = make_app(_UnsupportedLanguage())
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/v1/listen?language=ja",
+                content=make_wav(),
+                headers={"Content-Type": "audio/wav"},
+            )
+        assert response.status_code == 400
+        body = response.json()
+        assert set(body) == {"err_code", "err_msg", "request_id"}
+        assert "ja" in body["err_msg"]
+        assert "en" in body["err_msg"]
+
 
 @pytest.mark.asyncio
 class TestSilentlyHarmfulParametersAreRefused:

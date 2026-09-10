@@ -52,12 +52,13 @@ costs one recomputation rather than a wrong answer.
 # them would cost hit rate for no correctness gain.
 PREDICTION_AFFECTING_SETTINGS: tuple[tuple[str, frozenset[str]], ...] = (
     ("asr_compute_type", frozenset({"faster-whisper"})),
-    ("asr_quantization", frozenset({"onnx-asr"})),
+    ("asr_quantization", frozenset({"onnx-asr", "onnx-parakeet-prompt", "onnx-canary-split"})),
+    ("asr_decoder_quantization", frozenset({"onnx-canary-split"})),
     ("asr_onnx_vad", frozenset({"onnx-asr"})),
     ("asr_onnx_vad_threshold", frozenset({"onnx-asr"})),
 )
 
-_ONNX_PROVIDERS = frozenset({"onnx-asr", "onnx-genai"})
+_ONNX_PROVIDERS = frozenset({"onnx-asr", "onnx-genai", "onnx-parakeet-prompt", "onnx-canary-split"})
 _NVIDIA_PROC_ROOT = Path("/proc/driver/nvidia/gpus")
 
 
@@ -81,6 +82,36 @@ def normalise_language(language: str | None) -> str:
     if language is None:
         return ""
     return language.strip().lower().replace("_", "-")
+
+
+def base_language(language: str | None) -> str:
+    """Reduce a normalised language to its base subtag (``es-US`` -> ``es``).
+
+    The key-form half of what a base-subtag-resolving backend (onnx-canary-split)
+    decodes with: that backend's adapter resolves ``es-US`` and ``es`` to the
+    same ``<|es|>`` prefix token, so its cache keys must collapse the same way.
+    """
+    normalised = normalise_language(language)
+    return normalised.split("-")[0] if normalised else ""
+
+
+def resolved_language_key(language: str | None, *, fallback_language: str) -> str:
+    """Return the key form of a language for a base-subtag-resolving backend.
+
+    Such a backend also decodes an absent request language with its configured
+    fallback, so ``language=None`` must key identically to naming that
+    fallback. Pure string work -- no model is needed, so the lazy adapter path
+    still derives keys without loading one.
+
+    Args:
+        language: Language value as supplied by a request surface.
+        fallback_language: The backend's ``asr_fallback_language``.
+
+    Returns:
+        The base subtag of the language, or of the fallback when absent.
+
+    """
+    return base_language(language) or base_language(fallback_language)
 
 
 # MARK: Runtime And Accelerator Identity
@@ -291,6 +322,7 @@ def window_key(
     fingerprint: str,
     language: str | None,
     prompt: str | None,
+    language_key: str | None = None,
 ) -> str:
     """Return the cache key for one ASR Windowing window.
 
@@ -303,6 +335,12 @@ def window_key(
         fingerprint: Digest from :func:`asr_fingerprint`.
         language: Language value as supplied by the request surface.
         prompt: Carried prompt, or ``None`` when the backend ignores it.
+        language_key: Pre-resolved key form of the language, for a backend
+            that reduces a locale to a base subtag and/or resolves an absent
+            language to its own fallback (see ``coro/cache/adapter.py``'s
+            ``CachingASRAdapter``, which derives this from the wrapped
+            backend's ``fallback_language`` when it has one). ``None`` (the
+            default) keeps today's plain :func:`normalise_language` form.
 
     Returns:
         A hex digest identifying this window under this configuration.
@@ -311,7 +349,9 @@ def window_key(
     digest = hashlib.blake2b(digest_size=32)
     digest.update(fingerprint.encode("utf-8"))
     digest.update(b"\x00lang\x00")
-    digest.update(normalise_language(language).encode("utf-8"))
+    digest.update(
+        (language_key if language_key is not None else normalise_language(language)).encode("utf-8")
+    )
     digest.update(b"\x00prompt\x00")
     if prompt is not None:
         digest.update(prompt.encode("utf-8"))

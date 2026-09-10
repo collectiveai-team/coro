@@ -198,6 +198,44 @@ it is compute-bound, so `DynamicQuantizeLinear` overhead is pure loss, and the
 reference host has no VNNI to recover it. Set `CORO_ASR_QUANTIZATION=int8` only
 to fit a memory budget, never to go faster.
 
+### Canary default (INT8/INT8): combined quantization + auto-LID gate
+
+`onnx-canary-split` (Canary-1b-v2) is the **default ASR Model Selection** as of
+ADR 0019, replacing `onnx-asr`/`parakeet-tdt-0.6b-v3` to fix uncontrollable
+per-frame language switching (45 English function-word intrusions across 8/48
+windows on this same corpus with the old default; zero with forced-language
+Canary — `.scratch/issue-64-language-constrained-asr/findings.md`). The
+accepted INT8 encoder and INT8 decoder were each validated against fp32
+separately; this table is their first **combined**, single-process,
+interleaved measurement, plus the sticky auto-LID arm the new default actually
+serves requests through when no `language` is given.
+
+**Corpus.** The standing 48-window mTEDx Spanish longform gate
+(`mtedx-HLIJkmy3vy8`, 1341.8 s / 22.4 min, `.tmp/mtedx-drift`), 30 s / 2 s ASR
+Windowing. **Method.** Three arms interleaved window-by-window in one process
+(not run one arm to completion then the next) so thermal drift hits all arms
+equally, via `ASRWindowing._run_window` directly (the same per-window
+reconciliation/prompt-carry unit every real pipeline path uses). Host:
+`rocinante`, AVX2-class CPU (no VNNI), 16 cores, single process pinned to no
+particular core set. Run 2026-09-09, wall-stats log:
+`.tmp/logs/mtedx-gate/2026-09-09T17-20-48_wall-stats.log` (peak RSS 7.43 GB for
+all three arms' adapters resident simultaneously — not a per-arm figure;
+20m31s total wall for all three arms combined). Script:
+`.tmp/run_mtedx_gate_canary_default.py`.
+
+| arm | norm cpWER ↓ | RTFx ↑ | LID hit count |
+|---|---:|---:|---:|
+| fp32/fp32, forced `es` (reference) | 0.0513 | 2.20× | n/a (forced) |
+| **INT8/INT8, forced `es`** (default, explicit language) | **0.0526** | **4.45×** | n/a (forced) |
+| **INT8/INT8, sticky auto-LID** (default, no language) | **0.0526** | 4.36× | 48/48 detected `es`, 0 misses |
+
+**Thresholds (from the PRD invariants) — both pass:**
+- Arm 2 (INT8/INT8 forced) norm cpWER within ±0.002 of 0.0529: **0.0526, Δ=0.0003 — pass.**
+- Arm 3 (auto-LID) transcript identical to arm 2 on every window where LID said `es`: **pass** — LID resolved `es` on window 1 (sticky: one detection call fixes the language for the whole request; the pipeline never re-runs detection once resolved) and held it for all 48 windows, and arm 2's and arm 3's full reconciled hypotheses are **byte-identical**.
+- Arm 3 detected `es` on all 48 windows: **pass**, 0 misses — no window's decode used any language other than `es`.
+
+**Reading this table.** INT8/INT8 both *reduces* cpWER slightly versus fp32/fp32 on this corpus (0.0526 vs 0.0513 is within run-to-run noise at this scale — 3 fewer or more correct words moves it) while **doubling RTFx** (2.20× → 4.45×), because both quantizations were independently accepted for being small-but-real wins, not neutral trades — unlike `parakeet-tdt-0.6b-v3`'s `int8`, which is a pure memory-for-WER trade with no throughput gain (see above). Auto-LID's per-request one-time detection cost (~55 ms probed in isolation, ticket 01) is invisible at this scale: 4.45× vs 4.36× RTFx (int8-es vs int8-auto) is one extra encoder pass on window 1 amortised over 22.4 minutes of audio, not a per-window tax.
+
 ### Diarization Model Selection: Sortformer v2.1 was **not** adopted
 
 A/B over 8 × 600 s AMI clips (80 min, 6 meetings), **ASR Model Selection held

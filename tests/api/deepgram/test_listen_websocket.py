@@ -244,3 +244,71 @@ class TestReadiness:
             frame = json.loads(ws.receive_text())
         assert frame["type"] == "Error"
         assert "not ready" in frame["description"].lower()
+
+
+class _LanguageValidatingASR(_FakeASR):
+    """A ``_FakeASR`` that also validates language at negotiate time, like
+    ``OnnxCanarySplitASRAdapter.resolve_language`` does."""
+
+    def resolve_language(self, language: str | None) -> str:
+        from coro.backends.asr.errors import AsrUnsupportedLanguageError
+
+        supported = {"en", "es", "fr"}
+        resolved = (language or "en").strip().lower()
+        if resolved not in supported:
+            raise AsrUnsupportedLanguageError(resolved, supported_languages=supported)
+        return resolved
+
+
+class TestLanguageNegotiation:
+    def test_unsupported_language_is_rejected_before_any_audio_is_accepted(self):
+        app = _app(_LanguageValidatingASR())
+        with TestClient(app).websocket_connect("/v1/listen?language=ja") as ws:
+            frame = json.loads(ws.receive_text())
+        assert frame["type"] == "Error"
+        assert "ja" in frame["message"]
+        assert "en" in frame["message"]
+
+    def test_supported_language_negotiates_normally(self):
+        frames = _stream(_app(_LanguageValidatingASR()), "?language=es")
+        assert frames[0]["type"] == "Results"
+
+    def test_no_language_uses_the_adapter_default_without_rejecting(self):
+        frames = _stream(_app(_LanguageValidatingASR()))
+        assert frames[0]["type"] == "Results"
+
+
+class _AutoLIDFakeASR(_FakeASR):
+    """A canary-like fake exposing ``detect_language``, scripted per call."""
+
+    def __init__(self, detection: str | None = "es") -> None:
+        super().__init__()
+        self._detection = detection
+        self.detect_calls = 0
+
+    async def detect_language(self, pcm: bytes) -> str | None:
+        self.detect_calls += 1
+        return self._detection
+
+
+class TestAutoLIDStickyState:
+    """ticket 05's streaming/live slice: negotiate-time skip + closing report."""
+
+    def test_explicit_negotiated_language_never_calls_detect_language(self):
+        asr = _AutoLIDFakeASR()
+        _stream(_app(asr), "?language=es")
+        assert asr.detect_calls == 0
+
+    def test_an_undeclared_language_is_detected_and_reported_in_metadata(self):
+        asr = _AutoLIDFakeASR(detection="es")
+        frames = _stream(_app(asr))  # no ?language query param
+        assert asr.detect_calls >= 1
+        metadata = frames[-1]
+        assert metadata["type"] == "Metadata"
+        assert metadata["detected_language"] == "es"
+
+    def test_a_backend_without_detect_language_omits_the_metadata_field(self):
+        frames = _stream(_app(_FakeASR()))
+        metadata = frames[-1]
+        assert metadata["type"] == "Metadata"
+        assert "detected_language" not in metadata

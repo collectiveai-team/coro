@@ -19,9 +19,14 @@ from collections.abc import AsyncIterator
 
 from fastapi.responses import StreamingResponse
 
-from coro.api.exceptions import UNDECODABLE_MEDIA_MESSAGE, TranscriptionCapacityError
+from coro.api.exceptions import (
+    UNDECODABLE_MEDIA_MESSAGE,
+    TranscriptionCapacityError,
+    TranscriptionValidationError,
+)
 from coro.audio import AudioConversionError
 from coro.backends.asr.concurrency import AsrCapacityError
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.models import PipelineStreamEvent
 from coro.pipelines.done_frame import StreamingDoneFrame
 
@@ -67,6 +72,12 @@ async def _sse_generator(event_source: AsyncIterator[PipelineStreamEvent]):
         # already on the wire by the time the generator runs, so the retry hint
         # travels in the error frame's message rather than as Retry-After.
         yield _error_frame(exc.message, error_type=TranscriptionCapacityError.error_type)
+        yield _TERMINATOR_FRAME
+    except AsrUnsupportedLanguageError as exc:
+        # Same wire constraint as AsrCapacityError above: the 200 headers are
+        # already sent, so the 400-equivalent travels as an error frame naming
+        # the supported languages rather than as a status code.
+        yield _error_frame(exc.message, error_type=TranscriptionValidationError.error_type)
         yield _TERMINATOR_FRAME
     except Exception as exc:
         yield _error_frame(str(exc), error_type="server_error")

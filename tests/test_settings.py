@@ -5,15 +5,18 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from coro.settings import ServerSettings
+from coro.settings import DEFAULT_MODEL_SLUG, MODEL_SLUGS, ServerSettings
 
 
-def test_settings_default_to_full_memory_asr_only_configuration():
+def test_settings_default_to_full_memory_canary_configuration():
+    """Canary-1b-v2 (INT8/INT8) is the default ASR Model Selection (ADR 0019/0020)."""
     settings = ServerSettings(_env_file=None)
 
     assert settings.pipeline == "full-memory"
-    assert settings.backend_asr == "onnx-asr"
-    assert settings.model_asr == "nemo-parakeet-tdt-0.6b-v3"
+    assert settings.backend_asr == "onnx-canary-split"
+    assert settings.model_asr == "collectiveai/canary-1b-v2-onnx-split-int8"
+    assert settings.asr_quantization == "static_qdq_v4_pct_excl"
+    assert settings.asr_decoder_quantization == "dynamic_v1_quint8"
     assert settings.asr_device == "auto"
     assert settings.asr_compute_type == "default"
     assert settings.backend_diarization == "none"
@@ -23,9 +26,92 @@ def test_settings_default_to_full_memory_asr_only_configuration():
     assert settings.asr_onnx_vad_threshold is None
     assert settings.diarization_postprocessing is None
     assert settings.diarization_postprocessing_max_speakers == 4
-    # int8 is a memory-fitting tool, not a speed tool, for the default transducer
-    # ASR Model Selection — quantization stays off unless explicitly opted into.
+
+
+def test_a_non_slug_asr_quantization_stays_unset_for_a_non_canary_backend():
+    """int8 is a memory-fitting tool, not a speed tool, for the parakeet slug."""
+    settings = ServerSettings(_env_file=None, model_asr="parakeet-tdt-0.6b-v3")
     assert settings.asr_quantization is None
+    assert settings.asr_decoder_quantization is None
+
+
+# ---------------------------------------------------------------------------
+# Model Slug Registry (ADR 0020)
+# ---------------------------------------------------------------------------
+
+
+class TestModelSlugRegistry:
+    def test_parakeet_slug_resolves_backend_and_model_with_no_quantization(self):
+        settings = ServerSettings(_env_file=None, model_asr="parakeet-tdt-0.6b-v3")
+        assert settings.backend_asr == "onnx-asr"
+        assert settings.model_asr == "nemo-parakeet-tdt-0.6b-v3"
+        assert settings.asr_quantization is None
+        assert settings.asr_decoder_quantization is None
+
+    def test_whisper_turbo_slug_resolves_backend_and_model(self):
+        settings = ServerSettings(_env_file=None, model_asr="whisper-large-v3-turbo")
+        assert settings.backend_asr == "faster-whisper"
+        assert settings.model_asr == "large-v3-turbo"
+
+    def test_whisper_slug_resolves_backend_and_model(self):
+        settings = ServerSettings(_env_file=None, model_asr="whisper-large-v3")
+        assert settings.backend_asr == "faster-whisper"
+        assert settings.model_asr == "large-v3"
+
+    def test_explicit_backend_and_raw_model_id_is_unchanged_from_before_slugs(self):
+        """`--backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3` is a no-op change."""
+        # Oracle computed via a different code path (the slug), not duplicated
+        # from this test's own constructor call.
+        via_slug = ServerSettings(_env_file=None, model_asr="parakeet-tdt-0.6b-v3")
+        settings = ServerSettings(
+            _env_file=None, backend_asr="onnx-asr", model_asr="nemo-parakeet-tdt-0.6b-v3"
+        )
+        assert settings.backend_asr == via_slug.backend_asr
+        assert settings.model_asr == via_slug.model_asr
+        assert settings.asr_quantization is None
+        assert settings.asr_decoder_quantization is None
+
+    def test_unknown_model_id_without_a_backend_raises_mentioning_backend_asr(self):
+        with pytest.raises(ValidationError, match="backend_asr"):
+            ServerSettings(_env_file=None, model_asr="some/unknown-id")
+
+    def test_unknown_model_id_with_an_explicit_backend_passes_through_verbatim(self):
+        raw_backend, raw_model = "onnx-genai", "some/unknown-id"
+        assert raw_model not in MODEL_SLUGS  # sanity: genuinely unknown, not a slug in disguise
+        settings = ServerSettings(_env_file=None, backend_asr=raw_backend, model_asr=raw_model)
+        assert settings.backend_asr == raw_backend
+        assert settings.model_asr == raw_model
+        assert settings.asr_quantization is None
+        assert settings.asr_decoder_quantization is None
+
+    def test_fp32_overrides_the_default_slugs_encoder_quantization_but_keeps_the_decoder(self):
+        settings = ServerSettings(_env_file=None, asr_quantization="fp32")
+        assert settings.backend_asr == "onnx-canary-split"
+        assert settings.asr_quantization is None
+        assert settings.asr_decoder_quantization == "dynamic_v1_quint8"
+
+    def test_fp32_overrides_the_default_slugs_decoder_quantization_but_keeps_the_encoder(self):
+        settings = ServerSettings(_env_file=None, asr_decoder_quantization="fp32")
+        assert settings.asr_decoder_quantization is None
+        assert settings.asr_quantization == "static_qdq_v4_pct_excl"
+
+    def test_explicit_backend_overriding_the_default_slug_still_fills_its_quantization(self):
+        """Precedence is per field: an overridden backend_asr does not un-fill model_asr's slug."""
+        default_slug = MODEL_SLUGS[DEFAULT_MODEL_SLUG]
+        settings = ServerSettings(_env_file=None, backend_asr="onnx-asr")
+        # The oracle is the default slug's own backend, not this test's input literal:
+        # proves the slug did NOT clobber the explicit backend_asr back to its own default.
+        assert settings.backend_asr != default_slug["backend_asr"]
+        assert settings.model_asr == default_slug["model_asr"]
+        assert settings.asr_quantization == default_slug["asr_quantization"]
+
+    def test_explicit_quantization_survives_the_default_slug(self):
+        default_slug = MODEL_SLUGS[DEFAULT_MODEL_SLUG]
+        settings = ServerSettings(_env_file=None, asr_quantization="int8")
+        # Oracle is the slug's own quantization default, proving the explicit
+        # value survived rather than being overwritten by the slug.
+        assert settings.asr_quantization != default_slug["asr_quantization"]
+        assert settings.asr_decoder_quantization == default_slug["asr_decoder_quantization"]
 
 
 def test_onnx_vad_settings_read_from_env(monkeypatch):
@@ -35,6 +121,20 @@ def test_onnx_vad_settings_read_from_env(monkeypatch):
 
     assert settings.asr_onnx_vad == "enabled"
     assert settings.asr_onnx_vad_threshold == 0.4
+
+
+def test_asr_fallback_language_defaults_to_english():
+    assert ServerSettings(_env_file=None).asr_fallback_language == "en"
+
+
+def test_asr_fallback_language_env_flip(monkeypatch):
+    monkeypatch.setenv("CORO_ASR_FALLBACK_LANGUAGE", "es")
+    assert ServerSettings(_env_file=None).asr_fallback_language == "es"
+
+
+def test_asr_fallback_language_blank_collapses_to_the_default(monkeypatch):
+    monkeypatch.setenv("CORO_ASR_FALLBACK_LANGUAGE", "   ")
+    assert ServerSettings(_env_file=None).asr_fallback_language == "en"
 
 
 @pytest.mark.parametrize("value", ["on", "true", "yes", ""])

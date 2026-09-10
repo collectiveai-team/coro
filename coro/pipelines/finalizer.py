@@ -113,12 +113,21 @@ def iter_response_segments(
 def build_streaming_response(
     store: TranscriptSpillStore,
     speaker_timeline: list[SpeakerSegment] | None = None,
+    *,
+    detected_language: str | None = None,
 ) -> TranscriptionResult:
     """Assemble the full :class:`TranscriptionResult` from a spill store.
 
     Mirrors the batch builder.  This materialises the lists once (inherent for
     a single response object); steady-state streaming stays flat because the
     data lived in the store, not Python lists.
+
+    Args:
+        store: The request's Transcript Spill Store.
+        speaker_timeline: Speaker timeline segments from the Diarization Adapter.
+        detected_language: Language auto-LID resolved for this request, if any
+            (see :class:`~coro.core.models.TranscriptionResult`).
+
     """
     segments: list[ResponseSegment] = []
     word_segments: list[TranscriptWord] = []
@@ -134,4 +143,5 @@ def build_streaming_response(
         transcript=transcript,
         diarization=diarization,
         raw_words=raw_words,
+        detected_language=detected_language,
     )

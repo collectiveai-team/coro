@@ -344,6 +344,25 @@ _Avoid_: Transcription engine wrapper, route model
 The adapter-owned rule for serializing or allowing concurrent model calls based on backend safety.
 _Avoid_: Global pipeline lock, assumed backend safety
 
+**Sticky Language Detection**:
+Request-scoped auto language identification for an **ASR Adapter** that
+exposes it (duck-typed `detect_language`, not part of the **ASR Adapter**
+protocol — today only `onnx-canary-split`): the first window whose detection
+succeeds fixes the language for every later window of the same
+request/connection, replacing per-frame language switching with one decision
+per recording. State lives with the pipeline call (`LanguageState`), never
+inside the shared adapter instance, so concurrent requests never see each
+other's detection. An explicit request language always wins outright and
+skips detection entirely. See ADR 0019.
+_Avoid_: Per-frame/per-window language switching, adapter-owned language state, assuming every ASR Adapter can detect language
+
+**Fallback Language**:
+The language an **ASR Adapter** decodes with when a request carries none and
+**Sticky Language Detection** either is unavailable or never yields one
+(`asr_fallback_language`, `CORO_ASR_FALLBACK_LANGUAGE`, default `en`). Server
+Warmup passes it explicitly for backends that publish one.
+_Avoid_: A hardcoded silent default hidden inside a backend, per-window fallback re-evaluation
+
 **ML Model Integration**:
 A package module under `backends/` that adapts an external ASR or diarization backend.
 _Avoid_: Pydantic model, response schema
@@ -359,9 +378,22 @@ _Avoid_: Provider-first backend tree, duplicated provider setup, capability code
 **ASR Model Selection**:
 The model identifier passed to the configured ASR backend provider — Hugging Face-style
 (`openai/whisper-medium`) unless the provider defines its own catalogue handle, as
-`onnx-asr` does for the models it curates (`nemo-parakeet-tdt-0.6b-v3`). The rule is that
-the identifier is whatever the provider resolves, never a package-invented short alias.
+`onnx-asr` does for the models it curates (`nemo-parakeet-tdt-0.6b-v3`), or a **Model
+Slug** resolves it. The rule is that the identifier is whatever the provider resolves,
+never a package-invented short alias.
 _Avoid_: ASR backend, provider name, package-invented short alias
+
+**Model Slug**:
+A short `model_asr` value (`canary-1b-v2`, `parakeet-tdt-0.6b-v3`,
+`whisper-large-v3-turbo`, `whisper-large-v3`) that resolves to a complete,
+known-good ASR configuration — `backend_asr`, the underlying model id, and both
+quantization selectors — in one step, so a slug alone is enough to pick a
+model without also knowing which backend drives it. Precedence is per field:
+an operator-set value always wins over the slug's own default. A `model_asr`
+that is not a registered slug passes through verbatim as the raw model id/path
+for an explicitly given `backend_asr` — the pre-slug behaviour, kept
+byte-for-byte. See ADR 0020.
+_Avoid_: Backend name as model selection, a slug that only sets one field, silently guessing a backend from an unrecognised model id
 
 **Diarization Model Selection**:
 The Hugging Face-style model identifier passed to the configured diarization backend provider. The package is distributed under MIT, so a selection that is named as a default, a recommendation, or an example must be permissively licensed; a non-commercial selection may only be named as a comparative reference and must be labelled with its license.
@@ -757,11 +789,11 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "full-memory" was used to imply whole-file ASR — resolved: both pipeline implementations use **ASR Windowing**.
 - "environment variable" was used without namespacing — resolved: **Server Startup Selection** uses `CORO_PIPELINE`, `CORO_BACKEND_ASR`, `CORO_MODEL_ASR`, `CORO_BACKEND_DIARIZATION`, and `CORO_MODEL_DIARIZATION`.
 - "default pipeline" was used to imply fallback behavior — resolved: defaults apply only when unset; invalid values fail **Strict Startup Validation**.
-- "backend provider default" was unspecified — resolved: ASR defaults to `onnx-asr` and diarization defaults to `none`.
-- "ASR model default" was unspecified — resolved: the default **ASR Model Selection** is `nemo-parakeet-tdt-0.6b-v3`.
-- "quantization" was used as a speed setting — resolved: for the default transducer **ASR Model Selection**, `int8` is a memory-fitting option with no measured throughput gain.
+- "backend provider default" was unspecified — resolved: ASR defaults to `onnx-canary-split` and diarization defaults to `none` (superseded 2026-09-09: ASR default moved off `onnx-asr` to fix uncontrollable per-frame language switching — see ADR 0019).
+- "ASR model default" was unspecified — resolved: the default **ASR Model Selection** is the `canary-1b-v2` **Model Slug** (`collectiveai/canary-1b-v2-onnx-split-int8`, INT8 encoder + INT8 decoder) (superseded 2026-09-09, was `nemo-parakeet-tdt-0.6b-v3` — see ADR 0019; that model remains available via the `parakeet-tdt-0.6b-v3` slug).
+- "quantization" was used as a speed setting — resolved: for the `parakeet-tdt-0.6b-v3` transducer slug, `int8` is a memory-fitting option with no measured throughput gain; for the default `canary-1b-v2` slug both encoder and decoder INT8 selectors are real (if small) throughput wins and are the default quantization — see ADR 0019 and ADR 0020's per-slug quantization defaults.
 - "better model card DER" was treated as sufficient to move a default — resolved: a **Diarization Model Selection** default changes only when an A/B on this pipeline shows the gain; Sortformer v2.1 did not, so the default stays v2.
-- "model name" was used to imply short aliases — resolved: **ASR Model Selection** and **Diarization Model Selection** use the identifier the **Backend Provider** resolves — Hugging Face-style full ids, or a provider's own catalogue handle (e.g. onnx-asr's `nemo-parakeet-tdt-0.6b-v3`) — never a package-invented alias.
+- "model name" was used to imply short aliases — resolved: **ASR Model Selection** and **Diarization Model Selection** use the identifier the **Backend Provider** resolves — Hugging Face-style full ids, or a provider's own catalogue handle (e.g. onnx-asr's `nemo-parakeet-tdt-0.6b-v3`) — never a package-invented alias, with one sanctioned exception: a registered **Model Slug** resolves backend *and* model *and* quantization together, and an unrecognised value still falls through to the no-alias rule unchanged.
 - "diarization model default" was unspecified — resolved: enabled NeMo diarization defaults to `nvidia/diar_streaming_sortformer_4spk-v2`.
 - "Sortformer" was used as if it named one interchangeable model — resolved: the family spans the batch `nvidia/diar_sortformer_4spk-v1` (CC-BY-NC-4.0) and the streaming `nvidia/diar_streaming_sortformer_4spk-v2` (CC-BY-4.0); only the permissively licensed streaming model is a default, recommendation, or example **Diarization Model Selection**.
 - "health backend" was used to imply one backend status — resolved: `/health` reports **Server Startup Selection** and **Capability Readiness** separately.
@@ -788,3 +820,6 @@ _Avoid_: Pipeline-owned backend construction, direct provider calls
 - "tune the diarizer" was used to imply coro should pick and ship numbers — resolved: coro exposes the **Diarization Post-Processing Configuration** capability and vendors NVIDIA's own presets verbatim; choosing or supplying a value is a per-deployment operator decision, per ADR 0010.
 - "collar-matched preset" was used to imply the collar predicts which preset scores best — resolved: the **Target Scoring Collar** is provenance governing *selection*, not a performance prediction.
 - "the model over-detects speech" was stated as a property of the model — resolved: miss and false-alarm shares are properties of the *reference* a timeline was scored against; two defensible references for one corpus can agree on total DER and disagree on the decomposition.
+- "language detection" was assumed to mean the old default's per-frame, per-window switching — resolved: **Sticky Language Detection** fixes one language per request/connection from the first successful detection; per-frame switching is the behaviour it replaces, not a mode it offers.
+- "no language given" was assumed to mean silent English — resolved: it means the **Fallback Language** (configurable, default `en`), consulted only when **Sticky Language Detection** is unavailable or never yields a language for the whole request.
+- "int8 is a memory tool, never a speed tool" was treated as a universal ASR claim — resolved: it holds for the `parakeet-tdt-0.6b-v3` slug's transducer architecture; the default `canary-1b-v2` slug's encoder and decoder INT8 selectors are real (measured) throughput wins and ship as that slug's own defaults.

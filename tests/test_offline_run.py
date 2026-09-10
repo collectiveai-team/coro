@@ -95,7 +95,7 @@ def test_it_reports_the_configuration_that_produced_the_result(
 
     report = capsys.readouterr().err
     assert "mode=in-process" in report
-    assert "asr=onnx-asr:nemo-parakeet-tdt-0.6b-v3" in report
+    assert "asr=onnx-canary-split:collectiveai/canary-1b-v2-onnx-split-int8" in report
 
 
 def test_it_forwards_the_language_hint(audio_file, tmp_path, fake_asr, no_network):
@@ -155,7 +155,52 @@ def test_a_fully_cached_run_is_byte_identical_to_the_cold_one(
 
 
 def test_a_fully_cached_run_never_builds_the_adapter(audio_file, tmp_path, undetectable_filesystem):
-    """The point of the fast path is skipping the model load, not just inference."""
+    """The point of the fast path is skipping the model load, not just inference.
+
+    ``--language es`` isolates the window-cache-driven laziness this test
+    names from auto-LID's own, separate load cost (see
+    ``test_an_auto_lid_capable_default_still_loads_once_per_run_for_detection``
+    below): an explicit language never calls ``detect_language`` at all, so
+    this test exercises only the property in its name, regardless of which
+    ASR Backend Provider (auto-LID-capable or not) is configured.
+    """
+    cache_dir = str(tmp_path / "cache")
+    arguments = (
+        str(audio_file),
+        "--asr-cache",
+        "enabled",
+        "--asr-cache-dir",
+        cache_dir,
+        "--language",
+        "es",
+    )
+
+    with patch(
+        "coro.backends.asr.factory.build_asr_adapter", autospec=True, return_value=_FakeASR()
+    ) as build:
+        _run(*arguments, "-o", str(tmp_path / "cold.json"))
+        builds_after_cold_run = build.call_count
+        _run(*arguments, "-o", str(tmp_path / "warm.json"))
+
+    assert (builds_after_cold_run, build.call_count) == (1, 1)
+
+
+def test_an_auto_lid_capable_default_still_loads_once_per_run_for_detection(
+    audio_file, tmp_path, undetectable_filesystem
+):
+    """A known, accepted trade-off of the default ASR Backend Provider having auto-LID.
+
+    Without an explicit language, ``coro run`` must call ``detect_language``
+    before it can even compute a window's cache key -- and each fresh
+    ``LazyASRAdapter`` (`coro run` builds one per invocation) must load the
+    real adapter to answer that call, even when the window's eventual
+    *transcription* is a cache hit. This costs exactly one load per
+    invocation (never a second one within the same run, and never a real
+    inference call for an already-cached window) -- both are asserted here,
+    the second via the cache hit/miss report
+    (``test_it_reports_cache_hits_and_misses``'s "hits=1 misses=0" on the
+    warm run already proves that half).
+    """
     cache_dir = str(tmp_path / "cache")
     arguments = (str(audio_file), "--asr-cache", "enabled", "--asr-cache-dir", cache_dir)
 
@@ -166,7 +211,8 @@ def test_a_fully_cached_run_never_builds_the_adapter(audio_file, tmp_path, undet
         builds_after_cold_run = build.call_count
         _run(*arguments, "-o", str(tmp_path / "warm.json"))
 
-    assert (builds_after_cold_run, build.call_count) == (1, 1)
+    # One load per invocation (detection forces it fresh each time), never more.
+    assert (builds_after_cold_run, build.call_count) == (1, 2)
 
 
 # MARK: Parity With The Server

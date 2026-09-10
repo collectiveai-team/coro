@@ -44,3 +44,21 @@ def write_silent_wav(dst: Path, seconds: float = 1.0) -> None:
         handle.setsampwidth(2)
         handle.setframerate(16000)
         handle.writeframes(b"\x00\x00" * int(16000 * seconds))
+
+
+def synthetic_fleurs_rows(language: str, count: int) -> list[dict]:
+    """Generate ``count`` canned FLEURS-shaped rows for one language.
+
+    Unlike :data:`SPANISH_CORPUS_ROWS` (a small fixed list matching real
+    FLEURS ids), the code-switch corpus builder fetches as many rows as its
+    preset's item count requires, so its fixture must scale to any requested
+    ``limit`` rather than being capped at 2-3 canned rows.
+    """
+    return [
+        {
+            "id": f"{language}-{index}",
+            "raw_transcription": f"{language} sentence number {index}",
+            "audio": {"bytes": f"FAKE-{language}-{index}".encode(), "path": f"{index}.wav"},
+        }
+        for index in range(count)
+    ]

@@ -35,6 +35,8 @@ from coro.api.deepgram.live_schemas import (
     DeepgramLiveResultsMetadata,
     live_results,
 )
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
+from coro.cache.adapter import unwrap_asr_adapter
 from coro.core.models import TranscriptToken
 from coro.core.protocols import ASRAdapter
 from coro.core.speakers import attribute_span, merge_speaker_timeline
@@ -156,12 +158,25 @@ async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | Non
         logger.info("listen_ws[%s] rejected audio declaration: %s", request_id, exc)
         await _reject(websocket, description="Unsupported audio format", message=str(exc))
         return None
+    language = websocket.query_params.get("language") or None
+    # Backends that resolve/validate a language up front (currently only
+    # onnx-canary-split) get it checked at negotiate time, mirroring the audio
+    # format check above -- an unsupported language is rejected before any
+    # audio flows rather than surfacing later inside the streaming session.
+    resolve_language = getattr(unwrap_asr_adapter(asr), "resolve_language", None)
+    if resolve_language is not None:
+        try:
+            resolve_language(language)
+        except AsrUnsupportedLanguageError as exc:
+            logger.info("listen_ws[%s] rejected unsupported language: %s", request_id, exc)
+            await _reject(websocket, description="Unsupported language", message=exc.message)
+            return None
     return _Negotiated(
         asr=asr,
         runtime=runtime,
         sample_rate=sample_rate or SAMPLE_RATE,
         diarize=_flag(websocket, "diarize"),
-        language=websocket.query_params.get("language") or None,
+        language=language,
     )
 
 
@@ -318,6 +333,7 @@ async def _close_out(
             duration=round(session.audio_seconds, 2),
             channels=1,
             models=[getattr(settings, "model_asr", "")] if settings else [],
+            detected_language=session.detected_language,
         ),
     )
     if websocket.client_state is WebSocketState.CONNECTED:

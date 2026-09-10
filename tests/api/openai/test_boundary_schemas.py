@@ -38,7 +38,14 @@ from coro.core.models import (
 # model has to change this list too — a test that reads the answer off the code
 # it is testing would pass for any answer.
 _PUBLIC_FIELDS = {
-    TranscriptionResult: ["segments", "word_segments", "transcript", "diarization", "raw_words"],
+    TranscriptionResult: [
+        "segments",
+        "word_segments",
+        "transcript",
+        "diarization",
+        "raw_words",
+        "detected_language",
+    ],
     ResponseSegment: ["start", "end", "text", "speaker", "words", "overlap"],
     TranscriptWord: ["word", "start", "end", "score", "speaker", "overlap"],
     TranscriptItem: ["start", "end", "text"],

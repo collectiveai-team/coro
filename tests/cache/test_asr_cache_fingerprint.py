@@ -27,6 +27,16 @@ _PCM = b"\x01\x02" * 800
 
 
 def _settings(**overrides) -> ServerSettings:
+    """Default to a stable, non-slug backend/model pair.
+
+    Most of this file's tests care about the fingerprint mechanism, not the
+    model slug registry (ticket 06): defaulting to the raw-passthrough form
+    keeps quantization fields at their own unset default (None) unless a
+    test explicitly overrides one, exactly as before the default ASR Model
+    Selection became a quantization-filling slug.
+    """
+    overrides.setdefault("backend_asr", "onnx-asr")
+    overrides.setdefault("model_asr", "m")
     return ServerSettings(_env_file=None, **overrides)
 
 
@@ -63,6 +73,19 @@ def test_quantization_changes_the_fingerprint_for_the_backend_that_honours_it():
     assert _fingerprint(backend_asr="onnx-asr", asr_quantization="int8") != _fingerprint(
         backend_asr="onnx-asr"
     )
+
+
+def test_decoder_quantization_changes_the_fingerprint_for_the_backend_that_honours_it():
+    assert _fingerprint(
+        backend_asr="onnx-canary-split", asr_decoder_quantization="dynamic_v1_quint8"
+    ) != _fingerprint(backend_asr="onnx-canary-split")
+
+
+def test_decoder_quantization_is_a_no_op_for_a_provider_that_ignores_it():
+    """asr_decoder_quantization only affects onnx-canary-split's decoder_step.onnx."""
+    assert _fingerprint(
+        backend_asr="onnx-asr", asr_decoder_quantization="dynamic_v1_quint8"
+    ) == _fingerprint(backend_asr="onnx-asr")
 
 
 def test_vad_configuration_changes_the_fingerprint():

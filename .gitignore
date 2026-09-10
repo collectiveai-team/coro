@@ -39,4 +39,18 @@ coro/static/
 !.env.example
 .tmp/
 .scratch/
-.journals/
+.journals
+
+# Generated output of coro/recipes/ scripts (ONNX exports, calibration
+# corpora, quantized weights) — regenerable by re-running the recipe that
+# produced it, never committed. See coro/recipes/paths.py.
+/recipe-artifacts/
+.orquestalite/
+team.json
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+.mypy_cache/
+.ruff_cache/

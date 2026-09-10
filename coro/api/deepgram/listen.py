@@ -27,6 +27,7 @@ from coro.api.deepgram.render import render_deepgram
 from coro.api.deepgram.schemas import DeepgramErrorResponse
 from coro.api.json_body import spooled_json_response
 from coro.audio import AudioConversionError, AudioInput
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.transcript_source import TranscriptSource
 from coro.pipelines.source import transcript_source
 from coro.settings import ServerSettings
@@ -223,6 +224,14 @@ async def listen(
         return _error(
             err_code=_BAD_REQUEST,
             err_msg=UNDECODABLE_AUDIO_MESSAGE,
+            request_id=request_id,
+            status_code=400,
+        )
+    except AsrUnsupportedLanguageError as exc:
+        logger.info("listen[%s] rejected unsupported language: %s", request_id, exc)
+        return _error(
+            err_code=_BAD_REQUEST,
+            err_msg=exc.message,
             request_id=request_id,
             status_code=400,
         )

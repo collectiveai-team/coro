@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.core.models import SpeakerSegment, TokenBatchEvent, TranscriptToken
 from coro.core.protocols import ASRAdapter
-from coro.pipelines.windowing import ASRWindowing
+from coro.pipelines.windowing import ASRWindowing, LanguageState
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,11 @@ class LiveTranscriptionSession:
         )
         self._total_bytes = 0
         self._started = time.perf_counter()
+        # One per connection, never inside the shared (and concurrent) ASR
+        # adapter instance -- see coro/pipelines/windowing.py's LanguageState.
+        # An explicit negotiated language means _resolve_window_language never
+        # even reads this, so detection never runs for it either.
+        self._language_state = LanguageState()
 
     @property
     def diarization_enabled(self) -> bool:
@@ -100,6 +105,11 @@ class LiveTranscriptionSession:
     def audio_seconds(self) -> float:
         """Seconds of audio ingested so far, derived from bytes consumed."""
         return self._total_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
+
+    @property
+    def detected_language(self) -> str | None:
+        """Sticky auto-LID result for this connection so far, if any."""
+        return self._language_state.resolved
 
     async def run(self, source: LiveAudioSource) -> AsyncIterator[list[TranscriptToken]]:
         """Consume the source, yielding each window's accepted tokens."""
@@ -116,6 +126,7 @@ class LiveTranscriptionSession:
             asr=self._asr,
             language=self._language,
             prompt=self._prompt,
+            language_state=self._language_state,
         ):
             if isinstance(event, TokenBatchEvent) and event.tokens:
                 yield event.tokens

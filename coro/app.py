@@ -173,7 +173,16 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
                 streaming_diarizer_factory=runtime.streaming_diarizer_factory,
             )
             warmup_audio = AudioInput(WARMUP_AUDIO_PATH.read_bytes())
-            await warmup_pipeline.transcribe(warmup_audio)
+            # asr_fallback_language is consulted by onnx-canary-split only (see
+            # its ServerSettings description); other backends keep warming up
+            # with no language hint (their own auto-LID/default), unchanged.
+            warmup_language = (
+                settings.asr_fallback_language
+                if settings.backend_asr == "onnx-canary-split"
+                else None
+            )
+            logger.info("Server Warmup using ASR language=%s", warmup_language)
+            await warmup_pipeline.transcribe(warmup_audio, language=warmup_language)
             runtime.warmup_ready = True
         else:
             logger.warning("Server Warmup is disabled — first request may pay cold-model costs.")
