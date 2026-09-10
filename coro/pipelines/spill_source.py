@@ -31,9 +31,27 @@ from coro.pipelines.transcript_store import TranscriptSpillStore
 class SpillTranscriptSource:
     """A Transcript Source reading through a per-request spill store."""
 
-    def __init__(self, store: TranscriptSpillStore, timeline: list[SpeakerSegment]) -> None:
+    def __init__(
+        self,
+        store: TranscriptSpillStore,
+        timeline: list[SpeakerSegment],
+        *,
+        detected_language: str | None = None,
+    ) -> None:
         self._store = store
         self._timeline = timeline
+        self._detected_language = detected_language
+
+    @property
+    def detected_language(self) -> str | None:
+        """Language auto-LID resolved for this request, if any.
+
+        Not part of the :class:`~coro.core.transcript_source.TranscriptSource`
+        Protocol; callers read it with ``getattr(source, "detected_language",
+        None)`` (see ``coro/api/openai/render.py``), mirroring
+        ``MemoryTranscriptSource``'s own property.
+        """
+        return self._detected_language
 
     def iter_segments(self) -> Iterator[ResponseSegment]:
         return iter_response_segments(self._store, self._timeline)

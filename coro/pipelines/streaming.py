@@ -34,7 +34,7 @@ from coro.pipelines.finalizer import (
 )
 from coro.pipelines.spill_source import SpillTranscriptSource
 from coro.pipelines.transcript_store import TranscriptSpillStore
-from coro.pipelines.windowing import ASRWindowing
+from coro.pipelines.windowing import ASRWindowing, LanguageState
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,7 @@ class _RunOutcome:
     duration: float = 0.0
     chunk_count: int = 0
     diarizer_chunks: int = 0
+    detected_language: str | None = None
 
 
 class StreamingPipeline:
@@ -97,7 +98,9 @@ class StreamingPipeline:
         try:
             async for _ in self._run(audio, store, outcome, language=language, prompt=prompt):
                 pass
-            return build_streaming_response(store, outcome.timeline)
+            return build_streaming_response(
+                store, outcome.timeline, detected_language=outcome.detected_language
+            )
         finally:
             store.close()
             await audio.cleanup()
@@ -125,7 +128,9 @@ class StreamingPipeline:
             raise
         finally:
             await audio.cleanup()
-        return SpillTranscriptSource(store, outcome.timeline)
+        return SpillTranscriptSource(
+            store, outcome.timeline, detected_language=outcome.detected_language
+        )
 
     # Streaming Transcription ----------------------------------------------
     async def stream(
@@ -145,7 +150,9 @@ class StreamingPipeline:
             # Ownership of the store passes to the frame, which closes it once
             # rendered; the final transcript is never materialised in memory.
             store_released = True
-            yield StreamingDoneFrame(store=store, timeline=outcome.timeline)
+            yield StreamingDoneFrame(
+                store=store, timeline=outcome.timeline, detected_language=outcome.detected_language
+            )
         finally:
             if not store_released:
                 store.close()
@@ -177,17 +184,20 @@ class StreamingPipeline:
             logger.info("streaming_pipeline start path=%s diarizer=%s", path, diarizer is not None)
 
             finalizer = StreamingTranscriptFinalizer(store)
+            language_state = LanguageState()
             async for event in self._windowing.stream_chunks(
                 self._chunks(path, diarizer, outcome),
                 asr=self._asr,
                 language=language,
                 prompt=prompt,
+                language_state=language_state,
             ):
                 if isinstance(event, TokenBatchEvent):
                     finalizer.add_tokens(event.tokens)
                     continue
                 yield event
             finalizer.finish()
+            outcome.detected_language = language_state.resolved
 
             outcome.timeline = await self._finalize_diarizer(diarizer, outcome)
             logger.info(

@@ -81,3 +81,10 @@ class TranscriptionResult:
     transcript: list[TranscriptItem] = field(default_factory=list)
     diarization: list[DiarizationItem] = field(default_factory=list)
     raw_words: list[RawWord] = field(default_factory=list)
+    detected_language: str | None = None
+    """Language auto-LID resolved for this request, or None when no request
+    language was given and no window's detection ever succeeded (the
+    fallback language decoded throughout instead -- see
+    ``coro/pipelines/windowing.py``'s sticky auto-LID state). Only ever set
+    by a backend that exposes ``detect_language``; ``None`` for every other
+    backend and for an explicit request language (detection never runs)."""

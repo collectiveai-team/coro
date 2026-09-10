@@ -227,3 +227,49 @@ async def test_streaming_capacity_rejection_emits_rate_limit_error():
     assert err["type"] == "rate_limit_exceeded"
     assert "Retry in 5s" in err["message"]
     assert events[-1] == "[DONE]"
+
+
+class _UnsupportedLanguageStreamingPipeline:
+    async def transcribe(self, audio, *, language=None, prompt=None):
+        return TranscriptionResult()
+
+    async def stream(self, audio, *, language=None, prompt=None):
+        from coro.backends.asr.errors import AsrUnsupportedLanguageError
+
+        for _ in ():  # empty loop makes this an async generator that yields nothing
+            yield _
+        raise AsrUnsupportedLanguageError("ja", supported_languages=["en", "es", "fr"])
+
+
+@pytest.mark.asyncio
+async def test_streaming_unsupported_language_emits_invalid_request_error():
+    """An unsupported language mid-stream emits an invalid_request_error event.
+
+    Same wire constraint as the capacity case: the 200 SSE headers are already
+    on the wire, so the 400-equivalent travels as an error event, not a status
+    code.
+    """
+    from fastapi import FastAPI
+
+    application: FastAPI = create_app(ServerSettings())
+    runtime = RuntimeState(asr_adapter=object())
+    runtime.pipeline = _UnsupportedLanguageStreamingPipeline()
+    application.state.runtime = runtime
+
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
+            data={"model": "whisper-1", "stream": "true", "language": "ja"},
+        )
+
+    events = _parse_sse_events(response.text)
+    error_events = [e for e in events if isinstance(e, dict) and "error" in e]
+    assert len(error_events) == 1
+    err = error_events[0]["error"]
+    assert err["type"] == "invalid_request_error"
+    assert "ja" in err["message"]
+    assert "en" in err["message"]
+    assert events[-1] == "[DONE]"

@@ -134,11 +134,23 @@ _SEGMENT_DERIVED_RENDERERS = {
 # Response arrays read directly from the store, needing no segment pass.
 _STORE_DERIVED_RENDERERS = {"raw_words": _raw_word_elements}
 
+# Response fields that are a JSON scalar, not an array -- rendered directly
+# from the frame's own attribute rather than scanned from the store/segments.
+# ``detected_language`` is one: the auto-LID sticky result for the whole
+# request (see ``coro/pipelines/windowing.py``'s ``LanguageState``), which the
+# Streaming Pipeline does not yet thread through here (that is ticket 05's
+# streaming/live slice) -- it always renders ``null`` until then, exactly as
+# the field's own default already implies for any caller that does not set it.
+_SCALAR_FIELDS = {"detected_language"}
+
 # Field order comes from the response dataclass, never from string literals.
 _RESPONSE_FIELDS = tuple(f.name for f in fields(TranscriptionResult))
 
 _UNRENDERED = (
-    set(_RESPONSE_FIELDS) - set(_SEGMENT_DERIVED_RENDERERS) - set(_STORE_DERIVED_RENDERERS)
+    set(_RESPONSE_FIELDS)
+    - set(_SEGMENT_DERIVED_RENDERERS)
+    - set(_STORE_DERIVED_RENDERERS)
+    - _SCALAR_FIELDS
 )
 _UNKNOWN = (set(_SEGMENT_DERIVED_RENDERERS) | set(_STORE_DERIVED_RENDERERS)) - set(_RESPONSE_FIELDS)
 if _UNRENDERED or _UNKNOWN:  # pragma: no cover - import-time contract guard
@@ -215,6 +227,7 @@ class StreamingDoneFrame:
 
     store: TranscriptSpillStore
     timeline: list[SpeakerSegment]
+    detected_language: str | None = None
 
     def inner_fragments(self) -> Iterator[str]:
         """Yield the response JSON piecewise, equal to json.dumps(response)."""
@@ -225,7 +238,11 @@ class StreamingDoneFrame:
             for i, name in enumerate(_RESPONSE_FIELDS):
                 if i:
                     yield _ELEMENT_SEPARATOR
-                yield f"{json.dumps(name)}{_KEY_SEPARATOR}["
+                yield f"{json.dumps(name)}{_KEY_SEPARATOR}"
+                if name in _SCALAR_FIELDS:
+                    yield json.dumps(getattr(self, name))
+                    continue
+                yield "["
                 if name in spools:
                     yield from spools[name].read_fragments()
                 else:

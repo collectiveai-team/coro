@@ -37,6 +37,58 @@ class ASRWindowingResult:
     """Tokens accepted from ASR Windowing."""
 
     tokens: list[TranscriptToken]
+    detected_language: str | None = None
+    """Sticky auto-LID result for the whole call, if any -- see
+    :class:`LanguageState`."""
+
+
+# MARK: Sticky Auto-LID State
+@dataclass
+class LanguageState:
+    """Request-scoped sticky auto-LID state for one ``transcribe_pcm``/``stream_pcm`` call.
+
+    Lives with the request, not inside the shared (and now concurrent) ASR
+    adapter instance: two overlapping requests must not see each other's
+    detection. ``resolved`` is set by the first window whose detection
+    succeeds and never changes after that -- see :func:`_resolve_window_language`.
+    """
+
+    resolved: str | None = None
+
+
+async def _resolve_window_language(
+    asr: Any, pcm: bytes, *, language: str | None, state: LanguageState | None
+) -> str | None:
+    """Return the language to decode one window with, running auto-LID if needed.
+
+    - An explicit request ``language`` always wins outright; ``state`` is not
+      even consulted, so a forced-language request never calls ``detect_language``.
+    - No explicit language and no ``state`` (streaming/live pipelines, until
+      they carry their own sticky state): unchanged behaviour -- ``None``
+      reaches the adapter, whose own resolution/fallback applies.
+    - No explicit language, ``state`` given, already resolved: the sticky
+      language, no further detection calls.
+    - No explicit language, ``state`` given, not yet resolved: run detection
+      (only when ``asr`` exposes ``detect_language`` -- any backend without
+      it, i.e. every backend but onnx-canary-split today, behaves exactly as
+      before). A successful result becomes sticky and decodes *this* window;
+      an unsuccessful one (not observed on real audio in the LID probe, but
+      handled) decodes this window with ``None`` and detection is retried on
+      the next window.
+    """
+    if language:
+        return language
+    if state is None:
+        return None
+    if state.resolved is not None:
+        return state.resolved
+    detect = getattr(asr, "detect_language", None)
+    if detect is None:
+        return None
+    detected = await detect(pcm)
+    if detected is not None:
+        state.resolved = detected
+    return detected
 
 
 # MARK: Window Plan
@@ -168,12 +220,16 @@ class ASRWindowing:
         asr: Any,
         language: str | None,
         carry: _PromptCarry,
+        language_state: LanguageState | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Transcribe one window and emit its reconciled tokens.
 
         Every ASR Windowing path routes through here, including the tail flush,
         so token conversion, boundary reconciliation and prompt carry-over have
-        exactly one implementation.
+        exactly one implementation. ``language_state`` is ``None`` for any
+        caller not yet carrying sticky auto-LID state (see
+        :func:`_resolve_window_language`); today that is every caller except
+        the Full-Memory Pipeline's ``transcribe_pcm``/``stream_pcm``.
         """
         logger.info(
             "asr_windowing window=%d start=%.2fs duration=%.2fs final=%s",
@@ -182,8 +238,13 @@ class ASRWindowing:
             len(window) / BYTES_PER_SECOND,
             plan.is_final,
         )
+        resolved_language = await _resolve_window_language(
+            asr, window, language=language, state=language_state
+        )
         asr_started = time.perf_counter()
-        window_tokens = await asr.transcribe_pcm(window, language=language, prompt=carry.text)
+        window_tokens = await asr.transcribe_pcm(
+            window, language=resolved_language, prompt=carry.text
+        )
         logger.info(
             "asr_windowing window=%d asr_complete elapsed=%.3fs raw_tokens=%d",
             plan.index,
@@ -208,11 +269,14 @@ class ASRWindowing:
         language: str | None = None,
         prompt: str | None = None,
     ) -> ASRWindowingResult:
+        state = LanguageState()
         tokens: list[TranscriptToken] = []
-        async for event in self.stream_pcm(pcm, asr=asr, language=language, prompt=prompt):
+        async for event in self.stream_pcm(
+            pcm, asr=asr, language=language, prompt=prompt, language_state=state
+        ):
             if isinstance(event, TokenBatchEvent):
                 tokens.extend(event.tokens)
-        return ASRWindowingResult(tokens=tokens)
+        return ASRWindowingResult(tokens=tokens, detected_language=state.resolved)
 
     # Streaming Transcription ----------------------------------------------
     async def stream_pcm(
@@ -222,11 +286,12 @@ class ASRWindowing:
         asr: Any,
         language: str | None = None,
         prompt: str | None = None,
+        language_state: LanguageState | None = None,
     ) -> AsyncIterator[StreamEvent]:
         carry = _PromptCarry(text=prompt)
         for plan, window in self._plan_windows(pcm):
             async for event in self._run_window(
-                window, plan, asr=asr, language=language, carry=carry
+                window, plan, asr=asr, language=language, carry=carry, language_state=language_state
             ):
                 yield event
 
@@ -237,8 +302,15 @@ class ASRWindowing:
         asr: Any,
         language: str | None = None,
         prompt: str | None = None,
+        language_state: LanguageState | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Window a chunk stream, matching the plan `_plan_windows` would produce.
+
+        ``language_state``, when given, carries sticky auto-LID for the whole
+        call exactly as ``stream_pcm``'s does -- see
+        :func:`_resolve_window_language`. The Streaming and Live pipelines
+        create one per request/connection and read ``.resolved`` back after
+        (or during, for the Live pipeline) the stream to report it.
 
         A window is only dispatched once at least one byte beyond it has
         arrived, which is what proves it is not the final window. Emitting as
@@ -273,7 +345,12 @@ class ASRWindowing:
                 plan = self._plan(window_count, consumed_bytes, is_final=False)
                 window = bytes(buffer[: self.window_bytes])
                 async for event in self._run_window(
-                    window, plan, asr=asr, language=language, carry=carry
+                    window,
+                    plan,
+                    asr=asr,
+                    language=language,
+                    carry=carry,
+                    language_state=language_state,
                 ):
                     if isinstance(event, TokenBatchEvent):
                         accepted_count += len(event.tokens)
@@ -286,7 +363,12 @@ class ASRWindowing:
             window_count += 1
             plan = self._plan(window_count, consumed_bytes, is_final=True)
             async for event in self._run_window(
-                bytes(buffer), plan, asr=asr, language=language, carry=carry
+                bytes(buffer),
+                plan,
+                asr=asr,
+                language=language,
+                carry=carry,
+                language_state=language_state,
             ):
                 if isinstance(event, TokenBatchEvent):
                     accepted_count += len(event.tokens)

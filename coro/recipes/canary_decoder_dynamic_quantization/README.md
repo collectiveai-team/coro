@@ -65,11 +65,12 @@ uv run --extra recipes --extra cpu -m coro.recipes.canary_decoder_dynamic_quanti
 
 `coro/backends/asr/onnx_canary_split.py`'s `decoder_quantization="dynamic_v1_quint8"`
 selector (also `coro/settings.py`'s `asr_decoder_quantization` Server
-Setting) loads `decoder_step.dynamic_v1_quint8.onnx`. `None` (the default)
-loads the fp32 `decoder_step.onnx` from
-[canary_split_decoder](../canary_split_decoder/README.md) instead — this
-backend is comparative reference only, never the default ASR Backend
-Provider, so quantization is opt-in.
+Setting) loads `decoder_step.dynamic_v1_quint8.onnx`. `None` loads the fp32
+`decoder_step.onnx` from
+[canary_split_decoder](../canary_split_decoder/README.md) instead, but the
+default `canary-1b-v2` model slug fills `asr_decoder_quantization` with
+`dynamic_v1_quint8` — this is one of the two quantizations the *default* ASR
+Backend Provider ships with (see ADR 0019); explicit `fp32` opts back out.
 
 ## Not migrated here (stay in `.tmp/`, rejected)
 

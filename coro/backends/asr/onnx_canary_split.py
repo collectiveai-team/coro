@@ -30,8 +30,10 @@ loading it would be pure waste. ``_encode``, preprocessing, tokenization, and
 ``max_sequence_length``) are all inherited unmodified -- only ``_decode`` is
 overridden, per the PRD's integration-seam note.
 
-Artifact directory contract (``model_asr`` is a directory, not a single file),
-following the same convention ``onnx-parakeet-prompt`` already established:
+Artifact directory contract (``model_asr`` is a directory or a Hugging Face
+repo id -- never a single file), following the same convention
+``onnx-parakeet-prompt`` established for the directory case and
+``onnx-genai`` for the local-path-else-``snapshot_download`` resolution:
 
 - ``encoder-model.onnx`` (+ ``.onnx.data`` external-data sidecar, when
   present): fp32 encoder, unmodified from `istupakov/canary-1b-v2-onnx`.
@@ -74,42 +76,116 @@ following the same convention ``onnx-parakeet-prompt`` already established:
 - ``config.json``: optional; ``max_sequence_length`` etc, same as plain
   ``onnx-asr``'s Canary config.
 
-Adapter Concurrency Policy: **serialised**. ``_decode``'s split-graph override
-caches the 16 cross-attention K/V tensors as mutable instance state
-(``self._kv_cache``, computed on the first step of each window and read on
-every subsequent step of the *same* ``_decoding`` call) -- two overlapping
-``recognize_batch`` calls on the same instance would race on it, the same
-category of problem ``onnx-parakeet-prompt``'s ``_prompt_id`` has (see that
-module's docstring). Serialising via a one-permit :class:`AdmissionController`
-is the same precedent this project already uses for that reason. A
-thread-local cache would let this be concurrent instead (each
-``asyncio.to_thread`` call runs entirely on one thread), but this backend is
-comparative-reference status only, so the extra complexity is not justified
-without a concrete throughput need.
+Hugging Face resolution (when ``model_asr`` is not an existing local
+directory): the repo id is resolved with ``huggingface_hub.snapshot_download``
+using ``allow_patterns`` derived from the selected quantizations, so only the
+needed files are pulled -- the accepted default INT8/INT8 selection
+(``static_qdq_v4_pct_excl`` + ``dynamic_v1_quint8``) downloads exactly
+``encoder-model.static_qdq_v4_pct_excl.onnx(+.data)``,
+``decoder_step.dynamic_v1_quint8.onnx``, ``xattn_kv.onnx``, ``vocab.txt`` and
+``config.json`` (~1.29 GB), never the 609 MB fp32 ``decoder_step.onnx`` and
+never an encoder that was not selected. The default repo is
+`collectiveai/canary-1b-v2-onnx-split-int8`, which holds every artifact above
+**except the fp32 encoder**.
+
+Two-repo fp32-encoder rule (this backend only): the fp32 encoder selector --
+``quantization=None``, or the explicit ``"fp32"`` sentinel -- is not in the
+default repo, so it resolves ``encoder-model.onnx`` +
+``encoder-model.onnx.data`` from a second ``snapshot_download`` of
+`istupakov/canary-1b-v2-onnx` (the unmodified upstream export the local
+artifact directories already symlink to). The two repos land in different
+cache snapshots, so the builder assembles ``model_files`` from both resolved
+paths rather than assuming one directory. Note that ``None`` therefore *means
+fp32* here, unlike backends whose unquantized graph lives in the same repo;
+``decoder_quantization=None`` still means the fp32 ``decoder_step.onnx``,
+which *does* live in the default repo. A Hugging Face token from
+``ServerSettings.hf_token`` (``CORO_HF_TOKEN``/``HF_TOKEN``) is forwarded to
+every download. A file still missing after its download raises the same
+``FileNotFoundError`` shape as the local case, with the repo id and filename
+in the message.
+
+Forced-language hardening: every decode runs in an explicitly resolved
+language. ``resolve_language`` reduces a request language (``es-US``,
+``es_US``, `` ES ``) to a base subtag and checks it against the ``<|xx|>``
+tokens actually present in the loaded vocab (``language_token_ids``, derived
+at load -- never a hardcoded list); an unsupported language raises
+:class:`AsrUnsupportedLanguageError` at the adapter call boundary, which every
+request surface maps the way ``AsrCapacityError`` is mapped. A request
+carrying no language decodes with ``asr_fallback_language``
+(``CORO_ASR_FALLBACK_LANGUAGE``, default ``en``) -- the same resolution
+Server Warmup passes explicitly -- *unless* auto-LID (below) resolves one
+first; the pipeline layer decides which applies, never this adapter.
+
+Auto-LID (ticket 05): this checkpoint *can* predict its source language --
+see ``.scratch/canary-default/findings-lid-probe.md`` (ticket 01's probe:
+100% accuracy across 64 speech windows). :meth:`OnnxCanarySplitASRAdapter.detect_language`
+exposes it as a standalone call (module-level ``_partial_prompt_lid``): two
+greedy decoder steps on NeMo's Canary2 ``user_partial`` prefix
+(``<|startofcontext|><|startoftranscript|>``), returning the second step's
+``<|xx|>`` token when this checkpoint's vocab carries one, else ``None``. It
+runs its own encoder pass rather than reusing a concurrent transcription
+call's -- a deliberate simplicity-over-throughput trade documented on that
+method. Not part of the :class:`~coro.core.protocols.ASRAdapter` protocol;
+every pipeline duck-types it (``getattr(asr, "detect_language", None)``), so
+every other backend is unaffected, and both stack-wrapping layers this
+backend can sit under (:class:`~coro.cache.adapter.CachingASRAdapter`,
+:class:`~coro.backends.asr.factory.LazyASRAdapter`) forward it. Request-scoped
+sticky state (the first window whose detection succeeds fixes the language
+for the rest of the request) lives in ``coro/pipelines/windowing.py``'s
+``LanguageState``, not here -- this adapter is a shared, concurrent instance
+that must not carry per-request state. All three pipelines (Full-Memory,
+Streaming, Live) drive it, each with its own per-request/per-connection
+``LanguageState``.
+
+Adapter Concurrency Policy: **concurrent**. ``_decode``'s split-graph override
+caches the 16 cross-attention K/V tensors (computed on the first step of each
+window, read on every subsequent step of the *same* ``_decoding`` call) in a
+``threading.local()`` holder rather than plain instance state: every
+``transcribe_pcm`` call runs its whole ``recognize_batch`` on one worker thread
+via ``asyncio.to_thread``, so per-thread storage makes overlapping windows on
+one shared instance race-free without any locking. Each ``_decoding`` call
+starts with empty ``decoder_mems``, so the first step per thread recomputes the
+K/V tensors -- a later window on the same thread never reuses an earlier
+window's cache. ONNX Runtime ``InferenceSession.run`` is thread-safe, so the
+three sessions themselves stay shared. Load is bounded by an
+:class:`AdmissionController` sized the same way ``onnx-asr`` sizes its own:
+permit count from ``asr_max_concurrency`` (0 auto-sizes from the core count).
 
 License:
     `nvidia/canary-1b-v2` is **CC-BY-4.0** -- unlike `nemo`/`onnx-parakeet-prompt`
     (both driving `parakeet-rnnt-1.1b-multilingual-prompt`, NVIDIA Community
     Model License, NIM-gated), it carries no redistribution or NIM/AI-Enterprise
     production-use restriction. Do not copy those backends' license-comment
-    pattern onto this one -- it does not apply. Still **comparative reference
-    only**: never the default (`onnx-asr` is, and stays), never recommended --
-    see the PRD's non-goals (this program exists to fix Canary's RTF, not to
-    replace `onnx-asr` as the default).
+    pattern onto this one -- it does not apply.
+
+    This backend (Canary-1b-v2, INT8 encoder + INT8 decoder) is the **default**
+    ASR Backend Provider (`--model-asr canary-1b-v2`, the default slug) -- see
+    ADR 0019 for why: the previous default's implicit, uncontrollable per-frame
+    language identification is disqualifying for single-language recordings,
+    and this backend's forced-language and sticky-auto-LID design (above) fixes
+    that at an accepted RTFx cost. `onnx-asr` (`parakeet-tdt-0.6b-v3`) remains
+    available by slug for deployments that value raw throughput over language
+    stability -- see docs/benchmark.md.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
+from coro.backends.asr.nemo import resolve_target_language
 from coro.backends.asr.onnx_asr import convert_onnx_asr_result
 from coro.backends.asr.onnx_session import build_asr_session_options
+from coro.cache.fingerprint import normalise_language
 from coro.core.models import TranscriptToken
 
 if TYPE_CHECKING:
@@ -131,6 +207,123 @@ _DECODER_STEP_BASENAME = "decoder_step"
 _VOCAB_FILENAME = "vocab.txt"
 _CONFIG_FILENAME = "config.json"
 
+# Default HF repo holding the whole contract except the fp32 encoder, and the
+# upstream export the fp32 encoder (and the split graphs' source) came from.
+# See the module docstring's Hugging Face resolution section.
+_DEFAULT_SPLIT_REPO = "collectiveai/canary-1b-v2-onnx-split-int8"
+_FP32_ENCODER_REPO = "istupakov/canary-1b-v2-onnx"
+# Explicit sentinel for "no quantization"; the slug registry (ticket 06)
+# normalises it at the settings layer, this builder accepts it directly too.
+_FP32_SELECTOR = "fp32"
+
+
+def _is_fp32(quantization: str | None) -> bool:
+    """Whether a quantization selector names the unquantized fp32 graph."""
+    return quantization is None or quantization == _FP32_SELECTOR
+
+
+# Matches exactly the two-letter language switch tokens in Canary's vocab
+# (`<|en|>`, `<|es|>`, ...) -- deliberately narrower than any `<|...|>` token,
+# so control tokens (`<|pnc|>`, `<|noitn|>`, `<|emo:...|>`) are excluded and
+# the supported set is whatever this checkpoint's vocab actually ships.
+_LANGUAGE_TOKEN_RE = re.compile(r"<\|([a-z]{2})\|>")
+
+
+def resolve_canary_language(language: str | None, language_tokens: dict[str, int]) -> str | None:
+    """Resolve a request language to a Canary ``<|xx|>`` vocab code.
+
+    Composed from the two normalisers the codebase already has (no third one
+    is added): :func:`coro.cache.fingerprint.normalise_language` handles the
+    spelling (strip / lowercase / underscore-to-hyphen), then NeMo's
+    :func:`~coro.backends.asr.nemo.resolve_target_language` does the
+    exact-then-primary-subtag match against the vocab-derived token map --
+    so ``es-US``, ``es_US`` and ``" ES "`` all resolve to ``es``.
+
+    Args:
+        language: Request language, or None/blank to leave unresolved (the
+            caller applies its fallback).
+        language_tokens: The ``code -> token id`` map derived from the loaded
+            vocab; also the supported set the error names.
+
+    Returns:
+        The base-subtag code whose ``<|xx|>`` token keys the decode prefix.
+
+    Raises:
+        AsrUnsupportedLanguageError: If the language matches no ``<|xx|>``
+            token in the loaded vocab.
+
+    """
+    normalised = normalise_language(language)
+    try:
+        return resolve_target_language(normalised, language_tokens)
+    except ValueError as exc:
+        raise AsrUnsupportedLanguageError(normalised, supported_languages=language_tokens) from exc
+
+
+def _partial_prompt_lid(asr: Any, pcm: bytes) -> str | None:
+    """Run NeMo's Canary2 partial-prompt LID probe on one PCM window.
+
+    NeMo's ``Canary2PromptFormatter`` documents a ``user_partial`` role
+    (``<|startofcontext|><|startoftranscript|>``) used for exactly two
+    decoder steps to retrieve the emotion and source-language tokens.
+    ``.scratch/canary-default/findings-lid-probe.md`` (ticket 01) measured
+    this against the split-decode INT8/INT8 checkpoint: 100% accuracy across
+    64 probed speech windows (48 mTEDx es, 4 each en/fr/de/pt), step 1 always
+    ``<|emo:undefined|>`` (no emotion capability), step 2 the language.
+
+    Deliberately runs its own encoder pass rather than reusing a concurrent
+    transcription call's -- keeping :meth:`OnnxCanarySplitASRAdapter.detect_language`
+    a self-contained call (no `transcribe_pcm` return-type/contract change,
+    see that method's docstring) costs one extra encoder pass on the *first*
+    one or two windows of a request needing detection, never a sustained
+    per-window cost once :class:`~coro.pipelines.windowing.LanguageState`
+    goes sticky.
+
+    Args:
+        asr: The loaded split-decode ``NemoConformerAED`` subclass instance.
+        pcm: Raw PCM s16le 16 kHz mono bytes for one window.
+
+    Returns:
+        The emitted language code (e.g. ``"es"``) when the second step's
+        token matches this checkpoint's ``<|xx|>`` language-token shape, else
+        ``None`` -- not observed on real audio in the probe (even silence
+        emitted some language token), but handled defensively.
+
+    """
+    audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+    waveforms = audio[None, :]
+    waveforms_len = np.array([len(audio)], dtype=np.int64)
+    features, features_lens = asr._preprocessor(waveforms, waveforms_len)
+    encoder_embeddings, encoder_mask = asr._encode(features, features_lens)
+
+    prefix = np.array(
+        [
+            [
+                asr._tokens[" "],
+                asr._tokens["<|startofcontext|>"],
+                asr._tokens["<|startoftranscript|>"],
+            ]
+        ],
+        dtype=np.int64,
+    )
+    shapes = {x.name: x.shape for x in asr._decoder.get_inputs()}
+    decoder_mems = np.empty(
+        (shapes["decoder_mems"][0], 1, 0, shapes["decoder_mems"][3]), dtype=np.float32
+    )
+
+    batch_tokens = prefix
+    next_token_id = -1
+    for _ in range(2):
+        logits, decoder_mems = asr._decode(
+            batch_tokens, encoder_embeddings, encoder_mask, decoder_mems
+        )
+        next_token_id = int(np.argmax(logits[:, -1], axis=-1)[0])
+        batch_tokens = np.concatenate([batch_tokens, [[next_token_id]]], axis=-1)
+
+    match = _LANGUAGE_TOKEN_RE.fullmatch(asr._vocab[next_token_id])
+    return match.group(1) if match else None
+
+
 # The 16 cross-attention K/V frontier tensors -- see `.tmp/split_canary_decoder.py`'s
 # module docstring for why these tensors (not the shallower MatMul outputs) are
 # the maximal hoistable cut. Duplicated here (rather than imported) because that
@@ -143,16 +336,16 @@ for _layer in range(8):
 
 def _encoder_filename(quantization: str | None) -> str:
     """Return the encoder ONNX filename for a quantization selector."""
-    if quantization:
-        return f"{_ENCODER_BASENAME}.{quantization}.onnx"
-    return f"{_ENCODER_BASENAME}.onnx"
+    if _is_fp32(quantization):
+        return f"{_ENCODER_BASENAME}.onnx"
+    return f"{_ENCODER_BASENAME}.{quantization}.onnx"
 
 
 def _decoder_step_filename(decoder_quantization: str | None) -> str:
     """Return the decoder_step ONNX filename for a decoder quantization selector."""
-    if decoder_quantization:
-        return f"{_DECODER_STEP_BASENAME}.{decoder_quantization}.onnx"
-    return f"{_DECODER_STEP_BASENAME}.onnx"
+    if _is_fp32(decoder_quantization):
+        return f"{_DECODER_STEP_BASENAME}.onnx"
+    return f"{_DECODER_STEP_BASENAME}.{decoder_quantization}.onnx"
 
 
 def _split_canary_asr_class() -> type:
@@ -200,11 +393,19 @@ def _split_canary_asr_class() -> type:
             # input contract, so aliasing satisfies that lookup without loading
             # the fused decoder.
             self._decoder = self._decoder_step
-            self._kv_cache: dict[str, np.ndarray] | None = None
+            self._kv_cache = threading.local()
 
             # Verbatim from `NemoConformerAED.__init__` (onnx_asr/models/nemo.py).
             self._tokens = {token: id for id, token in self._vocab.items()}
             self._eos_token_id = self._tokens["<|endoftext|>"]
+            # The supported-language set, derived from the loaded vocab rather
+            # than hardcoded: whichever `<|xx|>` tokens this checkpoint ships
+            # are exactly the languages its decode prefix can request.
+            self.language_token_ids = {
+                match.group(1): token_id
+                for token_id, token in self._vocab.items()
+                if (match := _LANGUAGE_TOKEN_RE.fullmatch(token))
+            }
             self._transcribe_input = np.array(
                 [
                     [
@@ -237,14 +438,20 @@ def _split_canary_asr_class() -> type:
             encoder_mask: np.ndarray,
             decoder_mems: np.ndarray,
         ) -> tuple[np.ndarray, np.ndarray]:
+            # The K/V cache lives in a threading.local: each transcribe_pcm call
+            # runs its whole decode loop on one asyncio.to_thread worker, and
+            # each _decoding call starts with empty decoder_mems so step 0
+            # recomputes -- overlapping windows on this shared instance never
+            # see each other's tensors.
             if decoder_mems.shape[2] == 0:
                 kv_outputs = self._xattn_kv.run(
                     _KV_TENSORS, {"encoder_embeddings": encoder_embeddings}
                 )
-                self._kv_cache = {
+                self._kv_cache.tensors = {
                     name: np.asarray(arr) for name, arr in zip(_KV_TENSORS, kv_outputs, strict=True)
                 }
-            assert self._kv_cache is not None  # noqa: S101 -- set above on step 0; every later step reads it
+            kv_cache = getattr(self._kv_cache, "tensors", None)
+            assert kv_cache is not None  # noqa: S101 -- set above on step 0 of this thread; every later step reads it
 
             outputs = self._decoder_step.run(
                 ["logits", "decoder_hidden_states"],
@@ -252,7 +459,7 @@ def _split_canary_asr_class() -> type:
                     "input_ids": input_ids if decoder_mems.shape[2] == 0 else input_ids[:, -1:],
                     "encoder_mask": encoder_mask,
                     "decoder_mems": decoder_mems,
-                    **self._kv_cache,
+                    **kv_cache,
                 },
             )
             return np.asarray(outputs[0]), np.asarray(outputs[1])
@@ -263,7 +470,10 @@ def _split_canary_asr_class() -> type:
 class OnnxCanarySplitASRAdapter:
     """ASRAdapter wrapping the split-decode Canary pipeline.
 
-    Adapter Concurrency Policy: **serialised** -- see the module docstring.
+    Adapter Concurrency Policy: **concurrent** -- the split-decode K/V cache is
+    thread-local and the ONNX Runtime sessions are shared and thread-safe; see
+    the module docstring. Load is bounded by an :class:`AdmissionController`
+    sized from ``asr_max_concurrency`` (0 = auto-size from the core count).
     """
 
     honours_prompt: bool = False
@@ -276,16 +486,83 @@ class OnnxCanarySplitASRAdapter:
         asr: Any,
         *,
         admission: AdmissionController | None = None,
+        fallback_language: str = "en",
     ) -> None:
         self._asr = asr
+        # The ASR instance's vocab-derived `<|xx|>` map -- this checkpoint's
+        # supported-language set, never a hardcoded list.
+        self._language_tokens: dict[str, int] = asr.language_token_ids
+        self._fallback_language = fallback_language
         self._admission = admission or build_admission_controller(
-            max_concurrency=1, max_queue_depth=_DEFAULT_QUEUE_DEPTH, serialized=True
+            max_concurrency=0, max_queue_depth=_DEFAULT_QUEUE_DEPTH
         )
 
     @property
     def admission(self) -> AdmissionController:
         """Admission controller implementing this adapter's concurrency policy."""
         return self._admission
+
+    @property
+    def supported_languages(self) -> frozenset[str]:
+        """Language codes this checkpoint can decode with, derived from its vocab."""
+        return frozenset(self._language_tokens)
+
+    @property
+    def fallback_language(self) -> str:
+        """Language used when a request carries none (``asr_fallback_language``).
+
+        Public so the ASR Window Cache decorator can key an absent request
+        language the same way :meth:`resolve_language` decodes it (base
+        subtag of this value), without the cache layer knowing anything else
+        about this backend -- see ``coro/cache/adapter.py``.
+        """
+        return self._fallback_language
+
+    def resolve_language(self, language: str | None) -> str:
+        """Resolve a request language to a vocab-backed Canary code.
+
+        A blank or absent request language resolves to the adapter's
+        ``fallback_language`` (``asr_fallback_language`` via the factory), so
+        the decode prefix is never left to onnx_asr's hardcoded ``<|en|>``.
+        Detection (slice 05) will take precedence by passing a detected
+        language explicitly -- explicit beats the fallback here.
+
+        Raises:
+            AsrUnsupportedLanguageError: If the requested language (or the
+                fallback, when the request carries none) matches no ``<|xx|>``
+                token in the loaded vocab.
+
+        """
+        requested = language if (language or "").strip() else self._fallback_language
+        resolved = resolve_canary_language(requested, self._language_tokens)
+        if resolved is None:  # blank request and blank fallback
+            raise AsrUnsupportedLanguageError("", supported_languages=self._language_tokens)
+        return resolved
+
+    async def detect_language(self, pcm: bytes) -> str | None:
+        """Detect one window's source language via the Canary2 partial-prompt LID probe.
+
+        Not part of the :class:`~coro.core.protocols.ASRAdapter` protocol --
+        the auto-LID sticky pipeline layer (``coro/pipelines/windowing.py``)
+        duck-types this (``getattr(asr, "detect_language", None)``), so every
+        other backend is unaffected.
+
+        Returns:
+            The base-subtag language code (e.g. ``"es"``) when the probe's
+            second decoder step emitted one of this checkpoint's ``<|xx|>``
+            language tokens, else ``None``. Cross-checked against
+            ``self._language_tokens`` (the same vocab-derived set
+            :meth:`resolve_language` uses) rather than trusting
+            :func:`_partial_prompt_lid`'s own regex match in isolation.
+
+        """
+
+        def _detect() -> str | None:
+            code = _partial_prompt_lid(self._asr, pcm)
+            return code if code in self._language_tokens else None
+
+        async with self._admission.admit():
+            return await asyncio.to_thread(_detect)
 
     async def transcribe_pcm(
         self,
@@ -304,18 +581,22 @@ class OnnxCanarySplitASRAdapter:
 
         Raises:
             AsrCapacityError: If the admission queue is full.
+            AsrUnsupportedLanguageError: If the language (or the fallback,
+                when the request carries none) matches no ``<|xx|>`` vocab
+                token. Raised at resolution time, before admission, so every
+                request surface gets it for free.
 
         """
+        resolved = self.resolve_language(language)
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
         duration = len(audio) / _SAMPLE_RATE
 
         def _recognize():
             waveforms = audio[None, :]
             waveforms_len = np.array([len(audio)], dtype=np.int64)
-            kwargs: dict = {}
-            if language:
-                kwargs["language"] = language
-            return next(iter(self._asr.recognize_batch(waveforms, waveforms_len, **kwargs)))
+            return next(
+                iter(self._asr.recognize_batch(waveforms, waveforms_len, language=resolved))
+            )
 
         async with self._admission.admit():
             result = await asyncio.to_thread(_recognize)
@@ -341,6 +622,150 @@ def _providers_for_device(device: str) -> Sequence[str] | None:
     return None
 
 
+def _require_file(directory: Path, filename: str, *, repo_id: str | None = None) -> Path:
+    """Return the artifact path, raising this backend's FileNotFoundError shape.
+
+    ``repo_id`` is included in the message when resolution came from the hub,
+    so a missing post-download file names the repo and the filename.
+    """
+    path = directory / filename
+    if not path.is_file():
+        suffix = f" (repo {repo_id})" if repo_id else ""
+        msg = f"Missing required onnx-canary-split artifact: {path}{suffix}"
+        raise FileNotFoundError(msg)
+    return path
+
+
+@dataclass(frozen=True)
+class _SplitArtifacts:
+    """Resolved artifact paths for one build (local directory or HF snapshots).
+
+    The encoder and the split-decode graphs may live in different HF cache
+    snapshots (fp32-encoder rule -- see the module docstring), which is why
+    resolution yields named paths rather than one directory.
+    """
+
+    encoder: Path
+    xattn_kv: Path
+    decoder_step: Path
+    vocab: Path
+    config: Path | None = None
+
+
+def _optional_config(directory: Path) -> Path | None:
+    """Return ``config.json`` when present (optional in both local and hub contracts)."""
+    config_path = directory / _CONFIG_FILENAME
+    return config_path if config_path.is_file() else None
+
+
+def _artifacts_from_directory(
+    directory: Path, *, quantization: str | None, decoder_quantization: str | None
+) -> _SplitArtifacts:
+    """Resolve the artifact contract against a local artifact directory.
+
+    Raises:
+        FileNotFoundError: If a required artifact is missing (path in the message).
+
+    """
+    return _SplitArtifacts(
+        encoder=_require_file(directory, _encoder_filename(quantization)),
+        xattn_kv=_require_file(directory, _XATTN_KV_FILENAME),
+        decoder_step=_require_file(directory, _decoder_step_filename(decoder_quantization)),
+        vocab=_require_file(directory, _VOCAB_FILENAME),
+        config=_optional_config(directory),
+    )
+
+
+def _artifacts_from_hub(
+    repo_id: str,
+    *,
+    quantization: str | None,
+    decoder_quantization: str | None,
+    hf_token: str | None,
+) -> _SplitArtifacts:
+    """Resolve the artifact contract from HF snapshots, downloading only what is needed.
+
+    ``allow_patterns`` are derived from the selected quantizations so the
+    default INT8/INT8 selection pulls ~1.29 GB, never the 609 MB fp32
+    ``decoder_step.onnx``. The fp32 encoder is absent from the split repos, so
+    selecting it means a second ``snapshot_download`` from
+    ``_FP32_ENCODER_REPO`` and resolved paths spanning two snapshots -- see
+    the module docstring's Hugging Face resolution section.
+
+    Raises:
+        FileNotFoundError: If a required artifact is still missing after the
+            download, with the repo id and filename in the message.
+
+    """
+    from huggingface_hub import snapshot_download
+
+    encoder_name = _encoder_filename(quantization)
+    shared_patterns = [
+        _decoder_step_filename(decoder_quantization),
+        _XATTN_KV_FILENAME,
+        _VOCAB_FILENAME,
+        _CONFIG_FILENAME,
+    ]
+    if _is_fp32(quantization):
+        encoder_repo_id = _FP32_ENCODER_REPO
+        encoder_snapshot = Path(
+            snapshot_download(
+                encoder_repo_id,
+                allow_patterns=[encoder_name, f"{encoder_name}.data"],
+                token=hf_token,
+            )
+        )
+        split_snapshot = Path(
+            snapshot_download(repo_id, allow_patterns=shared_patterns, token=hf_token)
+        )
+    else:
+        encoder_repo_id = repo_id
+        encoder_snapshot = split_snapshot = Path(
+            snapshot_download(
+                repo_id,
+                allow_patterns=[encoder_name, f"{encoder_name}.data", *shared_patterns],
+                token=hf_token,
+            )
+        )
+
+    return _SplitArtifacts(
+        encoder=_require_file(encoder_snapshot, encoder_name, repo_id=encoder_repo_id),
+        xattn_kv=_require_file(split_snapshot, _XATTN_KV_FILENAME, repo_id=repo_id),
+        decoder_step=_require_file(
+            split_snapshot, _decoder_step_filename(decoder_quantization), repo_id=repo_id
+        ),
+        vocab=_require_file(split_snapshot, _VOCAB_FILENAME, repo_id=repo_id),
+        config=_optional_config(split_snapshot),
+    )
+
+
+def _resolve_artifacts(
+    model_asr: str,
+    *,
+    quantization: str | None,
+    decoder_quantization: str | None,
+    hf_token: str | None,
+) -> _SplitArtifacts:
+    """Resolve the artifact contract to concrete paths: local directory else HF hub.
+
+    Follows ``onnx-genai``'s resolution pattern: an existing local directory
+    is used as-is (no hub call at all); anything else is a Hugging Face repo
+    id. The default repo is ``_DEFAULT_SPLIT_REPO``, but it must be named
+    explicitly in ``model_asr`` -- flipping the default is ticket 06.
+    """
+    directory = Path(model_asr)
+    if directory.is_dir():
+        return _artifacts_from_directory(
+            directory, quantization=quantization, decoder_quantization=decoder_quantization
+        )
+    return _artifacts_from_hub(
+        repo_id=model_asr,
+        quantization=quantization,
+        decoder_quantization=decoder_quantization,
+        hf_token=hf_token,
+    )
+
+
 def build_onnx_canary_split_adapter(
     model_asr: str,
     *,
@@ -348,57 +773,71 @@ def build_onnx_canary_split_adapter(
     quantization: str | None = None,
     decoder_quantization: str | None = None,
     providers: Sequence[str] | None = None,
+    max_concurrency: int = 0,
     max_queue_depth: int = _DEFAULT_QUEUE_DEPTH,
+    hf_token: str | None = None,
+    fallback_language: str = "en",
 ) -> OnnxCanarySplitASRAdapter:
     """Construct and return an OnnxCanarySplitASRAdapter.
 
     Args:
-        model_asr: Path to a directory holding the artifact contract described
-            in this module's docstring (encoder + split-decoder-graph ONNX
-            files, vocab.txt, optional config.json).
+        model_asr: Local directory holding the artifact contract described in
+            this module's docstring, or a Hugging Face repo id (default repo:
+            ``collectiveai/canary-1b-v2-onnx-split-int8``) resolved via
+            ``snapshot_download`` with only the selected quantizations'
+            files -- see the module docstring's Hugging Face resolution
+            section for the two-repo fp32-encoder rule.
         device: Device selector (``"auto"``, ``"cuda"``, ``"cpu"``) used to
             derive providers when ``providers`` is not given explicitly.
         quantization: Encoder quantization selector (e.g.
             ``"static_qdq_v4_pct_excl"``, the accepted static-QDQ INT8 variant
             -- see the module docstring for the two earlier variants of it that
-            were rejected); ``None`` loads the fp32 encoder.
+            were rejected); ``None`` (or the ``"fp32"`` sentinel) loads the
+            fp32 encoder from ``istupakov/canary-1b-v2-onnx`` when resolving
+            from the hub -- this backend's documented exception to
+            ``None``-means-in-the-same-repo.
         decoder_quantization: ``decoder_step.onnx`` quantization selector
             (e.g. ``"dynamic_v1_quint8"``, the accepted dynamic-INT8 variant
             -- see the module docstring for why static QDQ was rejected for
-            this graph); ``None`` loads the fp32 decoder step.
+            this graph); ``None`` (or ``"fp32"``) loads the fp32 decoder step.
         providers: Explicit onnxruntime providers; overrides ``device`` when supplied.
-        max_queue_depth: Calls allowed to wait for the single permit before
-            rejection. The permit count is fixed at 1 by this backend's
-            Adapter Concurrency Policy.
+        max_concurrency: Adapter Concurrency Policy permit count; 0 auto-sizes
+            from the host core count.
+        max_queue_depth: Calls allowed to wait for a permit before rejection.
+        hf_token: Hugging Face token (``ServerSettings.hf_token``, read from
+            ``CORO_HF_TOKEN``/``HF_TOKEN``); forwarded to ``snapshot_download``
+            and ignored for local directories.
+        fallback_language: Language used when a request carries none
+            (``ServerSettings.asr_fallback_language``). This checkpoint has no
+            auto-detection, so the fallback -- not a hidden ``en`` inside
+            onnx_asr's prefix -- is what a no-language request decodes with.
 
     Returns:
         Initialised adapter ready for use.
 
     Raises:
-        FileNotFoundError: If a required artifact is missing from ``model_asr``.
+        FileNotFoundError: If a required artifact is missing from ``model_asr``
+            (local) or still missing after the download (hub; message carries
+            the repo id and filename).
 
     """
     from onnx_asr.loader import Manager
 
-    directory = Path(model_asr)
-    encoder_path = directory / _encoder_filename(quantization)
-    xattn_kv_path = directory / _XATTN_KV_FILENAME
-    decoder_step_path = directory / _decoder_step_filename(decoder_quantization)
-    vocab_path = directory / _VOCAB_FILENAME
-    for path in (encoder_path, xattn_kv_path, decoder_step_path, vocab_path):
-        if not path.is_file():
-            msg = f"Missing required onnx-canary-split artifact: {path}"
-            raise FileNotFoundError(msg)
-
+    artifacts = _resolve_artifacts(
+        model_asr,
+        quantization=quantization,
+        decoder_quantization=decoder_quantization,
+        hf_token=hf_token,
+    )
+    # ``model_files`` dict keys are onnx_asr's own constructor contract.
     model_files: dict[str, Path] = {
-        "encoder": encoder_path,
-        "xattn_kv": xattn_kv_path,
-        "decoder_step": decoder_step_path,
-        "vocab": vocab_path,
+        "encoder": artifacts.encoder,
+        "xattn_kv": artifacts.xattn_kv,
+        "decoder_step": artifacts.decoder_step,
+        "vocab": artifacts.vocab,
     }
-    config_path = directory / _CONFIG_FILENAME
-    if config_path.is_file():
-        model_files["config"] = config_path
+    if artifacts.config is not None:
+        model_files["config"] = artifacts.config
 
     resolved_providers = providers if providers is not None else _providers_for_device(device)
     session_options = build_asr_session_options()
@@ -417,6 +856,7 @@ def build_onnx_canary_split_adapter(
     return OnnxCanarySplitASRAdapter(
         asr,
         admission=build_admission_controller(
-            max_concurrency=1, max_queue_depth=max_queue_depth, serialized=True
+            max_concurrency=max_concurrency, max_queue_depth=max_queue_depth
         ),
+        fallback_language=fallback_language,
     )

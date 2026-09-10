@@ -97,13 +97,13 @@ License:
     ``nvidia/diar_sortformer_4spk-v1`` (CONTEXT.md's Diarization Model
     Selection precedent, itself only CC-BY-NC-4.0 -- weaker restrictions than
     this checkpoint's NIM gate): this backend is a **comparative reference
-    only**. It must never be `backend_asr`'s default (``onnx-asr`` is, and
-    stays), never recommended to operators, and its weights (or any
+    only**. It must never be `backend_asr`'s default (``onnx-canary-split`` is,
+    see ADR 0019), never recommended to operators, and its weights (or any
     derivative ONNX export of them, e.g. ``onnx-parakeet-prompt``'s
     artifacts) must not be redistributed. See
     ``.scratch/issue-64-language-constrained-asr/findings.md`` for the
-    licensing finding and the open, shippable alternative
-    (``nvidia/canary-1b-v2``, CC-BY-4.0) under evaluation.
+    licensing finding that led to the shippable alternative
+    (``nvidia/canary-1b-v2``, CC-BY-4.0) that ADR 0019 made the default.
 
 """
 

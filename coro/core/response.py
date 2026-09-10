@@ -176,6 +176,8 @@ def build_transcription_response(
     tokens: list[TranscriptToken],
     speaker_timeline: list[SpeakerSegment],
     duration: float,
+    *,
+    detected_language: str | None = None,
 ) -> TranscriptionResult:
     """Build a :class:`TranscriptionResult` from project-owned types.
 
@@ -183,10 +185,12 @@ def build_transcription_response(
         tokens: Ordered transcript tokens (Project-Owned Transcript Model).
         speaker_timeline: Speaker timeline segments from the Diarization Adapter.
         duration: Total audio duration in seconds.
+        detected_language: Language auto-LID resolved for this request, if any
+            (see :class:`~coro.core.models.TranscriptionResult`).
 
     Returns:
         TranscriptionResult with segments, word_segments, transcript,
-        diarization, and raw_words.
+        diarization, raw_words, and detected_language.
 
     """
     if not tokens:
@@ -194,7 +198,7 @@ def build_transcription_response(
             DiarizationItem(start=round(s.start, 3), end=round(s.end, 3), speaker=str(s.speaker))
             for s in sorted(speaker_timeline, key=lambda x: x.start)
         ]
-        return TranscriptionResult(diarization=diar)
+        return TranscriptionResult(diarization=diar, detected_language=detected_language)
 
     raw_words = [
         RawWord(
@@ -228,4 +232,5 @@ def build_transcription_response(
         transcript=transcript,
         diarization=diarization,
         raw_words=raw_words,
+        detected_language=detected_language,
     )

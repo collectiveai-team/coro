@@ -110,6 +110,12 @@ class DeepgramLiveMetadata(BaseModel):
     duration: float
     channels: int
     models: list[str]
+    detected_language: str | None = None
+    """Language auto-LID resolved for this connection, when no client
+    ``language`` was negotiated and detection succeeded (see
+    ``coro/pipelines/live.py``'s ``LiveTranscriptionSession.detected_language``).
+    Not part of Deepgram's own contract; omitted from the frame entirely
+    (``exclude_none=True``) rather than published as null when absent."""
 
 
 class DeepgramLiveError(BaseModel):

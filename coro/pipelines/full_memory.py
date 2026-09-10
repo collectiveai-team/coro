@@ -9,7 +9,7 @@ from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, convert_path_t
 from coro.core.response import build_transcription_response
 from coro.core.protocols import ASRAdapter, DiarizationAdapter
 from coro.core.models import TokenBatchEvent, TranscriptDoneEvent, TranscriptionResult
-from coro.pipelines.windowing import ASRWindowing
+from coro.pipelines.windowing import ASRWindowing, LanguageState
 
 
 # MARK: Full-Memory Pipeline
@@ -60,7 +60,9 @@ class FullMemoryPipeline:
             timeline = []
             if self._diarization is not None:
                 timeline = await self._diarization.diarize_pcm(pcm)
-            return build_transcription_response(result.tokens, timeline, duration)
+            return build_transcription_response(
+                result.tokens, timeline, duration, detected_language=result.detected_language
+            )
         finally:
             await audio.cleanup()
 
@@ -76,11 +78,13 @@ class FullMemoryPipeline:
             pcm = await self._pcm(audio)
             duration = len(pcm) / (SAMPLE_RATE * BYTES_PER_SAMPLE)
             tokens = []
+            state = LanguageState()
             async for event in self._windowing.stream_pcm(
                 pcm,
                 asr=self._asr,
                 language=language,
                 prompt=prompt,
+                language_state=state,
             ):
                 if isinstance(event, TokenBatchEvent):
                     tokens.extend(event.tokens)
@@ -90,7 +94,13 @@ class FullMemoryPipeline:
             if self._diarization is not None:
                 timeline = await self._diarization.diarize_pcm(pcm)
             yield TranscriptDoneEvent(
-                text=json.dumps(asdict(build_transcription_response(tokens, timeline, duration))),
+                text=json.dumps(
+                    asdict(
+                        build_transcription_response(
+                            tokens, timeline, duration, detected_language=state.resolved
+                        )
+                    )
+                ),
             )
         finally:
             await audio.cleanup()

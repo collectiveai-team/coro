@@ -156,7 +156,12 @@ def render_for_format(
     Args:
         response_format: The requested format.
         source: The transcription's Transcript Source.
-        language: Language to report, for the formats that carry one.
+        language: Language to report, for the formats that carry one. Only a
+            fallback: a source that carries its own ``detected_language``
+            (currently the Full-Memory Pipeline, once auto-LID resolved a
+            language -- see ``coro/pipelines/windowing.py``) reports that
+            instead, so an undeclared-language request reports what the
+            backend actually decoded with rather than the raw request value.
 
     Returns:
         The response body as an iterator of JSON fragments.
@@ -165,11 +170,12 @@ def render_for_format(
         TranscriptionValidationError: If the format is recognised but unsupported.
 
     """
+    reported_language = getattr(source, "detected_language", None) or language
     match response_format:
         case ResponseFormat.JSON:
             return render_json(source)
         case ResponseFormat.VERBOSE_JSON:
-            return render_verbose_json(source, language=language)
+            return render_verbose_json(source, language=reported_language)
         case ResponseFormat.DIARIZED_JSON:
             return render_diarized_json(source)
 

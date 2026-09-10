@@ -2,7 +2,7 @@
 
 Covers:
 - ``OnnxCanarySplitASRAdapter.transcribe_pcm`` against a stub ASR object (no
-  real ONNX Runtime session) -- language forwarding, the serialised Adapter
+  real ONNX Runtime session) -- language forwarding, the concurrent Adapter
   Concurrency Policy, and ``prompt`` being accepted but ignored (no carried-
   prompt input port on this AED model).
 - ``build_onnx_canary_split_adapter``'s artifact-directory contract (missing-
@@ -15,14 +15,17 @@ Covers:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.onnx_canary_split import (
     OnnxCanarySplitASRAdapter,
     build_onnx_canary_split_adapter,
+    resolve_canary_language,
 )
 
 _SAMPLE_RATE = 16000
@@ -39,16 +42,57 @@ def _result(tokens=(" hola", " mundo"), timestamps=None, logprobs=None):
 
 
 # ---------------------------------------------------------------------------
+# resolve_canary_language
+# ---------------------------------------------------------------------------
+
+
+class TestResolveCanaryLanguage:
+    """Vocab-backed language resolution -- locale reduction and membership."""
+
+    def test_locale_reduces_to_base_subtag(self):
+        assert resolve_canary_language("es-US", _STUB_LANGUAGE_TOKENS) == "es"
+
+    def test_base_subtag_and_locale_produce_the_same_result(self):
+        assert resolve_canary_language("es-US", _STUB_LANGUAGE_TOKENS) == resolve_canary_language(
+            "es", _STUB_LANGUAGE_TOKENS
+        )
+
+    def test_underscore_locale_and_mixed_case_also_reduce(self):
+        assert resolve_canary_language("es_US", _STUB_LANGUAGE_TOKENS) == "es"
+        assert resolve_canary_language(" ES ", _STUB_LANGUAGE_TOKENS) == "es"
+
+    def test_unsupported_language_raises_typed_error_naming_the_supported_set(self):
+        with pytest.raises(AsrUnsupportedLanguageError) as excinfo:
+            resolve_canary_language("ja", _STUB_LANGUAGE_TOKENS)
+        assert excinfo.value.language == "ja"
+        assert excinfo.value.supported_languages == tuple(sorted(_STUB_LANGUAGE_TOKENS))
+        assert "ja" in excinfo.value.message
+        assert len(excinfo.value.supported_languages) == len(_STUB_LANGUAGE_TOKENS)
+        assert all(code in excinfo.value.message for code in excinfo.value.supported_languages)
+
+    def test_none_language_is_left_unresolved_for_the_caller_to_apply_a_fallback(self):
+        assert resolve_canary_language(None, _STUB_LANGUAGE_TOKENS) is None
+
+
+# ---------------------------------------------------------------------------
 # OnnxCanarySplitASRAdapter.transcribe_pcm
 # ---------------------------------------------------------------------------
+
+
+_STUB_LANGUAGE_TOKENS = {"en": 64, "es": 171, "fr": 71, "de": 78, "pt": 151}
+"""A small vocab-derived-looking language map, standing in for the real
+checkpoint's ``language_token_ids`` (see ``onnx_canary_split.py``)."""
 
 
 class _StubAsr:
     """Fakes the split-decode ``NemoConformerAED`` subclass's public surface."""
 
-    def __init__(self, result):
+    def __init__(self, result, *, language_token_ids=None):
         self._result = result
         self.calls: list[dict] = []
+        self.language_token_ids = (
+            _STUB_LANGUAGE_TOKENS if language_token_ids is None else language_token_ids
+        )
 
     def recognize_batch(self, waveforms, waveforms_len, /, **kwargs):
         self.calls.append({"waveforms": waveforms, "waveforms_len": waveforms_len, **kwargs})
@@ -68,12 +112,18 @@ class TestOnnxCanarySplitASRAdapter:
             }
         ]
 
-    async def test_no_language_omits_the_kwarg(self):
-        """Canary's `_decoding` defaults its own prefix tokens when `language` is absent."""
+    async def test_no_language_resolves_to_the_adapter_fallback(self):
+        """No request language resolves to the adapter's fallback (never onnx_asr's own default)."""
+        asr = _StubAsr(_result())
+        adapter = OnnxCanarySplitASRAdapter(asr, fallback_language="fr")
+        await adapter.transcribe_pcm(_pcm())
+        assert asr.calls[0]["language"] == "fr"
+
+    async def test_no_language_defaults_to_english_fallback(self):
         asr = _StubAsr(_result())
         adapter = OnnxCanarySplitASRAdapter(asr)
         await adapter.transcribe_pcm(_pcm())
-        assert "language" not in asr.calls[0]
+        assert asr.calls[0]["language"] == "en"
 
     async def test_prompt_is_accepted_but_ignored(self):
         """No carried-prompt input port on this AED model (only language/pnc prefix tokens)."""
@@ -91,12 +141,99 @@ class TestOnnxCanarySplitASRAdapter:
             "".join(t.text for t in tokens).strip() == ""
         )  # text-only result has no `.text` set on the stub
 
-    def test_admission_is_serialised_to_one_permit(self):
+    def test_admission_auto_sizes_by_default(self):
+        """Default admission follows the shared auto-sizing policy (>= 2 permits)."""
         adapter = OnnxCanarySplitASRAdapter(_StubAsr(_result()))
-        assert adapter.admission.max_concurrency == 1
+        assert adapter.admission.max_concurrency >= 2
+
+    def test_admission_honours_an_explicit_permit_count(self):
+        from coro.backends.asr.concurrency import AdmissionController
+
+        adapter = OnnxCanarySplitASRAdapter(
+            _StubAsr(_result()), admission=AdmissionController(max_concurrency=3, max_queue_depth=4)
+        )
+        assert adapter.admission.max_concurrency == 3
 
     def test_honours_prompt_is_false(self):
         assert OnnxCanarySplitASRAdapter.honours_prompt is False
+
+
+# ---------------------------------------------------------------------------
+# OnnxCanarySplitASRAdapter.detect_language (ticket 05's core auto-LID probe)
+# ---------------------------------------------------------------------------
+
+_LID_VOCAB = {
+    0: " ",
+    1: "<|startofcontext|>",
+    2: "<|startoftranscript|>",
+    3: "<|emo:undefined|>",
+    4: "<|es|>",
+    5: "<|en|>",
+    6: "<|pnc|>",
+}
+
+
+class _LidStubAsr:
+    """Fakes the private encode/decode surface ``detect_language`` drives.
+
+    Scripts the two decoder steps directly, mirroring ``_partial_prompt_lid``'s
+    own encode -> 2-step-decode sequence, without a real ONNX graph.
+    """
+
+    def __init__(self, *, emitted_tokens: tuple[str, str]) -> None:
+        self._vocab = dict(_LID_VOCAB)
+        self._tokens = {token: id for id, token in self._vocab.items()}
+        self.language_token_ids = {"es": 4, "en": 5}
+        self._emitted_ids = [self._tokens[t] for t in emitted_tokens]
+        self._decoder = SimpleNamespace(
+            get_inputs=lambda: [SimpleNamespace(name="decoder_mems", shape=(2, 1, 0, 4))]
+        )
+        self.decode_calls = 0
+
+    def _preprocessor(self, waveforms, waveforms_len):
+        return waveforms, waveforms_len
+
+    def _encode(self, features, features_lens):
+        return np.zeros((1, 1, 1), dtype=np.float32), np.ones((1, 1), dtype=np.int64)
+
+    def _decode(self, input_ids, encoder_embeddings, encoder_mask, decoder_mems):
+        next_id = self._emitted_ids[self.decode_calls]
+        self.decode_calls += 1
+        logits = np.zeros((1, 1, len(self._vocab)), dtype=np.float32)
+        logits[0, 0, next_id] = 10.0
+        new_mems = np.zeros(
+            (decoder_mems.shape[0], 1, decoder_mems.shape[2] + 1, decoder_mems.shape[3]),
+            dtype=np.float32,
+        )
+        return logits, new_mems
+
+
+class TestDetectLanguage:
+    async def test_detects_the_emitted_language_token(self):
+        asr = _LidStubAsr(emitted_tokens=("<|emo:undefined|>", "<|es|>"))
+        adapter = OnnxCanarySplitASRAdapter(asr)
+
+        detected = await adapter.detect_language(_pcm())
+
+        assert detected == "es"
+        assert asr.decode_calls == 2  # exactly the two partial-prompt steps
+
+    async def test_a_non_language_second_token_returns_none(self):
+        """Defensive: not observed on real audio in the LID probe, but handled."""
+        asr = _LidStubAsr(emitted_tokens=("<|emo:undefined|>", "<|pnc|>"))
+        adapter = OnnxCanarySplitASRAdapter(asr)
+
+        assert await adapter.detect_language(_pcm()) is None
+
+    async def test_participates_in_the_admission_controller(self):
+        """detect_language is a real inference call, bounded the same way transcribe_pcm is."""
+        from coro.backends.asr.concurrency import AdmissionController
+
+        asr = _LidStubAsr(emitted_tokens=("<|emo:undefined|>", "<|es|>"))
+        admission = AdmissionController(max_concurrency=1, max_queue_depth=0)
+        adapter = OnnxCanarySplitASRAdapter(asr, admission=admission)
+
+        assert await adapter.detect_language(_pcm()) == "es"
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +289,16 @@ class TestBuildOnnxCanarySplitAdapter:
             adapter = build_onnx_canary_split_adapter(str(tmp_path), device="cpu")
 
         assert isinstance(adapter, OnnxCanarySplitASRAdapter)
-        assert adapter.admission.max_concurrency == 1
+        assert adapter.admission.max_concurrency >= 2
+
+    def test_builder_forwards_max_concurrency_to_admission(self, tmp_path):
+        _build_artifact_dir(tmp_path)
+        with patch("onnxruntime.InferenceSession", autospec=True, return_value=MagicMock()):
+            adapter = build_onnx_canary_split_adapter(
+                str(tmp_path), device="cpu", max_concurrency=5
+            )
+
+        assert adapter.admission.max_concurrency == 5
 
     def test_quantized_encoder_filename_is_selected(self, tmp_path):
         _build_artifact_dir(tmp_path)

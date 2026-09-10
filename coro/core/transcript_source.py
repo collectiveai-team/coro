@@ -73,6 +73,17 @@ class MemoryTranscriptSource:
     def __init__(self, result: TranscriptionResult) -> None:
         self._result = result
 
+    @property
+    def detected_language(self) -> str | None:
+        """Language auto-LID resolved for this request, if any.
+
+        Not part of the :class:`TranscriptSource` Protocol (a lazy source
+        without one simply has no attribute; callers read it with
+        ``getattr(source, "detected_language", None)``, see
+        ``coro/api/openai/render.py``).
+        """
+        return self._result.detected_language
+
     def iter_segments(self) -> Iterator[ResponseSegment]:
         return iter(self._result.segments)
 

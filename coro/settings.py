@@ -7,9 +7,9 @@ module must not mutate global logging policy.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, TypedDict
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, PrivateAttr, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,11 +22,11 @@ PipelineSelector = Literal["full-memory", "streaming"]
 # NVIDIA NIM runtime / AI Enterprise subscription for production use -- see
 # ``coro/backends/asr/nemo.py``'s and ``coro/backends/asr/onnx_parakeet_prompt.py``'s
 # module docstrings. Comparative-reference backends only: never the default
-# (``onnx-asr`` is), never recommended, and their weights/derivative ONNX
-# exports must not be redistributed. "onnx-canary-split" is also comparative-
-# reference only (issue #64's Canary decode-loop RTF fix), but drives
-# `nvidia/canary-1b-v2` (CC-BY-4.0, no NIM/redistribution restriction) -- see
-# ``coro/backends/asr/onnx_canary_split.py``'s module docstring.
+# (``onnx-canary-split`` is, see ADR 0019), never recommended, and their
+# weights/derivative ONNX exports must not be redistributed. "onnx-canary-split"
+# drives `nvidia/canary-1b-v2` (CC-BY-4.0, no NIM/redistribution restriction)
+# -- see ``coro/backends/asr/onnx_canary_split.py``'s module docstring and
+# ADR 0019 for why it is the default.
 ASRBackendProvider = Literal[
     "faster-whisper", "onnx-asr", "onnx-genai", "nemo", "onnx-parakeet-prompt", "onnx-canary-split"
 ]
@@ -35,6 +35,54 @@ ASRDevice = Literal["auto", "cuda", "cpu"]
 OnnxVadSelector = Literal["enabled", "disabled"]
 DiarizationDevice = Literal["auto", "cuda", "cpu"]
 DiarizationLatencyTier = Literal["very-high", "high", "low", "ultra-low"]
+
+
+# MARK: Model Slug Registry
+class _SlugConfig(TypedDict):
+    """One slug's complete ASR configuration -- see ``resolve_model_slug``."""
+
+    backend_asr: ASRBackendProvider
+    model_asr: str
+    asr_quantization: str | None
+    asr_decoder_quantization: str | None
+
+
+# A slug names a complete, known-good ASR configuration so a `model_asr` value
+# alone can select backend + model + quantization together. See ADR 0020.
+MODEL_SLUGS: dict[str, _SlugConfig] = {
+    "canary-1b-v2": {
+        "backend_asr": "onnx-canary-split",
+        "model_asr": "collectiveai/canary-1b-v2-onnx-split-int8",
+        "asr_quantization": "static_qdq_v4_pct_excl",
+        "asr_decoder_quantization": "dynamic_v1_quint8",
+    },
+    "parakeet-tdt-0.6b-v3": {
+        "backend_asr": "onnx-asr",
+        "model_asr": "nemo-parakeet-tdt-0.6b-v3",
+        "asr_quantization": None,
+        "asr_decoder_quantization": None,
+    },
+    "whisper-large-v3-turbo": {
+        "backend_asr": "faster-whisper",
+        "model_asr": "large-v3-turbo",
+        "asr_quantization": None,
+        "asr_decoder_quantization": None,
+    },
+    "whisper-large-v3": {
+        "backend_asr": "faster-whisper",
+        "model_asr": "large-v3",
+        "asr_quantization": None,
+        "asr_decoder_quantization": None,
+    },
+}
+
+DEFAULT_MODEL_SLUG = "canary-1b-v2"
+
+# The sentinel that turns a slug's quantization off. Distinct from `None`
+# (unset -- let the slug or the backend's own default decide) because a slug
+# default needs an explicit way to say "no quantization" rather than merely
+# "no opinion".
+FP32_QUANTIZATION_SENTINEL = "fp32"
 
 
 # MARK: Server Settings
@@ -62,10 +110,22 @@ class ServerSettings(BaseSettings):
     # Literal grows past 4 members (reproduced in isolation, unrelated to
     # pydantic-settings specifics) -- verified false positive, not a real
     # type error: "onnx-asr" is one of the Literal's own members.
+    # This class-level default is a pydantic-typing placeholder only, never
+    # actually read: resolve_model_slug always overwrites it (from a
+    # recognised model_asr slug) or raises (a non-slug model_asr with no
+    # explicit backend_asr) before any other code sees this field. See that
+    # validator and ADR 0020.
     backend_asr: ASRBackendProvider = Field(  # pyrefly: ignore[bad-assignment]
-        default="onnx-asr", description="ASR Backend Provider selector."
+        default="onnx-asr",
+        description="ASR Backend Provider selector. Derived from model_asr's slug when "
+        "not given explicitly; required explicitly alongside a non-slug model_asr.",
     )
-    model_asr: str = Field(default="nemo-parakeet-tdt-0.6b-v3", description="ASR Model Selection.")
+    model_asr: str = Field(
+        default=DEFAULT_MODEL_SLUG,
+        description="ASR Model Selection: a slug resolving backend_asr and quantization "
+        f"together ({', '.join(sorted(MODEL_SLUGS))}; default: {DEFAULT_MODEL_SLUG!r}), or "
+        "a raw model id/path for the ASR Backend Provider given via backend_asr.",
+    )
     asr_device: ASRDevice = Field(default="auto", description="Faster Whisper device selection.")
     asr_compute_type: str = Field(
         default="default",
@@ -75,13 +135,15 @@ class ServerSettings(BaseSettings):
         default=None,
         description="Encoder quantization selector (e.g. 'int8' for onnx-asr, "
         "'static_qdq_v4_pct_excl' for onnx-canary-split); ignored by the "
-        "faster-whisper backend. Left unset on purpose: int8 is a memory-fitting "
-        "tool for the default transducer ASR Model Selection, not a speed tool "
-        "(measured: no throughput gain, small WER cost). See docs/benchmark.md. "
-        "The onnx-canary-split selector is a different story -- it is a small but "
-        "real win (norm cpWER 0.0508 vs fp32's 0.0513 at +4.0% RTFx) -- but that "
-        "backend is comparative reference only, never the default, so this stays "
-        "unset. See coro/backends/asr/onnx_canary_split.py's module docstring.",
+        "faster-whisper backend. None means 'let the resolved model slug decide': "
+        "the default canary-1b-v2 slug fills this with 'static_qdq_v4_pct_excl' "
+        "-- a real win for that backend (norm cpWER 0.0508 vs fp32's 0.0513, "
+        "+4.0% RTFx), not just a memory trade -- see ADR 0019 and "
+        "coro/backends/asr/onnx_canary_split.py's module docstring. The "
+        "parakeet-tdt-0.6b-v3 slug leaves it unset instead: int8 is a "
+        "memory-fitting tool for that transducer, not a speed tool (measured: no "
+        "throughput gain, small WER cost). See docs/benchmark.md. Explicit "
+        "'fp32' always turns a slug's own default back off.",
     )
     asr_decoder_quantization: str | None = Field(
         default=None,
@@ -90,10 +152,21 @@ class ServerSettings(BaseSettings):
         "from asr_quantization (which selects the encoder's quantization for this "
         "same backend) because the decoder graph needed a different technique: "
         "static-QDQ INT8 (usable for the encoder) caused real word-level WER damage "
-        "on the autoregressive decoder, while dynamic INT8 did not. See "
-        "coro/backends/asr/onnx_canary_split.py's module docstring for the measured "
-        "quality/speed numbers. Left unset by default: onnx-canary-split itself is "
-        "comparative reference only, never the default ASR Backend Provider.",
+        "on the autoregressive decoder, while dynamic INT8 did not. The default "
+        "canary-1b-v2 slug fills this with 'dynamic_v1_quint8' (+3.1% relative "
+        "cpWER, +43.8% RTFx). See coro/backends/asr/onnx_canary_split.py's module "
+        "docstring for the measured quality/speed numbers and ADR 0019 for the "
+        "default decision. Explicit 'fp32' turns it off, independently of "
+        "asr_quantization.",
+    )
+    asr_fallback_language: str = Field(
+        default="en",
+        description="Language used when a request gives no language hint and no "
+        "detection is available. Consulted today by the onnx-canary-split backend "
+        "only (its Canary checkpoint has no auto-detection); slice 05's language "
+        "detection will take precedence over this fallback where available, and "
+        "only consult it when detection never yields a language. Server Warmup "
+        "also passes it explicitly.",
     )
     asr_onnx_vad: OnnxVadSelector = Field(
         default="disabled",
@@ -219,7 +292,61 @@ class ServerSettings(BaseSettings):
     ssl_certfile: str | None = Field(default=None, description="TLS certificate file path.")
     ssl_keyfile: str | None = Field(default=None, description="TLS private key file path.")
 
+    # Fields the operator actually set (CLI flag, env var, or constructor
+    # kwarg), captured before resolve_model_slug's own mutations -- pydantic's
+    # own `model_fields_set` would otherwise also pick up those mutations
+    # (setting an attribute in a `mode="after"` validator adds it), which is
+    # exactly what would make warn_ignored_asr_settings misattribute a
+    # slug-filled value to the operator. Never read before that validator
+    # has run (every successful construction runs it).
+    _explicit_fields: frozenset[str] = PrivateAttr(default=frozenset())
+
     # Derived Defaults ------------------------------------------------------
+    @model_validator(mode="after")
+    def resolve_model_slug(self) -> ServerSettings:
+        """Resolve model_asr's slug into backend_asr, model_asr and quantization.
+
+        Precedence: an operator-set value always wins over the slug's own
+        default; the slug only fills fields the operator left unset. A
+        non-slug model_asr passes through verbatim as the model id/path for
+        backend_asr, which must then be given explicitly -- backward
+        compatible with ``--backend-asr onnx-asr --model-asr
+        nemo-parakeet-tdt-0.6b-v3``. ``fp32`` for either quantization selector
+        always collapses to ``None`` (backends never see the string), the
+        only way to turn a slug's quantization off. See ``MODEL_SLUGS`` and
+        ADR 0020.
+
+        Raises:
+            ValueError: If model_asr is not a recognised slug and backend_asr
+                was not given explicitly.
+
+        """
+        self._explicit_fields = frozenset(self.model_fields_set)
+
+        slug = MODEL_SLUGS.get(self.model_asr)
+        if slug is not None:
+            if "backend_asr" not in self._explicit_fields:
+                self.backend_asr = slug["backend_asr"]
+            if "asr_quantization" not in self._explicit_fields:
+                self.asr_quantization = slug["asr_quantization"]
+            if "asr_decoder_quantization" not in self._explicit_fields:
+                self.asr_decoder_quantization = slug["asr_decoder_quantization"]
+            self.model_asr = slug["model_asr"]
+        elif "backend_asr" not in self._explicit_fields:
+            msg = (
+                f"ASR Model Selection model_asr={self.model_asr!r} is not a recognised "
+                f"slug ({', '.join(sorted(MODEL_SLUGS))}) and no backend_asr was given. "
+                "Set CORO_BACKEND_ASR (or --backend-asr) alongside a raw model id/path, "
+                "or use one of the slugs above."
+            )
+            raise ValueError(msg)
+
+        if self.asr_quantization == FP32_QUANTIZATION_SENTINEL:
+            self.asr_quantization = None
+        if self.asr_decoder_quantization == FP32_QUANTIZATION_SENTINEL:
+            self.asr_decoder_quantization = None
+        return self
+
     @model_validator(mode="after")
     def default_enabled_diarization_model(self) -> ServerSettings:
         if self.model_diarization is None:
@@ -272,6 +399,18 @@ class ServerSettings(BaseSettings):
         from coro.cache.directory import resolve_cache_dir
 
         self.asr_cache_dir = resolve_cache_dir(self.asr_cache_dir)
+        return self
+
+    @model_validator(mode="after")
+    def collapse_blank_fallback_language(self) -> ServerSettings:
+        """Collapse a blank asr_fallback_language to the default.
+
+        Blank means unset (the same forgiving contract the request surfaces
+        give their optional language fields), and an empty string would
+        otherwise reach the adapter as "no language at all".
+        """
+        if not self.asr_fallback_language.strip():
+            self.asr_fallback_language = "en"
         return self
 
     @model_validator(mode="after")

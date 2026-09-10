@@ -85,6 +85,75 @@ async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
     assert any("warmup" in r.message.lower() for r in caplog.records)
 
 
+def test_warmup_passes_and_logs_the_fallback_language_for_canary(caplog):
+    """Server Warmup passes asr_fallback_language explicitly to onnx-canary-split and logs it."""
+    from unittest.mock import AsyncMock, patch
+
+    from starlette.testclient import TestClient
+
+    with patch(
+        "coro.backends.asr.onnx_canary_split.build_onnx_canary_split_adapter", autospec=True
+    ) as mock_build:
+        mock_build.return_value = object()
+        settings = ServerSettings(
+            _env_file=None,
+            warmup="enabled",
+            backend_asr="onnx-canary-split",
+            model_asr="collectiveai/canary-1b-v2-onnx-split-int8",
+            asr_fallback_language="es",
+        )
+        application = create_app(settings)
+
+        with (
+            patch(
+                "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
+                new_callable=AsyncMock,
+                return_value=None,
+            ) as mock_transcribe,
+            caplog.at_level(logging.INFO, logger="coro.app"),
+            TestClient(application) as client,
+        ):
+            response = client.get("/health")
+
+    assert response.json()["warmup_ready"] is True
+    mock_transcribe.assert_awaited_once()
+    assert mock_transcribe.call_args.kwargs["language"] == "es"
+    assert any(
+        "warmup" in r.message.lower() and "language=es" in r.message.lower() for r in caplog.records
+    )
+
+
+def test_warmup_omits_the_language_hint_for_a_non_canary_backend():
+    """Other backends keep warming up with no language hint (unchanged behaviour)."""
+    from unittest.mock import AsyncMock, patch
+
+    from starlette.testclient import TestClient
+
+    with patch("coro.backends.asr.faster_whisper.build_asr_adapter") as mock_build:
+        mock_build.return_value = object()
+        settings = ServerSettings(
+            _env_file=None,
+            warmup="enabled",
+            backend_asr="faster-whisper",
+            model_asr="tiny",
+            asr_fallback_language="es",
+        )
+        application = create_app(settings)
+
+        with (
+            patch(
+                "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
+                new_callable=AsyncMock,
+                return_value=None,
+            ) as mock_transcribe,
+            TestClient(application),
+        ):
+            pass
+
+    mock_transcribe.assert_awaited_once()
+    assert mock_transcribe.call_args.kwargs["language"] is None
+
+
 def test_enabled_diarization_builds_a_diarization_adapter():
     """An enabled Backend Provider always builds an adapter — never silently ASR-only."""
     from unittest.mock import AsyncMock, patch

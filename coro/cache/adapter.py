@@ -18,7 +18,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-from coro.cache.fingerprint import window_key
+from coro.cache.fingerprint import resolved_language_key, window_key
 
 if TYPE_CHECKING:
     from coro.cache.store import ASRCacheStore
@@ -89,6 +89,12 @@ class CachingASRAdapter:
         self.honours_prompt = (
             adapter_honours_prompt(inner) if honours_prompt is None else honours_prompt
         )
+        # A backend that publishes a fallback_language (currently only
+        # onnx-canary-split) also reduces a request language to a base
+        # subtag and resolves an absent one to that fallback -- the cache key
+        # must collapse the same way, or es-US/es (or an absent language)
+        # would each get their own cache entry despite decoding identically.
+        self._fallback_language: str | None = getattr(inner, "fallback_language", None)
         self._hits = 0
         self._misses = 0
 
@@ -96,6 +102,21 @@ class CachingASRAdapter:
     def inner(self) -> Any:
         """The wrapped ASR Adapter, for callers that must reach the real model."""
         return self._inner
+
+    async def detect_language(self, pcm: bytes) -> str | None:
+        """Forward to the wrapped adapter's auto-LID, when it has one.
+
+        Plain passthrough, never cached: detection is a cheap, separate
+        inference call (see ``OnnxCanarySplitASRAdapter.detect_language``),
+        and what the window cache keys on is the *resolved* language a window
+        was actually decoded with, not the detection call itself. Pipelines
+        duck-type this the same way (``getattr(asr, "detect_language",
+        None)``), so a backend without one is simply absent here too.
+        """
+        detect = getattr(self._inner, "detect_language", None)
+        if detect is None:
+            return None
+        return await detect(pcm)
 
     @property
     def fingerprint(self) -> str:
@@ -132,10 +153,16 @@ class CachingASRAdapter:
             The window's transcript tokens.
 
         """
+        language_key = (
+            resolved_language_key(language, fallback_language=self._fallback_language)
+            if self._fallback_language is not None
+            else None
+        )
         key = window_key(
             pcm,
             fingerprint=self._fingerprint,
             language=language,
+            language_key=language_key,
             prompt=prompt if self.honours_prompt else None,
         )
         cached = await asyncio.to_thread(self._store.get, key)

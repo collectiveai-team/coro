@@ -71,13 +71,21 @@ def test_dispatches_to_onnx_parakeet_prompt():
     )
 
 
-def test_dispatches_to_onnx_canary_split():
+def _no_hf_token_in_env(monkeypatch):
+    """Keep a developer's real CORO_HF_TOKEN/HF_TOKEN out of these assertions."""
+    for name in ("CORO_HF_TOKEN", "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_dispatches_to_onnx_canary_split(monkeypatch):
     """The onnx-canary-split provider routes to its builder with both quantization selectors."""
+    _no_hf_token_in_env(monkeypatch)
     settings = ServerSettings(
         backend_asr="onnx-canary-split",
         model_asr="m",
         asr_quantization="static_qdq_v3",
         asr_decoder_quantization="dynamic_v1_quint8",
+        _env_file=None,
     )
     sentinel = object()
     with patch(
@@ -92,8 +100,31 @@ def test_dispatches_to_onnx_canary_split():
         device=settings.asr_device,
         quantization="static_qdq_v3",
         decoder_quantization="dynamic_v1_quint8",
+        max_concurrency=settings.asr_max_concurrency,
         max_queue_depth=settings.asr_max_queue_depth,
+        hf_token=None,
+        fallback_language=settings.asr_fallback_language,
     )
+
+
+def test_dispatches_to_onnx_canary_split_with_hf_token(monkeypatch):
+    """A configured ServerSettings.hf_token reaches the canary-split builder."""
+    monkeypatch.setenv("CORO_HF_TOKEN", "secret-token")
+    settings = ServerSettings(
+        backend_asr="onnx-canary-split",
+        model_asr="m",
+        _env_file=None,
+    )
+    sentinel = object()
+    with patch(
+        "coro.backends.asr.onnx_canary_split.build_onnx_canary_split_adapter",
+        return_value=sentinel,
+    ) as mock_build:
+        adapter = build_asr_adapter(settings)
+
+    assert adapter is sentinel
+    forwarded = mock_build.call_args.kwargs["hf_token"]
+    assert forwarded is not None and forwarded == "secret-token"
 
 
 def test_dispatches_to_onnx_genai():
@@ -128,7 +159,7 @@ def test_dispatches_to_nemo():
 
 def test_unknown_provider_raises():
     """An unknown ASR Backend Provider fails fast."""
-    settings = ServerSettings(model_asr="m")
+    settings = ServerSettings(backend_asr="onnx-asr", model_asr="m")
     object.__setattr__(settings, "backend_asr", "bogus")
     with pytest.raises(ValueError, match="Unknown ASR backend provider"):
         build_asr_adapter(settings)
@@ -161,6 +192,7 @@ def test_unknown_provider_raises():
         ("faster-whisper", {"asr_onnx_vad": "enabled"}, ["asr_onnx_vad"]),
         ("faster-whisper", {"asr_onnx_vad_threshold": 0.4}, ["asr_onnx_vad_threshold"]),
         ("onnx-genai", {"asr_max_concurrency": 8}, ["asr_max_concurrency"]),
+        ("onnx-parakeet-prompt", {"asr_max_concurrency": 8}, ["asr_max_concurrency"]),
     ],
 )
 def test_warns_when_a_setting_is_ignored_by_the_provider(provider, overrides, expected, caplog):
@@ -184,6 +216,7 @@ def test_warns_when_a_setting_is_ignored_by_the_provider(provider, overrides, ex
         ("onnx-canary-split", {"asr_decoder_quantization": "dynamic_v1_quint8"}),
         ("onnx-asr", {"asr_onnx_vad": "enabled", "asr_onnx_vad_threshold": 0.4}),
         ("onnx-asr", {"asr_max_concurrency": 8}),
+        ("onnx-canary-split", {"asr_max_concurrency": 8}),
     ],
 )
 def test_no_warning_when_the_provider_honours_the_setting(provider, overrides):
@@ -196,6 +229,30 @@ def test_no_warning_for_unset_settings():
     """Leaving provider-specific knobs at their defaults is never reported."""
     settings = ServerSettings(backend_asr="onnx-asr", model_asr="m")
     assert warn_ignored_asr_settings(settings) == []
+
+
+def test_no_warning_for_the_default_model_slugs_own_filled_settings():
+    """A model slug's own quantization fill is never mistaken for an operator setting."""
+    settings = ServerSettings(_env_file=None)  # default: canary-1b-v2 slug
+    assert settings.asr_quantization == "static_qdq_v4_pct_excl"
+    assert settings.asr_decoder_quantization == "dynamic_v1_quint8"
+    assert warn_ignored_asr_settings(settings) == []
+
+
+def test_slug_filled_quantization_is_not_warned_about_when_backend_asr_is_overridden(caplog):
+    """An operator overriding backend_asr away from the default slug's own backend.
+
+    asr_quantization/asr_decoder_quantization were filled by the slug, not by
+    the operator, so no CORO_ASR_*QUANTIZATION warning should name a setting
+    the operator never touched -- even though the newly-selected backend
+    (onnx-asr) does not honour asr_decoder_quantization at all.
+    """
+    settings = ServerSettings(_env_file=None, backend_asr="onnx-asr")
+    assert settings.asr_decoder_quantization == "dynamic_v1_quint8"  # slug-filled, unused here
+    with caplog.at_level(logging.WARNING, logger="coro.backends.asr.factory"):
+        ignored = warn_ignored_asr_settings(settings)
+    assert ignored == []
+    assert "asr_decoder_quantization" not in caplog.text
 
 
 def test_build_emits_the_ignored_setting_warning(caplog):

@@ -39,6 +39,19 @@ PROVIDER_HONOURS_PROMPT: dict[str, bool] = {
 }
 
 
+# MARK: Auto-LID Capability
+# Whether each ASR Backend Provider exposes ``detect_language``, known without
+# building the adapter -- exactly the same reason ``PROVIDER_HONOURS_PROMPT``
+# exists: ``LazyASRAdapter.detect_language`` must not force-load a model for a
+# provider that has no auto-LID at all (that would defeat laziness's whole
+# point on every request without an explicit language). Any provider absent
+# here is assumed ``False``. ``test_asr_factory`` asserts this agrees with the
+# ``detect_language`` each adapter class actually declares.
+PROVIDER_DETECTS_LANGUAGE: dict[str, bool] = {
+    "onnx-canary-split": True,
+}
+
+
 # MARK: Cross-Provider Setting Leakage
 # Each entry maps a provider-specific setting to the ASR Backend Providers that
 # actually honour it. Anything set for a provider outside its set is a no-op.
@@ -48,15 +61,19 @@ _PROVIDER_SPECIFIC_SETTINGS: tuple[tuple[str, frozenset[str]], ...] = (
     ("asr_decoder_quantization", frozenset({"onnx-canary-split"})),
     ("asr_onnx_vad", frozenset({"onnx-asr"})),
     ("asr_onnx_vad_threshold", frozenset({"onnx-asr"})),
-    ("asr_max_concurrency", frozenset({"faster-whisper", "onnx-asr"})),
+    ("asr_max_concurrency", frozenset({"faster-whisper", "onnx-asr", "onnx-canary-split"})),
 )
 
 
 def warn_ignored_asr_settings(settings: ServerSettings) -> list[str]:
     """Warn about ASR settings the configured Backend Provider ignores.
 
-    A setting counts as configured when its value differs from its declared
-    default, so leaving a knob unset is never reported.
+    A setting counts as configured when the *operator* actually set it (CLI
+    flag, env var, or constructor kwarg) -- ``settings._explicit_fields``,
+    captured by ``ServerSettings.resolve_model_slug`` before its own
+    slug-filling mutations, so a value a model slug filled (e.g. the default
+    slug's ``asr_decoder_quantization``) is never misattributed to the
+    operator merely because it now differs from the field's declared default.
 
     Args:
         settings: Server Startup Selection to inspect.
@@ -66,15 +83,15 @@ def warn_ignored_asr_settings(settings: ServerSettings) -> list[str]:
 
     """
     provider = settings.backend_asr
-    fields = type(settings).model_fields
+    explicit = settings._explicit_fields
     ignored: list[str] = []
 
     for name, honouring_providers in _PROVIDER_SPECIFIC_SETTINGS:
         if provider in honouring_providers:
             continue
-        value = getattr(settings, name)
-        if value == fields[name].default:
+        if name not in explicit:
             continue
+        value = getattr(settings, name)
         ignored.append(name)
         logger.warning(
             "Setting CORO_%s=%r is ignored by the '%s' ASR Backend Provider "
@@ -136,7 +153,10 @@ def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
             device=settings.asr_device,
             quantization=settings.asr_quantization,
             decoder_quantization=settings.asr_decoder_quantization,
+            max_concurrency=settings.asr_max_concurrency,
             max_queue_depth=settings.asr_max_queue_depth,
+            hf_token=settings.hf_token.get_secret_value() if settings.hf_token else None,
+            fallback_language=settings.asr_fallback_language,
         )
 
     if provider == "onnx-genai":
@@ -185,18 +205,30 @@ class LazyASRAdapter:
     semantics are unchanged; this is for the offline command.
     """
 
-    def __init__(self, build: Callable[[], ASRAdapter], *, honours_prompt: bool) -> None:
+    def __init__(
+        self,
+        build: Callable[[], ASRAdapter],
+        *,
+        honours_prompt: bool,
+        detects_language: bool = False,
+    ) -> None:
         """Defer adapter construction.
 
         Args:
             build: Zero-argument builder returning the real ASR Adapter.
             honours_prompt: The provider's declared prompt capability, known
                 without building, so a cache fingerprint can be derived first.
+            detects_language: The provider's declared auto-LID capability,
+                known without building (see :data:`PROVIDER_DETECTS_LANGUAGE`)
+                -- without it, :meth:`detect_language` would force-load the
+                model on every request without an explicit language, for
+                every provider, defeating laziness for the common case.
 
         """
         self._build = build
         self._adapter: ASRAdapter | None = None
         self.honours_prompt = honours_prompt
+        self._detects_language = detects_language
 
     @property
     def loaded(self) -> bool:
@@ -219,6 +251,24 @@ class LazyASRAdapter:
         """Build the adapter if needed, then transcribe through it."""
         return await self.resolve().transcribe_pcm(pcm, language=language, prompt=prompt)
 
+    async def detect_language(self, pcm: bytes) -> str | None:
+        """Resolve the adapter and forward, but only for a provider with auto-LID.
+
+        Without ``detects_language`` gating this, EVERY lazily-wrapped
+        request without an explicit language would force-load the model on
+        window 1 just to learn it has no ``detect_language`` -- defeating
+        laziness's whole point (a fully-cached run must load nothing) for
+        every provider, not just auto-LID-capable ones. When it *is*
+        capable, the same lazy load ``transcribe_pcm`` would have paid on a
+        cache miss simply happens one call earlier.
+        """
+        if not self._detects_language:
+            return None
+        detect = getattr(self.resolve(), "detect_language", None)
+        if detect is None:
+            return None
+        return await detect(pcm)
+
 
 # MARK: ASR Adapter Stack
 def build_asr_adapter_stack(settings: ServerSettings, *, lazy: bool = False) -> ASRAdapter:
@@ -239,10 +289,15 @@ def build_asr_adapter_stack(settings: ServerSettings, *, lazy: bool = False) -> 
     """
     provider = settings.backend_asr
     honours_prompt = PROVIDER_HONOURS_PROMPT.get(provider, True)
+    detects_language = PROVIDER_DETECTS_LANGUAGE.get(provider, False)
 
     inner: ASRAdapter
     if lazy:
-        inner = LazyASRAdapter(lambda: build_asr_adapter(settings), honours_prompt=honours_prompt)
+        inner = LazyASRAdapter(
+            lambda: build_asr_adapter(settings),
+            honours_prompt=honours_prompt,
+            detects_language=detects_language,
+        )
     else:
         inner = build_asr_adapter(settings)
 

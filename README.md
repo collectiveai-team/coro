@@ -46,7 +46,7 @@ The key features are:
 - **Deepgram-compatible API** — drop-in `POST /v1/listen` and `WebSocket /v1/listen`; the only way to get **per-word speaker labels**, since no OpenAI type has a slot for one
 - **Audio *and* video input** — uploads are decoded through ffmpeg, so any container it supports works: audio (`.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`, …) and video (`.mp4`, `.mkv`, `.mov`, `.webm`, …); the audio track is extracted to 16 kHz mono PCM automatically — same endpoint, same response shapes
 - **Pluggable diarization backends** — pick per deployment: NVIDIA NeMo Sortformer (streaming-capable, **≤ 4 speakers**) or pyannote community-1 (batch/whole-file, **handles > 4 speakers**); both attribute every segment to a speaker (`diarized_json`), so you get *who spoke, when, and what*
-- **Pluggable ASR backends** — pick per deployment: onnx-asr Parakeet (the default — fastest on CPU *and* GPU, strongest on Spanish), Faster-Whisper (best English meeting accuracy, multilingual), or onnx-genai Nemotron (real-time streaming)
+- **Pluggable ASR backends, picked by slug** — Canary-1b-v2 INT8/INT8 (the default — forces the request language or auto-detects it once per recording and holds it, never switches mid-file), Parakeet (fastest on CPU *and* GPU, strongest raw Spanish WER, but per-frame language switching it cannot be told not to do), Faster-Whisper (best English meeting accuracy, multilingual), or onnx-genai Nemotron (real-time streaming) — `--model-asr canary-1b-v2 | parakeet-tdt-0.6b-v3 | whisper-large-v3-turbo | whisper-large-v3`
 - **Two transcription pipelines** — `full-memory` (default) decodes and holds the whole recording in RAM for lowest latency on short/medium clips; `streaming` streams 1 s PCM chunks off disk and spills the growing transcript to a per-request on-disk store, trading a little latency for **flat host RAM on arbitrarily long audio**. Select with `CORO_PIPELINE` / `--pipeline` — see [the pipeline comparison](#two-transcription-pipelines-full-memory-vs-streaming)
 - **Streaming both ways** — OpenAI-exact SSE (`transcript.text.delta` / `transcript.text.done` / `[DONE]`) with `stream=true`, *and* a Deepgram-compatible WebSocket at `/v1/listen` that pushes `Results` frames as audio arrives
 - **Flat-memory long audio** — the streaming pipeline spills the transcript to disk so host RSS stays flat from 11 s to multi-hour recordings
@@ -153,17 +153,15 @@ command and must start with a subcommand. The server binds `0.0.0.0:8000`
 inside the container.
 
 ```bash
-# CPU
+# CPU — no ASR flags needed, the default is already Canary-1b-v2 INT8/INT8
 docker run --rm -p 8000:8000 \
   ghcr.io/collectiveai-team/coro:latest-cpu \
-  serve --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 --asr-device cpu \
-  --backend-diarization nemo
+  serve --asr-device cpu --backend-diarization nemo
 
 # NVIDIA GPU (needs the NVIDIA Container Toolkit)
 docker run --rm --gpus all -p 8000:8000 \
   ghcr.io/collectiveai-team/coro:latest-gpu \
-  serve --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
-  --backend-diarization nemo
+  serve --backend-diarization nemo
 ```
 
 The `--backend-diarization nemo` flag turns on Sortformer speaker labels; omit it
@@ -234,7 +232,7 @@ attached run is governed by that server's configuration, so the local flags are
 ignored — and the run reports which configuration actually produced the result:
 
 ```
-coro run: mode=in-process pipeline=full-memory asr=onnx-asr:nemo-parakeet-tdt-0.6b-v3 \
+coro run: mode=in-process pipeline=full-memory asr=onnx-canary-split:collectiveai/canary-1b-v2-onnx-split-int8 \
   diarization=none cache=enabled windows=65 hits=65 misses=0
 ```
 
@@ -249,7 +247,10 @@ coro run recording.m4a --asr-cache enabled       # or CORO_ASR_CACHE=enabled
 coro serve --asr-cache enabled
 ```
 
-Measured on 30 minutes of audio, default backend, CPU:
+Measured on 30 minutes of audio, CPU (`parakeet-tdt-0.6b-v3`, the default at
+measurement time — not re-measured against the current `canary-1b-v2`
+default, which pays one detection load per run under auto-LID; see
+[ADR 0019](docs/adr/0019-canary-default-asr.md)):
 
 | | Cold | Fully cached |
 |---|---|---|
@@ -301,12 +302,14 @@ environment variables > defaults**. See `coro/settings.py` for the full list.
 
 ```bash
 # Env vars (add CORO_BACKEND_DIARIZATION to enable speaker labels; omit for ASR-only)
-CORO_BACKEND_ASR=onnx-asr CORO_MODEL_ASR=nemo-parakeet-tdt-0.6b-v3 \
+# CORO_MODEL_ASR here is a Model Slug -- it resolves backend + model + quantization
+# together; the default is already canary-1b-v2, this just makes it explicit.
+CORO_MODEL_ASR=canary-1b-v2 \
   CORO_ASR_DEVICE=cuda CORO_BACKEND_DIARIZATION=nemo \
   coro serve --port 8000
 
 # Equivalent CLI flags
-coro serve --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
+coro serve --model-asr canary-1b-v2 \
   --asr-device cuda --backend-diarization nemo --port 8000
 ```
 
@@ -391,47 +394,85 @@ rather than silently costing you the flat-RAM property. See
 
 ## ASR backends
 
-The ASR backend is pluggable behind a single adapter contract. Select it with
-`CORO_BACKEND_ASR` + `CORO_MODEL_ASR`; pick the device with
-`CORO_ASR_DEVICE` (`auto` | `cpu` | `cuda`).
+The ASR backend is pluggable behind a single adapter contract. The simplest
+selector is a **Model Slug** — `CORO_MODEL_ASR` / `--model-asr` alone resolves
+backend, model and quantization together (`canary-1b-v2` | `parakeet-tdt-0.6b-v3`
+| `whisper-large-v3-turbo` | `whisper-large-v3`); `CORO_BACKEND_ASR` +
+`CORO_MODEL_ASR` still work as a raw id/path pair for anything not registered
+as a slug. Pick the device with `CORO_ASR_DEVICE` (`auto` | `cpu` | `cuda`).
+See [ADR 0019](docs/adr/0019-canary-default-asr.md) and
+[ADR 0020](docs/adr/0020-model-slug-registry.md).
 
-| Backend (`CORO_BACKEND_ASR`) | Runtime | Typical model (`CORO_MODEL_ASR`) | Notes |
+| Backend (`CORO_BACKEND_ASR`) | Slug (`CORO_MODEL_ASR`) | Runtime | Notes |
 |---|---|---|---|
-| `onnx-asr` | onnxruntime | `nemo-parakeet-tdt-0.6b-v3` | **Default.** NeMo Parakeet/Canary; multilingual, and strongest of the three on Spanish. Offline (batched) → very high GPU throughput. Leave `CORO_ASR_QUANTIZATION` unset (fp32) — `int8` saves memory but does *not* go faster here. |
-| `faster-whisper` | CTranslate2 | `openai/whisper-medium` | Best English meeting accuracy; multilingual. `CORO_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
-| `onnx-genai` | onnxruntime-genai | `onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4` | NVIDIA Nemotron **cache-aware streaming**; 40 locales. Built for low-latency real-time, not batch throughput. Timestamps are 560 ms-resolution. GPU strongly recommended. |
+| `onnx-canary-split` | `canary-1b-v2` | onnxruntime | **Default.** NVIDIA Canary-1b-v2, INT8 encoder + INT8 decoder. Forces the request `language` when given; otherwise detects it once per request/connection with its own LID and holds it (never switches mid-recording) — see [ASR language handling](#asr-language-handling). Fetched from `collectiveai/canary-1b-v2-onnx-split-int8` (CC-BY-4.0, ≈1.29 GB). |
+| `onnx-asr` | `parakeet-tdt-0.6b-v3` | onnxruntime | NeMo Parakeet; fastest of the four on both CPU and GPU, strongest raw Spanish WER — but does **implicit per-frame language identification with no way to constrain it**, which is why it is no longer the default (ADR 0019). Offline (batched) → very high GPU throughput. Leave `CORO_ASR_QUANTIZATION` unset (fp32) — `int8` saves memory but does *not* go faster here. |
+| `faster-whisper` | `whisper-large-v3-turbo`, `whisper-large-v3` | CTranslate2 | Best English meeting accuracy; multilingual. `CORO_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
+| `onnx-genai` | _(no slug — raw model id)_ `onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4` | onnxruntime-genai | NVIDIA Nemotron **cache-aware streaming**; 40 locales. Built for low-latency real-time, not batch throughput. Timestamps are 560 ms-resolution. GPU strongly recommended. |
+
+### ASR language handling
+
+With **Canary-1b-v2** (the default), every decode runs in an explicitly
+resolved language, in this precedence order:
+
+1. **A request `language`** always wins — normalised to a base subtag
+   (`es-US` → `es`) and checked against the languages this checkpoint actually
+   supports; an unsupported one is a `400` naming the supported set, never a
+   silent fallback or a `500`.
+2. **No request language** → auto-detected once per request/connection from
+   the audio itself (Canary's own language-ID probe) and held for every later
+   window — never re-evaluated mid-recording. `verbose_json.language` (and the
+   Deepgram live socket's closing metadata) reports what was actually used.
+3. **Detection never succeeds** (not observed in testing, but handled) → falls
+   back to `CORO_ASR_FALLBACK_LANGUAGE` (default `en`).
+
+This is deliberately **not** what `parakeet-tdt-0.6b-v3` does: that backend
+identifies language per audio frame with no override, which on
+single-language recordings can drift mid-file — measured at 45 English
+function-word intrusions across 8 of 48 windows on a 22-minute Spanish
+recording (see [docs/benchmark.md](docs/benchmark.md#canary-default-int8int8-combined-quantization--auto-lid-gate)).
+That uncontrollable drift, not Canary's throughput, is why the default moved.
 
 ### Recommended configuration
 
 Each setting below is shown as an env var; the equivalent CLI flag is the
-`--kebab-case` form (e.g. `--backend-asr onnx-asr`).
+`--kebab-case` form (e.g. `--model-asr canary-1b-v2`).
 
-The defaults (`onnx-asr` + `nemo-parakeet-tdt-0.6b-v3`, fp32) are already the
-recommended configuration on both CPU and GPU — you only need the settings below
-if you want to move off them.
+The default (`canary-1b-v2`, INT8 encoder + INT8 decoder) is already the
+recommended configuration on both CPU and GPU for language-stable
+transcription — you only need the settings below to move off it.
 
 **GPU (`--extra cuda`):**
 ```bash
-CORO_ASR_DEVICE=cuda           # fp32 (leave CORO_ASR_QUANTIZATION unset)
+CORO_ASR_DEVICE=cuda
 ```
 Or as a CLI flag:
 ```bash
 coro serve --asr-device cuda --port 8000
 ```
-Fastest by a wide margin with near-best accuracy. Use `faster-whisper` +
-`float16` if you want the top English-meeting accuracy point; use `onnx-genai`
-only for real-time low-latency streaming.
 
-**CPU (`--extra cpu`):** nothing to set — the default selection is the CPU pick.
-Measured against `faster-whisper` + `openai/whisper-medium` on the same host:
-**~8.8× the throughput**, **23% lower Spanish WER**, ~1 GB less resident memory,
-and English meeting WER within noise. `onnx-genai` is not recommended on CPU.
+**CPU (`--extra cpu`):** nothing to set — the default selection is already the
+CPU pick. Combined INT8/INT8 measured on the 48-window mTEDx Spanish gate:
+**RTFx 4.45×** (forced language) vs fp32/fp32's 2.20× — roughly **double the
+throughput** — with norm cpWER within run-to-run noise of the fp32 reference
+(0.0526 vs 0.0513). Full numbers:
+[docs/benchmark.md](docs/benchmark.md#canary-default-int8int8-combined-quantization--auto-lid-gate).
 
-> **Do not reach for `int8` for speed.** For this transducer model int8 measured
-> **no throughput gain** (+0.6% / −3.6% across two workload sets — inside noise)
-> and cost 3–6% relative WER. Its real benefit is memory: it drops the resident
-> server from ~2.7 GB to ~1.3–1.7 GB. Set `CORO_ASR_QUANTIZATION=int8` to fit a
-> memory budget, never to go faster. Full numbers:
+**Want raw throughput over language stability instead?** `--model-asr
+parakeet-tdt-0.6b-v3` — measured against `faster-whisper` +
+`openai/whisper-medium` on the same host: **~8.8× the throughput**, **23%
+lower Spanish WER**, ~1 GB less resident memory, and English meeting WER
+within noise. Accept its per-frame language switching risk on single-language
+audio, or force a language client-side per request (it has no forced-language
+mode of its own).
+
+> **Do not reach for `int8` on the `parakeet-tdt-0.6b-v3` slug for speed.** For
+> that transducer architecture int8 measured **no throughput gain** (+0.6% /
+> −3.6% across two workload sets — inside noise) and cost 3–6% relative WER.
+> Its real benefit there is memory: it drops the resident server from ~2.7 GB
+> to ~1.3–1.7 GB. This does **not** apply to the default `canary-1b-v2` slug,
+> whose encoder and decoder INT8 selectors are real throughput wins and ship
+> as that slug's own defaults (see above). Full numbers:
 > [docs/benchmark.md](docs/benchmark.md#quantization-int8-is-a-memory-tool-not-a-speed-tool).
 
 **Streaming on long audio:** set `CORO_PIPELINE=streaming` so the per-request
@@ -505,11 +546,12 @@ CORO_BACKEND_DIARIZATION=nemo coro serve --port 8000
 coro serve --backend-diarization nemo --port 8000
 ```
 
-Combine with an ASR backend and pin the device as usual:
+Combine with an ASR Model Selection and pin the device as usual (the ASR
+backend defaults to `canary-1b-v2`, so no ASR flags are needed unless you want
+a different one):
 
 ```bash
 coro serve --port 8000 \
-  --backend-asr onnx-asr --model-asr nemo-parakeet-tdt-0.6b-v3 \
   --backend-diarization nemo --diarization-device cuda
 ```
 
@@ -625,11 +667,13 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 | `CORO_PORT` | `--port` | `8000` | Bind port. |
 | `CORO_CORS_ORIGINS` | `--cors-origins` | `["*"]` | Allowed CORS origins. |
 | `CORO_PIPELINE` | `--pipeline` | `full-memory` | Transcription pipeline selector (`full-memory` \| `streaming`). |
-| `CORO_BACKEND_ASR` | `--backend-asr` | `onnx-asr` | ASR backend provider (`faster-whisper` \| `onnx-asr` \| `onnx-genai`). |
-| `CORO_MODEL_ASR` | `--model-asr` | `nemo-parakeet-tdt-0.6b-v3` | ASR model selection. |
+| `CORO_BACKEND_ASR` | `--backend-asr` | _(derived from `CORO_MODEL_ASR`'s slug)_ | ASR backend provider (`faster-whisper` \| `onnx-asr` \| `onnx-genai` \| `onnx-canary-split`). Only needed explicitly alongside a non-slug `CORO_MODEL_ASR`. |
+| `CORO_MODEL_ASR` | `--model-asr` | `canary-1b-v2` | ASR model selection — a **Model Slug** (`canary-1b-v2` \| `parakeet-tdt-0.6b-v3` \| `whisper-large-v3-turbo` \| `whisper-large-v3`) or a raw model id/path for an explicit `CORO_BACKEND_ASR`. |
 | `CORO_ASR_DEVICE` | `--asr-device` | `auto` | ASR device (`auto` \| `cuda` \| `cpu`). |
-| `CORO_ASR_COMPUTE_TYPE` | `--asr-compute-type` | `default` | Faster-Whisper compute type (ignored by `onnx-asr`). |
-| `CORO_ASR_QUANTIZATION` | `--asr-quantization` | _(unset)_ | onnx-asr quantization (e.g. `int8`); ignored by `faster-whisper`. Unset = fp32; int8 is a memory-fitting option, not a speed one. |
+| `CORO_ASR_COMPUTE_TYPE` | `--asr-compute-type` | `default` | Faster-Whisper compute type (ignored by every other backend). |
+| `CORO_ASR_QUANTIZATION` | `--asr-quantization` | _(slug-derived; `static_qdq_v4_pct_excl` for the default `canary-1b-v2`)_ | Encoder quantization (e.g. `int8` for `onnx-asr`); ignored by `faster-whisper`. Explicit `fp32` turns a slug's own default back off. |
+| `CORO_ASR_DECODER_QUANTIZATION` | `--asr-decoder-quantization` | _(slug-derived; `dynamic_v1_quint8` for the default `canary-1b-v2`)_ | `onnx-canary-split` decoder quantization; ignored by every other backend. Explicit `fp32` turns it off independently of `CORO_ASR_QUANTIZATION`. |
+| `CORO_ASR_FALLBACK_LANGUAGE` | `--asr-fallback-language` | `en` | Language used when a request gives none and detection (where available) never yields one. |
 | `CORO_ASR_ONNX_VAD` | `--asr-onnx-vad` | `disabled` | Silero VAD segmentation for `onnx-asr` (`enabled` \| `disabled`). |
 | `CORO_ASR_ONNX_VAD_THRESHOLD` | `--asr-onnx-vad-threshold` | _(unset)_ | Silero VAD speech-probability threshold; only when VAD enabled. |
 | `CORO_ASR_MAX_CONCURRENCY` | `--asr-max-concurrency` | `0` _(auto)_ | Max ASR inference calls running at once; `0` auto-sizes from the host core count. Ignored by `onnx-genai`, which always serialises. |
@@ -651,12 +695,18 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 
 > **Picking a backend?** See the full **[leaderboard →
 > docs/benchmark.md](docs/benchmark.md)** (WER, DER, RTFx, VRAM and RAM across
-> backends, with reproduction commands). TL;DR: the **default** (onnx-asr
-> `parakeet`, fp32) is the CPU pick and the Spanish pick; **faster-whisper
-> `large-v3-turbo`** is the best English-meeting GPU option; **faster-whisper
-> `small`** for max GPU throughput; **nemotron** for real-time streaming. Don't
-> run Whisper through the onnx-asr backend (slower and less accurate than
-> faster-whisper).
+> backends, with reproduction commands). TL;DR: the **default**
+> (`canary-1b-v2`, INT8/INT8) is the pick whenever a recording is
+> single-language and you cannot tolerate mid-file language drift;
+> `parakeet-tdt-0.6b-v3` is the raw-throughput/Spanish-WER pick when that risk
+> is acceptable; **faster-whisper `large-v3-turbo`** is the best
+> English-meeting GPU option; **faster-whisper `small`** for max GPU
+> throughput; **nemotron** for real-time streaming. Don't run Whisper through
+> the onnx-asr backend (slower and less accurate than faster-whisper). The
+> table below predates the Canary default and only compares the earlier
+> `onnx-asr`/faster-whisper/onnx-genai three-way split — see [Canary default
+> (INT8/INT8)](docs/benchmark.md#canary-default-int8int8-combined-quantization--auto-lid-gate)
+> for Canary's own numbers.
 
 The table below is a separate, ASR-only view (diarization off).
 
@@ -678,7 +728,7 @@ normalized ORC-WER, lower is better. (Absolute WER is high because AMI
 
 | Backend / model | precision | RTFx (CPU) | RTFx (GPU) | ORC-WER (norm) |
 |---|---|---:|---:|---:|
-| **onnx-asr `parakeet-tdt-0.6b-v3`** (default) | fp32 | **5.0×** | **~120×** ‡ | 51–57% |
+| **onnx-asr `parakeet-tdt-0.6b-v3`** | fp32 | **5.0×** | **~120×** ‡ | 51–57% |
 | faster-whisper `whisper-medium` | int8/fp16 | 0.6× | ~20× ‡ | 52–53% |
 | onnx-genai `nemotron-…-int4` | int4 streaming | ~0.4× (impractical) | ~10× ‡ | 44–57% |
 
@@ -693,7 +743,7 @@ Memory footprint — **baseline** (peak, model + runtime, short clip):
 
 | Backend / model | CPU RAM | GPU VRAM |
 |---|---|---|
-| onnx-asr `parakeet-tdt-0.6b-v3` (default) | ~2.7 GB (fp32) / ~1.3–1.7 GB (int8) | ~3.6 GB (fp32) / ~0.6 GB (int8) |
+| onnx-asr `parakeet-tdt-0.6b-v3` | ~2.7 GB (fp32) / ~1.3–1.7 GB (int8) | ~3.6 GB (fp32) / ~0.6 GB (int8) |
 | faster-whisper `whisper-medium` | ~3.8 GB (default compute type) | ~2.3 GB (fp16) |
 | onnx-genai `nemotron-…-int4` | ~1.0 GB | ~1.4 GB |
 

@@ -1,8 +1,10 @@
-"""Reproducible ONNX export/quantization recipes for comparative-reference ASR backends.
+"""Reproducible ONNX export/quantization recipes backing coro's pluggable ASR backends.
 
-``coro/backends/asr/onnx_canary_split.py`` and ``coro/backends/asr/onnx_parakeet_prompt.py``
-both drive artifact-directory contracts (fp32 + optionally-quantized ONNX
-graphs, extracted checkpoint state) that some script has to produce first.
+``coro/backends/asr/onnx_canary_split.py`` (the default backend, see ADR 0019)
+and ``coro/backends/asr/onnx_parakeet_prompt.py`` (comparative reference only,
+see that module's docstring) both drive artifact-directory contracts (fp32 +
+optionally-quantized ONNX graphs, extracted checkpoint state) that some script
+has to produce first.
 Before this package existed, those scripts lived ad hoc under ``.tmp/``
 (gitignored, several with paths hardcoded into a *different*, no-longer-
 guaranteed-to-exist worktree) -- reproducing a backend's artifacts meant

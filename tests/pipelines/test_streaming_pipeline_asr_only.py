@@ -30,7 +30,14 @@ def _render_done_frame(frame: StreamingDoneFrame) -> Any:
     return json.loads(outer["text"])
 
 
-RESPONSE_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
+RESPONSE_KEYS = {
+    "segments",
+    "word_segments",
+    "transcript",
+    "diarization",
+    "raw_words",
+    "detected_language",
+}
 
 _CHUNK_BYTES = struct.pack("<1600h", *([0] * 1600))
 _NUM_CHUNKS = 3
