@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 
 from coro.app import create_app
 from coro.settings import ServerSettings
+from support.routes import flat_routes
 
 
 def _minimal_wav_bytes() -> bytes:
@@ -49,7 +50,7 @@ async def test_excluded_routes_stay_excluded(path: str):
 @pytest.mark.asyncio
 async def test_deepgram_endpoint_is_in_the_supported_endpoint_set():
     app = create_app(ServerSettings(_env_file=None))
-    routes = {getattr(route, "path", None) for route in app.routes}
+    routes = {getattr(route, "path", None) for route in flat_routes(app)}
     assert "/v1/listen" in routes
     assert "/v1/audio/transcriptions" in routes
     assert "/health" in routes
