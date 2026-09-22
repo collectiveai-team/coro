@@ -24,6 +24,7 @@ from coro.api.openai.sse import SSE_TERMINATOR
 from coro.app import api_metadata, create_app
 from coro.core.models.events import TranscriptDeltaEvent, TranscriptDoneEvent
 from coro.settings import ServerSettings
+from support.routes import flat_routes
 
 
 @pytest.fixture
@@ -136,7 +137,7 @@ def test_live_channel_address_is_a_real_websocket_route(app):
     the endpoint has. The guard is therefore the route table itself.
     """
     websocket_paths = {
-        route.path for route in app.routes if type(route).__name__ == "APIWebSocketRoute"
+        route.path for route in flat_routes(app) if type(route).__name__ == "APIWebSocketRoute"
     }
 
     assert LISTEN_CHANNEL_ADDRESS in websocket_paths
@@ -151,7 +152,9 @@ async def test_every_asyncapi_channel_is_pinned_to_a_route(app):
     """
     async with _client(app) as client:
         paths = set((await client.get("/openapi.json")).json()["paths"])
-    paths |= {route.path for route in app.routes if type(route).__name__ == "APIWebSocketRoute"}
+    paths |= {
+        route.path for route in flat_routes(app) if type(route).__name__ == "APIWebSocketRoute"
+    }
 
     addresses = {channel.address for channel in build_asyncapi_document().channels.values()}
 
