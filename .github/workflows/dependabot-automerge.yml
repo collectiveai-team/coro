@@ -42,23 +42,35 @@ jobs:
           # (the default GITHUB_TOKEN can't query alerts). Until
           # DEPENDABOT_METADATA_TOKEN is added as a repo secret this silently
           # degrades to "no security-alert fast lane" instead of failing the
-          # job, so patch/minor auto-merge keeps working either way.
+          # job, so patch auto-merge keeps working either way.
           github-token: ${{ secrets.DEPENDABOT_METADATA_TOKEN || github.token }}
           alert-lookup: ${{ secrets.DEPENDABOT_METADATA_TOKEN != '' }}
 
+      # Patch-only (plus open security alerts). collectiveai-web's equivalent
+      # also fast-lanes "minor, non-production dependency" -- deliberately
+      # NOT copied here: this repo's [dependency-groups].contracts
+      # (pyproject.toml) re-lists several packages that are simultaneously
+      # hard [project] production dependencies (fastapi, numpy,
+      # pydantic-settings, python-multipart, scalar-fastapi, soxr), purely so
+      # the contract-export CI job can install a minimal env. Dependabot's uv
+      # `dependency-type` output is derived from dependency-group membership,
+      # so every one of those packages is reported as `direct:development`
+      # regardless of also being production deps -- confirmed by three PRs
+      # (fastapi, pydantic-settings, soxr) all getting `direct:development`.
+      # Trusting that signal for the minor fast-lane briefly auto-armed merge
+      # on a fastapi bump that breaks the /v1/listen WebSocket route. Revisit
+      # only if dependency-type becomes reliable here (e.g. Dependabot fixes
+      # PEP 735 group handling, or `contracts` stops re-listing prod deps).
       - name: Decide whether this update is "easy"
         id: gate
         env:
           ALERT_STATE: ${{ steps.metadata.outputs.alert-state }}
           UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
-          DEPENDENCY_TYPE: ${{ steps.metadata.outputs.dependency-type }}
         run: |
           if [ "$ALERT_STATE" = "OPEN" ]; then
             reason="open security alert"
           elif [ "$UPDATE_TYPE" = "version-update:semver-patch" ]; then
             reason="patch update"
-          elif [ "$UPDATE_TYPE" = "version-update:semver-minor" ] && [ "$DEPENDENCY_TYPE" != "direct:production" ]; then
-            reason="minor update, non-production dependency"
           else
             reason=""
           fi
