@@ -50,7 +50,7 @@ jobs:
       # CUDA base + torch-cuda + nemo layers are multi-GB; reclaim runner disk.
       - name: Free disk space
         if: matrix.flavour == 'gpu'
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@v2.0.0
         with:
           tool-cache: true
           large-packages: false
