@@ -17,6 +17,7 @@ from fastapi.responses import Response
 
 from coro.api.dependencies import get_pipeline
 from coro.api.exceptions import (
+    PROCESSING_FAILED_MESSAGE,
     UNDECODABLE_MEDIA_MESSAGE,
     TranscriptionCapacityError,
     TranscriptionProcessingError,
@@ -125,7 +126,7 @@ async def _transcribe_or_raise(
             request_id,
             time.perf_counter() - started,
         )
-        raise TranscriptionProcessingError("Transcription processing failed.") from exc
+        raise TranscriptionProcessingError(PROCESSING_FAILED_MESSAGE) from exc
 
 
 # MARK: Transcription Endpoint
@@ -229,7 +230,7 @@ async def create_transcription(
         raise
     except Exception as exc:
         logger.exception("transcription[%s] response rendering failed", request_id)
-        raise TranscriptionProcessingError("Transcription processing failed.") from exc
+        raise TranscriptionProcessingError(PROCESSING_FAILED_MESSAGE) from exc
     finally:
         source.close()
 

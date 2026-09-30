@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 from collections.abc import AsyncIterator
 
 from fastapi.responses import StreamingResponse
 
 from coro.api.exceptions import (
+    PROCESSING_FAILED_MESSAGE,
     UNDECODABLE_MEDIA_MESSAGE,
     TranscriptionCapacityError,
     TranscriptionValidationError,
@@ -29,6 +31,8 @@ from coro.backends.asr.concurrency import AsrCapacityError
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.models import PipelineStreamEvent
 from coro.pipelines.done_frame import StreamingDoneFrame
+
+logger = logging.getLogger(__name__)
 
 _SSE_HEADERS = {
     "Cache-Control": "no-cache",
@@ -79,8 +83,12 @@ async def _sse_generator(event_source: AsyncIterator[PipelineStreamEvent]):
         # the supported languages rather than as a status code.
         yield _error_frame(exc.message, error_type=TranscriptionValidationError.error_type)
         yield _TERMINATOR_FRAME
-    except Exception as exc:
-        yield _error_frame(str(exc), error_type="server_error")
+    except Exception:
+        # Same policy as the non-streaming path: the traceback goes to the log,
+        # the client gets a curated message. ``str(exc)`` is not a message —
+        # a bare ``KeyError`` renders as just its key.
+        logger.exception("streaming transcription failed mid-stream")
+        yield _error_frame(PROCESSING_FAILED_MESSAGE, error_type="server_error")
         yield _TERMINATOR_FRAME
 
 

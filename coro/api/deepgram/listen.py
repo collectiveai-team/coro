@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse, Response
 from coro.api.dependencies import get_pipeline, get_settings
 from coro.api.deepgram.render import render_deepgram
 from coro.api.deepgram.schemas import DeepgramErrorResponse
+from coro.api.exceptions import PROCESSING_FAILED_MESSAGE
 from coro.api.json_body import spooled_json_response
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
@@ -241,7 +242,7 @@ async def listen(
         )
         return _error(
             err_code=_INTERNAL_ERROR,
-            err_msg="Transcription processing failed.",
+            err_msg=PROCESSING_FAILED_MESSAGE,
             request_id=request_id,
             status_code=500,
         )
@@ -268,7 +269,7 @@ async def listen(
         logger.exception("listen[%s] response rendering failed", request_id)
         return _error(
             err_code=_INTERNAL_ERROR,
-            err_msg="Transcription processing failed.",
+            err_msg=PROCESSING_FAILED_MESSAGE,
             request_id=request_id,
             status_code=500,
         )
