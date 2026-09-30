@@ -202,9 +202,9 @@ class ServerSettings(BaseSettings):
     transcript_spill_dir: str | None = Field(
         default=None,
         description="Directory for the streaming pipeline's per-request transcript "
-        "spill store. MUST be on real disk for flat host RAM: a tmpfs path (e.g. "
-        "/tmp on many systems) keeps the transcript in memory and defeats the spill. "
-        "None uses the system temp dir.",
+        "spill store, and for the audio backlog of live WebSocket streams. MUST be "
+        "on real disk for flat host RAM: a tmpfs path (e.g. /tmp on many systems) "
+        "keeps the data in memory and defeats the spill. None uses the system temp dir.",
     )
     log_level: str = Field(default="info", description="Log level (for CLI use only).")
 

@@ -23,11 +23,11 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketState
 
 from coro.api.deepgram.schemas import DeepgramWord
-from coro.audio import SAMPLE_RATE
+from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.api.deepgram.live_schemas import (
     DeepgramLiveError,
     DeepgramLiveMetadata,
@@ -42,6 +42,7 @@ from coro.core.protocols import ASRAdapter
 from coro.core.speakers import attribute_span, merge_speaker_timeline
 from coro.pcm import PcmStreamConverter, UnsupportedAudioFormat, validate_format
 from coro.pipelines.live import LiveAudioSource, LiveTranscriptionSession
+from coro.pipelines.spill import SpillDirectoryError, resolve_spill_dir
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger(__name__)
@@ -180,29 +181,59 @@ async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | Non
     )
 
 
-async def _pump_audio(
+async def _read_socket(
     websocket: WebSocket,
     source: LiveAudioSource,
     converter: PcmStreamConverter,
     digest: hashlib._Hash,
 ) -> None:
-    """Forward inbound frames until the client ends the stream.
+    """Read every inbound frame until the socket disconnects.
+
+    Reading never waits on the pipeline: uvicorn stops reading the TCP stream
+    while a message is unconsumed, and keepalive pongs share that stream, so a
+    handler that stops reading while it is behind gets the socket closed with
+    ``1011 keepalive ping timeout`` (ADR 0023). ``CloseStream`` ends the audio
+    but reading continues, so pings are still answered while the backlog
+    drains; frames after it are ignored.
 
     The digest accumulates as audio arrives: a live stream has no complete
     payload to hash up front, but ``Metadata`` must still report one.
     """
-    while True:
-        message = await websocket.receive()
-        if message["type"] == "websocket.disconnect":
-            return
-        if (payload := message.get("bytes")) is not None:
-            digest.update(payload)
-            await source.push(converter.push(payload))
-            continue
-        text = message.get("text")
-        if text is not None and _control_type(text) in {CLOSE_STREAM, FINALIZE}:
-            return
-        # KeepAlive and unrecognised control frames hold the socket open.
+    try:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                return
+            if source.closed:
+                continue
+            if (payload := message.get("bytes")) is not None:
+                digest.update(payload)
+                await source.push(converter.push(payload))
+                continue
+            text = message.get("text")
+            if text is not None and _control_type(text) in {CLOSE_STREAM, FINALIZE}:
+                await source.push(converter.flush())
+                await source.close()
+            # KeepAlive and unrecognised control frames hold the socket open.
+    finally:
+        await source.close()
+
+
+def _spill_dir(websocket: WebSocket) -> str | None:
+    """Real-disk directory for the live audio backlog.
+
+    The Streaming Pipeline's transcript spill dir is already resolved at
+    startup; other pipelines resolve the same default, and fall back to the
+    system temp dir when no real-disk candidate exists.
+    """
+    settings = getattr(websocket.app.state, "settings", None)
+    configured = getattr(settings, "transcript_spill_dir", None)
+    if configured is not None:
+        return configured
+    try:
+        return resolve_spill_dir(None)
+    except SpillDirectoryError:
+        return None
 
 
 def _frame_metadata(request_id: str, settings: Any) -> DeepgramLiveResultsMetadata:
@@ -236,7 +267,7 @@ async def listen_ws(websocket: WebSocket) -> None:
         return
 
     converter = PcmStreamConverter(source_rate=negotiated.sample_rate)
-    source = LiveAudioSource()
+    source = LiveAudioSource(spill_dir=_spill_dir(websocket))
     session = LiveTranscriptionSession(
         asr=negotiated.asr,
         streaming_diarizer_factory=(
@@ -279,26 +310,37 @@ async def listen_ws(websocket: WebSocket) -> None:
             )
 
     consumer = asyncio.create_task(_emit_results())
+    reader = asyncio.create_task(_read_socket(websocket, source, converter, digest))
     try:
-        await _pump_audio(websocket, source, converter, digest)
-    except WebSocketDisconnect:
-        logger.info("listen_ws[%s] client disconnected", request_id)
+        await asyncio.wait({consumer, reader}, return_when=asyncio.FIRST_COMPLETED)
+        if reader.done():
+            # The client is gone: nobody can receive the rest, so the backlog
+            # is abandoned rather than burning CPU other connections need.
+            consumer.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await consumer
+            logger.info(
+                "listen_ws[%s] client disconnected; abandoned backlog_s=%.2f",
+                request_id,
+                source.pending_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE),
+            )
+            return
+        if (error := consumer.exception()) is not None:
+            logger.error("listen_ws[%s] transcription failed", request_id, exc_info=error)
+        await _close_out(
+            websocket,
+            request_id,
+            session,
+            collected,
+            diarize=negotiated.diarize,
+            audio_sha256=digest.hexdigest(),
+            frame_metadata=frame_metadata,
+        )
     finally:
-        with contextlib.suppress(Exception):
-            await source.push(converter.flush())
-        await source.close()
-        with contextlib.suppress(Exception):
-            await consumer
-
-    await _close_out(
-        websocket,
-        request_id,
-        session,
-        collected,
-        diarize=negotiated.diarize,
-        audio_sha256=digest.hexdigest(),
-        frame_metadata=frame_metadata,
-    )
+        for task in (consumer, reader):
+            task.cancel()
+        await asyncio.gather(consumer, reader, return_exceptions=True)
+        source.release()
 
 
 async def _close_out(
@@ -338,12 +380,6 @@ async def _close_out(
     )
     if websocket.client_state is WebSocketState.CONNECTED:
         await websocket.close(code=_CLOSE_NORMAL)
-    logger.info(
-        "listen_ws[%s] closed audio_s=%.2f words=%d",
-        request_id,
-        session.audio_seconds,
-        len(collected),
-    )
     logger.info(
         "listen_ws[%s] closed audio_s=%.2f words=%d",
         request_id,

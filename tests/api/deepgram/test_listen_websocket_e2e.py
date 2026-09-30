@@ -17,11 +17,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import socket
-import threading
 
 import pytest
-import uvicorn
 import websockets
 from deepgram.listen.v1.types.listen_v1metadata import ListenV1Metadata
 from deepgram.listen.v1.types.listen_v1results import ListenV1Results
@@ -31,6 +28,8 @@ from coro.bench.data import WARMUP_AUDIO_PATH
 from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.settings import ServerSettings
 from support.factories import make_app
+from support.live_server import LiveServer as _LiveServer
+from support.live_server import keep_injected_runtime
 
 pytestmark = pytest.mark.asyncio
 
@@ -64,12 +63,6 @@ class _FakeDiarizer:
 
     def finalize(self):
         return [SpeakerSegment(start=0.0, end=600.0, speaker=1)]
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
 
 
 def _real_pcm(seconds: int) -> list[bytes]:
@@ -111,33 +104,6 @@ def _real_pcm(seconds: int) -> list[bytes]:
     return frames[:seconds]
 
 
-class _LiveServer:
-    """A real uvicorn instance on a real port."""
-
-    def __init__(self, app):
-        self.port = _free_port()
-        self._server = uvicorn.Server(
-            uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="error")
-        )
-        self._thread = threading.Thread(target=self._server.run, daemon=True)
-
-    async def __aenter__(self):
-        self._thread.start()
-        for _ in range(200):
-            if self._server.started:
-                return self
-            await asyncio.sleep(0.05)
-        raise RuntimeError("uvicorn did not start")
-
-    async def __aexit__(self, *exc):
-        self._server.should_exit = True
-        self._thread.join(timeout=10)
-
-    @property
-    def ws_url(self) -> str:
-        return f"ws://127.0.0.1:{self.port}/v1/listen"
-
-
 def _app(*, diarize: bool = False):
     """Build the real app, but keep the lifespan from loading real models.
 
@@ -150,16 +116,7 @@ def _app(*, diarize: bool = False):
     app.state.runtime.asr_adapter = _FakeASR()
     if diarize:
         app.state.runtime.streaming_diarizer_factory = _FakeDiarizer
-    runtime = app.state.runtime
-
-    @contextlib.asynccontextmanager
-    async def _keep_injected_runtime(application):
-        application.state.settings = settings
-        application.state.runtime = runtime
-        yield
-
-    app.router.lifespan_context = _keep_injected_runtime
-    return app
+    return keep_injected_runtime(app, settings)
 
 
 async def _stream(server: _LiveServer, query: str = "", *, seconds: int = 31) -> list[dict]:
