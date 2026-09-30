@@ -3,23 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
-import os
-import tempfile
-import wave
-from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.backends.diarization.nemo.postprocessing import (
     DEFAULT_MAX_SPEAKERS,
-    baseline_postprocessing_params,
-    postprocessing_gate_open,
+    apply_gated_postprocessing,
     resolve_postprocessing_yaml,
-    segments_from_predictions,
 )
 from coro.backends.diarization.segments import convert_diarization_segments
 from coro.core.models import SpeakerSegment
@@ -28,7 +22,19 @@ logger = logging.getLogger(__name__)
 
 
 class NemoDiarizationAdapter:
-    """DiarizationAdapter that wraps a NeMo Sortformer model."""
+    """DiarizationAdapter that wraps a NeMo Sortformer model.
+
+    Concurrency policy: **concurrent**. The adapter calls the model's
+    ``forward`` directly instead of NeMo's ``diarize()`` convenience wrapper.
+    ``diarize()`` keeps per-call state on the shared model instance
+    (``_diarize_audio_rttm_map``, preprocessor ``dither``/``pad_to``, the
+    train/eval mode and NeMo's global log level) and restores it afterwards, so
+    overlapping calls clobber each other — one failed with a ``KeyError`` naming
+    the other's temp file (issue #81). ``forward`` in eval mode only reads the
+    model, so overlapping requests are independent: per-call state lives in
+    locals, and post-processing is the same shared helper the Streaming
+    Diarization Flow uses.
+    """
 
     def __init__(
         self,
@@ -75,77 +81,56 @@ class NemoDiarizationAdapter:
         return await asyncio.to_thread(self._diarize_sync, pcm)
 
     def _diarize_sync(self, pcm: bytes) -> list[SpeakerSegment]:
-        duration = len(pcm) / (SAMPLE_RATE * BYTES_PER_SAMPLE)
-        fd, path = tempfile.mkstemp(prefix="coro-nemo-", suffix=".wav")
-        os.close(fd)
-        try:
-            with wave.open(path, "wb") as wav:
-                wav.setnchannels(1)
-                wav.setsampwidth(BYTES_PER_SAMPLE)
-                wav.setframerate(SAMPLE_RATE)
-                wav.writeframes(pcm)
-            # include_tensor_outputs returns the raw speaker-activity matrix
-            # alongside NeMo's own post-processed segments, so the
-            # Speaker-Count Post-Processing Gate can be evaluated without a
-            # second inference pass. See ADR 0010.
-            predicted, preds_list = self._model.diarize(
-                audio=path,
-                batch_size=1,
-                include_tensor_outputs=True,
-                postprocessing_yaml=self._postprocessing_yaml,
-            )
-        finally:
-            with contextlib.suppress(OSError):
-                Path(path).unlink()
+        """Diarize one recording with state that lives only in this call.
 
-        if len(predicted) == 1 and isinstance(predicted[0], list):
-            predicted = predicted[0]
-
-        gated = self._gated_segments(preds_list)
-        if gated is not None:
-            return convert_diarization_segments(gated, duration=duration)
-        return convert_diarization_segments(predicted, duration=duration)
-
-    def _gated_segments(self, preds_list) -> list[tuple[float, float, int]] | None:
-        """Re-derive segments without the tuned thresholds when the gate closes.
-
-        Returns ``None`` in the common case, meaning NeMo's own post-processed
-        output stands. Segments are only recomputed when a tuned Diarization
-        Post-Processing Configuration is active *and* the estimated speaker
-        count exceeds the ceiling, because tuned short-segment deletion is
-        reported to degrade DER in exactly that range.
+        The raw speaker-activity matrix feeds the shared gated post-processing,
+        so the Speaker-Count Post-Processing Gate is evaluated without a second
+        inference pass. See ADR 0010.
         """
-        if self._postprocessing_yaml is None or not preds_list:
-            return None
-
-        preds = preds_list[0]
-        subsampling_factor = self._subsampling_factor()
-        gate_open, estimated = postprocessing_gate_open(
+        duration = len(pcm) / (SAMPLE_RATE * BYTES_PER_SAMPLE)
+        preds = self._predict(pcm)
+        segments = apply_gated_postprocessing(
             preds,
-            subsampling_factor=subsampling_factor,
+            n_spk=preds.shape[-1],
+            postprocessing_yaml=self._postprocessing_yaml,
+            subsampling_factor=self._subsampling_factor(),
             max_speakers=self._max_speakers,
         )
-        if gate_open:
-            return None
+        return convert_diarization_segments(segments, duration=duration)
 
-        logger.info(
-            "batch diarization postprocessing gate closed estimated_speakers=%d "
-            "max_speakers=%d — reverting to the NeMo baseline for this recording",
-            estimated,
-            self._max_speakers,
-        )
-        n_spk = preds.shape[-1]
-        return segments_from_predictions(
-            preds,
-            n_spk=n_spk,
-            params=baseline_postprocessing_params(),
-            subsampling_factor=subsampling_factor,
-        )
+    def _predict(self, pcm: bytes) -> torch.Tensor:
+        """Run the Sortformer forward pass; returns ``(1, frames, speakers)`` sigmoids."""
+        audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        device = self._model.device
+        with torch.inference_mode():
+            signal = torch.from_numpy(audio).unsqueeze(0).to(device)
+            length = torch.tensor([audio.shape[0]], dtype=torch.long, device=device)
+            preds = self._model.forward(audio_signal=signal, audio_signal_length=length)
+        return preds.detach().cpu()
 
     def _subsampling_factor(self) -> int:
         cfg = getattr(self._model, "_cfg", None)
         encoder = getattr(cfg, "encoder", None) if cfg is not None else None
         return int(getattr(encoder, "subsampling_factor", 8) or 8)
+
+
+def prepare_for_inference(model) -> None:
+    """Put a Sortformer model into the fixed state ``diarize()`` would set per call.
+
+    NeMo's ``diarize()`` switches to eval mode and zeroes the preprocessor's
+    ``dither`` and ``pad_to`` on entry, then restores them on exit — shared
+    writes that race under concurrency. Setting them once at load keeps
+    ``forward`` numerically identical to ``diarize()`` while leaving it
+    read-only for the lifetime of the server.
+    """
+    model.eval()
+    featurizer = getattr(getattr(model, "preprocessor", None), "featurizer", None)
+    if featurizer is None:
+        return
+    if hasattr(featurizer, "dither"):
+        featurizer.dither = 0.0
+    if hasattr(featurizer, "pad_to"):
+        featurizer.pad_to = 0
 
 
 def build_nemo_diarization_adapter(
@@ -181,7 +166,7 @@ def build_nemo_diarization_adapter(
         model_diarization,
         map_location=map_location,
     )
-    model.eval()
+    prepare_for_inference(model)
     logger.info("Diarization model loaded on device '%s'.", getattr(model, "device", "unknown"))
     return NemoDiarizationAdapter(
         model,

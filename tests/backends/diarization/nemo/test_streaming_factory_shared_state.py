@@ -10,7 +10,8 @@ through ``forward_streaming``.
 Writing the streaming latency tier onto that shared object permanently, as
 construction used to, silently changed what batch diarization did. Any
 batch-vs-streaming comparison in one process was invalid. These tests pin the
-fix. See ADR 0010.
+fix: the streaming flow reads the tier off its own tier-bound view of the
+model, so the shared object is never written. See ADR 0010 and ADR 0022.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from coro.backends.diarization.nemo.streaming import (
     LATENCY_TIER_PARAMS,
     NemoStreamingDiarizerFactory,
     applied_streaming_params,
+    bind_latency_tier,
     get_latency_tier_params,
 )
 
@@ -168,9 +170,22 @@ def test_batch_adapter_sees_its_own_config_after_a_streaming_build():
 # ---------------------------------------------------------------------------
 
 
-def test_tier_params_are_applied_during_the_model_call_and_restored_after():
-    """Scoped, not removed: NeMo reads these attributes at call time."""
-    model = _make_model()
+class _PlainSortformerModel:
+    """Plain object whose step reads the tier through ``self``, exactly as NeMo does."""
+
+    def __init__(self):
+        self.device = torch.device("cpu")
+        self.sortformer_modules = _FakeSortformerModules()
+        self.params_seen_during_call: list[tuple[tuple[str, int], ...]] = []
+
+    def forward_streaming_step(self, signal, length, state, total_preds, **_kwargs):
+        self.params_seen_during_call.append(_snapshot(self.sortformer_modules))
+        return state, torch.cat([total_preds, torch.rand(1, 4, 4) * 0.01], dim=1)
+
+
+def test_the_tier_is_what_the_model_call_reads_and_the_shared_model_never_changes():
+    """NeMo reads these attributes at call time, off a tier-bound view (ADR 0022)."""
+    model = _PlainSortformerModel()
     diarizer = NemoStreamingDiarizerFactory(model, tier="low")()
     diarizer._preprocessor = _make_preprocessor()
 
@@ -180,10 +195,24 @@ def test_tier_params_are_applied_during_the_model_call_and_restored_after():
 
     diarizer.ingest_pcm_chunk(_pcm(chunk_bytes + rc_bytes))
 
-    assert len(model.params_seen_during_call) == 1
-    assert model.params_seen_during_call[0] == _pairs(vars(tier_params))
-    # Restored the moment the call returned.
+    assert model.params_seen_during_call == [_pairs(vars(tier_params))]
     assert _snapshot(model.sortformer_modules) == _pairs(BATCH_CONFIG)
+
+
+def test_bind_latency_tier_shares_weights_and_leaves_the_original_alone():
+    """The view is free: only the tiny parameter holder is copied, never a tensor."""
+    model = torch.nn.Module()
+    model.encoder = torch.nn.Linear(4, 4)
+    model.sortformer_modules = torch.nn.Linear(4, 4)
+    for name, value in BATCH_CONFIG.items():
+        setattr(model.sortformer_modules, name, value)
+
+    view = bind_latency_tier(model, get_latency_tier_params("ultra-low"))
+
+    assert _snapshot(view.sortformer_modules) == _pairs(vars(get_latency_tier_params("ultra-low")))
+    assert _snapshot(model.sortformer_modules) == _pairs(BATCH_CONFIG)
+    assert view.encoder is model.encoder
+    assert view.sortformer_modules.weight is model.sortformer_modules.weight
 
 
 def test_applied_streaming_params_restores_on_exception():

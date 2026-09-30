@@ -11,6 +11,9 @@ UNDECODABLE_MEDIA_MESSAGE = (
 )
 """Safe, ffmpeg-detail-free message for an upload that cannot be decoded."""
 
+PROCESSING_FAILED_MESSAGE = "Transcription processing failed."
+"""Curated message for an unexpected server-side failure; details go to the log."""
+
 
 # MARK: Base Transcription Exception
 class TranscriptionError(Exception):

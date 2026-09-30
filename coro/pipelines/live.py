@@ -19,47 +19,12 @@ from collections.abc import AsyncIterator
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.core.models import SpeakerSegment, TokenBatchEvent, TranscriptToken
 from coro.core.protocols import ASRAdapter
+from coro.pipelines.live_source import LiveAudioSource
 from coro.pipelines.windowing import ASRWindowing, LanguageState
 
+__all__ = ["LiveAudioSource", "LiveTranscriptionSession"]
+
 logger = logging.getLogger(__name__)
-
-_SENTINEL = object()
-
-
-class LiveAudioSource:
-    """An async PCM chunk iterator fed by a producer that is still running.
-
-    The socket handler pushes frames in as they arrive and calls
-    :meth:`close` when the client signals end of stream; the windowing layer
-    pulls from the other end and cannot tell the difference from a file.
-    """
-
-    def __init__(self, *, max_pending_chunks: int = 64) -> None:
-        # Bounded so a client that floods audio faster than the ASR consumes it
-        # applies backpressure instead of growing the queue without limit.
-        self._queue: asyncio.Queue = asyncio.Queue(maxsize=max_pending_chunks)
-        self._closed = False
-
-    async def push(self, chunk: bytes) -> None:
-        """Hand one PCM chunk to the consumer, waiting if it is behind."""
-        if self._closed or not chunk:
-            return
-        await self._queue.put(chunk)
-
-    async def close(self) -> None:
-        """Signal end of stream; the consumer finishes its current work."""
-        if self._closed:
-            return
-        self._closed = True
-        await self._queue.put(_SENTINEL)
-
-    async def chunks(self) -> AsyncIterator[bytes]:
-        """Yield PCM chunks until the producer closes the stream."""
-        while True:
-            item = await self._queue.get()
-            if item is _SENTINEL:
-                return
-            yield item
 
 
 class LiveTranscriptionSession:
@@ -118,7 +83,11 @@ class LiveTranscriptionSession:
             async for chunk in source.chunks():
                 self._total_bytes += len(chunk)
                 if self._diarizer is not None:
-                    self._diarizer.ingest_pcm_chunk(chunk)
+                    # Off-loop, as in the Streaming Pipeline: ingest runs a mel
+                    # preprocessor and a model forward step, which on the loop
+                    # would freeze every other connection for the whole chunk.
+                    # Awaited in turn, so one stream's chunks stay ordered.
+                    await asyncio.to_thread(self._diarizer.ingest_pcm_chunk, chunk)
                 yield chunk
 
         async for event in self._windowing.stream_chunks(
@@ -131,11 +100,15 @@ class LiveTranscriptionSession:
             if isinstance(event, TokenBatchEvent) and event.tokens:
                 yield event.tokens
 
-    def finalize(self) -> list[SpeakerSegment]:
-        """Return the completed speaker timeline, or empty without a diarizer."""
+    async def finalize(self) -> list[SpeakerSegment]:
+        """Return the completed speaker timeline, or empty without a diarizer.
+
+        Off-loop for the same reason as ingest: finalize runs per-speaker VAD
+        post-processing over the whole prediction tensor.
+        """
         if self._diarizer is None:
             return []
-        timeline = self._diarizer.finalize()
+        timeline = await asyncio.to_thread(self._diarizer.finalize)
         logger.info(
             "live_session finalize elapsed=%.3fs audio_s=%.2f timeline=%d",
             time.perf_counter() - self._started,

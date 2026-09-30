@@ -72,7 +72,8 @@ ever becomes available to validate against instead of a public benchmark.
 
 The setting must resolve identically for both diarization flows: the batch
 Sortformer adapter threads the resolved path straight into
-`diarize(..., postprocessing_yaml=path)`, and the streaming adapter's
+`diarize(..., postprocessing_yaml=path)` (since ADR 0021, through the shared
+`apply_gated_postprocessing` helper instead), and the streaming adapter's
 `StreamingDiarizer` must stop hardcoding `None` in `_default_post_process`
 and use the same resolved path instead, so the Full-Memory Pipeline and the
 Streaming Pipeline apply the same post-processing configuration for
@@ -120,8 +121,9 @@ all 4-speaker models emitting a `T x 4` matrix, so the estimate can never
 exceed 4. It is built now, with the ceiling as a setting rather than a
 constant, so the behaviour is already correct when a >4-speaker Diarization
 Model Selection is configured. This is a deliberate acceptance of presently
-unreachable code, not an oversight — and it is why the batch adapter asks NeMo
-for `include_tensor_outputs=True`: the gate must be evaluable without a second
+unreachable code, not an oversight — and it is why the batch adapter works from
+the raw activity matrix (originally `include_tensor_outputs=True`, since ADR
+0021 the `forward` output itself): the gate must be evaluable without a second
 inference pass.
 
 ## Shared-state hazard
@@ -140,7 +142,9 @@ they are applied around each model call and restored afterwards, including on
 exception. Tier validation at construction uses the same scoping, so it leaves
 no residue. This makes construction and teardown safe; it does not make one
 model object safe for concurrent use across different latency tiers, which
-remains a pre-existing constraint.
+remains a pre-existing constraint. *(Superseded by ADR 0022: concurrent
+scopes interleave even on one tier, so the request path now reads the tier
+off a tier-bound view of the model and never writes to the shared object.)*
 
 ## Measurement — recorded as evidence, not as grounds for a default
 

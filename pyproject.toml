@@ -314,6 +314,9 @@ max-complexity = 10
 # Decodes the bundled public recording with the system ffmpeg by name — the same
 # convention as the clip utilities below, on a fixed local path with no shell.
 "tests/api/deepgram/test_listen_websocket_e2e.py" = ["S607"]
+# Builds a WebM with the system ffmpeg and reads it back with ffprobe, by name:
+# container handling is what is under test, so a mock would only restate it.
+"tests/test_audio_probe.py" = ["S603", "S607"]
 # Asks git for the tracked-file list by name, with no shell and no interpolated
 # input. Reading the index is the point: it is what excludes untracked scratch
 # output and virtualenvs from the call-site scan by construction.

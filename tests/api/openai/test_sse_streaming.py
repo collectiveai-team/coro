@@ -20,7 +20,7 @@ import wave
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from coro.api.exceptions import UNDECODABLE_MEDIA_MESSAGE
+from coro.api.exceptions import PROCESSING_FAILED_MESSAGE, UNDECODABLE_MEDIA_MESSAGE
 from coro.app import create_app
 from coro.audio import AudioConversionError
 from coro.backends.asr.concurrency import AsrCapacityError
@@ -273,3 +273,46 @@ async def test_streaming_unsupported_language_emits_invalid_request_error():
     assert "ja" in err["message"]
     assert "en" in err["message"]
     assert events[-1] == "[DONE]"
+
+
+class _KeyErrorStreamingPipeline:
+    async def transcribe(self, audio, *, language=None, prompt=None):
+        return TranscriptionResult()
+
+    async def stream(self, audio, *, language=None, prompt=None):
+        yield TranscriptDeltaEvent(delta="partial")
+        # What NeMo's shared-state race raised (issue #81): str() is just the key.
+        raise KeyError("coro-nemo-f8xyxoxy")
+
+
+@pytest.mark.asyncio
+async def test_streaming_unexpected_error_is_logged_and_curated(caplog):
+    """An unexpected mid-stream failure is logged with a traceback, not leaked raw."""
+    from fastapi import FastAPI
+
+    application: FastAPI = create_app(ServerSettings())
+    runtime = RuntimeState(asr_adapter=object())
+    runtime.pipeline = _KeyErrorStreamingPipeline()
+    application.state.runtime = runtime
+
+    with caplog.at_level("ERROR", logger="coro.api.openai.sse"):
+        async with AsyncClient(
+            transport=ASGITransport(app=application), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/v1/audio/transcriptions",
+                files={"file": ("test.wav", _minimal_wav(), "audio/wav")},
+                data={"model": "whisper-1", "stream": "true"},
+            )
+
+    events = _parse_sse_events(response.text)
+    error_events = [e for e in events if isinstance(e, dict) and "error" in e]
+    assert len(error_events) == 1
+    err = error_events[0]["error"]
+    assert err["type"] == "server_error"
+    assert err["message"] == PROCESSING_FAILED_MESSAGE
+    assert "coro-nemo" not in err["message"]
+    assert events[-1] == "[DONE]"
+
+    assert "streaming transcription failed mid-stream" in caplog.text
+    assert "KeyError: 'coro-nemo-f8xyxoxy'" in caplog.text  # the traceback is logged

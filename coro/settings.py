@@ -202,9 +202,9 @@ class ServerSettings(BaseSettings):
     transcript_spill_dir: str | None = Field(
         default=None,
         description="Directory for the streaming pipeline's per-request transcript "
-        "spill store. MUST be on real disk for flat host RAM: a tmpfs path (e.g. "
-        "/tmp on many systems) keeps the transcript in memory and defeats the spill. "
-        "None uses the system temp dir.",
+        "spill store, and for the audio backlog of live WebSocket streams. MUST be "
+        "on real disk for flat host RAM: a tmpfs path (e.g. /tmp on many systems) "
+        "keeps the data in memory and defeats the spill. None uses the system temp dir.",
     )
     log_level: str = Field(default="info", description="Log level (for CLI use only).")
 
@@ -286,6 +286,26 @@ class ServerSettings(BaseSettings):
         description="Maximum ASR inference calls allowed to wait for a concurrency "
         "permit. Requests beyond this cap are rejected with an OpenAI-Style Error "
         "(HTTP 429) carrying a Retry-After hint instead of being queued indefinitely.",
+    )
+
+    # Client Rate Limits ----------------------------------------------------
+    rate_limit_requests_per_minute: int = Field(
+        default=60,
+        ge=0,
+        description="Transcription requests (REST, SSE and WebSocket connections) one "
+        "client IP may start per minute, as a burst that refills evenly. Beyond it the "
+        "request is rejected with HTTP 429 and a Retry-After hint. 0 disables. Behind a "
+        "reverse proxy, uvicorn must trust its forwarding headers (FORWARDED_ALLOW_IPS) "
+        "or every client counts as the proxy's IP.",
+    )
+    rate_limit_audio_minutes_per_hour: float = Field(
+        default=0,
+        ge=0,
+        description="Minutes of audio one client IP may submit per hour, refilling "
+        "evenly. Uploads are measured with ffprobe before processing and rejected with "
+        "HTTP 429 and a Retry-After hint when they do not fit; a WebSocket stream is "
+        "charged as audio arrives and closed with an Error frame when it runs out. "
+        "0 (default) disables. Requires ffprobe on PATH when enabled.",
     )
 
     # TLS ------------------------------------------------------------------

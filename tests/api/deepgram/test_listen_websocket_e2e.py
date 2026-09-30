@@ -17,11 +17,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import socket
-import threading
 
 import pytest
-import uvicorn
 import websockets
 from deepgram.listen.v1.types.listen_v1metadata import ListenV1Metadata
 from deepgram.listen.v1.types.listen_v1results import ListenV1Results
@@ -31,6 +28,8 @@ from coro.bench.data import WARMUP_AUDIO_PATH
 from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.settings import ServerSettings
 from support.factories import make_app
+from support.live_server import LiveServer as _LiveServer
+from support.live_server import keep_injected_runtime
 
 pytestmark = pytest.mark.asyncio
 
@@ -64,12 +63,6 @@ class _FakeDiarizer:
 
     def finalize(self):
         return [SpeakerSegment(start=0.0, end=600.0, speaker=1)]
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
 
 
 def _real_pcm(seconds: int) -> list[bytes]:
@@ -111,55 +104,19 @@ def _real_pcm(seconds: int) -> list[bytes]:
     return frames[:seconds]
 
 
-class _LiveServer:
-    """A real uvicorn instance on a real port."""
-
-    def __init__(self, app):
-        self.port = _free_port()
-        self._server = uvicorn.Server(
-            uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="error")
-        )
-        self._thread = threading.Thread(target=self._server.run, daemon=True)
-
-    async def __aenter__(self):
-        self._thread.start()
-        for _ in range(200):
-            if self._server.started:
-                return self
-            await asyncio.sleep(0.05)
-        raise RuntimeError("uvicorn did not start")
-
-    async def __aexit__(self, *exc):
-        self._server.should_exit = True
-        self._thread.join(timeout=10)
-
-    @property
-    def ws_url(self) -> str:
-        return f"ws://127.0.0.1:{self.port}/v1/listen"
-
-
-def _app(*, diarize: bool = False):
+def _app(*, diarize: bool = False, **settings_overrides):
     """Build the real app, but keep the lifespan from loading real models.
 
     ``create_app``'s lifespan builds an ASR adapter and runs warmup, which would
     download whisper-medium. These tests are about transport and frame
     conformance, so the injected runtime is preserved instead.
     """
-    settings = ServerSettings(_env_file=None)
+    settings = ServerSettings(_env_file=None, **settings_overrides)
     app = make_app(pipeline=object(), settings=settings)
     app.state.runtime.asr_adapter = _FakeASR()
     if diarize:
         app.state.runtime.streaming_diarizer_factory = _FakeDiarizer
-    runtime = app.state.runtime
-
-    @contextlib.asynccontextmanager
-    async def _keep_injected_runtime(application):
-        application.state.settings = settings
-        application.state.runtime = runtime
-        yield
-
-    app.router.lifespan_context = _keep_injected_runtime
-    return app
+    return keep_injected_runtime(app, settings)
 
 
 async def _stream(server: _LiveServer, query: str = "", *, seconds: int = 31) -> list[dict]:
@@ -238,6 +195,18 @@ class TestDeepgramLiveSdkConformance:
         # Two windows of two tokens each, so all four words appear here.
         assert len(speakers) == 4
         assert set(speakers) == {1}
+
+
+class TestRealClientRateLimit:
+    async def test_an_over_limit_client_gets_http_429_from_uvicorn(self):
+        # The denial is an HTTP response to the upgrade, which only a server
+        # supporting the websocket.http.response extension can send.
+        async with _LiveServer(_app(rate_limit_requests_per_minute=1)) as server:
+            await _stream(server, seconds=1)
+            with pytest.raises(websockets.InvalidStatus) as denied:
+                await websockets.connect(server.ws_url)
+        assert denied.value.response.status_code == 429
+        assert int(denied.value.response.headers["Retry-After"]) >= 1
 
 
 class TestRealClientRejection:

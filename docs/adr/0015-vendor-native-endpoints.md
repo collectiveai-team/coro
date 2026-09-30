@@ -211,10 +211,11 @@ This was almost free architecturally. `ASRWindowing.stream_chunks` already
 accepts any async iterator of PCM, and a StreamingDiarizer already ingests
 chunk by chunk; the Streaming Pipeline reads from a spooled file only because
 an HTTP upload arrives whole. `coro/pipelines/live.py` supplies the other
-source — a bounded queue fed by socket frames — and everything below it is the
+source — a queue fed by socket frames — and everything below it is the
 same code, so a socket stream and an upload cannot drift apart in behaviour.
-The queue is bounded so a client sending audio faster than the ASR consumes it
-gets backpressure rather than unbounded memory growth.
+The queue is unbounded and the socket is always read, so a pipeline running
+slower than real time delays results instead of losing the connection to a
+keepalive timeout (ADR 0023, which replaced the original bounded queue).
 
 **Audio format is declared, not sniffed.** A live socket has no container, so
 the client's `encoding` and `sample_rate` are authoritative and are validated
