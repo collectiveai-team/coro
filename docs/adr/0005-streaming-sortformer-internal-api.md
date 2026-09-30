@@ -32,7 +32,7 @@ The existing **NeMo Diarization Adapter** (`NemoDiarizationAdapter`, batch path)
 
 - The **Streaming Diarizer** owns its integration surface: mel preprocessing, streaming state lifecycle, left-context carry, cumulative prediction accumulation, and post-processing. Future NeMo changes to any of these areas require a manual update to the **Streaming Diarizer**.
 - NeMo minor version bumps must be treated as potentially breaking for the **Streaming Diarizer**. CI should run the env-gated real-model smoke test (`CORO_RUN_REAL_MODEL_TESTS=1`) against any new NeMo version before merging.
-- The batch **NeMo Diarization Adapter** is insulated from this risk because it uses the documented `diarize()` entry point, which has a stable public contract.
+- The batch **NeMo Diarization Adapter** is insulated from this risk because it uses the documented `diarize()` entry point, which has a stable public contract. *(Superseded by ADR 0021: the batch adapter now calls `forward` directly, because `diarize()` is not safe for concurrent calls on a shared model.)*
 - The `nvidia/diar_streaming_sortformer_4spk-v2` model card and the `e2e_diarize_speech.py` example remain the documented baseline. If NVIDIA adds a documented chunk-by-chunk inference API in a future release, the **Streaming Diarizer** should migrate to it and this ADR should be superseded.
 
 ## Alternatives Considered
