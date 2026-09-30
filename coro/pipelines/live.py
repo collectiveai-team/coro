@@ -118,7 +118,11 @@ class LiveTranscriptionSession:
             async for chunk in source.chunks():
                 self._total_bytes += len(chunk)
                 if self._diarizer is not None:
-                    self._diarizer.ingest_pcm_chunk(chunk)
+                    # Off-loop, as in the Streaming Pipeline: ingest runs a mel
+                    # preprocessor and a model forward step, which on the loop
+                    # would freeze every other connection for the whole chunk.
+                    # Awaited in turn, so one stream's chunks stay ordered.
+                    await asyncio.to_thread(self._diarizer.ingest_pcm_chunk, chunk)
                 yield chunk
 
         async for event in self._windowing.stream_chunks(
@@ -131,11 +135,15 @@ class LiveTranscriptionSession:
             if isinstance(event, TokenBatchEvent) and event.tokens:
                 yield event.tokens
 
-    def finalize(self) -> list[SpeakerSegment]:
-        """Return the completed speaker timeline, or empty without a diarizer."""
+    async def finalize(self) -> list[SpeakerSegment]:
+        """Return the completed speaker timeline, or empty without a diarizer.
+
+        Off-loop for the same reason as ingest: finalize runs per-speaker VAD
+        post-processing over the whole prediction tensor.
+        """
         if self._diarizer is None:
             return []
-        timeline = self._diarizer.finalize()
+        timeline = await asyncio.to_thread(self._diarizer.finalize)
         logger.info(
             "live_session finalize elapsed=%.3fs audio_s=%.2f timeline=%d",
             time.perf_counter() - self._started,

@@ -312,7 +312,7 @@ async def _close_out(
     frame_metadata: DeepgramLiveResultsMetadata,
 ) -> None:
     """Emit the attributed final frame (if any) and the closing Metadata."""
-    timeline = session.finalize()
+    timeline = await session.finalize()
     if diarize and timeline and collected:
         await _send(
             websocket,
