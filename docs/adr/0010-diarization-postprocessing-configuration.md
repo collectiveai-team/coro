@@ -142,7 +142,9 @@ they are applied around each model call and restored afterwards, including on
 exception. Tier validation at construction uses the same scoping, so it leaves
 no residue. This makes construction and teardown safe; it does not make one
 model object safe for concurrent use across different latency tiers, which
-remains a pre-existing constraint.
+remains a pre-existing constraint. *(Superseded by ADR 0022: concurrent
+scopes interleave even on one tier, so the request path now reads the tier
+off a tier-bound view of the model and never writes to the shared object.)*
 
 ## Measurement — recorded as evidence, not as grounds for a default
 

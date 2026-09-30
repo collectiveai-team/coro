@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from dataclasses import dataclass, fields
+import copy
 import logging
 import time
 
@@ -86,10 +87,10 @@ def applied_streaming_params(sortformer_modules, params: LatencyTierParams) -> I
     unset; they are applied around each model call and restored afterwards,
     leaving the shared model exactly as it was found.
 
-    NOTE: this makes construction and teardown safe, not concurrent use. Two
-    streaming requests on different latency tiers sharing one model process
-    would still interleave — the pre-existing single-model concurrency
-    constraint is unchanged by this scoping.
+    NOTE: single-threaded use only (the diarization bench). Overlapping scopes
+    on one model interleave their save/restore: one call runs with the other's
+    restored values and the model is left retuned. Concurrent request paths use
+    :func:`bind_latency_tier`, which never writes to the shared model.
     """
     previous = {f.name: getattr(sortformer_modules, f.name) for f in fields(params)}
     try:
@@ -99,6 +100,31 @@ def applied_streaming_params(sortformer_modules, params: LatencyTierParams) -> I
     finally:
         for name, value in previous.items():
             setattr(sortformer_modules, name, value)
+
+
+def bind_latency_tier(model, params: LatencyTierParams):
+    """Return a view of ``model`` whose ``sortformer_modules`` carries ``params``.
+
+    NeMo's ``forward_streaming_step`` reads the tier parameters off
+    ``self.sortformer_modules`` at call time. Rather than writing them onto the
+    shared model around each call — which races between concurrent requests
+    (see ADR 0022) — the view gets its own shallow copy of that one submodule
+    with the tier applied once. Shallow copies share every parameter tensor and
+    every other submodule, so the view costs no model memory and the shared
+    model, batch Diarization Adapter included, is never written.
+    """
+    modules = copy.copy(model.sortformer_modules)
+    for field in fields(params):
+        setattr(modules, field.name, getattr(params, field.name))
+
+    view = copy.copy(model)
+    if isinstance(view, torch.nn.Module):
+        # nn.Module resolves submodules through ``_modules``; the shallow copy
+        # still shares that dict with the original, so give the view its own.
+        object.__setattr__(view, "_modules", {**model._modules, "sortformer_modules": modules})
+    else:
+        view.sortformer_modules = modules
+    return view
 
 
 class NemoStreamingDiarizerFactory:
@@ -116,20 +142,16 @@ class NemoStreamingDiarizerFactory:
         postprocessing_yaml: str | None = None,
         max_speakers: int = DEFAULT_MAX_SPEAKERS,
     ) -> None:
-        self._model = model
         self._tier = tier
         self._tier_params = get_latency_tier_params(tier)
+        # Every request of this factory shares one tier-bound view; building it
+        # leaves the shared model untouched, and so does every later call.
+        self._model = bind_latency_tier(model, self._tier_params)
+        self._model.sortformer_modules._check_streaming_parameters()
         self._postprocessing_yaml = postprocessing_yaml
         self._max_speakers = max_speakers
-        subsampling_factor = getattr(model.sortformer_modules, "subsampling_factor", 8)
-        n_spk = getattr(model.sortformer_modules, "n_spk", 4)
-        # Validate the tier against NeMo's own constraints without leaving the
-        # shared model retuned: apply, check, restore. Building this factory
-        # must not change what the batch Diarization Adapter does.
-        with applied_streaming_params(model.sortformer_modules, self._tier_params):
-            model.sortformer_modules._check_streaming_parameters()
-        self._subsampling_factor = subsampling_factor
-        self._n_spk = n_spk
+        self._subsampling_factor = getattr(model.sortformer_modules, "subsampling_factor", 8)
+        self._n_spk = getattr(model.sortformer_modules, "n_spk", 4)
 
     def __call__(self) -> StreamingDiarizer:
         return StreamingDiarizer(
@@ -139,7 +161,6 @@ class NemoStreamingDiarizerFactory:
             subsampling_factor=self._subsampling_factor,
             n_spk=self._n_spk,
             postprocessing_yaml=self._postprocessing_yaml,
-            tier_params=self._tier_params,
             max_speakers=self._max_speakers,
         )
 
@@ -158,7 +179,6 @@ class StreamingDiarizer:
         preprocessor=None,
         post_processor: Callable | None = None,
         postprocessing_yaml: str | None = None,
-        tier_params: LatencyTierParams | None = None,
         max_speakers: int = DEFAULT_MAX_SPEAKERS,
     ):
         self._model = model
@@ -170,7 +190,6 @@ class StreamingDiarizer:
         self._preprocessor = preprocessor
         self._post_processor = post_processor
         self._postprocessing_yaml = postprocessing_yaml
-        self._tier_params = tier_params
         self._max_speakers = max_speakers
 
         chunk_audio_seconds = chunk_len * subsampling_factor * 0.01
@@ -201,17 +220,6 @@ class StreamingDiarizer:
     @property
     def processed_chunks(self) -> int:
         return self._processed_chunks
-
-    def _streaming_params(self):
-        """Scope the latency-tier parameters to one model call.
-
-        A no-op when no tier params were supplied (the diarizer was built
-        directly rather than through ``NemoStreamingDiarizerFactory``), so the
-        shared model is never touched in that case either.
-        """
-        if self._tier_params is None:
-            return nullcontext()
-        return applied_streaming_params(self._model.sortformer_modules, self._tier_params)
 
     def ingest_pcm_chunk(self, pcm: bytes) -> None:
         self._pcm_buffer += pcm
@@ -358,19 +366,17 @@ class StreamingDiarizer:
             mel_len = torch.tensor([target_frames], device=self._device)
 
             seed_preds = torch.zeros((1, 0, self._n_spk), device=self._device)
-            # NeMo reads the latency-tier parameters off the shared
-            # sortformer_modules during this call, so they are applied here and
-            # restored immediately afterwards rather than being written once at
-            # construction — the same model object backs the batch adapter.
-            with self._streaming_params():
-                self._streaming_state, chunk_preds = self._model.forward_streaming_step(
-                    signal_t,
-                    mel_len,
-                    self._streaming_state,
-                    seed_preds,
-                    left_offset=0,
-                    right_offset=right_offset,
-                )
+            # When built by NemoStreamingDiarizerFactory, ``self._model`` is a
+            # tier-bound view: NeMo reads the tier off it, and nothing here
+            # writes to the model shared with other requests.
+            self._streaming_state, chunk_preds = self._model.forward_streaming_step(
+                signal_t,
+                mel_len,
+                self._streaming_state,
+                seed_preds,
+                left_offset=0,
+                right_offset=right_offset,
+            )
         self._pred_chunks.append(chunk_preds.detach().cpu())
         self._total_preds = seed_preds
 
