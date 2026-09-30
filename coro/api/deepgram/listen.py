@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -27,6 +28,7 @@ from coro.api.deepgram.render import render_deepgram
 from coro.api.deepgram.schemas import DeepgramErrorResponse
 from coro.api.exceptions import PROCESSING_FAILED_MESSAGE
 from coro.api.json_body import spooled_json_response
+from coro.api.rate_limit import RateLimited, admit_request, admit_upload
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.transcript_source import TranscriptSource
@@ -42,6 +44,7 @@ URL_INGEST_MESSAGE = "Remote URL ingest is not supported. Submit the audio as th
 
 _BAD_REQUEST = "Bad Request"
 _INTERNAL_ERROR = "INTERNAL_SERVER_ERROR"
+_TOO_MANY_REQUESTS = "TOO_MANY_REQUESTS"
 
 _IGNORED_DOC = "Accepted but ignored; the configured backend does not expose this control."
 _NO_FEATURE_DOC = (
@@ -107,6 +110,18 @@ def _error(*, err_code: str, err_msg: str, request_id: str, status_code: int) ->
     """
     body = DeepgramErrorResponse(err_code=err_code, err_msg=err_msg, request_id=request_id)
     return JSONResponse(body.model_dump(), status_code=status_code)
+
+
+def _rate_limited(limited: RateLimited, *, request_id: str) -> JSONResponse:
+    """Return a Deepgram-shaped 429 carrying a ``Retry-After`` hint."""
+    response = _error(
+        err_code=_TOO_MANY_REQUESTS,
+        err_msg=limited.message,
+        request_id=request_id,
+        status_code=429,
+    )
+    response.headers["Retry-After"] = str(max(1, math.ceil(limited.retry_after_seconds)))
+    return response
 
 
 def _word_count(source: TranscriptSource) -> int:
@@ -177,6 +192,9 @@ async def listen(
     request_id = uuid4().hex[:8]
     started = time.perf_counter()
 
+    if (limited := admit_request(request)) is not None:
+        return _rate_limited(limited, request_id=request_id)
+
     unsupported = _unsupported_parameter(request.query_params)
     if unsupported is not None:
         name, reason = unsupported
@@ -218,6 +236,9 @@ async def listen(
         )
 
     audio = AudioInput(audio_bytes)
+    if (limited := await admit_upload(request, audio)) is not None:
+        await audio.cleanup()
+        return _rate_limited(limited, request_id=request_id)
     try:
         source = await transcript_source(pipeline, audio, language=language, prompt=None)
     except AudioConversionError as exc:

@@ -57,9 +57,9 @@ idle socket, not a slow server.
 
 - A lagging stream is late, not dropped, matching Deepgram.
 - Host RAM stays flat per connection; the backlog grows on disk instead, at
-  115 MB per hour of canonical PCM. Nothing caps the disk yet: a client
-  sending hours of audio at once fills it at that rate. Controlling abusive
-  clients is a separate decision.
+  115 MB per hour of canonical PCM. The backlog itself is not capped; how much
+  audio one client may send is bounded by the per-client rate limits of
+  ADR 0024.
 - Spill writes and reads are small synchronous page-cache operations on the
   event loop, one per client frame.
 - A diarizer chunk already running on a worker thread when the client leaves

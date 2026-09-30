@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
-import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,12 +23,21 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket
-from starlette.websockets import WebSocketState
 
+from coro.api.deepgram.live_socket import (
+    CLOSE_STREAM,
+    FINALIZE,
+    KEEP_ALIVE,
+    deny_if_rate_limited,
+    read_socket,
+    reject,
+    send_frame,
+    socket_open,
+    spill_dir,
+)
 from coro.api.deepgram.schemas import DeepgramWord
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.api.deepgram.live_schemas import (
-    DeepgramLiveError,
     DeepgramLiveMetadata,
     DeepgramLiveModelInfo,
     DeepgramLiveResultsMetadata,
@@ -42,18 +50,14 @@ from coro.core.protocols import ASRAdapter
 from coro.core.speakers import attribute_span, merge_speaker_timeline
 from coro.pcm import PcmStreamConverter, UnsupportedAudioFormat, validate_format
 from coro.pipelines.live import LiveAudioSource, LiveTranscriptionSession
-from coro.pipelines.spill import SpillDirectoryError, resolve_spill_dir
+
+__all__ = ["CLOSE_STREAM", "FINALIZE", "KEEP_ALIVE", "router"]
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger(__name__)
 
-CLOSE_STREAM = "CloseStream"
-FINALIZE = "Finalize"
-KEEP_ALIVE = "KeepAlive"
-
-# 1000 Normal Closure; 1008 Policy Violation for a rejected declaration.
+# 1000 Normal Closure; rejections close with live_socket.CLOSE_POLICY (1008).
 _CLOSE_NORMAL = 1000
-_CLOSE_POLICY = 1008
 
 UNKNOWN_SPEAKER_LABEL = "-1"
 
@@ -123,17 +127,6 @@ def _attributed_words(tokens: list[TranscriptToken], timeline: list) -> list[Dee
     return words
 
 
-async def _send(websocket: WebSocket, model) -> None:
-    if websocket.client_state is WebSocketState.CONNECTED:
-        await websocket.send_text(model.model_dump_json(exclude_none=True))
-
-
-async def _reject(websocket: WebSocket, *, description: str, message: str) -> None:
-    """Send an ``Error`` frame and close with a policy-violation code."""
-    await _send(websocket, DeepgramLiveError(description=description, message=message))
-    await websocket.close(code=_CLOSE_POLICY)
-
-
 async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | None:
     """Validate readiness and the client's declared audio format.
 
@@ -144,9 +137,7 @@ async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | Non
     runtime = getattr(websocket.app.state, "runtime", None)
     asr = getattr(runtime, "asr_adapter", None) if runtime else None
     if asr is None:
-        await _reject(
-            websocket, description="Server not ready", message="No ASR adapter is loaded."
-        )
+        await reject(websocket, description="Server not ready", message="No ASR adapter is loaded.")
         return None
     try:
         sample_rate = _int_param(websocket, "sample_rate")
@@ -157,7 +148,7 @@ async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | Non
         )
     except UnsupportedAudioFormat as exc:
         logger.info("listen_ws[%s] rejected audio declaration: %s", request_id, exc)
-        await _reject(websocket, description="Unsupported audio format", message=str(exc))
+        await reject(websocket, description="Unsupported audio format", message=str(exc))
         return None
     language = websocket.query_params.get("language") or None
     # Backends that resolve/validate a language up front (currently only
@@ -170,7 +161,7 @@ async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | Non
             resolve_language(language)
         except AsrUnsupportedLanguageError as exc:
             logger.info("listen_ws[%s] rejected unsupported language: %s", request_id, exc)
-            await _reject(websocket, description="Unsupported language", message=exc.message)
+            await reject(websocket, description="Unsupported language", message=exc.message)
             return None
     return _Negotiated(
         asr=asr,
@@ -179,61 +170,6 @@ async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | Non
         diarize=_flag(websocket, "diarize"),
         language=language,
     )
-
-
-async def _read_socket(
-    websocket: WebSocket,
-    source: LiveAudioSource,
-    converter: PcmStreamConverter,
-    digest: hashlib._Hash,
-) -> None:
-    """Read every inbound frame until the socket disconnects.
-
-    Reading never waits on the pipeline: uvicorn stops reading the TCP stream
-    while a message is unconsumed, and keepalive pongs share that stream, so a
-    handler that stops reading while it is behind gets the socket closed with
-    ``1011 keepalive ping timeout`` (ADR 0023). ``CloseStream`` ends the audio
-    but reading continues, so pings are still answered while the backlog
-    drains; frames after it are ignored.
-
-    The digest accumulates as audio arrives: a live stream has no complete
-    payload to hash up front, but ``Metadata`` must still report one.
-    """
-    try:
-        while True:
-            message = await websocket.receive()
-            if message["type"] == "websocket.disconnect":
-                return
-            if source.closed:
-                continue
-            if (payload := message.get("bytes")) is not None:
-                digest.update(payload)
-                await source.push(converter.push(payload))
-                continue
-            text = message.get("text")
-            if text is not None and _control_type(text) in {CLOSE_STREAM, FINALIZE}:
-                await source.push(converter.flush())
-                await source.close()
-            # KeepAlive and unrecognised control frames hold the socket open.
-    finally:
-        await source.close()
-
-
-def _spill_dir(websocket: WebSocket) -> str | None:
-    """Real-disk directory for the live audio backlog.
-
-    The Streaming Pipeline's transcript spill dir is already resolved at
-    startup; other pipelines resolve the same default, and fall back to the
-    system temp dir when no real-disk candidate exists.
-    """
-    settings = getattr(websocket.app.state, "settings", None)
-    configured = getattr(settings, "transcript_spill_dir", None)
-    if configured is not None:
-        return configured
-    try:
-        return resolve_spill_dir(None)
-    except SpillDirectoryError:
-        return None
 
 
 def _frame_metadata(request_id: str, settings: Any) -> DeepgramLiveResultsMetadata:
@@ -260,6 +196,8 @@ async def listen_ws(websocket: WebSocket) -> None:
     ``language`` is an optional hint. Unhonoured parameters are ignored, as on
     the REST endpoint.
     """
+    if await deny_if_rate_limited(websocket):
+        return
     await websocket.accept()
     request_id = uuid4().hex[:8]
     negotiated = await _negotiate(websocket, request_id)
@@ -267,7 +205,7 @@ async def listen_ws(websocket: WebSocket) -> None:
         return
 
     converter = PcmStreamConverter(source_rate=negotiated.sample_rate)
-    source = LiveAudioSource(spill_dir=_spill_dir(websocket))
+    source = LiveAudioSource(spill_dir=spill_dir(websocket))
     session = LiveTranscriptionSession(
         asr=negotiated.asr,
         streaming_diarizer_factory=(
@@ -293,7 +231,7 @@ async def listen_ws(websocket: WebSocket) -> None:
     async def _emit_results() -> None:
         async for tokens in session.run(source):
             collected.extend(tokens)
-            await _send(
+            await send_frame(
                 websocket,
                 live_results(
                     _words_from_tokens(tokens, diarize=negotiated.diarize),
@@ -310,17 +248,18 @@ async def listen_ws(websocket: WebSocket) -> None:
             )
 
     consumer = asyncio.create_task(_emit_results())
-    reader = asyncio.create_task(_read_socket(websocket, source, converter, digest))
+    reader = asyncio.create_task(read_socket(websocket, source, converter, digest, request_id))
     try:
         await asyncio.wait({consumer, reader}, return_when=asyncio.FIRST_COMPLETED)
-        if reader.done():
-            # The client is gone: nobody can receive the rest, so the backlog
-            # is abandoned rather than burning CPU other connections need.
+        if reader.done() or not socket_open(websocket):
+            # The client is gone, or was closed out for its rate limit: nobody
+            # can receive the rest, so the backlog is abandoned rather than
+            # burning CPU other connections need.
             consumer.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await consumer
             logger.info(
-                "listen_ws[%s] client disconnected; abandoned backlog_s=%.2f",
+                "listen_ws[%s] stream abandoned; backlog_s=%.2f",
                 request_id,
                 source.pending_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE),
             )
@@ -356,7 +295,7 @@ async def _close_out(
     """Emit the attributed final frame (if any) and the closing Metadata."""
     timeline = await session.finalize()
     if diarize and timeline and collected:
-        await _send(
+        await send_frame(
             websocket,
             live_results(
                 _attributed_words(collected, timeline),
@@ -366,7 +305,7 @@ async def _close_out(
             ),
         )
     settings = getattr(websocket.app.state, "settings", None)
-    await _send(
+    await send_frame(
         websocket,
         DeepgramLiveMetadata(
             request_id=request_id,
@@ -378,7 +317,7 @@ async def _close_out(
             detected_language=session.detected_language,
         ),
     )
-    if websocket.client_state is WebSocketState.CONNECTED:
+    if socket_open(websocket):
         await websocket.close(code=_CLOSE_NORMAL)
     logger.info(
         "listen_ws[%s] closed audio_s=%.2f words=%d",
@@ -386,11 +325,3 @@ async def _close_out(
         session.audio_seconds,
         len(collected),
     )
-
-
-def _control_type(text: str) -> str:
-    """Return the ``type`` of a JSON control frame, or '' if unparseable."""
-    try:
-        return str(json.loads(text).get("type", ""))
-    except (ValueError, AttributeError):
-        return ""

@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from coro.api.docs import register_docs
 from coro.api.openai.errors import transcription_exception_handler
 from coro.api.exceptions import TranscriptionError
+from coro.api.rate_limit import ClientRateLimits
 from coro.runtime import RuntimeState
 from coro.settings import ServerSettings
 
@@ -226,6 +227,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     application.state.settings = settings
     application.state.runtime = runtime
+    application.state.rate_limits = ClientRateLimits.from_settings(settings)
     application.include_router(health_router)
     application.include_router(v1_router)
     application.include_router(listen_router)

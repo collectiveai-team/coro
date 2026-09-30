@@ -104,14 +104,14 @@ def _real_pcm(seconds: int) -> list[bytes]:
     return frames[:seconds]
 
 
-def _app(*, diarize: bool = False):
+def _app(*, diarize: bool = False, **settings_overrides):
     """Build the real app, but keep the lifespan from loading real models.
 
     ``create_app``'s lifespan builds an ASR adapter and runs warmup, which would
     download whisper-medium. These tests are about transport and frame
     conformance, so the injected runtime is preserved instead.
     """
-    settings = ServerSettings(_env_file=None)
+    settings = ServerSettings(_env_file=None, **settings_overrides)
     app = make_app(pipeline=object(), settings=settings)
     app.state.runtime.asr_adapter = _FakeASR()
     if diarize:
@@ -195,6 +195,18 @@ class TestDeepgramLiveSdkConformance:
         # Two windows of two tokens each, so all four words appear here.
         assert len(speakers) == 4
         assert set(speakers) == {1}
+
+
+class TestRealClientRateLimit:
+    async def test_an_over_limit_client_gets_http_429_from_uvicorn(self):
+        # The denial is an HTTP response to the upgrade, which only a server
+        # supporting the websocket.http.response extension can send.
+        async with _LiveServer(_app(rate_limit_requests_per_minute=1)) as server:
+            await _stream(server, seconds=1)
+            with pytest.raises(websockets.InvalidStatus) as denied:
+                await websockets.connect(server.ws_url)
+        assert denied.value.response.status_code == 429
+        assert int(denied.value.response.headers["Retry-After"]) >= 1
 
 
 class TestRealClientRejection:

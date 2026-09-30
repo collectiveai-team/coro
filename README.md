@@ -656,6 +656,37 @@ ceiling is a setting rather than a constant for the same reason.
 > Without a valid token (or before accepting the model conditions) the pyannote
 > pipeline fails to load at startup with an actionable error.
 
+### Client rate limits
+
+Two per-client-IP limits protect a shared server from one abusive client. A
+client over either limit is **rejected, not queued**, with HTTP `429` and a
+`Retry-After` header (in the OpenAI or Deepgram error shape, per route). Both
+apply to every entry point and pipeline: REST, SSE (`stream=true`), Deepgram
+REST, and the live WebSocket, all drawing from one budget per client.
+
+- **Requests per minute** (`CORO_RATE_LIMIT_REQUESTS_PER_MINUTE`, default `60`):
+  a burst that refills evenly. A WebSocket counts once, at connect, where an
+  over-limit client gets a plain HTTP `429` instead of an open socket.
+- **Audio minutes per hour** (`CORO_RATE_LIMIT_AUDIO_MINUTES_PER_HOUR`, default
+  `0` = off): uploads are measured with `ffprobe` before any transcription, so a
+  rejected upload costs no CPU. One upload longer than the whole budget is
+  admitted once when the budget is full and leaves it in debt. A WebSocket is
+  charged as audio arrives; when it runs out the server sends an `Error` frame
+  and closes with `1008`. Needs `ffprobe` on `PATH` (the Docker image ships it
+  with `ffmpeg`); the server refuses to start with the limit enabled and no
+  `ffprobe`.
+
+```bash
+coro serve --rate-limit-requests-per-minute 120 --rate-limit-audio-minutes-per-hour 600
+```
+
+Counters live in memory per server process: several uvicorn workers or
+replicas each count separately. Behind a reverse proxy, the client IP comes
+from `X-Forwarded-For` only when uvicorn trusts the proxy; it trusts
+`127.0.0.1` by default, so a proxy elsewhere (another container, another host)
+needs `FORWARDED_ALLOW_IPS=<proxy address>` or every client counts as the
+proxy. See ADR 0024.
+
 ### Settings reference
 
 Every setting below is available as both an environment variable and a CLI
@@ -678,6 +709,8 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 | `CORO_ASR_ONNX_VAD_THRESHOLD` | `--asr-onnx-vad-threshold` | _(unset)_ | Silero VAD speech-probability threshold; only when VAD enabled. |
 | `CORO_ASR_MAX_CONCURRENCY` | `--asr-max-concurrency` | `0` _(auto)_ | Max ASR inference calls running at once; `0` auto-sizes from the host core count. Ignored by `onnx-genai`, which always serialises. |
 | `CORO_ASR_MAX_QUEUE_DEPTH` | `--asr-max-queue-depth` | `32` | Max ASR calls allowed to queue for a slot; beyond this the request gets HTTP 429 + `Retry-After` instead of waiting indefinitely. |
+| `CORO_RATE_LIMIT_REQUESTS_PER_MINUTE` | `--rate-limit-requests-per-minute` | `60` | Transcription requests one client IP may start per minute (REST, SSE, WebSocket connects); beyond it HTTP 429 + `Retry-After`. `0` disables. See [Client rate limits](#client-rate-limits). |
+| `CORO_RATE_LIMIT_AUDIO_MINUTES_PER_HOUR` | `--rate-limit-audio-minutes-per-hour` | `0` _(off)_ | Minutes of audio one client IP may submit per hour, measured with `ffprobe` before processing; WebSocket streams are charged as audio arrives. Requires `ffprobe` when enabled. |
 | `CORO_BACKEND_DIARIZATION` | `--backend-diarization` | `none` | Diarization backend provider (`none` \| `nemo` \| `pyannote`). |
 | `CORO_MODEL_DIARIZATION` | `--model-diarization` | _(unset)_ | Diarization model; defaults to `nvidia/diar_streaming_sortformer_4spk-v2` (`nemo`) or `pyannote/speaker-diarization-community-1` (`pyannote`). |
 | `CORO_DIARIZATION_DEVICE` | `--diarization-device` | `auto` | Diarization device (`auto` \| `cuda` \| `cpu`). |
@@ -685,7 +718,7 @@ flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
 | `CORO_DIARIZATION_POSTPROCESSING` | `--diarization-postprocessing` | _(unset)_ | Sortformer post-processing preset (`dihard3-dev` \| `callhome-part1`), a path to a custom YAML, or `none` for NeMo's baseline; `nemo` only, see below. |
 | `CORO_DIARIZATION_POSTPROCESSING_MAX_SPEAKERS` | `--diarization-postprocessing-max-speakers` | `4` | Speaker-count ceiling above which post-processing is bypassed; `nemo` only, see above. No effect on 4-speaker models. |
 | `CORO_HF_TOKEN` | `--CORO-HF-TOKEN` | _(unset)_ | Hugging Face token for gated diarization models (e.g. pyannote community-1). Also read from `HF_TOKEN` / `HUGGING_FACE_HUB_TOKEN` (and matching `--HF-TOKEN` flags) and `.env`; masked in logs. |
-| `CORO_TRANSCRIPT_SPILL_DIR` | `--transcript-spill-dir` | _(first real-disk default)_ | Streaming transcript spill dir. Unset resolves to the system temp dir, or the cache dir when temp is tmpfs. A RAM-backed value is rejected at startup. |
+| `CORO_TRANSCRIPT_SPILL_DIR` | `--transcript-spill-dir` | _(first real-disk default)_ | Streaming transcript spill dir, also used for the live WebSocket's audio backlog. Unset resolves to the system temp dir, or the cache dir when temp is tmpfs. A RAM-backed value is rejected at startup. |
 | `CORO_WARMUP` | `--warmup` | `enabled` | Run warmup against the warmup audio asset at startup (`enabled` \| `disabled`). |
 | `CORO_LOG_LEVEL` | `--log-level` | `info` | Log level (CLI use only). |
 | `CORO_SSL_CERTFILE` | `--ssl-certfile` | _(unset)_ | TLS certificate file path. |
@@ -1121,6 +1154,15 @@ async with websockets.connect(
   timeline is complete — a deliberate deviation from Deepgram, which labels
   interim words.
 - The stream always ends with a `Metadata` frame.
+- **A slow server delays results; it does not drop the socket.** The socket is
+  always read, so keepalive pings and `KeepAlive` are answered however far
+  behind transcription is. Audio waiting to be processed beyond ~33 s per
+  connection is held on disk in `CORO_TRANSCRIPT_SPILL_DIR`, not in RAM. A
+  client that disconnects before its results cancels the rest of its work.
+  See ADR 0023.
+- **Rate limits** apply: an over-limit client is denied the upgrade with HTTP
+  `429`, and a stream that runs out of audio quota mid-way gets an `Error`
+  frame and close code `1008`. See [Client rate limits](#client-rate-limits).
 
 See `docs/adr/0015-vendor-native-endpoints.md` for the fidelity policy.
 `/v1/audio/transcriptions` is byte-unchanged, asserted in

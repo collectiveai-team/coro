@@ -12,7 +12,7 @@ import logging
 import time
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import Response
 
 from coro.api.dependencies import get_pipeline
@@ -28,6 +28,7 @@ from coro.api.json_body import spooled_json_response
 from coro.api.openai.formats import ResponseFormat
 from coro.api.openai.render import render_for_format
 from coro.api.openai.sse import streaming_response
+from coro.api.rate_limit import RateLimited, admit_request, admit_upload
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.concurrency import AsrCapacityError
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
@@ -71,6 +72,15 @@ def _validate_language(language: str | None) -> str | None:
             param="language",
         )
     return normalized
+
+
+def _rate_limit_error(limited: RateLimited) -> TranscriptionCapacityError:
+    """OpenAI's 429 for a client over its rate limit, with a Retry-After hint."""
+    return TranscriptionCapacityError(
+        limited.message,
+        retry_after_seconds=limited.retry_after_seconds,
+        code="rate_limit_exceeded",
+    )
 
 
 async def _transcribe_or_raise(
@@ -132,6 +142,7 @@ async def _transcribe_or_raise(
 # MARK: Transcription Endpoint
 @router.post("/audio/transcriptions", response_model=None)
 async def create_transcription(
+    request: Request,
     file: UploadFile = File(...),
     model: str = Form(
         default="", description="Accepted but ignored; server uses configured backend."
@@ -191,6 +202,8 @@ async def create_transcription(
         response_format,
         language,
     )
+    if (limited := admit_request(request)) is not None:
+        raise _rate_limit_error(limited)
     language = _validate_language(language)
     prompt_value = _normalize_optional(prompt)
     audio = await AudioInput.from_upload(file)
@@ -200,6 +213,9 @@ async def create_transcription(
     if not audio.size:
         await audio.cleanup()
         raise TranscriptionValidationError("Empty audio file.", param="file")
+    if (limited := await admit_upload(request, audio)) is not None:
+        await audio.cleanup()
+        raise _rate_limit_error(limited)
 
     # Streaming Response ----------------------------------------------------
     if stream:
