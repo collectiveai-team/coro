@@ -2152,16 +2152,16 @@ wheels = [
 
 [[package]]
 name = "onnxruntime-genai-cuda"
-version = "0.16.0"
+version = "0.17.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "onnxruntime-gpu" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/61/1e49d6c7c29bf7c4913816c8176bca9662663181f56f26b955e77ec505b6/onnxruntime_genai_cuda-0.16.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:ca5ae7dc4c533c56dca5919d8b720c2ed90fa4ef324464da13dbf966124674d1", size = 17749873, upload-time = "2026-09-13T07:40:50.161Z" },
-    { url = "https://files.pythonhosted.org/packages/c5/53/410e4113f1c037b367401af81db6bd61ed45fdd6dc74390bf097473f146b/onnxruntime_genai_cuda-0.16.0-cp312-cp312-win_amd64.whl", hash = "sha256:c43057e1c381cecd65e0aa2a8a1820530a162182c344eae183bcb0274a234155", size = 8419581, upload-time = "2026-09-13T07:40:52.701Z" },
-    { url = "https://files.pythonhosted.org/packages/57/c3/4d362c32482ad69270c120ceace4ca4f3cb340aadd56451715902e0bd107/onnxruntime_genai_cuda-0.16.0-cp312-cp312-win_arm64.whl", hash = "sha256:eebda04c82dbf395c1f953983311ea024937e4e35867982e800bb08753285b03", size = 6004618, upload-time = "2026-09-13T07:40:54.888Z" },
+    { url = "https://files.pythonhosted.org/packages/14/38/323e89f6b6e5109f6443ecfa5171f585fb75f55143feee224afc18b5cf0a/onnxruntime_genai_cuda-0.17.1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:4ab2f602bcf1f8761d05e28a6d825bc515a3289316b4134654e4d80268f87940", size = 17704110, upload-time = "2026-09-29T05:16:49.07Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/cb/24054f77b06e093cb91cff177b11e3584201f3fdf593ffc3413beaa69586/onnxruntime_genai_cuda-0.17.1-cp312-cp312-win_amd64.whl", hash = "sha256:e7049b50d256e07628d23b7c9f7de120c454594489805a4d06da6ab5965a05ba", size = 8522740, upload-time = "2026-09-29T05:16:51.569Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/36/91ba3a8fc55b55b39376e6a776222ca96d0450d913a13a963c81d123e67d/onnxruntime_genai_cuda-0.17.1-cp312-cp312-win_arm64.whl", hash = "sha256:5ba61eab3b50a11a57d7efaaf8e77261a1afaa80fb21edcc81f99da9f39ae090", size = 6106954, upload-time = "2026-09-29T05:16:54.09Z" },
 ]
 
 [[package]]
