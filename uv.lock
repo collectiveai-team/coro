@@ -2118,7 +2118,7 @@ hub = [
 
 [[package]]
 name = "onnxruntime"
-version = "1.28.0"
+version = "1.30.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "flatbuffers" },
@@ -2127,27 +2127,27 @@ dependencies = [
     { name = "protobuf" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/98/f8/dcbe7700dca82fa540035abd3c868fe5ad0f86af00b9a3db7c2e27d15c7d/onnxruntime-1.28.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:26ff0fdd06efb6c155bae95387a09db1a2be89c7a03e4d0bffd5a171cc2826da", size = 19141362, upload-time = "2026-07-25T01:22:36.965Z" },
-    { url = "https://files.pythonhosted.org/packages/28/5b/1d77e62097fdbe07e2dc827f389b1c4c0c275f6fab0369a8f46d2461af27/onnxruntime-1.28.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:4e81a23df16e7acb9d51b06d30cc098e49315ef9180f97bc2221d167b4b04d9c", size = 17050628, upload-time = "2026-07-25T01:21:40.481Z" },
-    { url = "https://files.pythonhosted.org/packages/95/df/5486ab03e9be288d5268867054c8b04bebcf95bfd12e801c05cc67703dab/onnxruntime-1.28.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:0a83bdb70d143cede762b677789bf2a7acca54b3fb82565601d5c30695aa933c", size = 19214257, upload-time = "2026-07-25T01:22:01.695Z" },
-    { url = "https://files.pythonhosted.org/packages/3e/3b/986ca67c274932ba9ac5332fb10de56f643dfd433c74e33f8ae8f847cf24/onnxruntime-1.28.0-cp312-cp312-win_amd64.whl", hash = "sha256:c35064f9b3c43c81c5d5d282091401d0f1ff22796d93ccade4ea2ece5e137ab8", size = 13755036, upload-time = "2026-07-25T01:22:26.89Z" },
-    { url = "https://files.pythonhosted.org/packages/1d/46/059dba81d46c6ba88e0c2d1c64321ac8098847d678423300a183d42ecbd6/onnxruntime-1.28.0-cp312-cp312-win_arm64.whl", hash = "sha256:e02feeb0165c5f13b4cc954738078d59b90128516ac12b671ee24a530242bf02", size = 13454462, upload-time = "2026-07-25T01:22:17.38Z" },
+    { url = "https://files.pythonhosted.org/packages/31/6f/48169f2e62b405bff5053cbd1d73fb5ce41ef7ecd13bb3bfcc191e689b8a/onnxruntime-1.30.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:001ed726c9bd5e2bc92faade7d37d889e9606a350b7d5529f0227df2e3bb57fd", size = 21544867, upload-time = "2026-09-10T16:31:19.876Z" },
+    { url = "https://files.pythonhosted.org/packages/16/bd/cbc5b8f91963689fdd622f463508c01d0aa95d3f944747b1e0b1eb2160b8/onnxruntime-1.30.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:6c32a000d5139a38ba9349030b0032e3331acb559d596b22738d9d2b343a2b83", size = 21345202, upload-time = "2026-09-10T16:31:23.361Z" },
+    { url = "https://files.pythonhosted.org/packages/34/35/e7f862dbacbc99fadd9b14a614e49c99bf0f35fd9927a82f096e3de33531/onnxruntime-1.30.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:fa688e7891a6aa206636fe7372e27ee75fd17713289f6b4fc7b190e0a7de9328", size = 23585654, upload-time = "2026-09-10T16:31:26.65Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/13/0f1699f6de549c9324bc9112a2a85b14c517904cd11b562a654643b755a1/onnxruntime-1.30.0-cp312-cp312-win_amd64.whl", hash = "sha256:f3501472571f1b1eee50e017851e7929f5ea37312d2d8c2494a19e8fc58b4a38", size = 14311470, upload-time = "2026-09-10T16:31:31.273Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/17/02b13e5f51461f0453b18ab854e2d0bc1b6ec353241b05a2ee6b79e35d87/onnxruntime-1.30.0-cp312-cp312-win_arm64.whl", hash = "sha256:dc4c706f1935ebb62356e6a095b047859badd854482c40560888e95c328ed262", size = 14175072, upload-time = "2026-09-10T16:31:34.541Z" },
 ]
 
 [[package]]
 name = "onnxruntime-genai"
-version = "0.15.2"
+version = "0.17.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "onnxruntime" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/0b/79763be599b567dc2070cc2445ac9a7498297f532a15e18b6b5b639e7780/onnxruntime_genai-0.15.2-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:7848cfd94b7ca963bf47822de5375710d240c40453bf333739bb32d2386a7e12", size = 4688456, upload-time = "2026-08-06T05:22:34.15Z" },
-    { url = "https://files.pythonhosted.org/packages/9b/e2/85cfbceee1cecf9534101e8a4eac28ae5c6e13ecabb2ba99261ad99a9b9e/onnxruntime_genai-0.15.2-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:9e3d270ac274258eb8d7ec3d46a283f921d6ea3697c1e39dbfc2453a8a87b9ae", size = 11226467, upload-time = "2026-08-06T05:22:36.167Z" },
-    { url = "https://files.pythonhosted.org/packages/5b/55/4ad2ed40ae1ef711f95626d68421f9cd5ccc3dbcae489ea18b4634c88158/onnxruntime_genai-0.15.2-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:136383e6021ad60323a314141f41d70d43cc8953370d13ac601a1b11c0d0ffe4", size = 11512069, upload-time = "2026-08-06T05:22:38.988Z" },
-    { url = "https://files.pythonhosted.org/packages/63/24/0959ba7870bf5ccd5a932c3be01a8f8f26c3da23b70ae08257ff2362d42f/onnxruntime_genai-0.15.2-cp312-cp312-win_amd64.whl", hash = "sha256:64c15edfee9373492365a6a2e5e377df818de93eda6b24b3025d189ef0fd0bdf", size = 3588130, upload-time = "2026-08-06T05:22:41.563Z" },
-    { url = "https://files.pythonhosted.org/packages/d7/07/b3fc918a83574c37de0e27e4421fe024a758dbf6742f07505b608a9dfb3d/onnxruntime_genai-0.15.2-cp312-cp312-win_arm64.whl", hash = "sha256:cb721a38ec3742b54dc816d534272a8da05bbabffbb4b977716fb321a4b9a092", size = 3472330, upload-time = "2026-08-06T05:22:43.37Z" },
+    { url = "https://files.pythonhosted.org/packages/33/8f/82dc39e40fe475b1d235da8f9b7afef1831a44dea6bf666d53ff6805d96d/onnxruntime_genai-0.17.1-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:507a9c31405475861d1615685af0bd31b4743e7bfe1483493f6172c7b6923d81", size = 4746273, upload-time = "2026-09-29T05:18:39.148Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/65/efede2fc12a1cad861615f2ab959bb3bc30a22cd494fbbb315d9d4551720/onnxruntime_genai-0.17.1-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:a887b1bd47a0fe197d5af87bffe4af5e08c9a18186abaea3508532543aa25139", size = 11967253, upload-time = "2026-09-29T05:18:41.032Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/37/0acfad3db76f97d890b2aa71e29b795693b0ff89158086ea2957b88a5655/onnxruntime_genai-0.17.1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:89ad23eddcb24158809ad83fdd3a7a88e5928a0026ca7cd6baa0807b0d6cb579", size = 12312990, upload-time = "2026-09-29T05:18:43.567Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/36/a4e1da428d99190453de629a4d4b30c47c81c366d2060daaa1a9acb097d4/onnxruntime_genai-0.17.1-cp312-cp312-win_amd64.whl", hash = "sha256:7c7e6ec20710059f8f72f2fad1e9127eb955cd9059b1321da6f15374b1b0ba78", size = 4224498, upload-time = "2026-09-29T05:18:45.592Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/b0/c92c40901d00edb38e2562249a927ed733df7774aec8b87aba067ee24f91/onnxruntime_genai-0.17.1-cp312-cp312-win_arm64.whl", hash = "sha256:8f9fe06c0240f704215fb175597f72298e7d14d9cc9fe1d739ce77e295a17a0e", size = 4069076, upload-time = "2026-09-29T05:18:47.058Z" },
 ]
 
 [[package]]
