@@ -9,8 +9,16 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.onnx_asr import convert_onnx_asr_result
-from coro.backends.asr.onnx_genai import _LANG_TAG_RE, _apply_device, _lang_id_for
+from coro.backends.asr.onnx_genai import (
+    _LANG_TAG_RE,
+    OnnxGenaiASRAdapter,
+    _apply_device,
+    _lang_id_for,
+)
 
 
 class _RecordingConfig:
@@ -78,11 +86,32 @@ def test_lang_id_known_codes():
     assert _lang_id_for("auto") == 101
 
 
-def test_lang_id_falls_back_to_base_then_default():
-    """Unknown locale falls back to base code, then to English default."""
+def test_lang_id_falls_back_to_base_code_then_to_english_when_absent():
+    """An unlisted locale uses its base code; no language at all keeps the English default."""
     assert _lang_id_for("es-AR") == 3  # base 'es'
-    assert _lang_id_for("xx") == 0  # unknown -> default English
     assert _lang_id_for(None) == 0
+    assert _lang_id_for("") == 0
+
+
+def test_lang_id_accepts_any_spelling_of_a_listed_locale():
+    assert _lang_id_for("ES-es") == 2
+    assert _lang_id_for("en_gb") == 1
+
+
+def test_lang_id_rejects_an_unknown_language_instead_of_transcribing_as_english():
+    """A silent English fallback returns a wrong transcript with no error."""
+    with pytest.raises(AsrUnsupportedLanguageError) as excinfo:
+        _lang_id_for("xx")
+
+    assert excinfo.value.language == "xx"
+    assert {"en", "es", "fr"} <= set(excinfo.value.supported_languages)
+
+
+async def test_transcribe_rejects_an_unknown_language_before_touching_the_model():
+    adapter = OnnxGenaiASRAdapter(object(), chunk_samples=8960, sample_rate=16000)
+
+    with pytest.raises(AsrUnsupportedLanguageError):
+        await adapter.transcribe_pcm(b"\x00\x00" * 1600, language="xx-YY")
 
 
 def test_language_tag_stripping():
