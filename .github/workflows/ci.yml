@@ -48,7 +48,7 @@ jobs:
         run: uvx prek run --all-files --show-diff-on-failure
 
       - name: Run tests
-        run: uv run pytest
+        run: uv run --no-sync pytest
 
       # MARK: api-contract
       # Both contracts are generated, never authored, so there is nothing
@@ -57,7 +57,7 @@ jobs:
       # committed (an openapi.json in git is a merge conflict on every schema
       # edit, paid for a benefit only external consumers need).
       - name: Export API contracts
-        run: uv run python scripts/export_contracts.py .
+        run: uv run --no-sync python scripts/export_contracts.py .
 
       # One MIT tool lints both OpenAPI and AsyncAPI. Severities are tuned in
       # redocly.yaml so a real spec defect still fails the build.
@@ -125,7 +125,7 @@ jobs:
           git checkout --detach "${{ github.event.pull_request.head.sha }}"
 
       - name: Diff for breaking changes
-        uses: oasdiff/oasdiff-action/breaking@main
+        uses: oasdiff/oasdiff-action/breaking@b9325c9e0a27ab65b0da3b766522cedec6be81dc # main as of 2026-10-06
         with:
           base: .tmp/base/openapi.json
           revision: .tmp/head/openapi.json
