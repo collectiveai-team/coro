@@ -103,8 +103,13 @@ cpu = [
     "onnxruntime-genai>=0.14.0",
 ]
 cuda = [
+    # CTranslate2 (faster-whisper) is still built against CUDA 12 cuBLAS; keep this
+    # until it ships a CUDA 13 build (OpenNMT/CTranslate2#1933).
     "nvidia-cublas-cu12>=12.0.0.0",
-    "nvidia-cudnn-cu12>=9.0.0.0",
+    # torch (cu13) pins nvidia-cudnn-cu13 exactly. A second cuDNN from the cu12 wheel
+    # lands in the same nvidia/cudnn dir and mixes sublibrary versions
+    # (CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH), so declare the cu13 wheel instead.
+    "nvidia-cudnn-cu13>=9.0.0.0",
     "torch>=2.12.1,<4.0",
     "torchaudio>=2.1.0,<4.0",
     "onnxruntime-gpu!=1.24.1,>=1.27.0",
