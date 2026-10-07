@@ -10,7 +10,64 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from coro.backends.asr.onnx_asr import convert_onnx_asr_result
-from coro.backends.asr.onnx_genai import _LANG_TAG_RE, _lang_id_for
+from coro.backends.asr.onnx_genai import _LANG_TAG_RE, _apply_device, _lang_id_for
+
+
+class _RecordingConfig:
+    """Stands in for ``og.Config``, recording the provider calls made on it."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, ...]] = []
+
+    def clear_providers(self) -> None:
+        self.calls.append(("clear",))
+
+    def append_provider(self, name: str) -> None:
+        self.calls.append(("append", name))
+
+
+def _ort_providers(monkeypatch, providers):
+    monkeypatch.setattr("onnxruntime.get_available_providers", lambda: providers)
+
+
+def test_auto_device_selects_cuda_when_onnxruntime_offers_it(monkeypatch):
+    """``auto`` must not silently leave a GPU host on CPU (~5x slower, measured)."""
+    _ort_providers(monkeypatch, ["CUDAExecutionProvider", "CPUExecutionProvider"])
+    config = _RecordingConfig()
+
+    _apply_device(config, "auto")
+
+    assert config.calls == [("clear",), ("append", "cuda")]
+
+
+def test_auto_device_leaves_the_model_default_without_cuda(monkeypatch):
+    """On a CPU-only host ``auto`` keeps following the model's own ``genai_config.json``."""
+    _ort_providers(monkeypatch, ["CPUExecutionProvider"])
+    config = _RecordingConfig()
+
+    _apply_device(config, "auto")
+
+    assert config.calls == []
+
+
+def test_explicit_cpu_overrides_available_cuda(monkeypatch):
+    """An explicit ``cpu`` still wins on a GPU host."""
+    _ort_providers(monkeypatch, ["CUDAExecutionProvider", "CPUExecutionProvider"])
+    config = _RecordingConfig()
+
+    _apply_device(config, "cpu")
+
+    assert config.calls == [("clear",)]
+
+
+def test_explicit_cuda_does_not_depend_on_detection(monkeypatch):
+    """An explicit ``cuda`` is honoured as before, so a misdetection can be worked around."""
+    _ort_providers(monkeypatch, ["CPUExecutionProvider"])
+    config = _RecordingConfig()
+
+    _apply_device(config, "cuda")
+
+    assert config.calls == [("clear",), ("append", "cuda")]
 
 
 def test_lang_id_known_codes():

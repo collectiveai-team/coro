@@ -192,13 +192,27 @@ class OnnxGenaiASRAdapter:
         return convert_onnx_asr_result(result)
 
 
+def _cuda_available() -> bool:
+    """Report whether onnxruntime offers the CUDA execution provider."""
+    import onnxruntime as ort
+
+    return "CUDAExecutionProvider" in ort.get_available_providers()
+
+
 def _apply_device(config, device: str) -> None:
     """Select the execution provider on a GenAI config for the given device.
 
     onnxruntime-genai ships as separate CPU and CUDA builds; CPU is the implicit
     default when no provider is appended (appending ``"cpu"`` is rejected). ``"auto"``
-    follows whatever the model's ``genai_config.json`` declares.
+    selects CUDA when onnxruntime offers it, matching the ``nemo`` backend, and
+    otherwise follows whatever the model's ``genai_config.json`` declares. The
+    onnxruntime provider list is the signal because the ``cpu`` and ``cuda`` extras
+    install the matching onnxruntime and onnxruntime-genai builds together; a CPU
+    GenAI build accepts ``append_provider("cuda")`` silently, so there is no
+    failure to fall back from once it has been appended.
     """
+    if device == "auto" and _cuda_available():
+        device = "cuda"
     if device == "cuda":
         config.clear_providers()
         config.append_provider("cuda")
