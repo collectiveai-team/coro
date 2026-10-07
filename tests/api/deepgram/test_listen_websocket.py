@@ -277,6 +277,25 @@ class TestLanguageNegotiation:
         frames = _stream(_app(_LanguageValidatingASR()))
         assert frames[0]["type"] == "Results"
 
+    def test_the_backend_sees_the_canonical_language_at_negotiate_and_transcribe_time(self):
+        negotiated: list[str | None] = []
+        transcribed: list[str | None] = []
+
+        class _Recording(_FakeASR):
+            def resolve_language(self, language):
+                negotiated.append(language)
+                return language
+
+            async def transcribe_pcm(self, pcm, *, language=None, prompt=None):
+                transcribed.append(language)
+                return await super().transcribe_pcm(pcm, language=language, prompt=prompt)
+
+        frames = _stream(_app(_Recording()), "?language=ES_ar")
+
+        assert frames[0]["type"] == "Results"
+        assert negotiated == ["es-AR"]
+        assert set(transcribed) == {"es-AR"}
+
 
 class _AutoLIDFakeASR(_FakeASR):
     """A canary-like fake exposing ``detect_language``, scripted per call."""

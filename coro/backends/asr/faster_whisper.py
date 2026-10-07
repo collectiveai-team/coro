@@ -13,6 +13,7 @@ from coro.backends.asr.concurrency import (
     resolve_max_concurrency,
 )
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
+from coro.core.language import canonical_language
 from coro.core.models import TranscriptToken
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,25 @@ class FasterWhisperASRAdapter:
         """Admission controller implementing this adapter's concurrency policy."""
         return self._admission
 
+    def _resolve_language(self, language: str | None) -> str | None:
+        """Map a request language onto the bare ISO code faster-whisper expects.
+
+        faster-whisper only knows codes such as ``es``, so a locale (``es-AR``)
+        resolves to its base language when the model supports it. A language the
+        model does not list is passed on in canonical spelling rather than
+        rejected here: English-only models fall back to ``en`` on their own, and
+        a multilingual model rejects it, which :meth:`transcribe_pcm` reports as
+        an unsupported language.
+        """
+        canonical = canonical_language(language)
+        if canonical is None:
+            return None
+        supported = self._model.supported_languages
+        if canonical in supported:
+            return canonical
+        base = canonical.split("-")[0]
+        return base if base in supported else canonical
+
     async def transcribe_pcm(
         self,
         pcm: bytes,
@@ -117,6 +137,7 @@ class FasterWhisperASRAdapter:
 
         """
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        language = self._resolve_language(language)
 
         def _transcribe() -> list:
             try:

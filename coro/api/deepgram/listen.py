@@ -31,6 +31,7 @@ from coro.api.json_body import spooled_json_response
 from coro.api.rate_limit import RateLimited, admit_request, admit_upload
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
+from coro.core.language import canonical_language
 from coro.core.transcript_source import TranscriptSource
 from coro.pipelines.source import transcript_source
 from coro.settings import ServerSettings
@@ -217,6 +218,7 @@ async def listen(
             status_code=400,
         )
 
+    language = canonical_language(language)
     audio_bytes = await request.body()
     logger.info(
         "listen[%s] request start bytes=%d content_type=%s diarize=%s utterances=%s language=%s",
