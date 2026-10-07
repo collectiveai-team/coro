@@ -12,6 +12,7 @@ from coro.backends.asr.concurrency import (
     build_admission_controller,
     resolve_max_concurrency,
 )
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.models import TranscriptToken
 
 logger = logging.getLogger(__name__)
@@ -109,17 +110,29 @@ class FasterWhisperASRAdapter:
 
         Raises:
             AsrCapacityError: If the admission queue is full.
+            AsrUnsupportedLanguageError: If ``language`` is not one of the
+                model's supported languages, which faster-whisper reports as a
+                bare ``ValueError``; that is the client's mistake, so it must
+                reach the API as a 400 rather than a server error.
 
         """
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
 
         def _transcribe() -> list:
-            segments, _info = self._model.transcribe(
-                audio,
-                language=language,
-                initial_prompt=prompt,
-                word_timestamps=True,
-            )
+            try:
+                segments, _info = self._model.transcribe(
+                    audio,
+                    language=language,
+                    initial_prompt=prompt,
+                    word_timestamps=True,
+                )
+            except ValueError as exc:
+                supported = self._model.supported_languages
+                if language is not None and language not in supported:
+                    raise AsrUnsupportedLanguageError(
+                        language, supported_languages=supported
+                    ) from exc
+                raise
             return list(segments)
 
         async with self._admission.admit():
