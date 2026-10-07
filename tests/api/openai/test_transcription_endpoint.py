@@ -320,6 +320,47 @@ async def test_transcription_endpoint_rejects_language_forcing_on_a_non_prompt_n
 
 
 @pytest.mark.asyncio
+async def test_transcription_endpoint_rejects_an_unknown_language_on_faster_whisper():
+    """The real faster-whisper adapter answers a language the model rejects with a 400 naming
+    ``language`` (was a generic 500 from faster-whisper's bare ``ValueError``)."""
+    from faster_whisper.tokenizer import Tokenizer
+
+    from coro.backends.asr.faster_whisper import FasterWhisperASRAdapter
+
+    class _TokenizerStub:
+        def token_to_id(self, _token):
+            return 1
+
+    class _WhisperModel:
+        supported_languages = ("en", "es", "fr")
+
+        def transcribe(self, audio, *, language=None, **_kwargs):
+            Tokenizer(_TokenizerStub(), True, task="transcribe", language=language or "en")
+            return iter([]), None
+
+    adapter = FasterWhisperASRAdapter(_WhisperModel())
+
+    class _FasterWhisperPipeline:
+        async def transcribe(self, audio, *, language=None, prompt=None):
+            return await adapter.transcribe_pcm(b"\x00\x00" * 1600, language=language)
+
+    app = _app_with_pipeline(_FasterWhisperPipeline())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+            data={"model": "whisper-1", "language": "xx"},
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["type"] == "invalid_request_error"
+    assert body["error"]["param"] == "language"
+    assert "'xx'" in body["error"]["message"]
+    assert "es" in body["error"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_transcription_endpoint_returns_diarized_json():
     """diarized_json returns speaker-annotated OpenAI segments."""
     app = _app_with_fake_pipeline()
