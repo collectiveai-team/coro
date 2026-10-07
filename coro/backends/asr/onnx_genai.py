@@ -63,6 +63,11 @@ _DEFAULT_LANG_ID = 0
 # Strips inline language-tag tokens like "<en>" or "<en-US>" the model emits.
 _LANG_TAG_RE = re.compile(r"<[a-z]{2}(?:-[A-Z]{2})?>")
 
+# Fragment of the RuntimeError GenAI raises when a model's external-data file resolves
+# outside the model directory through a symlink. Only used to add context to the error:
+# if the wording changes, the original error still propagates unchanged.
+_EXTERNAL_DATA_ESCAPE = "External data path escapes model directory"
+
 # Admission queue depth used when an adapter is built without explicit settings
 # (direct construction in tests and tooling); the factory always passes one.
 _DEFAULT_QUEUE_DEPTH = 32
@@ -267,7 +272,23 @@ def build_onnx_genai_adapter(
     )
     config = og.Config(model_path)
     _apply_device(config, device)
-    model = og.Model(config)
+    try:
+        model = og.Model(config)
+    except RuntimeError as exc:
+        if _EXTERNAL_DATA_ESCAPE in str(exc):
+            remedy = (
+                "`cp -rL` the directory to a new location"
+                if Path(model_asr).is_dir()
+                else f"`hf download {model_asr} --local-dir <dir>`"
+            )
+            msg = (
+                f"onnxruntime-genai cannot load the model in {model_dir}: its external data "
+                "files are symlinks that resolve outside the model directory, as in a "
+                "HuggingFace cache written by huggingface-hub >= 1. Use a directory of real "
+                f"files instead ({remedy}) and point CORO_MODEL_ASR at it."
+            )
+            raise RuntimeError(msg) from exc
+        raise
     logger.info("onnx-genai model loaded.")
     return OnnxGenaiASRAdapter(
         model,
