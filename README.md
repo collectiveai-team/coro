@@ -187,7 +187,7 @@ docker build -t coro:cpu \
 
 # NVIDIA GPU
 docker build -t coro:gpu \
-  --build-arg CORE_IMAGE=nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04 \
+  --build-arg CORE_IMAGE=nvidia/cuda:13.0.3-base-ubuntu24.04 \
   --build-arg EXTRA=cuda .
 ```
 
@@ -408,7 +408,7 @@ See [ADR 0019](docs/adr/0019-canary-default-asr.md) and
 | `onnx-canary-split` | `canary-1b-v2` | onnxruntime | **Default.** NVIDIA Canary-1b-v2, INT8 encoder + INT8 decoder. Forces the request `language` when given; otherwise detects it once per request/connection with its own LID and holds it (never switches mid-recording) — see [ASR language handling](#asr-language-handling). Fetched from `collectiveai/canary-1b-v2-onnx-split-int8` (CC-BY-4.0, ≈1.29 GB). |
 | `onnx-asr` | `parakeet-tdt-0.6b-v3` | onnxruntime | NeMo Parakeet; fastest of the four on both CPU and GPU, strongest raw Spanish WER — but does **implicit per-frame language identification with no way to constrain it**, which is why it is no longer the default (ADR 0019). Offline (batched) → very high GPU throughput. Leave `CORO_ASR_QUANTIZATION` unset (fp32) — `int8` saves memory but does *not* go faster here. |
 | `faster-whisper` | `whisper-large-v3-turbo`, `whisper-large-v3` | CTranslate2 | Best English meeting accuracy; multilingual. `CORO_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
-| `onnx-genai` | _(no slug — raw model id)_ `onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4` | onnxruntime-genai | NVIDIA Nemotron **cache-aware streaming**; 40 locales. Built for low-latency real-time, not batch throughput. Timestamps are 560 ms-resolution. GPU strongly recommended. |
+| `onnx-genai` | _(no slug — raw model id)_ `onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4` | onnxruntime-genai | NVIDIA Nemotron **cache-aware streaming**; 40 locales. Built for low-latency real-time, not batch throughput. Timestamps are 560 ms-resolution. GPU strongly recommended — and set `CORO_ASR_DEVICE=cuda` explicitly: with the default `auto` this backend appends no execution provider and runs on CPU even in the GPU image (~5× slower, measured). |
 
 ### ASR language handling
 
@@ -1210,7 +1210,7 @@ Running the GPU build outside the devcontainer has two gotchas:
     after any plain `uv sync` / `uv run`). (`uv tool install "coro-asr[cuda]"` is
    not affected — its environment is not re-synced.)
 2. **faster-whisper (CTranslate2) needs `libcublas.so.12` + cuDNN 9**, which
-   ship in the `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` wheels (pulled by the
+   ship in the `nvidia-cublas-cu12` / `nvidia-cudnn-cu13` wheels (pulled by the
    `cuda` extra) but are **not** on the loader path by default. If you see
    `RuntimeError: Library libcublas.so.12 is not found`, prepend the wheel lib
    dirs to `LD_LIBRARY_PATH`:
@@ -1218,8 +1218,10 @@ Running the GPU build outside the devcontainer has two gotchas:
    export LD_LIBRARY_PATH="$VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cublas/lib:\
    $VIRTUAL_ENV/lib/python3.12/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
    ```
-   The shipped Docker GPU image bakes the `nvidia-cublas-cu12` wheel dir onto
-   `LD_LIBRARY_PATH` for you (see the `Dockerfile` runtime stage). In the
+   The shipped Docker GPU image bakes the wheel lib dirs (cuDNN first, then
+   `cu13` and `cublas`) onto `LD_LIBRARY_PATH` for you and ships on the minimal
+   `nvidia/cuda:13.0.3-base` image, taking every CUDA library from the venv's
+   wheels (see the `Dockerfile` runtime stage). In the
    devcontainer or a bare `uv` env — both now on the `nvidia/cuda:13.x` base,
    which ships `libcublas.so.13`, not `.so.12` — you still need the export
    above. The `onnx-asr` / `onnx-genai` backends use onnxruntime-gpu (CUDA 13,

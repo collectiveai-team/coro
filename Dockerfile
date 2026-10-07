@@ -13,7 +13,7 @@
 #
 #   CPU:  --build-arg CORE_IMAGE=ubuntu:noble \
 #         --build-arg EXTRA=cpu
-#   GPU:  --build-arg CORE_IMAGE=nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04 \
+#   GPU:  --build-arg CORE_IMAGE=nvidia/cuda:13.0.3-base-ubuntu24.04 \
 #         --build-arg EXTRA=cuda
 #
 # Unlike .devcontainer/Dockerfile this ships no dev tooling (node, zsh,
@@ -103,15 +103,21 @@ WORKDIR /app
 # then copy the source and install the project itself. --no-dev keeps the dev
 # dependency-group out; --extra selects cpu or cuda wheels; --no-editable bakes
 # the project into site-packages so runtime needs no source tree on disk.
+#
+# triton (~690 MB, pulled in by the CUDA torch wheel) is skipped: it only backs
+# torch.compile/inductor and NeMo's optional triton kernels, which NeMo guards
+# behind TRITON_AVAILABLE. coro uses neither. No-op on the CPU image.
 COPY pyproject.toml uv.lock README.md LICENSE ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev --no-editable --extra ${EXTRA}
+    uv sync --frozen --no-install-project --no-dev --no-editable \
+        --no-install-package triton --extra ${EXTRA}
 
 COPY coro ./coro
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --extra ${EXTRA}
+    uv sync --frozen --no-dev --no-editable \
+        --no-install-package triton --extra ${EXTRA}
 
 # Self-host the Scalar docs bundle inside the installed package, so it travels
 # with the venv into the runtime stage and /docs makes no third-party request at
@@ -144,12 +150,16 @@ WORKDIR /app
 # so its console scripts and interpreter symlink resolve unchanged.
 COPY --from=builder /app/.venv /app/.venv
 
-# faster-whisper's CTranslate2 links libcublas.so.12 (CUDA 12), but the CUDA 13
-# base ships libcublas.so.13, so add the nvidia-cublas-cu12 wheel lib dir (cuda
-# extra) to the loader path. The soname is unique, so onnxruntime-gpu still binds
-# the base's CUDA 13 cuBLAS; cuDNN 9 stays on the default path for both. No-op on
-# the CPU image (the wheel — and thus the dir — is absent).
-ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.12/site-packages/nvidia/cublas/lib:$LD_LIBRARY_PATH
+# The CUDA libraries come from the venv's NVIDIA wheels, not from the base image,
+# so the GPU base can be the minimal `-base` flavour (no CUDA/cuDNN runtime
+# packages, ~2.6 GB lighter). Order matters: cuDNN first, so every libcudnn
+# sublibrary resolves from the one wheel torch was built against (mixing a
+# wheel's libcudnn.so.9 with another version's sublibraries raises
+# CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH); cu13 holds the CUDA 13 cuBLAS,
+# cuFFT, cuRAND, NVRTC that torch and onnxruntime-gpu link; cublas holds the
+# CUDA 12 cuBLAS that faster-whisper's CTranslate2 still links (its sonames
+# differ, so both coexist). No-op on the CPU image (the dirs are absent).
+ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/app/.venv/lib/python3.12/site-packages/nvidia/cu13/lib:/app/.venv/lib/python3.12/site-packages/nvidia/cublas/lib:$LD_LIBRARY_PATH
 
 EXPOSE 8000
 
