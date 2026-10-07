@@ -23,7 +23,9 @@ from types import SimpleNamespace
 import numpy as np
 
 from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.onnx_asr import convert_onnx_asr_result
+from coro.core.language import canonical_language
 from coro.core.models import TranscriptToken
 
 logger = logging.getLogger(__name__)
@@ -74,10 +76,23 @@ _DEFAULT_QUEUE_DEPTH = 32
 
 
 def _lang_id_for(language: str | None) -> int:
-    """Map a language/locale code to the model's lang_id (default English)."""
-    if not language:
+    """Map a language/locale code to the model's lang_id.
+
+    The code is matched in canonical spelling, exact locale first and then its base
+    language (``es-AR`` -> ``es``). No language keeps the English default.
+
+    Raises:
+        AsrUnsupportedLanguageError: If the language is in neither form. Decoding
+            it as English instead would return a wrong transcript with no error.
+
+    """
+    canonical = canonical_language(language)
+    if canonical is None:
         return _DEFAULT_LANG_ID
-    return _LANG_TO_ID.get(language, _LANG_TO_ID.get(language.split("-")[0], _DEFAULT_LANG_ID))
+    for code in (canonical, canonical.split("-")[0]):
+        if code in _LANG_TO_ID:
+            return _LANG_TO_ID[code]
+    raise AsrUnsupportedLanguageError(canonical, supported_languages=_LANG_TO_ID)
 
 
 class OnnxGenaiASRAdapter:
@@ -147,6 +162,7 @@ class OnnxGenaiASRAdapter:
 
         Raises:
             AsrCapacityError: If the admission queue is full.
+            AsrUnsupportedLanguageError: If ``language`` is not one the model lists.
 
         """
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
