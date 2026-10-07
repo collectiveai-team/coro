@@ -85,7 +85,7 @@ repo = "local"
 [[repos.hooks]]
 id = "pyrefly"
 name = "pyrefly"
-entry = "uv run pyrefly check coro/"
+entry = "uv run --no-sync pyrefly check coro/"
 language = "system"
 types = ["python"]
 pass_filenames = false
@@ -133,7 +133,7 @@ priority = 2
 [[repos.hooks]]
 id = "adr-numbering"
 name = "adr numbering"
-entry = "uv run python scripts/check_adr_numbering.py"
+entry = "uv run --no-sync python scripts/check_adr_numbering.py"
 language = "system"
 files = "^docs/adr/"
 pass_filenames = false
@@ -148,7 +148,7 @@ priority = 2
 [[repos.hooks]]
 id = "flicker-rule-rejected"
 name = "flicker rule stays rejected"
-entry = "uv run python scripts/check_flicker_rule_rejected.py"
+entry = "uv run --no-sync python scripts/check_flicker_rule_rejected.py"
 language = "system"
 types_or = ["python", "markdown"]
 pass_filenames = false
