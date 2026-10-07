@@ -32,6 +32,7 @@ from coro.api.rate_limit import RateLimited, admit_request, admit_upload
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.concurrency import AsrCapacityError
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
+from coro.core.language import canonical_language
 from coro.pipelines.source import transcript_source
 
 
@@ -57,13 +58,14 @@ def _normalize_optional(value: str | None) -> str | None:
 
 
 def _validate_language(language: str | None) -> str | None:
-    """Normalize and validate the optional BCP-47 language hint.
+    """Canonicalize and validate the optional BCP-47 language hint.
 
-    Returns None when unset; raises a 400-mapped validation error for values
-    that are not plausible language tags instead of letting the ASR backend
-    fail with an opaque 500.
+    Returns the canonical spelling (``ES`` -> ``es``, ``es_ar`` -> ``es-AR``), or
+    None when unset; raises a 400-mapped validation error for values that are
+    not plausible language tags instead of letting the ASR backend fail with an
+    opaque 500.
     """
-    normalized = _normalize_optional(language)
+    normalized = canonical_language(language)
     if normalized is None:
         return None
     if not _BCP47_LANGUAGE_RE.match(normalized):

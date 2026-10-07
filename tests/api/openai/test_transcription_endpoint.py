@@ -157,6 +157,29 @@ async def test_transcription_endpoint_rejects_invalid_language_tag():
 
 
 @pytest.mark.asyncio
+async def test_transcription_endpoint_passes_the_canonical_language_to_the_pipeline():
+    """Equivalent spellings of a language reach the pipeline in one BCP-47 form."""
+    received: list[str | None] = []
+
+    class _RecordingPipeline(_FakePipeline):
+        async def transcribe(self, audio, *, language=None, prompt=None):
+            received.append(language)
+            return _PIPELINE_RESULT
+
+    app = _app_with_pipeline(_RecordingPipeline())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for spelling in ("ES", "es_ar", " es-US "):
+            response = await client.post(
+                "/v1/audio/transcriptions",
+                files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+                data={"model": "whisper-1", "language": spelling},
+            )
+            assert response.status_code == 200, spelling
+
+    assert received == ["es", "es-AR", "es-US"]
+
+
+@pytest.mark.asyncio
 async def test_transcription_endpoint_treats_blank_language_as_unset():
     """An empty / whitespace-only language hint is coerced to None and succeeds."""
     app = _app_with_fake_pipeline()

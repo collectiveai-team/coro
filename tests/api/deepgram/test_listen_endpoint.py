@@ -145,6 +145,26 @@ class TestDeepgramRequestContract:
     async def test_language_hint_is_accepted(self):
         assert (await _listen("?language=es")).status_code == 200
 
+    async def test_equivalent_language_spellings_reach_the_pipeline_in_one_form(self):
+        received: list[str | None] = []
+
+        class _Recording(FakePipeline):
+            async def transcribe(self, audio, *, language=None, prompt=None):
+                received.append(language)
+                return self.result
+
+        app = make_app(_Recording())
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            for spelling in ("ES", "es_ar", "es-US", ""):
+                response = await client.post(
+                    f"/v1/listen?language={spelling}",
+                    content=make_wav(),
+                    headers={"Content-Type": "audio/wav"},
+                )
+                assert response.status_code == 200, spelling
+
+        assert received == ["es", "es-AR", "es-US", None]
+
 
 @pytest.mark.asyncio
 class TestDeepgramErrors:

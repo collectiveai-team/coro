@@ -44,6 +44,7 @@ from coro.api.deepgram.live_schemas import (
     live_results,
 )
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
+from coro.core.language import canonical_language
 from coro.cache.adapter import unwrap_asr_adapter
 from coro.core.models import TranscriptToken
 from coro.core.protocols import ASRAdapter
@@ -150,7 +151,7 @@ async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | Non
         logger.info("listen_ws[%s] rejected audio declaration: %s", request_id, exc)
         await reject(websocket, description="Unsupported audio format", message=str(exc))
         return None
-    language = websocket.query_params.get("language") or None
+    language = canonical_language(websocket.query_params.get("language"))
     # Backends that resolve/validate a language up front (currently only
     # onnx-canary-split) get it checked at negotiate time, mirroring the audio
     # format check above -- an unsupported language is rejected before any
