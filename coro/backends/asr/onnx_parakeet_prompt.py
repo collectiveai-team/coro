@@ -75,6 +75,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.nemo import resolve_target_language
 from coro.backends.asr.onnx_asr import convert_onnx_asr_result
 from coro.backends.asr.onnx_session import build_asr_session_options
@@ -276,19 +277,14 @@ class OnnxParakeetPromptASRAdapter:
 
         Raises:
             AsrCapacityError: If the admission queue is full.
-            ValueError: If no language is given -- this checkpoint's prompt
-                dictionary has no "auto" entry (see findings.md), so a forced
-                language is always required -- or the given language matches
-                no prompt-dictionary key.
+            AsrUnsupportedLanguageError: If no language is given -- this
+                checkpoint's prompt dictionary has no "auto" entry (see
+                findings.md), so a forced language is always required -- or the
+                given language matches no prompt-dictionary key.
 
         """
         if not language:
-            available = ", ".join(sorted(self._prompt_dictionary) or ["<none>"])
-            msg = (
-                "This checkpoint's prompt dictionary has no auto-detection "
-                f"entry; an explicit language is required (supported: {available})."
-            )
-            raise ValueError(msg)
+            raise AsrUnsupportedLanguageError("", supported_languages=self._prompt_dictionary)
         target_lang = resolve_target_language(language, self._prompt_dictionary)
         assert target_lang is not None  # noqa: S101 -- `language` is truthy, so resolve_target_language cannot return None
         prompt_id = self._prompt_dictionary[target_lang]

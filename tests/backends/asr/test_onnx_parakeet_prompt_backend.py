@@ -25,6 +25,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.onnx_parakeet_prompt import (
     OnnxParakeetPromptASRAdapter,
     _apply_prompt_kernel,
@@ -177,13 +178,15 @@ class TestOnnxParakeetPromptASRAdapter:
     async def test_missing_language_raises(self):
         asr = _StubAsr(_result())
         adapter = OnnxParakeetPromptASRAdapter(asr, prompt_dictionary=_PROMPT_DICTIONARY)
-        with pytest.raises(ValueError, match="auto-detection"):
+        with pytest.raises(AsrUnsupportedLanguageError) as excinfo:
             await adapter.transcribe_pcm(_pcm())
+        assert excinfo.value.language == ""
+        assert set(excinfo.value.supported_languages) == set(_PROMPT_DICTIONARY)
 
     async def test_unknown_language_raises(self):
         asr = _StubAsr(_result())
         adapter = OnnxParakeetPromptASRAdapter(asr, prompt_dictionary=_PROMPT_DICTIONARY)
-        with pytest.raises(ValueError, match="not supported"):
+        with pytest.raises(AsrUnsupportedLanguageError, match="not supported"):
             await adapter.transcribe_pcm(_pcm(), language="de")
 
     async def test_converts_result_to_transcript_tokens(self):

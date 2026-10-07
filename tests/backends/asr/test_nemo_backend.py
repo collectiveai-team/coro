@@ -25,6 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.nemo import (
     NemoASRAdapter,
     _build_forced_language_config,
@@ -122,8 +123,10 @@ class TestResolveTargetLanguage:
         assert resolve_target_language(None, _PROMPT_DICTIONARY) is None
 
     def test_unknown_language_lists_supported_keys(self):
-        with pytest.raises(ValueError, match=r"fr.*es-US"):
+        with pytest.raises(AsrUnsupportedLanguageError, match=r"fr.*es-US") as excinfo:
             resolve_target_language("fr", _PROMPT_DICTIONARY)
+        assert excinfo.value.language == "fr"
+        assert set(excinfo.value.supported_languages) == set(_PROMPT_DICTIONARY)
 
 
 class TestNemoASRAdapter:
@@ -213,14 +216,17 @@ class TestNemoASRAdapter:
         assert tokens[0].start == 0.0
         assert tokens[-1].end <= 1.0
 
-    async def test_language_without_prompt_dictionary_raises(self):
+    async def test_language_without_prompt_dictionary_is_an_unsupported_language(self):
+        """A client-fixable request (drop ``language``), so it must reach the API as a 400."""
         model = _FakePromptModel()
-        with pytest.raises(ValueError, match="no prompt dictionary"):
+        with pytest.raises(AsrUnsupportedLanguageError, match="not supported") as excinfo:
             await _transcribe(model, "es", prompt_dictionary=None)
+        assert excinfo.value.language == "es"
+        assert excinfo.value.supported_languages == ()
 
     async def test_unknown_language_raises_from_the_adapter(self):
         model = _FakePromptModel()
-        with pytest.raises(ValueError, match="not supported"):
+        with pytest.raises(AsrUnsupportedLanguageError, match="not supported"):
             await _transcribe(model, "fr")
 
     async def test_subword_pieces_reconstruct_word_tokens(self):
@@ -381,8 +387,11 @@ class TestBuildForcedLanguageConfig:
         assert config.return_hypotheses is True
 
     def test_raises_loudly_when_no_override_config_type_is_discoverable(self):
-        with pytest.raises(ValueError, match="override_config"):
+        with pytest.raises(ValueError, match="override_config") as excinfo:
             _build_forced_language_config(_FakeNoOverrideConfigModel(), "es")
+        # A checkpoint/NeMo API mismatch is the deployment's fault, not the
+        # request's: it must stay a server error rather than a language 400.
+        assert not isinstance(excinfo.value, AsrUnsupportedLanguageError)
 
 
 def _build_fake_asr_model(fake_model):

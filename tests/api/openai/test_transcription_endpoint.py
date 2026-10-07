@@ -293,6 +293,33 @@ async def test_transcription_endpoint_rejects_unsupported_language():
 
 
 @pytest.mark.asyncio
+async def test_transcription_endpoint_rejects_language_forcing_on_a_non_prompt_nemo_checkpoint():
+    """The real nemo adapter, built on a checkpoint without a prompt dictionary, answers a
+    forced language with a 400 naming ``language`` (was a generic 500)."""
+    from coro.backends.asr.nemo import NemoASRAdapter
+
+    adapter = NemoASRAdapter(object(), tokenizer=object(), prompt_dictionary=None)
+
+    class _NemoPipeline:
+        async def transcribe(self, audio, *, language=None, prompt=None):
+            return await adapter.transcribe_pcm(b"\x00\x00" * 1600, language=language)
+
+    app = _app_with_pipeline(_NemoPipeline())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
+            data={"model": "whisper-1", "language": "es"},
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["type"] == "invalid_request_error"
+    assert body["error"]["param"] == "language"
+    assert "'es'" in body["error"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_transcription_endpoint_returns_diarized_json():
     """diarized_json returns speaker-annotated OpenAI segments."""
     app = _app_with_fake_pipeline()
