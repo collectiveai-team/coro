@@ -120,6 +120,7 @@ from typing import Any
 import numpy as np
 
 from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
+from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.subword_tokens import LAST_WORD_PAD, group_subwords, words_from_text
 from coro.core.models import TranscriptToken
 
@@ -145,9 +146,10 @@ def resolve_target_language(language: str | None, prompt_dictionary: dict[str, i
         language was requested.
 
     Raises:
-        ValueError: If the language matches no dictionary key. Listing the
-            supported keys turns a silent English fallback (the failure mode
-            this backend exists to avoid) into an explicit configuration error.
+        AsrUnsupportedLanguageError: If the language matches no dictionary key.
+            Listing the supported keys turns a silent English fallback (the
+            failure mode this backend exists to avoid) into an explicit error
+            that every request surface reports as a 400 naming the supported set.
 
     """
     if not language:
@@ -158,12 +160,7 @@ def resolve_target_language(language: str | None, prompt_dictionary: dict[str, i
     for key in prompt_dictionary:
         if key.split("-")[0] == primary:
             return key
-    available = ", ".join(sorted(prompt_dictionary) or ["<none>"])
-    msg = (
-        f"Language {language!r} is not supported by this model's prompt dictionary "
-        f"(supported: {available})."
-    )
-    raise ValueError(msg)
+    raise AsrUnsupportedLanguageError(language, supported_languages=prompt_dictionary)
 
 
 def _resolve_override_config_type(model: Any) -> type | None:
@@ -456,20 +453,18 @@ class NemoASRAdapter:
 
         Raises:
             AsrCapacityError: If the admission queue is full.
-            ValueError: If an explicit language matches no prompt-dictionary
-                key, the checkpoint carries no prompt dictionary at all, or
-                (forced-language calls only) the checkpoint's ``transcribe``
-                exposes no typed ``override_config`` to force it through.
+            AsrUnsupportedLanguageError: If an explicit language matches no
+                prompt-dictionary key, or the checkpoint carries no prompt
+                dictionary at all (so it supports no forced language).
+            ValueError: If (forced-language calls only) the checkpoint's
+                ``transcribe`` exposes no typed ``override_config`` to force
+                the language through -- a NeMo/checkpoint mismatch, which is
+                the deployment's fault rather than the request's.
 
         """
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
         if language and self._prompt_dictionary is None:
-            msg = (
-                "This model has no prompt dictionary, so language forcing is not "
-                "supported by the checkpoint. Send no language, or use a Prompt "
-                "variant checkpoint."
-            )
-            raise ValueError(msg)
+            raise AsrUnsupportedLanguageError(language, supported_languages=())
         target_lang = resolve_target_language(language, self._prompt_dictionary or {})
 
         duration = len(audio) / _SAMPLE_RATE
