@@ -146,7 +146,7 @@ dev = [
     "httpx>=0.27.0",
     "anyio>=4.0.0",
     "openai>=2.0.0",
-    "ruff>=0.15,<0.17",
+    "ruff>=0.15,<0.18",
     "pyrefly>=1.1.1",
     "deepgram-sdk>=7.6.0",
 ]
