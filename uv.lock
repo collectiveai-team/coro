@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.12.*"
 resolution-markers = [
     "platform_machine != 's390x' and sys_platform == 'win32' and extra != 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda'",
@@ -27,8 +27,6 @@ conflicts = [[
     { package = "coro-asr", extra = "cpu" },
     { package = "coro-asr", extra = "cuda" },
 ]]
-
-[manifest]
 
 [[manifest.dependency-metadata]]
 name = "faster-whisper"
@@ -180,9 +178,9 @@ version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/90/fa/5c2be1f96dc179f83cdd3bb267edbd1f47d08f756785c016d5c2163901a7/asteroid-filterbanks-0.4.0.tar.gz", hash = "sha256:415f89d1dcf2b13b35f03f7a9370968ac4e6fa6800633c522dac992b283409b9", size = 24599, upload-time = "2021-04-09T20:03:07.456Z" }
@@ -247,7 +245,7 @@ name = "cffi"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/eb/56/b1ba7935a17738ae8453301356628e8147c79dbb825bcbc73dc7401f9846/cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529", size = 523588, upload-time = "2025-09-08T23:24:04.541Z" }
 wheels = [
@@ -295,7 +293,7 @@ name = "click"
 version = "8.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/bb/63/f9e1ea081ce35720d8b92acde70daaedace594dc93b693c869e0d5910718/click-8.3.3.tar.gz", hash = "sha256:398329ad4837b2ff7cbe1dd166a4c0f8900c3ca3a218de04466f38f6497f18a2", size = 328061, upload-time = "2026-04-22T15:11:27.506Z" }
 wheels = [
@@ -325,7 +323,7 @@ name = "colorlog"
 version = "6.10.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a2/61/f083b5ac52e505dfc1c624eafbf8c7589a0d7f32daa398d2e7590efa5fda/colorlog-6.10.1.tar.gz", hash = "sha256:eb4ae5cb65fe7fec7773c2306061a8e63e02efc2c72eba9d27b0fa23c94f1321", size = 17162, upload-time = "2025-10-16T16:14:11.978Z" }
 wheels = [
@@ -378,10 +376,10 @@ dependencies = [
 cpu = [
     { name = "onnxruntime" },
     { name = "onnxruntime-genai" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 cuda = [
     { name = "nvidia-cublas-cu12" },
@@ -513,7 +511,7 @@ name = "cuda-bindings"
 version = "13.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-pathfinder", marker = "sys_platform != 'darwin' or extra != 'extra-8-coro-asr-cpu' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "cuda-pathfinder" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/52/c8/b2589d68acf7e3d63e2be330b84bc25712e97ed799affbca7edd7eae25d6/cuda_bindings-13.2.0-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:e865447abfb83d6a98ad5130ed3c70b1fc295ae3eeee39fd07b4ddb0671b6788", size = 5722404, upload-time = "2026-03-11T00:12:44.041Z" },
@@ -539,43 +537,43 @@ wheels = [
 
 [package.optional-dependencies]
 cublas = [
-    { name = "nvidia-cublas", version = "13.1.1.3", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cublas", version = "13.1.1.3", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 cudart = [
-    { name = "nvidia-cuda-runtime", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 cufft = [
-    { name = "nvidia-cufft", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cufft", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 cufile = [
-    { name = "nvidia-cufile", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cufile", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 cupti = [
-    { name = "nvidia-cuda-cupti", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cuda-cupti", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 curand = [
-    { name = "nvidia-curand", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-curand", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 cusolver = [
-    { name = "nvidia-cublas", version = "13.1.1.3", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "nvidia-cusolver", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "nvidia-cusparse", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cublas", version = "13.1.1.3", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cusolver", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 cusparse = [
-    { name = "nvidia-cusparse", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 nvjitlink = [
-    { name = "nvidia-nvjitlink", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 nvrtc = [
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 nvtx = [
-    { name = "nvidia-nvtx", marker = "(platform_machine != 'aarch64' and platform_machine != 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'aarch64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (platform_machine == 'x86_64' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'linux' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "nvidia-nvtx", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 
 [[package]]
@@ -676,7 +674,7 @@ wheels = [
 
 [[package]]
 name = "deepgram-sdk"
-version = "7.10.0"
+version = "7.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -685,9 +683,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/82/d9/4bb497c90641887e47e8faa30e985cee9ee1279952eddfc1261c72acee0e/deepgram_sdk-7.10.0.tar.gz", hash = "sha256:c183fdfef88373c0b2bdd25fd38a81594149b05268a7a17f869a56882eb64ce9", size = 247494, upload-time = "2026-09-21T09:50:18.089Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/20/32/02856581cc8c50c48392530b2a6fe52e052218e0581ba3bf4983efe70da8/deepgram_sdk-7.13.0.tar.gz", hash = "sha256:e7e5a3bcf261cbd1f2ee8987adcdd21acce6268bf5904dc943fefe4b9577a8ef", size = 252676, upload-time = "2026-10-12T08:49:45.268Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/2e/d8e256653552e9f36b4360e59056b4286fdc3c742ed1f0689903ce9f72ca/deepgram_sdk-7.10.0-py3-none-any.whl", hash = "sha256:d6d97e9bcd10667d0d062a9d79b67ef5dd65d3939864177966f6045347db5569", size = 646874, upload-time = "2026-09-21T09:50:16.762Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/27/a1f6c03d9243f996bf67ae872c796c49fcfb066dd3c2338b5d3b68f9c6ea/deepgram_sdk-7.13.0-py3-none-any.whl", hash = "sha256:dff3ed7929bef4c2dc6d87003d8fa7994501e52a41212416b4a81258da76f415", size = 660444, upload-time = "2026-10-12T08:49:43.944Z" },
 ]
 
 [[package]]
@@ -867,9 +865,7 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ef/32/f2ce6d4cac3e55bc6173f92dbe627e782e1850f89d986c3606feb63aafa7/greenlet-3.5.0-cp312-cp312-macosx_11_0_universal2.whl", hash = "sha256:db2910d3c809444e0a20147361f343fe2798e106af8d9d8506f5305302655a9f", size = 286228, upload-time = "2026-04-27T12:20:34.421Z" },
     { url = "https://files.pythonhosted.org/packages/b7/aa/caed9e5adf742315fc7be2a84196373aab4816e540e38ba0d76cb7584d68/greenlet-3.5.0-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:3ec9ea74e7268ace7f9aab1b1a4e730193fc661b39a993cd91c606c32d4a3628", size = 601775, upload-time = "2026-04-27T12:52:41.045Z" },
     { url = "https://files.pythonhosted.org/packages/c7/af/90ae08497400a941595d12774447f752d3dfe0fbb012e35b76bc5c0ff37e/greenlet-3.5.0-cp312-cp312-manylinux_2_24_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:54d243512da35485fc7a6bf3c178fdda6327a9d6506fcdd62b1abd1e41b2927b", size = 614436, upload-time = "2026-04-27T12:59:41.595Z" },
-    { url = "https://files.pythonhosted.org/packages/3f/e9/4eeadf8cb3403ac274245ba75f07844abc7fa5f6787583fc9156ba741e0f/greenlet-3.5.0-cp312-cp312-manylinux_2_24_s390x.manylinux_2_28_s390x.whl", hash = "sha256:41353ec2ecedf7aa8f682753a41919f8718031a6edac46b8d3dc7ed9e1ceb136", size = 620610, upload-time = "2026-04-27T13:02:39.194Z" },
     { url = "https://files.pythonhosted.org/packages/2b/e0/2e13df68f367e2f9960616927d60857dd7e56aaadd59a47c644216b2f920/greenlet-3.5.0-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:9d280a7f5c331622c69f97eb167f33577ff2d1df282c41cd15907fc0a3ca198c", size = 611388, upload-time = "2026-04-27T12:25:28.008Z" },
-    { url = "https://files.pythonhosted.org/packages/ee/ef/f913b3c0eb7d26d86a2401c5e1546c9d46b657efee724b06f6f4ac5d8824/greenlet-3.5.0-cp312-cp312-manylinux_2_39_riscv64.whl", hash = "sha256:58c1c374fe2b3d852f9b6b11a7dff4c85404e51b9a596fd9e89cf904eb09866d", size = 422775, upload-time = "2026-04-27T13:05:14.261Z" },
     { url = "https://files.pythonhosted.org/packages/82/f7/393c64055132ac0d488ef6be549253b7e6274194863967ddc0bc8f5b87b8/greenlet-3.5.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:1eb67d5adefb5bd2e182d42678a328979a209e4e82eb93575708185d31d1f588", size = 1570768, upload-time = "2026-04-27T12:53:28.099Z" },
     { url = "https://files.pythonhosted.org/packages/b8/4b/eaf7735253522cf56d1b74d672a58f54fc114702ceaf05def59aae72f6e1/greenlet-3.5.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:2628d6c86f6cb0cb45e0c3c54058bbec559f57eaae699447748cb3928150577e", size = 1635983, upload-time = "2026-04-27T12:25:26.903Z" },
     { url = "https://files.pythonhosted.org/packages/4c/fe/4fb3a0805bd5165da5ebf858da7cc01cce8061674106d2cf5bdab32cbfde/greenlet-3.5.0-cp312-cp312-win_amd64.whl", hash = "sha256:d4d9f0624c775f2dfc56ba54d515a8c771044346852a918b405914f6b19d7fd8", size = 238840, upload-time = "2026-04-27T12:23:54.806Z" },
@@ -957,7 +953,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
     { name = "fsspec" },
-    { name = "hf-xet", marker = "platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "hf-xet", marker = "platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
     { name = "packaging" },
     { name = "pyyaml" },
     { name = "requests" },
@@ -1083,9 +1079,9 @@ name = "julius"
 version = "0.2.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1d/c6/5c2aea2b11ead1680bb5b17c996def31f8ccade471cada37cdb93855e06f/julius-0.2.8.tar.gz", hash = "sha256:d691e651200930affea4f6c849c26e95fec846087281ae3d1a7757eac90253d5", size = 48081, upload-time = "2026-06-03T16:05:34.52Z" }
 wheels = [
@@ -1157,9 +1153,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "soundfile" },
     { name = "tabulate" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "tqdm" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9d/5a/b606c87b0a50322200aafb0f0682e719890bf0f045152b53e161090a6e8f/lhotse-1.33.0.tar.gz", hash = "sha256:3e91fca8531fc4c1798d0a6de1b3c7ea6bf2e181df70e5985927a131761c67f5", size = 686482, upload-time = "2026-04-20T13:11:08.579Z" }
@@ -1201,9 +1197,9 @@ dependencies = [
     { name = "packaging" },
     { name = "pytorch-lightning" },
     { name = "pyyaml" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "torchmetrics" },
     { name = "tqdm" },
     { name = "typing-extensions" },
@@ -1497,10 +1493,10 @@ version = "3.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aistore" },
-    { name = "cuda-bindings", marker = "sys_platform != 'darwin' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "cuda-bindings", marker = "sys_platform != 'darwin'" },
     { name = "fsspec" },
     { name = "huggingface-hub" },
-    { name = "numba", marker = "sys_platform == 'darwin' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "numba", marker = "sys_platform == 'darwin'" },
     { name = "numpy" },
     { name = "onnx" },
     { name = "scikit-learn" },
@@ -1508,9 +1504,9 @@ dependencies = [
     { name = "smart-open" },
     { name = "tensorboard" },
     { name = "text-unidecode" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "tqdm" },
     { name = "wrapt" },
 ]
@@ -2174,7 +2170,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "python-dateutil" },
-    { name = "tzdata", marker = "sys_platform == 'emscripten' or sys_platform == 'win32' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "tzdata", marker = "sys_platform == 'emscripten' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e2/17/d7b106e05bfa642e8694451e7d3d759c6a241c5386a5d962e4f66c047e06/pandas-3.0.6.tar.gz", hash = "sha256:66b07ef7315a31bfe1089cd3d71a7de781c9dca986762d0b4fe7c0ef17465d10", size = 4667686, upload-time = "2026-09-17T23:23:18.345Z" }
 wheels = [
@@ -2245,7 +2241,7 @@ name = "portalocker"
 version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pywin32", marker = "sys_platform == 'win32' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5e/77/65b857a69ed876e1951e88aaba60f5ce6120c33703f7cb61a3c894b8c1b6/portalocker-3.2.0.tar.gz", hash = "sha256:1f3002956a54a8c3730586c5c77bf18fae4149e07eaf1c29fc3faf4d5a3f89ac", size = 95644, upload-time = "2025-06-14T13:20:40.03Z" }
 wheels = [
@@ -2320,13 +2316,13 @@ dependencies = [
     { name = "pytorch-metric-learning" },
     { name = "rich" },
     { name = "safetensors" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "torch-audiomentations" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "torchcodec" },
     { name = "torchmetrics" },
 ]
@@ -2534,7 +2530,7 @@ name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
@@ -2597,9 +2593,9 @@ dependencies = [
     { name = "lightning-utilities" },
     { name = "packaging" },
     { name = "pyyaml" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "torchmetrics" },
     { name = "tqdm" },
     { name = "typing-extensions" },
@@ -2616,9 +2612,9 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "scikit-learn" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "tqdm" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9b/80/6e61b1a91debf4c1b47d441f9a9d7fe2aabcdd9575ed70b2811474eb95c3/pytorch-metric-learning-2.9.0.tar.gz", hash = "sha256:27a626caf5e2876a0fd666605a78cb67ef7597e25d7a68c18053dd503830701f", size = 84530, upload-time = "2025-08-17T17:11:19.501Z" }
@@ -2971,7 +2967,7 @@ name = "sqlalchemy"
 version = "2.0.49"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "greenlet", marker = "platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "greenlet", marker = "platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/09/45/461788f35e0364a8da7bda51a1fe1b09762d0c32f12f63727998d85a873b/sqlalchemy-2.0.49.tar.gz", hash = "sha256:d15950a57a210e36dd4cec1aac22787e2a4d57ba9318233e2ef8b2daf9ff2d5f", size = 9898221, upload-time = "2026-04-03T16:38:11.704Z" }
@@ -3138,13 +3134,13 @@ resolution-markers = [
     "platform_machine != 's390x' and sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "filelock", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "fsspec", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "jinja2", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "networkx", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "setuptools", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "sympy", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "typing-extensions", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "filelock", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "fsspec", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "jinja2", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "networkx", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "setuptools", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "sympy", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "typing-extensions", marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.13.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:2fe228aba290d14b9f31b049be550dbd469c3fd3013d7a19705b30454da97027", upload-time = "2026-07-08T12:26:18Z" },
@@ -3165,18 +3161,18 @@ resolution-markers = [
 dependencies = [
     { name = "cuda-bindings", marker = "(sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "(sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "filelock", marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "fsspec", marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "jinja2", marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "networkx", marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
+    { name = "filelock", marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "fsspec", marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "jinja2", marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "networkx", marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
     { name = "nvidia-cudnn-cu13", marker = "(sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "nvidia-cusparselt-cu13", marker = "(sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "nvidia-nccl-cu13", marker = "(sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "nvidia-nvshmem-cu13", marker = "(sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "setuptools", marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "sympy", marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
+    { name = "setuptools", marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "sympy", marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
     { name = "triton", marker = "(sys_platform == 'linux' and extra != 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "typing-extensions", marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
+    { name = "typing-extensions", marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c4/3a/ed0f4d4d1dcde03bced7aac9a28e800abcdc0cbd06b6775044c9fbd877b7/torch-2.13.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:2fe228aba290d14b9f31b049be550dbd469c3fd3013d7a19705b30454da97027", size = 111213045, upload-time = "2026-07-08T16:05:22.997Z" },
@@ -3199,13 +3195,13 @@ resolution-markers = [
     "platform_machine == 's390x' and sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "filelock", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
-    { name = "fsspec", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
-    { name = "jinja2", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
-    { name = "networkx", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
-    { name = "setuptools", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
-    { name = "sympy", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
-    { name = "typing-extensions", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "filelock", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "fsspec", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "jinja2", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "networkx", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "setuptools", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "sympy", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "typing-extensions", marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp312-cp312-linux_s390x.whl", hash = "sha256:ffadde149901c8afa138daa38d898264003cfcf1a3336ca5cd964b5af227d867", upload-time = "2026-07-08T19:28:41Z" },
@@ -3221,13 +3217,13 @@ version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "julius" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "torch-pitch-shift" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/31/8d/2f8fd7e34c75f5ee8de4310c3bd3f22270acd44d1f809e2fe7c12fbf35f8/torch_audiomentations-0.12.0.tar.gz", hash = "sha256:b02d4c5eb86376986a53eb405cca5e34f370ea9284411237508e720c529f7888", size = 52094, upload-time = "2025-01-15T09:07:01.071Z" }
 wheels = [
@@ -3241,12 +3237,12 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
     { name = "primepy" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/79/a6/722a832bca75d5079f6731e005b3d0c2eec7c6c6863d030620952d143d57/torch_pitch_shift-1.2.5.tar.gz", hash = "sha256:6e1c7531f08d0f407a4c55e5ff8385a41355c5c5d27ab7fa08632e51defbd0ed", size = 4725, upload-time = "2024-09-25T19:10:12.922Z" }
 wheels = [
@@ -3321,9 +3317,9 @@ dependencies = [
     { name = "lightning-utilities" },
     { name = "numpy" },
     { name = "packaging" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-8-coro-asr-cuda' or extra != 'extra-8-coro-asr-cpu'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (platform_machine != 's390x' and extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/81/34/39b8b749333db56c0585d7a11fa62a283c087bb1dfc897d69fb8cedbefb1/torchmetrics-1.9.0.tar.gz", hash = "sha256:a488609948600df52d3db4fcdab02e62aab2a85ef34da67037dc3e65b8512faa", size = 581765, upload-time = "2026-03-09T17:41:22.443Z" }
 wheels = [
@@ -3335,7 +3331,7 @@ name = "tqdm"
 version = "4.67.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd8dac228323f2777d886cb206987444e4bce66338dd4/tqdm-4.67.3.tar.gz", hash = "sha256:7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb", size = 169598, upload-time = "2026-02-03T17:35:53.048Z" }
 wheels = [
