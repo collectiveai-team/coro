@@ -61,7 +61,7 @@ from coro.bench.diar_workload import (
 from coro.bench.models.quality import DerStats
 from coro.bench.quality import score_item
 from coro.bench.stm import speaker_timeline_to_stm
-from coro.settings import ServerSettings
+from coro.settings import get_settings
 
 
 @dataclass
@@ -356,7 +356,7 @@ def main() -> None:
     args = _parse_args()
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    hf_token_secret = ServerSettings().hf_token
+    hf_token_secret = get_settings().hf_token
     hf_token = hf_token_secret.get_secret_value() if hf_token_secret else None
 
     region_modes = list(args.regions)

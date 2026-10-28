@@ -64,7 +64,7 @@ uv run --extra recipes --extra cpu -m coro.recipes.canary_decoder_dynamic_quanti
 ## Consumers
 
 `coro/backends/asr/onnx_canary_split.py`'s `decoder_quantization="dynamic_v1_quint8"`
-selector (also `coro/settings.py`'s `asr_decoder_quantization` Server
+selector (also `coro/settings/server.py`'s `asr_decoder_quantization` Server
 Setting) loads `decoder_step.dynamic_v1_quint8.onnx`. `None` loads the fp32
 `decoder_step.onnx` from
 [canary_split_decoder](../canary_split_decoder/README.md) instead, but the

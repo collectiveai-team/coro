@@ -373,7 +373,7 @@ max-complexity = 10
     "UP017",
 ]
 # Settings and CLI use 0.0.0.0 intentionally.
-"coro/settings.py" = ["S104"]
+"coro/settings/server.py" = ["S104"]
 "coro/cli.py" = ["S104"]
 
 

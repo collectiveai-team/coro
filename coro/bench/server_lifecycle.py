@@ -101,7 +101,7 @@ class BenchManagedServer:
     def _build_env(self) -> Mapping[str, str]:
         import os
 
-        env = dict(os.environ)
+        env = dict(os.environ)  # botica: ignore[settings-module] -- the child inherits it
         env["CORO_BACKEND_ASR"] = self._asr_backend
         env["CORO_MODEL_ASR"] = self._asr_model
         env["CORO_BACKEND_DIARIZATION"] = self._diar_backend

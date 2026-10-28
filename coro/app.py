@@ -24,7 +24,7 @@ from coro.api.openai.errors import transcription_exception_handler
 from coro.api.exceptions import TranscriptionError
 from coro.api.rate_limit import ClientRateLimits
 from coro.runtime import RuntimeState
-from coro.settings import ServerSettings
+from coro.settings import ServerSettings, get_settings
 
 if TYPE_CHECKING:
     pass
@@ -77,14 +77,14 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     """Create and configure a FastAPI application.
 
     Args:
-        settings: Server settings. Defaults to ``ServerSettings()``.
+        settings: Server settings. Defaults to ``get_settings()``.
 
     Returns:
         Configured FastAPI instance with no real model loaded.
 
     """
     if settings is None:
-        settings = ServerSettings()
+        settings = get_settings()
 
     runtime = RuntimeState(
         pipeline_selector=settings.pipeline,

@@ -298,7 +298,7 @@ deployment, or mix both:
 
 Each `ServerSettings` field maps to both forms, e.g. `backend_asr` →
 `CORO_BACKEND_ASR` (env) or `--backend-asr` (CLI). Precedence is **CLI flags >
-environment variables > defaults**. See `coro/settings.py` for the full list.
+environment variables > defaults**. See `coro/settings/server.py` for the full list.
 
 ```bash
 # Env vars (add CORO_BACKEND_DIARIZATION to enable speaker labels; omit for ASR-only)
@@ -690,7 +690,7 @@ proxy. See ADR 0024.
 ### Settings reference
 
 Every setting below is available as both an environment variable and a CLI
-flag (CLI flags take precedence). Source of truth: `coro/settings.py`.
+flag (CLI flags take precedence). Source of truth: `coro/settings/server.py`.
 
 | Env var | CLI flag | Default | Description |
 |---|---|---|---|

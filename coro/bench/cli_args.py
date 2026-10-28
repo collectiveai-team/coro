@@ -7,7 +7,6 @@ surface can be read and validated on its own.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +14,7 @@ from pathlib import Path
 from coro.bench.calibration import DEFAULT_CALIBRATION_MARGIN
 from coro.bench.process_lookup import DEFAULT_SERVER_MATCH
 from coro.bench.quarantine import CircularReferenceError, assert_scorable_reference
+from coro.bench.settings import get_settings
 from coro.bench.spanish import SPANISH_PRESETS
 
 _MANAGED_FLAGS = {
@@ -34,19 +34,17 @@ _SAMPLING_SUBCOMMANDS = frozenset({"performance", "all"})
 
 
 def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
+    env = get_settings()
     parser.add_argument(
         "--out-dir",
-        default=os.environ.get(
-            "OUT_DIR",
-            f"/tmp/asr-bench-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        ),
+        default=env.out_dir or Path(f"/tmp/asr-bench-{datetime.now().strftime('%Y%m%d-%H%M%S')}"),
         type=Path,
     )
     parser.add_argument("--reps", type=int, default=1)
     parser.add_argument(
         "--sample-interval",
         type=float,
-        default=float(os.environ.get("SAMPLE_INTERVAL", "0.25")),
+        default=env.sample_interval,
     )
     parser.add_argument("--ami-meetings", nargs="+", default=[])
     parser.add_argument(
@@ -84,13 +82,13 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
     attached.add_argument(
         "--server-pid",
         type=int,
-        default=int(os.environ["SERVER_PID"]) if os.environ.get("SERVER_PID") else None,
+        default=env.server_pid,
         help="Root PID of the Server Process Tree to sample. Bench-attached only; "
         "a Bench-Managed Server reports its own PID.",
     )
     attached.add_argument(
         "--server-match",
-        default=os.environ.get("SERVER_MATCH") or None,
+        default=env.server_match,
         help="Command-line substring identifying the Server Process Tree when "
         f"--server-pid is not given (default: {DEFAULT_SERVER_MATCH!r}). "
         "Bench-attached only.",

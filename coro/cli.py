@@ -22,10 +22,8 @@ import argparse
 import logging
 import sys
 
-from pydantic_settings import CliSettingsSource
-
 from coro.offline import DEFAULT_RESPONSE_FORMAT
-from coro.settings import ServerSettings
+from coro.settings.cli import build_settings_from_cli
 
 SUBCOMMANDS = ("serve", "run", "bench")
 
@@ -38,30 +36,6 @@ commands:
 
 Run `coro <command> --help` for a command's options.
 """
-
-
-def build_settings_from_cli(
-    argv: list[str] | None = None, *, prog: str = "coro serve"
-) -> ServerSettings:
-    """Build ServerSettings honouring CLI flags, env vars, and defaults.
-
-    Args:
-        argv: Optional list of CLI arguments. Defaults to ``sys.argv[1:]``.
-        prog: Program name shown in help output.
-
-    Returns:
-        A populated ``ServerSettings`` instance.
-
-    """
-    cli_source = CliSettingsSource(
-        ServerSettings,
-        cli_parse_args=argv if argv is not None else True,
-        cli_kebab_case=True,
-        cli_avoid_json=True,
-        cli_prog_name=prog,
-        cli_use_class_docs_for_groups=True,
-    )
-    return ServerSettings(_cli_settings_source=cli_source)
 
 
 # MARK: Subcommand Dispatch
