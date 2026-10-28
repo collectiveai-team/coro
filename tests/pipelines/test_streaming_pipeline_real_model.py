@@ -43,12 +43,28 @@ skip_unless_real = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
+def _load_sortformer():
+    """The streaming Sortformer checkpoint, in inference mode."""
+    from nemo.collections.asr.models import SortformerEncLabelModel
+
+    model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
+    # NeMo stub types from_pretrained as str.
+    model.eval()  # pyrefly: ignore[missing-attribute]
+    return model
+
+
+def _noise_pcm(seconds: int, sample_rate: int) -> bytes:
+    """Seeded low-level noise as 16-bit mono PCM."""
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    return (rng.standard_normal(sample_rate * seconds) * 0.1 * 32768).astype(np.int16).tobytes()
+
+
 @skip_unless_real
 @pytest.mark.asyncio
 async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
     """End-to-end smoke test: real ASR + real NeMo diarizer + warmup audio."""
-    from nemo.collections.asr.models import SortformerEncLabelModel
-
     from coro.audio import AudioInput
     from coro.backends.asr.faster_whisper import build_asr_adapter
     from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
@@ -57,10 +73,7 @@ async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
 
     # Load real models
     asr = build_asr_adapter("openai/whisper-small", device="cpu")
-    diar_model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
-    # NeMo stub types from_pretrained as str.
-    diar_model.eval()  # pyrefly: ignore[missing-attribute]
-    factory = NemoStreamingDiarizerFactory(diar_model, tier="very-high")
+    factory = NemoStreamingDiarizerFactory(_load_sortformer(), tier="very-high")
 
     pipeline = StreamingPipeline(
         asr=asr,
@@ -90,9 +103,6 @@ def test_streaming_diarizer_frame_count_matches_audio_duration():
     subsampled frames (sample_rate / window_stride / subsampling_factor), with
     at most one frame of rounding slack.
     """
-    import numpy as np
-    from nemo.collections.asr.models import SortformerEncLabelModel
-
     from coro.backends.diarization.nemo.streaming import NemoStreamingDiarizerFactory
 
     SAMPLE_RATE = 16000
@@ -102,14 +112,10 @@ def test_streaming_diarizer_frame_count_matches_audio_duration():
     # very-high tier chunk is ~27.2s, so 95s exercises 3 full chunks + remainder.
     DURATION_S = 95
 
-    model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
-    # NeMo stub types from_pretrained as str.
-    model.eval()  # pyrefly: ignore[missing-attribute]
-    factory = NemoStreamingDiarizerFactory(model, tier="very-high")
+    factory = NemoStreamingDiarizerFactory(_load_sortformer(), tier="very-high")
     diar = factory()
 
-    rng = np.random.default_rng(0)
-    pcm = (rng.standard_normal(SAMPLE_RATE * DURATION_S) * 0.1 * 32768).astype(np.int16).tobytes()
+    pcm = _noise_pcm(DURATION_S, SAMPLE_RATE)
 
     # Feed 1-second PCM chunks like the streaming pipeline does.
     one_second = SAMPLE_RATE * 2

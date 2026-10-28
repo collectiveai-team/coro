@@ -78,6 +78,23 @@ def _server(app) -> LiveServer:
     return LiveServer(app, ws_ping_interval=PING_SECONDS, ws_ping_timeout=PING_SECONDS)
 
 
+async def _close_and_collect(ws) -> list[dict]:
+    """Send CloseStream and read every frame until the server closes the socket."""
+    await ws.send(json.dumps({"type": "CloseStream"}))
+    return [json.loads(raw) async for raw in ws]
+
+
+def _distinct_frames(count: int) -> list[bytes]:
+    """Frames whose bytes differ, so a dropped or reordered frame changes the digest."""
+    return [
+        hashlib.sha256(i.to_bytes(2, "big")).digest() * (len(FRAME) // 32) for i in range(count)
+    ]
+
+
+def _sha256_hex(chunks: list[bytes]) -> str:
+    return hashlib.sha256(b"".join(chunks)).hexdigest()
+
+
 class TestSlowerThanRealTime:
     async def test_keepalive_survives_a_backlog_and_the_stream_completes(self):
         frames: list[dict] = []
@@ -97,7 +114,6 @@ class TestSlowerThanRealTime:
         assert frames[-1]["duration"] == pytest.approx(20.0, abs=1e-6)
 
     async def test_keepalive_messages_during_a_backlog_do_not_stall_the_socket(self):
-        frames: list[dict] = []
         async with (
             _server(_app(_SlowDiarizer)) as server,
             websockets.connect(
@@ -107,9 +123,7 @@ class TestSlowerThanRealTime:
             for _ in range(200):
                 await ws.send(FRAME)
                 await ws.send(json.dumps({"type": "KeepAlive"}))
-            await ws.send(json.dumps({"type": "CloseStream"}))
-            async for raw in ws:
-                frames.append(json.loads(raw))
+            frames = await _close_and_collect(ws)
         assert [f["type"] for f in frames].count("Metadata") == 1
         assert frames[-1]["duration"] == pytest.approx(20.0, abs=1e-6)
 
@@ -133,22 +147,17 @@ class TestSpilledBacklog:
         # 60 s at once is ~1.9 MB against a 1 MiB in-memory limit, so the
         # tail of the backlog goes through the spill file.
         diarizer = _HashingDiarizer()
-        audio = [
-            hashlib.sha256(i.to_bytes(2, "big")).digest() * (len(FRAME) // 32) for i in range(600)
-        ]
-        frames: list[dict] = []
+        audio = _distinct_frames(600)
         async with (
             _server(_app(lambda: diarizer)) as server,
             websockets.connect(server.ws_url + DIARIZE) as ws,
         ):
             for chunk in audio:
                 await ws.send(chunk)
-            await ws.send(json.dumps({"type": "CloseStream"}))
-            async for raw in ws:
-                frames.append(json.loads(raw))
+            frames = await _close_and_collect(ws)
         assert frames[-1]["type"] == "Metadata"
         assert frames[-1]["duration"] == pytest.approx(60.0, abs=1e-6)
-        assert diarizer.digest.hexdigest() == hashlib.sha256(b"".join(audio)).hexdigest()
+        assert diarizer.digest.hexdigest() == _sha256_hex(audio)
 
 
 class TestClientGone:

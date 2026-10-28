@@ -22,10 +22,11 @@ async def test_a_wav_reports_its_declared_duration(tmp_path):
     assert await probe_duration_seconds(str(path)) == pytest.approx(1.0, abs=1e-3)
 
 
+@pytest.mark.integration
 async def test_a_webm_without_declared_duration_falls_back_to_its_packets(tmp_path):
     # Written to a pipe, the muxer cannot seek back to record the duration:
     # the shape of a browser MediaRecorder upload.
-    webm = subprocess.run(  # noqa: ASYNC221
+    webm = subprocess.run(  # noqa: ASYNC221, BTTEST009 -- ffmpeg muxes the unseekable webm under test
         [
             "ffmpeg",
             "-nostdin",
@@ -46,7 +47,7 @@ async def test_a_webm_without_declared_duration_falls_back_to_its_packets(tmp_pa
     ).stdout
     path = tmp_path / "recording.webm"
     path.write_bytes(webm)
-    declared = subprocess.run(  # noqa: ASYNC221
+    declared = subprocess.run(  # noqa: ASYNC221, BTTEST009 -- real ffprobe shows the webm lacks a duration
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
         capture_output=True,
         text=True,

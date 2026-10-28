@@ -66,14 +66,15 @@ def test_is_ram_backed_is_undetermined_without_a_mount_table(monkeypatch, tmp_pa
     assert is_ram_backed(tmp_path) is None
 
 
+def _write_mountinfo(path: Path, *entries: str) -> Path:
+    path.write_text("\n".join([ROOT_MOUNT_ENTRY, *entries]) + "\n", encoding="utf-8")
+    return path
+
+
 def test_mount_points_containing_spaces_are_decoded(monkeypatch, tmp_path):
     directory = (tmp_path / "spill dir").resolve()
     directory.mkdir()
-    mountinfo = tmp_path / "mountinfo"
-    mountinfo.write_text(
-        "\n".join([ROOT_MOUNT_ENTRY, mountinfo_line(26, directory, "tmpfs")]) + "\n",
-        encoding="utf-8",
-    )
+    mountinfo = _write_mountinfo(tmp_path / "mountinfo", mountinfo_line(26, directory, "tmpfs"))
     monkeypatch.setattr(fsinfo, "_MOUNTINFO_PATH", mountinfo)
     assert is_ram_backed(directory) is True
 
@@ -105,15 +106,25 @@ def test_default_prefers_the_temp_dir_when_it_is_real_disk(monkeypatch, fake_mou
     assert resolve_spill_dir(None) == str(mounts.path("disk"))
 
 
-def test_default_avoids_a_ram_backed_temp_dir(monkeypatch, fake_mounts):
+@pytest.fixture
+def ram_temp_dir_and_disk_cache(monkeypatch, fake_mounts):
+    """The system temp dir on tmpfs and XDG_CACHE_HOME on real disk."""
     mounts = fake_mounts(ram="tmpfs", cache="ext4")
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(mounts.path("ram")))
     monkeypatch.setenv("XDG_CACHE_HOME", str(mounts.path("cache")))
+    return mounts
 
+
+def test_default_avoids_a_ram_backed_temp_dir(ram_temp_dir_and_disk_cache):
     resolved = resolve_spill_dir(None)
 
     assert is_ram_backed(resolved) is not True
-    assert Path(resolved).is_relative_to(mounts.path("cache"))
+
+
+def test_default_falls_back_to_the_cache_dir(ram_temp_dir_and_disk_cache):
+    resolved = resolve_spill_dir(None)
+
+    assert Path(resolved).is_relative_to(ram_temp_dir_and_disk_cache.path("cache"))
 
 
 def test_default_fails_loudly_when_every_candidate_is_ram_backed(monkeypatch, fake_mounts):

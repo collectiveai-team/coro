@@ -373,7 +373,7 @@ def test_rendered_report_labels_each_metric_lane(tmp_path):
 
     quality_dir = tmp_path / "quality"
     quality_dir.mkdir()
-    quality_dir.joinpath("summary.json").write_text(
+    (quality_dir / "summary.json").write_text(
         json.dumps(
             {
                 "combined": {

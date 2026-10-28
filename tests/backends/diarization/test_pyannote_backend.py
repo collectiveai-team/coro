@@ -63,7 +63,7 @@ class _FakePipeline:
             return self._annotation
         return SimpleNamespace(speaker_diarization=self._annotation)
 
-    def to(self, device):  # pragma: no cover - trivial
+    def to(self, device):
         return self
 
 

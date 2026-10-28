@@ -66,6 +66,29 @@ def _uploaded_filename(body: bytes) -> str:
     return match.group(1).decode() if match else ""
 
 
+def _audio(tmp_path: Path, stem: str) -> Path:
+    """A placeholder WAV upload; the stub server never decodes it."""
+    path = tmp_path / f"{stem}.wav"
+    path.write_bytes(b"RIFF" + b"\x00" * 200)
+    return path
+
+
+def _ref_stm(tmp_path: Path, stem: str, line: str) -> Path:
+    path = tmp_path / f"{stem}.ref.stm"
+    path.write_text(line)
+    return path
+
+
+def _out_dir(tmp_path: Path) -> Path:
+    out_dir = tmp_path / "results"
+    out_dir.mkdir()
+    return out_dir
+
+
+def _read_json(path: Path) -> dict:
+    return json.loads(path.read_text())
+
+
 class _E2EHandler(BaseHTTPRequestHandler):
     uploads: ClassVar[list[str]] = []
     """Filenames posted to the transcription endpoint, in request order."""
@@ -115,14 +138,9 @@ class TestE2EAdhocAudio:
     def test_single_audio_produces_artifacts(self, e2e_server, tmp_path: Path):
         from coro.bench.orchestrate import run_workload
 
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-
-        ref_stm = tmp_path / "meeting1.ref.stm"
-        ref_stm.write_text("meeting1 1 SPEAKER_00 0.000 1.500 hello world\n")
-
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
+        audio = _audio(tmp_path, "meeting1")
+        ref_stm = _ref_stm(tmp_path, "meeting1", "meeting1 1 SPEAKER_00 0.000 1.500 hello world\n")
+        out_dir = _out_dir(tmp_path)
 
         items = [
             {
@@ -149,7 +167,7 @@ class TestE2EAdhocAudio:
         assert (ref_dir / "meeting1.ref.stm").exists()
         assert (out_dir / "manifest.json").exists()
 
-        resp_data = json.loads((resp_dir / "meeting1_rep1.json").read_text())
+        resp_data = _read_json(resp_dir / "meeting1_rep1.json")
         assert resp_data["task"] == "transcribe"
 
         hyp_text = (hyp_dir / "meeting1.hyp.stm").read_text()
@@ -162,14 +180,9 @@ class TestE2EAdhocAudio:
     def test_manifest_contains_expected_fields(self, e2e_server, tmp_path: Path):
         from coro.bench.orchestrate import run_workload
 
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-
-        ref_stm = tmp_path / "meeting1.ref.stm"
-        ref_stm.write_text("meeting1 1 SPK_00 0.0 1.0 test\n")
-
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
+        audio = _audio(tmp_path, "meeting1")
+        ref_stm = _ref_stm(tmp_path, "meeting1", "meeting1 1 SPK_00 0.0 1.0 test\n")
+        out_dir = _out_dir(tmp_path)
 
         items = [
             {
@@ -187,7 +200,7 @@ class TestE2EAdhocAudio:
             subcommand="all",
         )
 
-        manifest = json.loads((out_dir / "manifest.json").read_text())
+        manifest = _read_json(out_dir / "manifest.json")
         assert "timestamp" in manifest
         assert "hostname" in manifest
         assert "cli_args" in manifest
@@ -445,11 +458,8 @@ class TestE2EAllSubcommand:
     def test_adhoc_audio_without_ref_skips_quality(self, e2e_server, tmp_path: Path):
         from coro.bench.orchestrate import run_all_workload
 
-        audio = tmp_path / "my.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
+        audio = _audio(tmp_path, "my")
+        out_dir = _out_dir(tmp_path)
 
         items = [
             {
@@ -473,7 +483,7 @@ class TestE2EAllSubcommand:
         assert not (out_dir / "hyp" / "my.hyp.stm").exists()
         assert not (out_dir / "quality" / "my.json").exists()
 
-        quality_summary = json.loads((out_dir / "quality" / "summary.json").read_text())
+        quality_summary = _read_json(out_dir / "quality" / "summary.json")
         assert quality_summary["n_skipped"] == 1
         assert quality_summary["n_succeeded"] == 0
 
@@ -482,21 +492,12 @@ class TestE2EAllSubcommand:
 
         from coro.bench.orchestrate import run_all_workload
 
-        audio1 = tmp_path / "IB4001.wav"
-        audio1.write_bytes(b"RIFF" + b"\x00" * 200)
-        ref1 = tmp_path / "IB4001.ref.stm"
-        ref1.write_text("IB4001 1 SPEAKER_00 0.000 1.500 hello world\n")
-
-        audio2 = tmp_path / "IN1001.wav"
-        audio2.write_bytes(b"RIFF" + b"\x00" * 200)
-        ref2 = tmp_path / "IN1001.ref.stm"
-        ref2.write_text("IN1001 1 SPEAKER_00 0.000 1.500 test data\n")
-
-        audio3 = tmp_path / "adhoc.wav"
-        audio3.write_bytes(b"RIFF" + b"\x00" * 200)
-
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
+        audio1 = _audio(tmp_path, "IB4001")
+        ref1 = _ref_stm(tmp_path, "IB4001", "IB4001 1 SPEAKER_00 0.000 1.500 hello world\n")
+        audio2 = _audio(tmp_path, "IN1001")
+        ref2 = _ref_stm(tmp_path, "IN1001", "IN1001 1 SPEAKER_00 0.000 1.500 test data\n")
+        audio3 = _audio(tmp_path, "adhoc")
+        out_dir = _out_dir(tmp_path)
 
         items = [
             {"item_id": "IB4001", "audio_path": audio1, "ref_stm_path": ref1},
@@ -541,6 +542,6 @@ class TestE2EAllSubcommand:
         assert (out_dir / "quality" / "IN1001.json").exists()
         assert not (out_dir / "quality" / "adhoc.json").exists()
 
-        quality_summary = json.loads((out_dir / "quality" / "summary.json").read_text())
+        quality_summary = _read_json(out_dir / "quality" / "summary.json")
         assert quality_summary["n_skipped"] == 1
         assert quality_summary["n_succeeded"] == 2

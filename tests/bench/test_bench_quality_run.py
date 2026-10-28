@@ -84,50 +84,93 @@ def e2e_server():
     thread.join()
 
 
+def _audio(tmp_path: Path, stem: str) -> Path:
+    """A placeholder WAV upload; the stub server never decodes it."""
+    path = tmp_path / f"{stem}.wav"
+    path.write_bytes(b"RIFF" + b"\x00" * 200)
+    return path
+
+
+def _ref_stm(tmp_path: Path, stem: str, line: str) -> Path:
+    path = tmp_path / f"{stem}.ref.stm"
+    path.write_text(line)
+    return path
+
+
+def _out_dir(tmp_path: Path) -> Path:
+    out_dir = tmp_path / "results"
+    out_dir.mkdir()
+    return out_dir
+
+
+def _read_json(path: Path) -> dict:
+    return json.loads(path.read_text())
+
+
+def _run_quality(items: list[dict], base_url: str, out_dir: Path) -> Path:
+    """Run the quality subcommand and return its ``quality`` directory."""
+    from coro.bench.orchestrate import run_workload
+
+    run_workload(
+        items=items,
+        base_url=base_url,
+        out_dir=out_dir,
+        reps=1,
+        subcommand="quality",
+        der_collar=0.0,
+        der_regions="all",
+    )
+    return out_dir / "quality"
+
+
+class _FailAfterFirstItem:
+    """Scores the first item for real and returns an error result for the rest,
+    mimicking ``score_item``'s own error-result contract."""
+
+    def __init__(self, real_score_item) -> None:
+        self._real_score_item = real_score_item
+        self.calls = 0
+
+    def __call__(self, ref_path, hyp_path, **kwargs):
+        self.calls += 1
+        if self.calls > 1:
+            return ScoreResult(
+                metrics=None,
+                error=ScoreError(type="RuntimeError", message="scoring failed for meeting2"),
+            )
+        return self._real_score_item(ref_path, hyp_path, **kwargs)
+
+
+@pytest.fixture()
+def one_item_quality_dir(e2e_server, tmp_path: Path) -> Path:
+    items = [
+        {
+            "item_id": "meeting1",
+            "audio_path": _audio(tmp_path, "meeting1"),
+            "ref_stm_path": _ref_stm(
+                tmp_path, "meeting1", "meeting1 1 SPEAKER_00 0.000 1.500 hello world\n"
+            ),
+            "audio_seconds": 3.5,
+        }
+    ]
+    return _run_quality(items, e2e_server, _out_dir(tmp_path))
+
+
 class TestQualityRun:
-    def test_quality_run_produces_artifacts(self, e2e_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_workload
+    def test_quality_run_writes_the_item_score(self, one_item_quality_dir: Path):
+        assert (one_item_quality_dir / "meeting1.json").exists()
 
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-
-        ref_stm = tmp_path / "meeting1.ref.stm"
-        ref_stm.write_text("meeting1 1 SPEAKER_00 0.000 1.500 hello world\n")
-
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
-
-        items = [
-            {
-                "item_id": "meeting1",
-                "audio_path": audio,
-                "ref_stm_path": ref_stm,
-                "audio_seconds": 3.5,
-            }
-        ]
-
-        run_workload(
-            items=items,
-            base_url=e2e_server,
-            out_dir=out_dir,
-            reps=1,
-            subcommand="quality",
-            der_collar=0.0,
-            der_regions="all",
-        )
-
-        quality_dir = out_dir / "quality"
-        assert (quality_dir / "meeting1.json").exists()
-        assert (quality_dir / "summary.json").exists()
-
-        item_data = json.loads((quality_dir / "meeting1.json").read_text())
+        item_data = _read_json(one_item_quality_dir / "meeting1.json")
         assert item_data["session_id"] == "meeting1"
         assert item_data["audio_seconds"] == pytest.approx(3.5, abs=1e-9)
         assert item_data["metrics"] is not None
         assert "cpwer" in item_data["metrics"]
         assert "der" in item_data["metrics"]
 
-        summary = json.loads((quality_dir / "summary.json").read_text())
+    def test_quality_run_writes_the_summary(self, one_item_quality_dir: Path):
+        assert (one_item_quality_dir / "summary.json").exists()
+
+        summary = _read_json(one_item_quality_dir / "summary.json")
         assert summary["n_succeeded"] == 1
         assert summary["n_failed"] == 0
         assert "combined" in summary
@@ -135,68 +178,26 @@ class TestQualityRun:
         assert summary["per_item"][0]["session_id"] == "meeting1"
 
     def test_quality_run_isolates_failures(self, e2e_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_workload
-
-        audio1 = tmp_path / "meeting1.wav"
-        audio1.write_bytes(b"RIFF" + b"\x00" * 200)
-        audio2 = tmp_path / "meeting2.wav"
-        audio2.write_bytes(b"RIFF" + b"\x00" * 200)
-
-        ref1 = tmp_path / "meeting1.ref.stm"
-        ref1.write_text("meeting1 1 A 0.0 1.0 hello\n")
-        ref2 = tmp_path / "meeting2.ref.stm"
-        ref2.write_text("meeting2 1 A 0.0 1.0 world\n")
-
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
+        from coro.bench import quality as quality_mod
 
         items = [
             {
-                "item_id": "meeting1",
-                "audio_path": audio1,
-                "ref_stm_path": ref1,
+                "item_id": stem,
+                "audio_path": _audio(tmp_path, stem),
+                "ref_stm_path": _ref_stm(tmp_path, stem, f"{stem} 1 A 0.0 1.0 {word}\n"),
                 "audio_seconds": 1.0,
-            },
-            {
-                "item_id": "meeting2",
-                "audio_path": audio2,
-                "ref_stm_path": ref2,
-                "audio_seconds": 1.0,
-            },
+            }
+            for stem, word in (("meeting1", "hello"), ("meeting2", "world"))
         ]
+        scorer = _FailAfterFirstItem(quality_mod.score_item)
 
-        # Force the second item's scoring to fail while the first succeeds,
-        # mimicking score_item's own error-result contract.
-        from coro.bench import quality as quality_mod
+        with patch.object(quality_mod, "score_item", autospec=True, side_effect=scorer):
+            quality_dir = _run_quality(items, e2e_server, _out_dir(tmp_path))
 
-        real_score_item = quality_mod.score_item
-        call_count = [0]
-
-        def fail_on_second(ref_path, hyp_path, **kwargs):
-            call_count[0] += 1
-            if call_count[0] > 1:
-                return ScoreResult(
-                    metrics=None,
-                    error=ScoreError(type="RuntimeError", message="scoring failed for meeting2"),
-                )
-            return real_score_item(ref_path, hyp_path, **kwargs)
-
-        with patch.object(quality_mod, "score_item", autospec=True, side_effect=fail_on_second):
-            run_workload(
-                items=items,
-                base_url=e2e_server,
-                out_dir=out_dir,
-                reps=1,
-                subcommand="quality",
-                der_collar=0.0,
-                der_regions="all",
-            )
-
-        quality_dir = out_dir / "quality"
-        item2 = json.loads((quality_dir / "meeting2.json").read_text())
+        item2 = _read_json(quality_dir / "meeting2.json")
         assert item2["metrics"] is None
         assert "error" in item2
 
-        summary = json.loads((quality_dir / "summary.json").read_text())
+        summary = _read_json(quality_dir / "summary.json")
         assert summary["n_succeeded"] == 1
         assert summary["n_failed"] == 1

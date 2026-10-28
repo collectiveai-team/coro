@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 from pathlib import Path
 from typing import ClassVar
 
@@ -147,22 +148,40 @@ class TestPlanFetch:
         assert narrow.download_bytes < wide.download_bytes
 
 
+class _RangeServer:
+    """In-memory stand-in for ``http_get``/``http_size`` that records each Range header."""
+
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+        self.ranges: list[str] = []
+
+    def get(self, url, *, headers=None, timeout=60):
+        requested = (headers or {})["Range"]
+        self.ranges.append(requested)
+        start, end = requested.removeprefix("bytes=").split("-")
+        return self.payload[int(start) : int(end) + 1]
+
+    def size(self, url, timeout=60):
+        return len(self.payload)
+
+
 class TestHttpRangeFile:
     def test_reads_are_issued_as_ranges(self, monkeypatch):
-        payload = bytes(range(256))
-        calls: list[str] = []
-
-        def fake_get(url, *, headers=None, timeout=60):
-            calls.append((headers or {})["Range"])
-            start, end = (headers or {})["Range"].removeprefix("bytes=").split("-")
-            return payload[int(start) : int(end) + 1]
-
-        monkeypatch.setattr(hf_parquet, "http_size", lambda url, timeout=60: len(payload))
-        monkeypatch.setattr(hf_parquet, "http_get", fake_get)
+        server = _RangeServer(bytes(range(256)))
+        monkeypatch.setattr(hf_parquet, "http_size", server.size)
+        monkeypatch.setattr(hf_parquet, "http_get", server.get)
 
         handle = hf_parquet.HttpRangeFile("https://example.invalid/x.parquet")
         handle.seek(-16, io.SEEK_END)
 
-        assert handle.read(16) == payload[240:]
-        assert calls == ["bytes=240-255"]
+        assert handle.read(16) == server.payload[240:]
+        assert server.ranges == ["bytes=240-255"]
         assert handle.bytes_fetched == 16
+
+
+class TestMissingPyarrow:
+    def test_reading_rows_without_pyarrow_names_the_install_command(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "pyarrow.parquet", None)
+
+        with pytest.raises(RuntimeError, match="uv sync --group bench"):
+            list(hf_parquet.iter_parquet_rows(["unused.parquet"], limit=1, columns=["id"]))

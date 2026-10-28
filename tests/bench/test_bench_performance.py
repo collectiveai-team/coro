@@ -95,6 +95,42 @@ def _mock_sample_fn(pid: int) -> ProcessTreeSample:
     )
 
 
+def _sampled(pid: int, seconds: float) -> Any:
+    """A Sampler that ran for ``seconds`` against the mock process tree."""
+    from coro.bench.sampling import Sampler
+
+    sampler = Sampler(pid=pid, interval=0.05, sample_fn=_mock_sample_fn)
+    sampler.start()
+    time.sleep(seconds)
+    sampler.stop()
+    return sampler
+
+
+def _read_csv(path: Path) -> tuple[list[str] | None, list[dict[str, str]]]:
+    with path.open() as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        return (list(reader.fieldnames) if reader.fieldnames else None), rows
+
+
+def _audio(tmp_path: Path, stem: str, size: int = 200) -> Path:
+    """A placeholder WAV upload; the stub server never decodes it."""
+    path = tmp_path / f"{stem}.wav"
+    path.write_bytes(b"RIFF" + b"\x00" * size)
+    return path
+
+
+def _out_dir(tmp_path: Path) -> Path:
+    out_dir = tmp_path / "results"
+    out_dir.mkdir()
+    return out_dir
+
+
+def _names_by_mtime(directory: Path, pattern: str) -> list[str]:
+    files = sorted(directory.glob(pattern), key=lambda p: p.stat().st_mtime)
+    return [f.stem for f in files]
+
+
 class TestSampler:
     def test_collects_samples_when_started(self):
         from coro.bench.sampling import Sampler
@@ -110,26 +146,18 @@ class TestSampler:
         assert sampler.samples[0]["pss_kb"] == 100123
 
     def test_write_csv_writes_valid_resource_csv(self, tmp_path: Path):
-        from coro.bench.sampling import Sampler
-
-        sampler = Sampler(pid=123, interval=0.05, sample_fn=_mock_sample_fn)
-        sampler.start()
-        time.sleep(0.15)
-        sampler.stop()
+        sampler = _sampled(pid=123, seconds=0.15)
 
         csv_path = tmp_path / "perf" / "resource_item1_rep1.csv"
         sampler.write_csv(csv_path)
 
         assert csv_path.exists()
-        with csv_path.open() as f:
-            reader = csv.DictReader(f)
-            headers = reader.fieldnames
-            assert headers is not None
-            assert headers == RESOURCE_FIELDNAMES
-            rows = list(reader)
-            assert len(rows) == len(sampler.samples)
-            assert rows[0]["root_pid"] == "123"
-            assert "time_to_first_delta_s" in headers
+        headers, rows = _read_csv(csv_path)
+        assert headers is not None
+        assert headers == RESOURCE_FIELDNAMES
+        assert len(rows) == len(sampler.samples)
+        assert rows[0]["root_pid"] == "123"
+        assert "time_to_first_delta_s" in headers
 
     def test_backfill_sets_fields_on_all_rows(self):
         from coro.bench.sampling import Sampler
@@ -398,13 +426,9 @@ class TestFullPerformanceRun:
     def test_reps_grouped_by_item_order(self, stub_server, tmp_path: Path):
         from coro.bench.orchestrate import run_performance_workload
 
-        audio1 = tmp_path / "a1.wav"
-        audio1.write_bytes(b"RIFF" + b"\x00" * 100)
-        audio2 = tmp_path / "a2.wav"
-        audio2.write_bytes(b"RIFF" + b"\x00" * 100)
-
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
+        audio1 = _audio(tmp_path, "a1", size=100)
+        audio2 = _audio(tmp_path, "a2", size=100)
+        out_dir = _out_dir(tmp_path)
 
         items = [
             {"item_id": "a1", "audio_path": audio1, "ref_stm_path": None},
@@ -421,18 +445,7 @@ class TestFullPerformanceRun:
             sample_interval=0.05,
         )
 
-        perf_dir = out_dir / "performance"
-        mtimes = []
-        for item_id in ["a1", "a1", "a2", "a2"]:
-            rep = len(mtimes) % 2 + 1 if item_id == "a1" else len(mtimes) - 2 + 1
-            p = perf_dir / f"resource_{item_id}_rep{rep}.csv"
-            mtimes.append(p.stat().st_mtime)
-
-        csv_files = sorted(
-            perf_dir.glob("resource_*.csv"),
-            key=lambda p: p.stat().st_mtime,
-        )
-        names = [f.stem for f in csv_files]
+        names = _names_by_mtime(out_dir / "performance", "resource_*.csv")
         assert names.index("resource_a1_rep1") < names.index("resource_a1_rep2")
         assert names.index("resource_a1_rep2") < names.index("resource_a2_rep1")
         assert names.index("resource_a2_rep1") < names.index("resource_a2_rep2")
@@ -557,10 +570,8 @@ class TestStreamingPerformanceRun:
     def test_summary_includes_ttft_aggregates_when_streaming(self, sse_stub_server, tmp_path: Path):
         from coro.bench.orchestrate import run_performance_workload
 
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
+        audio = _audio(tmp_path, "meeting1")
+        out_dir = _out_dir(tmp_path)
         items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
 
         run_performance_workload(
@@ -576,9 +587,7 @@ class TestStreamingPerformanceRun:
 
         summary = json.loads((out_dir / "performance" / "summary.json").read_text())
         m1_agg = summary["per_item_aggregation"]["meeting1"]
-        assert "time_to_first_delta_s" in m1_agg, (
-            f"Expected TTFT aggregates, got: {list(m1_agg.keys())}"
-        )
+        assert "time_to_first_delta_s" in m1_agg, f"Expected TTFT aggregates, got: {list(m1_agg)}"
         ttft_agg = m1_agg["time_to_first_delta_s"]
         for key in ("median", "min", "max", "mean", "stddev"):
             assert key in ttft_agg, f"Missing {key} in TTFT aggregates"

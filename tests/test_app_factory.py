@@ -64,10 +64,9 @@ async def test_health_not_ready_when_no_asr_adapter(app):
     assert response.json()["ready"] is False
 
 
-@pytest.mark.integration  # reaches the Hugging Face Hub at startup
-@pytest.mark.asyncio
-async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
-    """CORO_WARMUP=disabled skips Server Warmup and reports ready."""
+@pytest.fixture
+def warmup_disabled_health(caplog) -> dict:
+    """/health of a server started with CORO_WARMUP=disabled, WARNING logs captured."""
     from unittest.mock import patch
 
     from starlette.testclient import TestClient
@@ -79,15 +78,27 @@ async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
 
         with caplog.at_level(logging.WARNING, logger="coro.app"), TestClient(application) as client:
             response = client.get("/health")
-
-    body = response.json()
-    assert body["warmup_ready"] is True
-    assert body["ready"] is True
-    assert any("warmup" in r.message.lower() for r in caplog.records)
+    return response.json()
 
 
-def test_warmup_passes_and_logs_the_fallback_language_for_canary(caplog):
-    """Server Warmup passes asr_fallback_language explicitly to onnx-canary-split and logs it."""
+@pytest.mark.integration  # reaches the Hugging Face Hub at startup
+def test_warmup_disabled_reports_ready(warmup_disabled_health):
+    """CORO_WARMUP=disabled skips Server Warmup and reports ready."""
+    assert warmup_disabled_health["warmup_ready"] is True
+    assert warmup_disabled_health["ready"] is True
+
+
+@pytest.mark.integration  # reaches the Hugging Face Hub at startup
+def test_warmup_disabled_logs_that_warmup_was_skipped(warmup_disabled_health, caplog):
+    assert any("warmup" in r.message.lower() for r in caplog.get_records("setup"))
+
+
+@pytest.fixture
+def canary_warmup(caplog):
+    """Start an onnx-canary-split server with warmup enabled and fallback language ``es``.
+
+    Returns the /health body and the mock that stood in for the warmup transcription.
+    """
     from unittest.mock import AsyncMock, patch
 
     from starlette.testclient import TestClient
@@ -115,12 +126,22 @@ def test_warmup_passes_and_logs_the_fallback_language_for_canary(caplog):
             TestClient(application) as client,
         ):
             response = client.get("/health")
+    return response.json(), mock_transcribe
 
-    assert response.json()["warmup_ready"] is True
+
+def test_warmup_passes_the_fallback_language_for_canary(canary_warmup):
+    """Server Warmup passes asr_fallback_language explicitly to onnx-canary-split."""
+    health, mock_transcribe = canary_warmup
+
+    assert health["warmup_ready"] is True
     mock_transcribe.assert_awaited_once()
     assert mock_transcribe.call_args.kwargs["language"] == "es"
+
+
+def test_warmup_logs_the_fallback_language_for_canary(canary_warmup, caplog):
     assert any(
-        "warmup" in r.message.lower() and "language=es" in r.message.lower() for r in caplog.records
+        "warmup" in r.message.lower() and "language=es" in r.message.lower()
+        for r in caplog.get_records("setup")
     )
 
 

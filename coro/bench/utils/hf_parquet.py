@@ -31,7 +31,7 @@ def _require_pyarrow():
     """Import pyarrow.parquet, or fail with an actionable install hint."""
     try:
         import pyarrow.parquet as pq
-    except ImportError as exc:  # pragma: no cover - exercised only without pyarrow
+    except ImportError as exc:
         raise RuntimeError(
             "pyarrow is required to fetch Hugging Face Parquet corpora.\n"
             "Install the bench tooling with: uv sync --group bench"

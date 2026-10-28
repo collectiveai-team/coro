@@ -139,6 +139,17 @@ class _ChunkedUpload:
         return self._chunk
 
 
+async def _with_peak_traced_memory(awaitable):
+    """Await ``awaitable`` under tracemalloc; return its result and the peak bytes traced."""
+    tracemalloc.start()
+    try:
+        result = await awaitable
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    return result, peak
+
+
 @pytest.mark.asyncio
 async def test_audio_input_from_upload_does_not_hold_the_upload_in_memory():
     """A large upload is spooled chunk-by-chunk rather than accumulated and joined.
@@ -152,12 +163,9 @@ async def test_audio_input_from_upload_does_not_hold_the_upload_in_memory():
     chunk_count = 16
     expected_size = len(chunk) * chunk_count
 
-    tracemalloc.start()
-    try:
-        audio = await AudioInput.from_upload(_ChunkedUpload(chunk, count=chunk_count))
-        _, peak = tracemalloc.get_traced_memory()
-    finally:
-        tracemalloc.stop()
+    audio, peak = await _with_peak_traced_memory(
+        AudioInput.from_upload(_ChunkedUpload(chunk, count=chunk_count))
+    )
 
     try:
         assert audio._data is None, "file-backed input must not retain the encoded bytes"
@@ -321,6 +329,7 @@ async def test_stream_pcm_from_file_rejects_empty_output(monkeypatch):
             pass
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_convert_to_pcm_bytes_decodes_video_container(tmp_path):
     # Not skipped when ffmpeg is missing: it is a runtime dependency, so its
@@ -329,7 +338,7 @@ async def test_convert_to_pcm_bytes_decodes_video_container(tmp_path):
     ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
 
     video_path = tmp_path / "sample.mp4"
-    subprocess.run(  # noqa: ASYNC221, S603
+    subprocess.run(  # noqa: ASYNC221, S603, BTTEST009 -- ffmpeg muxes the video the real decoder reads
         [
             ffmpeg,
             "-v",

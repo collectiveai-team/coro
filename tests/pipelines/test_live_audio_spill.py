@@ -75,7 +75,7 @@ async def test_interleaved_push_and_pull_preserve_order(tmp_path):
     for i, chunk in enumerate(sent):
         await source.push(chunk)
         if i % 3 == 0:
-            received.append(await anext(pull))
+            received += [await anext(pull)]
     await source.close()
     received += [chunk async for chunk in pull]
     assert received == sent

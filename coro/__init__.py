@@ -12,7 +12,7 @@ try:
     __version__ = _metadata["Version"]
     __summary__ = _metadata["Summary"]
     __license__ = _metadata["License-Expression"]
-except PackageNotFoundError:  # pragma: no cover - uninstalled source tree
+except PackageNotFoundError:  # pragma: no cover  # noqa: BTTEST004 -- uninstalled source tree
     __version__ = "0.0.0"
     __summary__ = ""
     __license__ = ""
