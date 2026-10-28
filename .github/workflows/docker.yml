@@ -45,6 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           fetch-depth: 0 # hatch-vcs needs tags to resolve the version
 
       # CUDA base + torch-cuda + nemo layers are multi-GB; reclaim runner disk.
@@ -63,7 +64,8 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.12"
-          enable-cache: true
+          # A cache restored into a publishing job could poison the artifact (zizmor cache-poisoning).
+          enable-cache: false
 
       - name: Resolve version (PEP 440 via hatch-vcs)
         id: ver

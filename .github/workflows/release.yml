@@ -51,6 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           # hatch-vcs needs the full history + tags to derive the version.
           fetch-depth: 0
 
@@ -58,7 +59,8 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           version: "0.11.12"
-          enable-cache: true
+          # A cache restored into a publishing job could poison the artifact (zizmor cache-poisoning).
+          enable-cache: false
 
       - name: Build sdist and wheel
         run: uv build
@@ -108,4 +110,5 @@ jobs:
       - name: Dispatch PyPI publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run pypi.yml -f ref="${{ github.ref_name }}"
+          REF_NAME: ${{ github.ref_name }}
+        run: gh workflow run pypi.yml -f ref="$REF_NAME"

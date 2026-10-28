@@ -5,6 +5,8 @@ ARG CORE_IMAGE=ubuntu:noble
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS astral-uv-source
 FROM ${CORE_IMAGE} as devcontainer
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 
 ENV EDITOR=vim
 
@@ -19,7 +21,7 @@ ENV UV_VERSION=${UV_VERSION}
 ENV UV_PYTHON_PREFERENCE=system
 
 # add es_AR locale but en_US is default
-RUN apt update && apt install -y locales \
+RUN apt-get update && apt-get install -y locales \
     && sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
     && sed -i -e 's/# es_AR.UTF-8 UTF-8/es_AR.UTF-8 UTF-8/' /etc/locale.gen \
     && dpkg-reconfigure --frontend=noninteractive locales \
@@ -27,8 +29,8 @@ RUN apt update && apt install -y locales \
 ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 
 # Install basic tools
-RUN apt update \
-    && apt install software-properties-common -y \
+RUN apt-get update \
+    && apt-get install software-properties-common -y \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -68,7 +70,7 @@ RUN curl -fsSL https://get.docker.com | sh && \
     usermod -aG docker $DEVCONTAINER_USER
 
 # Install dev dependences & tools
-RUN apt update && apt install -y \
+RUN apt-get update && apt-get install -y \
     apt-transport-https \
     lsb-release \
     gnupg \
