@@ -1,0 +1,69 @@
+name: osv-scanner
+
+# CES-119: osv-scanner checks the lockfile against OSV.dev.
+#
+# Two scans, split by what can cause a finding:
+#
+# - A pull request is judged only on what it changes. osv-scanner-reusable-pr.yml scans the
+#   base and the head and fails only on vulnerabilities the PR introduces. A full scan on every
+#   PR turns every open PR red the day a CVE is disclosed against a dependency already on main,
+#   whatever the PR touches.
+# - main, the weekly schedule and a manual run get the full scan. A newly disclosed CVE in an
+#   existing dependency goes red on main, once, and is fixed there.
+#
+# A branch protection rule that requires the scan of a pull request names the job
+# `osv-scanner (new in this PR)`: GitHub counts a skipped job, which the
+# `osv-scanner` one is on a pull request, as passing.
+#
+# A private repository without GitHub Code Security cannot upload SARIF to Security > Code
+# Scanning: add `upload-sarif: false` under `with:` of both jobs. `fail-on-vuln` (default true)
+# still fails the check, and the findings are in the job log.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Re-audit weekly so newly disclosed CVEs surface without a code change.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: osv-scanner-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # A called workflow cannot hold more permissions than its caller, and the
+  # reusable job requests `security-events: write` to upload SARIF. Granting
+  # less makes the run fail at startup with zero jobs, so these are restated
+  # on each job rather than inherited from the top-level `contents: read`.
+  #
+  # Both are pinned to an exact immutable tag: `google/osv-scanner-action`
+  # publishes no floating `v2` tag or branch, so `@v2` is an unresolvable ref
+  # (startup failure, not a scan failure).
+  osv-scanner:
+    name: osv-scanner
+    if: github.event_name != 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.0
+    with:
+      scan-args: |-
+        --lockfile=uv.lock
+
+  osv-scanner-pr:
+    name: osv-scanner (new in this PR)
+    if: github.event_name == 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.7.0
+    with:
+      scan-args: |-
+        --lockfile=uv.lock

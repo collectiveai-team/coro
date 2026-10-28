@@ -1,0 +1,87 @@
+name: botica-update
+
+# Moves the project to the newest release of botica, once a week. `prek update` moves the `rev` of
+# the mirror collectiveai-team/botica-pre-commit to the newest release that is not a prerelease and
+# is at least 7 days old (the parameter `cooldown-days` of the recipes, which
+# dependabot.yml also waits). `.github/scripts/botica_update.py` then writes that version in each
+# `botica@<version>` of prek.toml, .pre-commit-config.yaml and .github/workflows/, and in the
+# parameter `botica-version` of the configuration of botica. The change goes to one pull request on
+# the branch `chore/botica-update`, whose checks run the new release.
+#
+# The push and the pull request use the secret BOTICA_UPDATE_TOKEN, a fine-grained token of this
+# repository with write access to contents, pull requests and workflows. The change edits files of
+# .github/workflows/, which the token of the workflow cannot push, and a pull request that the token
+# of the workflow opens runs no workflow. Without the secret the job fails.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: botica-update
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: move to the newest botica
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.13.3"
+          enable-cache: false
+
+      - name: Move the rev of the mirror of botica
+        run: >-
+          uvx prek@0.5.7 update
+          --repo https://github.com/collectiveai-team/botica-pre-commit
+          --cooldown-days 7
+          --exclude-tag '*-rc*' --exclude-tag '*-beta*' --exclude-tag '*-alpha*'
+
+      - name: Write the version in the hooks, the workflows and the configuration
+        id: align
+        run: |
+          uv run --no-project .github/scripts/botica_update.py > "$RUNNER_TEMP/aligned"
+          echo "version=$(head -n 1 "$RUNNER_TEMP/aligned")" >> "$GITHUB_OUTPUT"
+          tail -n +2 "$RUNNER_TEMP/aligned"
+
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ secrets.BOTICA_UPDATE_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ steps.align.outputs.version }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::the secret BOTICA_UPDATE_TOKEN is not set"
+            exit 1
+          fi
+          if git diff --quiet; then
+            echo "Every file names botica $VERSION." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          title="chore: botica $VERSION"
+          body="Opened by the workflow \`botica-update\`: \`prek update\` moved the mirror \`collectiveai-team/botica-pre-commit\` to v$VERSION, and \`.github/scripts/botica_update.py\` wrote $VERSION in the hooks, the workflows and the configuration.
+
+          Release notes: https://github.com/collectiveai-team/botica/releases/tag/v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c chore/botica-update
+          git commit -am "$title"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" chore/botica-update
+          if gh pr view chore/botica-update --json state --jq .state | grep -q OPEN; then
+            gh pr edit chore/botica-update --title "$title" --body "$body"
+          else
+            gh pr create --head chore/botica-update --title "$title" --body "$body"
+          fi

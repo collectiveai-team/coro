@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       # ffmpeg is a real runtime dependency, not a test convenience: the shipped
       # image installs it (Dockerfile) and coro/pcm.py decodes every HTTP upload
@@ -83,6 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Install uv
@@ -130,3 +133,53 @@ jobs:
           base: .tmp/base/openapi.json
           revision: .tmp/head/openapi.json
           fail-on: ERR
+
+  # MARK: botica
+  # Gate: only the findings on the lines this pull request adds fail. The findings that
+  # predate the adoption of botica are debt (botica-baseline.toml and the full report below).
+  botica:
+    name: botica (new lines)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    env:
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.12"
+          enable-cache: false
+
+      - name: Lint the lines of the pull request
+        run: uvx botica@0.18.0 lint --diff "origin/$BASE_REF" --output-format github
+
+  # Every rule botica can run here, over the whole tree, as a table in the job summary.
+  # Never fails: it measures the debt that the gate above leaves alone.
+  botica-report:
+    name: botica (full report)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.12"
+          enable-cache: false
+
+      - name: Report every finding
+        run: |
+          {
+            echo "## botica: full report"
+            echo
+            uvx botica@0.18.0 lint --statistics --exit-zero
+            echo
+            uvx botica@0.18.0 lint --output-format markdown --exit-zero
+          } >> "$GITHUB_STEP_SUMMARY"

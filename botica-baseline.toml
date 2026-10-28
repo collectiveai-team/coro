@@ -1,0 +1,79 @@
+# The known findings that `botica lint` leaves out while their value does not grow. `botica lint --write-baseline` writes this file.
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/app.py"
+name = "create_app"
+value = 16
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/audio.py"
+name = "stream_pcm_from_file"
+value = 22
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/backends/asr/nemo.py"
+name = "_tokens_from_hypothesis"
+value = 21
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/backends/asr/onnx_asr.py"
+name = "convert_onnx_asr_result"
+value = 16
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/bench/code_switch.py"
+name = "build_sequence"
+value = 26
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/bench/gpu.py"
+name = "_read_devices"
+value = 19
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/bench/report.py"
+name = "_load_quality"
+value = 19
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/bench/sampling.py"
+name = "Sampler::_sample_loop"
+value = 18
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/bench/stm.py"
+name = "_read_segments"
+value = 30
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/bench/stm.py"
+name = "word_segments_to_stm"
+value = 19
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "coro/pipelines/windowing.py"
+name = "ASRWindowing::stream_chunks"
+value = 20
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "scripts/check_adr_numbering.py"
+name = "main"
+value = 16
+
+[[finding]]
+rule = "cognitive-complexity"
+path = "scripts/check_flicker_rule_rejected.py"
+name = "main"
+value = 16

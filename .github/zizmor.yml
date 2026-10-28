@@ -1,0 +1,23 @@
+# zizmor configuration.
+# https://docs.zizmor.sh/configuration/
+#
+# The workflows of the recipes pin actions to version tags (e.g. @v7) and let
+# Dependabot keep them current, rather than pinning to commit hashes. Relax the
+# unpinned-uses audit from its default blanket hash-pin policy to ref-pin so
+# tag pins pass.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "*": ref-pin
+  # softprops/action-gh-release is a deliberate choice (release-notes
+  # generation + file globbing). The info-level "use gh release create"
+  # suggestion is intentionally ignored for the release workflow.
+  superfluous-actions:
+    ignore:
+      - release.yml
+  # release.yml calls ci.yml and docker.yml as `./.github/workflows/...`. The `$/...` form runs
+  # only when a tag is pushed, so it moves in a release of its own rather than with botica.
+  self-repository:
+    ignore:
+      - release.yml
