@@ -115,7 +115,7 @@ class ServerSettings(BaseSettings):
     # recognised model_asr slug) or raises (a non-slug model_asr with no
     # explicit backend_asr) before any other code sees this field. See that
     # validator and ADR 0020.
-    backend_asr: ASRBackendProvider = Field(  # pyrefly: ignore[bad-assignment]
+    backend_asr: ASRBackendProvider = Field(
         default="onnx-asr",
         description="ASR Backend Provider selector. Derived from model_asr's slug when "
         "not given explicitly; required explicitly alongside a non-slug model_asr.",

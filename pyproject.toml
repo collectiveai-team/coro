@@ -147,8 +147,11 @@ dev = [
     "anyio>=4.0.0",
     "openai>=2.0.0",
     "ruff>=0.15,<0.18",
-    "pyrefly>=1.1.1",
+    "pyrefly>=1.4,<2",
     "deepgram-sdk>=7.6.0",
+    "pytest-timeout>=2.4",
+    "pytest-randomly>=3.16",
+    "pytest-socket>=0.7",
 ]
 bench = [
     # Sliding-window language detection for coro/bench/language_drift.py's
@@ -187,7 +190,11 @@ contracts = [
     "soxr",
 ]
 
+# MARK: uv
+# CES-128: uv resolves only the files that were uploaded to the index at least
+# 7 days ago.
 [tool.uv]
+exclude-newer = "7 days"
 conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
 default-groups = ["dev"]
 
@@ -272,8 +279,30 @@ select = [
     "D417",   # missing argument descriptions
     "D418",   # no docstring on @overload
     "D419",   # empty docstring
+    # botica ruff-selection (BTTOOL002)
+    "ASYNC",   # blocking calls inside async def
+    "A",       # names that shadow builtins
+    "BLE",     # broad except that neither re-raises nor logs
+    "SLOT",    # str/tuple/NamedTuple subclasses without __slots__
+    "PLR0124", # comparison of a name with itself
+    "PLR0133", # comparison of two constants
+    # botica ruff-heavy-imports-in-function (BTTOOL005), until Python 3.15
+    "TID253",
+    # botica docstring-matches-signature (BTDOCS001); preview rules, named in full
+    "DOC102",
+    "DOC202",
+    "DOC403",
 ]
+# DOC102, DOC202 and DOC403 are preview rules. `explicit-preview-rules` keeps every
+# other preview rule off, and `preview` stays in `lint` so the formatter is unchanged.
+preview = true
+explicit-preview-rules = true
 task-tags = ["TODO", "FIXME", "XXX", "MARK"]
+# `botica lint` suppressions in `# noqa: BTxxx` comments; without this ruff reports RUF102.
+external = ["BT"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+banned-module-level-imports = ["torch", "tensorflow", "jax", "transformers", "cv2"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -284,7 +313,9 @@ max-complexity = 10
 [tool.ruff.lint.per-file-ignores]
 # Tests assert/lack docstrings, use fixed /tmp paths for deterministic fixtures,
 # and pass dummy tokens (S106) to gated-model settings/adapters.
-"tests/**" = ["S101", "D", "S108", "S106"]
+"tests/**" = ["S101", "D", "S108", "S106", "TID253"]
+# The adapters, which exist to use a heavy library, import it at the top.
+"coro/backends/**" = ["TID253"]
 # FastAPI routes use the idiomatic `= File(...)` / `= Form(...)` / `= Query(...)`
 # default style.
 "coro/api/openai/transcriptions.py" = ["FAST002", "B008"]
@@ -295,7 +326,10 @@ max-complexity = 10
 # Parses the AMI benchmark corpus XML/STM (trusted local fixtures).
 "coro/bench/stm.py" = ["S314"]
 # Markdown report tables: header/separator strings exceed the line limit by design.
-"coro/bench/report.py" = ["E501"]
+"coro/bench/report.py" = ["E501", "BLE001"]
+# Files over botica's file-size-guard limit: a suppression comment would touch them, and a
+# touched file must be split first (botica-0.18 adoption, phase 2). Remove once split.
+"coro/backends/asr/onnx_canary_split.py" = ["A001"]
 # Downloads the AMI corpus over http(s) from a fixed mirror.
 "coro/bench/utils/ami_audios_download.py" = ["S310"]
 # Bench/CLI tools use subprocess calls with partial paths (system tools).
@@ -379,17 +413,58 @@ python-interpreter-path = ".venv/bin/python"
 # `diar-pyannote` extra; it is not installed in the default (or CI) env, so
 # treat its lazy import as Any rather than reporting a missing module.
 replace-imports-with-any = ["onnxruntime_genai", "pyannote.audio"]
+# botica pyrefly-strict (BTTOOL003).
+preset = "strict"
+required-version = ">=1.4,<2"
+
+[tool.pyrefly.errors]
+# Adopted in steps: each kind that still has errors in coro/ stays a warning and
+# goes back to `true` once its errors are fixed (counts at adoption, 2026-10-28).
+explicit-any = "warn"                 # 134 botica: ignore[external-config-weakened] -- staged adoption, 134 errors in coro/
+implicit-any-type-argument = "warn"   # 79
+implicit-any-parameter = "warn"       # 56
+missing-override-decorator = "warn"   # 10
+implicit-any-empty-container = "warn" # 3
+missing-attribute-patch-target = "error"
+unused-coroutine = "error"
+
+[[tool.pyrefly.sub-config]]
+matches = "tests/**"
+
+[tool.pyrefly.sub-config.errors]
+implicit-any-parameter = false
 
 
 # MARK: Pytest
 [tool.pytest.ini_options]
+# CES-125. pytest 9.0 ignores --strict-markers and --strict-config in addopts (pytest#14442), and
+# pytest 8 does not know the strict_* keys: minversion stops it instead.
+minversion = "9.0"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 # Makes the `support` helper package importable from every directory of the tree.
 pythonpath = ["tests"]
+# botica test-no-network (BTTEST010): tests get no network unless marked
+# integration/e2e (see tests/conftest.py) or allow_hosts/enable_socket.
+addopts = ["-ra", "--disable-socket", "--allow-unix-socket"]
+strict_config = true
+strict_markers = true
+strict_xfail = true
+strict_parametrization_ids = true
+empty_parameter_set_mark = "fail_at_collect"
+required_plugins = ["pytest-asyncio", "pytest-socket", "pytest-timeout"]
+# Seconds for each test; a slower test takes @pytest.mark.timeout(N).
+timeout = 60
+# Seconds for the whole run. pytest-timeout checks it after each test and stops the run there.
+session_timeout = 900
+markers = [
+  "unit: fast isolated tests, no external deps",
+  "integration: tests requiring external services or multi-component interaction",
+  "e2e: end-to-end smoke tests",
+]
 
 
-# MARK: falsegreen
+# MARK: Falsegreen
 # False-green test scanner: flags tests that pass without protecting anything.
 # Exit contract is 0 clean / 10 low-only / 20 high. The prek hook runs it
 # against .falsegreen-baseline.json, so the findings that already existed when

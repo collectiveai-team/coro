@@ -428,7 +428,7 @@ def _git_sha() -> str:
             timeout=5,
         )
         return result.stdout.strip()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return "unknown"
 
 
@@ -440,7 +440,7 @@ def _collect_versions() -> Mapping[str, str]:
     for pkg in ("coro", "meeteval"):
         try:
             versions[pkg] = importlib.metadata.version(pkg)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
     try:
@@ -452,7 +452,7 @@ def _collect_versions() -> Mapping[str, str]:
         )
         first_line = result.stdout.splitlines()[0] if result.stdout else ""
         versions["ffmpeg"] = first_line
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     return versions
@@ -577,7 +577,7 @@ def _audio_duration(audio_path: Path) -> float:
             text=True,
         )
         return float(result.stdout.strip())
-    except Exception:
+    except Exception:  # noqa: BLE001
         return 0.0
 
 

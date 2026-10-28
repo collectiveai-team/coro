@@ -43,7 +43,7 @@ import wave
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-import torch
+import torch  # noqa: TID253
 
 from coro.backends.diarization import factory as diarization_factory
 from coro.backends.diarization.nemo.postprocessing import preset_for_collar
@@ -394,7 +394,7 @@ def main() -> None:
                 latency_tier=args.latency_tier if name == "nemo" else None,
             )
             _free(adapter)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             errors[name] = f"{type(exc).__name__}: {exc}"
             print(f"  [{name}] FAILED: {errors[name]}", flush=True)
 

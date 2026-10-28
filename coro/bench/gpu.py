@@ -52,12 +52,12 @@ def _read_devices() -> list[GpuDevice] | None:
     """
     try:
         import pynvml
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
     try:
         pynvml.nvmlInit()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
     try:
@@ -67,7 +67,7 @@ def _read_devices() -> list[GpuDevice] | None:
             mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
             try:
                 util = float(pynvml.nvmlDeviceGetUtilizationRates(handle).gpu)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 util = 0.0
 
             procs: list[tuple[int, int | None]] = []
@@ -79,7 +79,7 @@ def _read_devices() -> list[GpuDevice] | None:
                     for proc in query(handle):
                         used = getattr(proc, "usedGpuMemory", None)
                         procs.append((int(proc.pid), used if isinstance(used, int) else None))
-                except Exception:
+                except Exception:  # noqa: BLE001
                     continue
 
             devices.append(
@@ -91,12 +91,12 @@ def _read_devices() -> list[GpuDevice] | None:
                 )
             )
         return devices
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
     finally:
         try:
             pynvml.nvmlShutdown()
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
 

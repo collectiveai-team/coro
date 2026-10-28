@@ -11,6 +11,9 @@ from pathlib import Path
 import pytest
 
 from coro.bench.transport import transcribe_audio, transcribe_audio_sse
+from support.network import LOOPBACK
+
+pytestmark = LOOPBACK
 
 CANNED_RESPONSE = {
     "task": "transcribe",
@@ -56,7 +59,7 @@ class _StubHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002
         pass
 
 
@@ -152,7 +155,7 @@ class _SSEStubHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002
         pass
 
 

@@ -12,6 +12,9 @@ from typing import ClassVar
 import pytest
 
 from coro.bench.models.quality import QualitySummary, ScoreMetrics, ScoreResult
+from support.network import LOOPBACK
+
+pytestmark = LOOPBACK
 
 CANNED_DIARIZED_JSON = {
     "task": "transcribe",
@@ -92,7 +95,7 @@ class _E2EHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002
         pass
 
 

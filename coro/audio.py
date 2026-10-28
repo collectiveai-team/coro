@@ -171,7 +171,7 @@ class AudioInput:
         except BaseException:
             # Nothing else holds the path yet, so a failed spool must not leak it.
             with contextlib.suppress(FileNotFoundError):
-                Path(path).unlink()
+                Path(path).unlink()  # noqa: ASYNC240
             raise
         return cls._file_backed(path, filename=filename, size=size)
 
@@ -219,7 +219,7 @@ class AudioInput:
         """
         if self._temp_path is not None and self._owns_temp_path:
             with contextlib.suppress(FileNotFoundError):
-                Path(self._temp_path).unlink()
+                Path(self._temp_path).unlink()  # noqa: ASYNC240
         self._temp_path = None
         self._owns_temp_path = False
 
@@ -348,7 +348,7 @@ async def convert_to_pcm_bytes(audio_bytes: bytes) -> bytes:
         return await convert_path_to_pcm_bytes(tmp_path)
     finally:
         with contextlib.suppress(FileNotFoundError):
-            Path(tmp_path).unlink()
+            Path(tmp_path).unlink()  # noqa: ASYNC240
 
 
 # MARK: FFmpeg Streaming

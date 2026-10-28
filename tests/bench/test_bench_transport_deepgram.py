@@ -22,6 +22,9 @@ import pytest
 
 from coro.bench.errors import ServerUnreachableError
 from coro.bench.transport import transcribe_audio_deepgram
+from support.network import LOOPBACK
+
+pytestmark = LOOPBACK
 
 AUDIO_BYTES = b"RIFF" + b"\x00" * 100
 
@@ -67,7 +70,7 @@ class _ListenStubHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002
         pass
 
 

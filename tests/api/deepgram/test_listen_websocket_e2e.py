@@ -30,8 +30,9 @@ from coro.settings import ServerSettings
 from support.factories import make_app
 from support.live_server import LiveServer as _LiveServer
 from support.live_server import keep_injected_runtime
+from support.network import LOOPBACK
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, *LOOPBACK]
 
 CHUNK_SECONDS = 1.0
 CHUNK_BYTES = int(SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_SECONDS)

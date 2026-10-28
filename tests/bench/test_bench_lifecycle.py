@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from coro.bench.cli import parse_args
+from support.network import LOOPBACK
 
 
 class TestCliMutualExclusivity:
@@ -507,6 +508,8 @@ class TestPollHealth:
 
 
 class TestFindFreePort:
+    pytestmark = LOOPBACK
+
     def test_returns_int(self):
         from coro.bench.server_lifecycle import find_free_port
 

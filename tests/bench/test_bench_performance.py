@@ -17,6 +17,7 @@ from coro.bench.models.gpu import GpuSample
 from coro.bench.models.performance import PerRepSummary
 from coro.bench.models.resource import ProcessTreeSample
 from coro.bench.schema import RESOURCE_FIELDNAMES
+from support.network import LOOPBACK
 
 
 CANNED_RESPONSE = {
@@ -62,7 +63,7 @@ class _StubHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002
         pass
 
 
@@ -274,6 +275,8 @@ class TestAggregateAcrossReps:
 
 
 class TestFullPerformanceRun:
+    pytestmark = LOOPBACK
+
     def test_produces_artifacts_per_item_rep(self, stub_server, tmp_path: Path):
         from coro.bench.orchestrate import run_performance_workload
 
@@ -475,7 +478,7 @@ class _SSEStubHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002
         pass
 
 
@@ -491,6 +494,8 @@ def sse_stub_server():
 
 
 class TestStreamingPerformanceRun:
+    pytestmark = LOOPBACK
+
     def test_ttft_column_non_empty_in_streaming_run(self, sse_stub_server, tmp_path: Path):
         from coro.bench.orchestrate import run_performance_workload
 

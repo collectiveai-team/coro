@@ -274,7 +274,7 @@ async def test_adapter_rejects_beyond_queue_depth_with_retry_hint():
     )
 
     busy = asyncio.create_task(adapter.transcribe_pcm(_PCM))
-    while adapter.admission.in_flight == 0:  # wait for the permit to be taken
+    while adapter.admission.in_flight == 0:  # wait for the permit to be taken  # noqa: ASYNC110
         # Polls a condition and yields to the event loop; no fixed delay.
         await asyncio.sleep(0)  # falsegreen: ignore
 

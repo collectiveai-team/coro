@@ -25,7 +25,7 @@ async def test_a_wav_reports_its_declared_duration(tmp_path):
 async def test_a_webm_without_declared_duration_falls_back_to_its_packets(tmp_path):
     # Written to a pipe, the muxer cannot seek back to record the duration:
     # the shape of a browser MediaRecorder upload.
-    webm = subprocess.run(
+    webm = subprocess.run(  # noqa: ASYNC221
         [
             "ffmpeg",
             "-nostdin",
@@ -46,7 +46,7 @@ async def test_a_webm_without_declared_duration_falls_back_to_its_packets(tmp_pa
     ).stdout
     path = tmp_path / "recording.webm"
     path.write_bytes(webm)
-    declared = subprocess.run(
+    declared = subprocess.run(  # noqa: ASYNC221
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
         capture_output=True,
         text=True,

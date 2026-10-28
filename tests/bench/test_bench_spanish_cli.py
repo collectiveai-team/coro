@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from coro.bench.cli import main, parse_args
+from support.network import LOOPBACK
 
 CANNED_HEALTH = {
     "status": "ok",
@@ -131,6 +132,8 @@ class TestSpanishCliArgs:
 
 
 class TestSpanishQualityRun:
+    pytestmark = LOOPBACK
+
     def test_preset_scores_through_the_quality_benchmark_path(
         self, spanish_server, tmp_path: Path, fake_spanish_corpus, monkeypatch
     ):

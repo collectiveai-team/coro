@@ -157,7 +157,7 @@ def load_postprocessing_params(postprocessing_yaml: str | None) -> Any:
     from nemo.collections.asr.parts.mixins.diarization import load_postprocessing_from_yaml
 
     return load_postprocessing_from_yaml(
-        postprocessing_yaml=postprocessing_yaml,  # pyrefly: ignore[bad-argument-type]
+        postprocessing_yaml=postprocessing_yaml,
     )
 
 
@@ -249,7 +249,7 @@ def segments_from_predictions(
         ts_mat = ts_vad_post_processing(
             matrix[:, spk_id],
             # NeMo consumes the PostProcessingParams dataclass; stub types OmegaConf.
-            cfg_vad_params=params,  # pyrefly: ignore[bad-argument-type]
+            cfg_vad_params=params,
             unit_10ms_frame_count=subsampling_factor,
             bypass_postprocessing=False,
         )

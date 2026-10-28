@@ -24,8 +24,9 @@ from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.settings import ServerSettings
 from support.factories import make_app
 from support.live_server import LiveServer, keep_injected_runtime
+from support.network import LOOPBACK
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, *LOOPBACK]
 
 FRAME_SECONDS = 0.1
 FRAME = b"\x00\x00" * int(16000 * FRAME_SECONDS)

@@ -103,10 +103,10 @@ async def test_audio_input_temp_path_is_removed_on_cleanup():
     audio = await AudioInput.from_upload(_FakeUpload([b"audio"]))
     path = await audio.temp_path()
 
-    assert Path(path).exists()
+    assert Path(path).exists()  # noqa: ASYNC240
     await audio.cleanup()
 
-    assert not Path(path).exists()
+    assert not Path(path).exists()  # noqa: ASYNC240
 
 
 @pytest.mark.asyncio
@@ -162,7 +162,7 @@ async def test_audio_input_from_upload_does_not_hold_the_upload_in_memory():
     try:
         assert audio._data is None, "file-backed input must not retain the encoded bytes"
         assert audio.size == expected_size
-        assert Path(await audio.temp_path()).stat().st_size == expected_size
+        assert Path(await audio.temp_path()).stat().st_size == expected_size  # noqa: ASYNC240
         assert peak < 4 * len(chunk), (
             f"peak traced memory {peak} bytes for a {expected_size}-byte upload "
             "suggests the upload was accumulated in RAM"
@@ -221,11 +221,11 @@ async def test_audio_input_from_upload_leaves_no_file_when_spooling_fails():
                 return b"partial"
             raise OSError("upload stream died")
 
-    before = set(Path(tempfile.gettempdir()).glob("asr-upload-*"))
+    before = set(Path(tempfile.gettempdir()).glob("asr-upload-*"))  # noqa: ASYNC240
     with pytest.raises(OSError, match="upload stream died"):
         await AudioInput.from_upload(_FailingUpload())
 
-    assert set(Path(tempfile.gettempdir()).glob("asr-upload-*")) == before
+    assert set(Path(tempfile.gettempdir()).glob("asr-upload-*")) == before  # noqa: ASYNC240
 
 
 @pytest.mark.parametrize(
@@ -329,7 +329,7 @@ async def test_convert_to_pcm_bytes_decodes_video_container(tmp_path):
     ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
 
     video_path = tmp_path / "sample.mp4"
-    subprocess.run(  # noqa: S603
+    subprocess.run(  # noqa: ASYNC221, S603
         [
             ffmpeg,
             "-v",
@@ -391,11 +391,11 @@ async def test_from_path_exposes_the_file_without_copying_it(tmp_path):
 async def test_cleanup_still_removes_a_temp_file_this_instance_created(tmp_path):
     audio = AudioInput(b"payload", filename="clip.wav")
     spooled = Path(await audio.temp_path())
-    assert spooled.exists()
+    assert spooled.exists()  # noqa: ASYNC240
 
     await audio.cleanup()
 
-    assert not spooled.exists()
+    assert not spooled.exists()  # noqa: ASYNC240
 
 
 @pytest.mark.asyncio

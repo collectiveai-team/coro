@@ -182,7 +182,7 @@ class _LidStubAsr:
 
     def __init__(self, *, emitted_tokens: tuple[str, str]) -> None:
         self._vocab = dict(_LID_VOCAB)
-        self._tokens = {token: id for id, token in self._vocab.items()}
+        self._tokens = {token: id for id, token in self._vocab.items()}  # noqa: A001
         self.language_token_ids = {"es": 4, "en": 5}
         self._emitted_ids = [self._tokens[t] for t in emitted_tokens]
         self._decoder = SimpleNamespace(

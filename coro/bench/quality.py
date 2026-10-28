@@ -348,7 +348,7 @@ def score_item(
             raw=raw,
         )
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         # Print full traceback to stderr so the operator can see the real cause
         # without having to dig into the JSON artifact.
         print(

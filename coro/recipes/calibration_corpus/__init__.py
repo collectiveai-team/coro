@@ -159,7 +159,7 @@ def main(argv: list[str] | None = None) -> None:
             manifest += harvest_remote_fleurs(
                 lang_code, hf_config, args.out_dir, args.per_language_target
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(f"  WARNING: failed to fetch {lang_code} ({hf_config}): {exc}")
 
     manifest_path = args.out_dir / "calibration_manifest.json"

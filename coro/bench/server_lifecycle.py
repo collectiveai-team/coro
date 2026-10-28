@@ -47,7 +47,7 @@ def poll_health(
             data = _get_health_json(base_url)
             if data.get("ready") and data.get("warmup_ready"):
                 return data
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
         if proc is not None and proc.poll() is not None:
             raise RuntimeError(

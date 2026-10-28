@@ -230,7 +230,7 @@ async def transcribe_attached(
         data["prompt"] = prompt
 
     async with build_http_client() as client:
-        with Path(path).open("rb") as handle:
+        with Path(path).open("rb") as handle:  # noqa: ASYNC230
             response = await client.post(
                 f"{base}{_TRANSCRIPTION_PATH}", files={"file": (path, handle)}, data=data
             )

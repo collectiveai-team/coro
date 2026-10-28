@@ -64,6 +64,7 @@ async def test_health_not_ready_when_no_asr_adapter(app):
     assert response.json()["ready"] is False
 
 
+@pytest.mark.integration  # reaches the Hugging Face Hub at startup
 @pytest.mark.asyncio
 async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
     """CORO_WARMUP=disabled skips Server Warmup and reports ready."""
@@ -154,6 +155,7 @@ def test_warmup_omits_the_language_hint_for_a_non_canary_backend():
     assert mock_transcribe.call_args.kwargs["language"] is None
 
 
+@pytest.mark.integration  # reaches the Hugging Face Hub at startup
 def test_enabled_diarization_builds_a_diarization_adapter():
     """An enabled Backend Provider always builds an adapter — never silently ASR-only."""
     from unittest.mock import AsyncMock, patch
@@ -181,6 +183,7 @@ def test_enabled_diarization_builds_a_diarization_adapter():
     assert runtime.diarization_adapter is diarization_adapter
 
 
+@pytest.mark.integration  # reaches the Hugging Face Hub at startup
 def test_warmup_failure_fails_server_startup():
     """Server Warmup failures fail server startup loudly."""
     from unittest.mock import AsyncMock, patch

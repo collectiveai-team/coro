@@ -128,3 +128,21 @@ def undetectable_filesystem(monkeypatch, tmp_path):
     itself tmpfs, which the real resolvers rightly refuse.
     """
     monkeypatch.setattr(fsinfo, "_MOUNTINFO_PATH", tmp_path / "absent-mountinfo")
+
+
+NETWORK_MARKERS = ("integration", "e2e")
+OWN_SOCKET_MARKERS = ("enable_socket", "disable_socket", "allow_hosts")
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Give the network to the tests marked integration or e2e.
+
+    pytest runs with ``--disable-socket`` (botica test-no-network). A test that
+    already carries a pytest-socket marker keeps it, so ``allow_hosts`` narrows
+    an integration test to the hosts it lists.
+    """
+    for item in items:
+        needs_network = any(item.get_closest_marker(name) for name in NETWORK_MARKERS)
+        has_own_marker = any(item.get_closest_marker(name) for name in OWN_SOCKET_MARKERS)
+        if needs_network and not has_own_marker:
+            item.add_marker(pytest.mark.enable_socket)
