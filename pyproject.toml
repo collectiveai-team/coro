@@ -327,9 +327,6 @@ max-complexity = 10
 "coro/bench/stm.py" = ["S314"]
 # Markdown report tables: header/separator strings exceed the line limit by design.
 "coro/bench/report_markdown.py" = ["E501"]
-# Files over botica's file-size-guard limit: a suppression comment would touch them, and a
-# touched file must be split first (botica-0.18 adoption, phase 2). Remove once split.
-"coro/backends/asr/onnx_canary_split.py" = ["A001"]
 # Downloads the AMI corpus over http(s) from a fixed mirror.
 "coro/bench/utils/ami_audios_download.py" = ["S310"]
 # Bench/CLI tools use subprocess calls with partial paths (system tools).
