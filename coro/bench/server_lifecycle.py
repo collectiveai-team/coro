@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import socket
 import subprocess
 import time
@@ -10,7 +9,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import IO, Any
 
-logger = logging.getLogger(__name__)
+from coro.core.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def find_free_port() -> int:

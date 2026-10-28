@@ -110,7 +110,6 @@ License:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import tempfile
 from pathlib import Path
@@ -122,9 +121,10 @@ import numpy as np
 from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.subword_tokens import LAST_WORD_PAD, group_subwords, words_from_text
+from coro.core.logger import get_logger
 from coro.core.models import TranscriptToken
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SAMPLE_RATE = 16000
 # Admission queue depth used when an adapter is built without explicit settings

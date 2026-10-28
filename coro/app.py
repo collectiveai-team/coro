@@ -10,26 +10,25 @@ Usage (ASGI):
 
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
-
-import coro
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import coro
 from coro.api.docs import register_docs
-from coro.api.openai.errors import transcription_exception_handler
 from coro.api.exceptions import TranscriptionError
+from coro.api.openai.errors import transcription_exception_handler
 from coro.api.rate_limit import ClientRateLimits
+from coro.core.logger import get_logger, level_number
 from coro.runtime import RuntimeState
 from coro.settings import ServerSettings, get_settings
 
 if TYPE_CHECKING:
     pass
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 API_TITLE = "ASR Diarization Server"
 
@@ -103,7 +102,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
         application.state.settings = settings
         application.state.runtime = runtime
-        logging.getLogger("coro").setLevel(settings.log_level.upper())
+        get_logger("coro").setLevel(level_number(settings.log_level))
         logger.warning(
             "coro startup package_file=%s app_file=%s settings=%s",
             getattr(coro, "__file__", None),
@@ -220,9 +219,9 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     )
 
     # Register routers
-    from coro.api.health import router as health_router
     from coro.api.deepgram.listen import router as listen_router
     from coro.api.deepgram.listen_ws import router as listen_ws_router
+    from coro.api.health import router as health_router
     from coro.api.openai.transcriptions import router as v1_router
 
     application.state.settings = settings

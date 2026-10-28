@@ -31,16 +31,16 @@ from __future__ import annotations
 
 import contextlib
 import json
-import logging
 import sqlite3
 import threading
 import time
 from dataclasses import asdict
 from pathlib import Path
 
+from coro.core.logger import get_logger
 from coro.core.models import TranscriptToken
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 DATABASE_FILENAME = "asr-windows.sqlite3"
 """Database file created inside the configured cache directory."""

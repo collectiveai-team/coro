@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
-import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -24,6 +23,12 @@ from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket
 
+from coro.api.deepgram.live_schemas import (
+    DeepgramLiveMetadata,
+    DeepgramLiveModelInfo,
+    DeepgramLiveResultsMetadata,
+    live_results,
+)
 from coro.api.deepgram.live_socket import (
     CLOSE_STREAM,
     FINALIZE,
@@ -37,15 +42,10 @@ from coro.api.deepgram.live_socket import (
 )
 from coro.api.deepgram.schemas import DeepgramWord
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
-from coro.api.deepgram.live_schemas import (
-    DeepgramLiveMetadata,
-    DeepgramLiveModelInfo,
-    DeepgramLiveResultsMetadata,
-    live_results,
-)
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
-from coro.core.language import canonical_language
 from coro.cache.adapter import unwrap_asr_adapter
+from coro.core.language import canonical_language
+from coro.core.logger import get_logger
 from coro.core.models import TranscriptToken
 from coro.core.protocols import ASRAdapter
 from coro.core.speakers import attribute_span, merge_speaker_timeline
@@ -55,7 +55,7 @@ from coro.pipelines.live import LiveAudioSource, LiveTranscriptionSession
 __all__ = ["CLOSE_STREAM", "FINALIZE", "KEEP_ALIVE", "router"]
 
 router = APIRouter(prefix="/v1")
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 1000 Normal Closure; rejections close with live_socket.CLOSE_POLICY (1008).
 _CLOSE_NORMAL = 1000

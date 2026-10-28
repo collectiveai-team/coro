@@ -16,7 +16,6 @@ are stripped. Word reconstruction + end-time synthesis reuse the onnx-asr conver
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 from types import SimpleNamespace
 
@@ -26,9 +25,10 @@ from coro.backends.asr.concurrency import AdmissionController, build_admission_c
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.onnx_asr import convert_onnx_asr_result
 from coro.core.language import canonical_language
+from coro.core.logger import get_logger
 from coro.core.models import TranscriptToken
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Language code / locale -> lang_id, per the model card's prompt dictionary.
 # "auto" lets the model detect the language.

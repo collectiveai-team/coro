@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import logging
 from collections.abc import AsyncIterator
 
 from fastapi.responses import StreamingResponse
@@ -29,10 +28,11 @@ from coro.api.exceptions import (
 from coro.audio import AudioConversionError
 from coro.backends.asr.concurrency import AsrCapacityError
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
+from coro.core.logger import get_logger
 from coro.core.models import PipelineStreamEvent
 from coro.pipelines.done_frame import StreamingDoneFrame
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SSE_HEADERS = {
     "Cache-Control": "no-cache",

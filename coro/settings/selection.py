@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Literal, TypedDict
 
-
 # MARK: Startup Selector Types
 PipelineSelector = Literal["full-memory", "streaming"]
 # License note (see CONTEXT.md's Sortformer-v1 precedent for the same policy

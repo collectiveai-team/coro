@@ -6,6 +6,8 @@ package must not mutate global logging policy.
 """
 
 from coro.settings.host import HostEnvironment, host_environment
+from coro.settings.log_output import LogSettings
+from coro.settings.log_output import get_settings as get_log_settings
 from coro.settings.selection import (
     DEFAULT_MODEL_SLUG,
     FP32_QUANTIZATION_SENTINEL,
@@ -30,9 +32,11 @@ __all__ = [
     "DiarizationDevice",
     "DiarizationLatencyTier",
     "HostEnvironment",
+    "LogSettings",
     "OnnxVadSelector",
     "PipelineSelector",
     "ServerSettings",
+    "get_log_settings",
     "get_settings",
     "host_environment",
 ]

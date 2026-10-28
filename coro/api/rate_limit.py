@@ -8,15 +8,15 @@ buckets keyed by client IP, held in memory per server process.
 
 from __future__ import annotations
 
-import logging
 import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from coro.audio_probe import probe_duration_seconds
+from coro.core.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Idle buckets are dropped once they have refilled, checked every this many calls.
 _SWEEP_EVERY = 1024

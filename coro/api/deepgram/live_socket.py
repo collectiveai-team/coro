@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import math
 
 from fastapi import WebSocket
@@ -25,11 +24,12 @@ from coro.api.rate_limit import (
     rate_limits_of,
 )
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
+from coro.core.logger import get_logger
 from coro.pcm import PcmStreamConverter
 from coro.pipelines.live import LiveAudioSource
 from coro.pipelines.spill import SpillDirectoryError, resolve_spill_dir
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CLOSE_STREAM = "CloseStream"
 FINALIZE = "Finalize"

@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+import math
+import time
 from collections import deque
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
-import logging
-import math
-import time
 from typing import Any
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
+from coro.core.logger import get_logger
 from coro.core.models import (
     StreamEvent,
     TokenBatchEvent,
@@ -18,7 +18,7 @@ from coro.core.models import (
     TranscriptToken,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BYTES_PER_SECOND = SAMPLE_RATE * BYTES_PER_SAMPLE
 PROMPT_TOKEN_LIMIT = 50

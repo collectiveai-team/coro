@@ -68,7 +68,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -79,12 +78,13 @@ from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.nemo import resolve_target_language
 from coro.backends.asr.onnx_asr import convert_onnx_asr_result
 from coro.backends.asr.onnx_session import build_asr_session_options
+from coro.core.logger import get_logger
 from coro.core.models import TranscriptToken
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SAMPLE_RATE = 16000
 # Admission queue depth used when an adapter is built without explicit settings

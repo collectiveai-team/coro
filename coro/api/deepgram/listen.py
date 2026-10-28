@@ -13,7 +13,6 @@ contracts differ. See ADR 0015.
 from __future__ import annotations
 
 import hashlib
-import logging
 import math
 import time
 from collections.abc import Mapping
@@ -23,21 +22,22 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse, Response
 
-from coro.api.dependencies import get_pipeline, get_settings
 from coro.api.deepgram.render import render_deepgram
 from coro.api.deepgram.schemas import DeepgramErrorResponse
+from coro.api.dependencies import get_pipeline, get_settings
 from coro.api.exceptions import PROCESSING_FAILED_MESSAGE
 from coro.api.json_body import spooled_json_response
 from coro.api.rate_limit import RateLimited, admit_request, admit_upload
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.language import canonical_language
+from coro.core.logger import get_logger
 from coro.core.transcript_source import TranscriptSource
 from coro.pipelines.source import transcript_source
 from coro.settings import ServerSettings
 
 router = APIRouter(prefix="/v1")
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 UNDECODABLE_AUDIO_MESSAGE = "Could not decode the submitted audio."
 EMPTY_BODY_MESSAGE = "No audio was submitted in the request body."

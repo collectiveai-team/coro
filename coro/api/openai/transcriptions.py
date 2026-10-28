@@ -8,7 +8,6 @@ to the configured pipeline and rendering to the incremental renderers.
 from __future__ import annotations
 
 import re
-import logging
 import time
 from uuid import uuid4
 
@@ -33,12 +32,12 @@ from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.concurrency import AsrCapacityError
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.language import canonical_language
+from coro.core.logger import get_logger
 from coro.pipelines.source import transcript_source
-
 
 # MARK: Router Configuration
 router = APIRouter(prefix="/v1")
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Permissive BCP-47 shape: 2-3 letter primary subtag plus optional subtags.
 # Guards against junk like Swagger's placeholder "string" reaching the backend.

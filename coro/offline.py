@@ -25,12 +25,12 @@ a fourth, undocumented response shape.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from coro.audio import AudioInput
+from coro.core.logger import get_logger
 
 if TYPE_CHECKING:
     from coro.settings import ServerSettings
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 DEFAULT_RESPONSE_FORMAT = "diarized_json"
 """Richest project-native shape: sentence segments carrying speaker labels."""
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _TRANSCRIPTION_PATH = "/v1/audio/transcriptions"
 _HEALTH_PATH = "/health"

@@ -21,14 +21,15 @@ should be applied at all.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from coro.core.logger import get_logger
 
 if TYPE_CHECKING:
     import torch
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _PRESET_DIR = Path(__file__).parent / "postprocessing_presets"
 

@@ -9,7 +9,6 @@ incompatible with the Streaming Pipeline (rejected at startup in settings).
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Any
 
 import numpy as np
@@ -17,9 +16,10 @@ import torch
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.backends.diarization.segments import convert_diarization_segments
+from coro.core.logger import get_logger
 from coro.core.models import SpeakerSegment
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _resolve_device(device: str) -> torch.device:

@@ -170,7 +170,6 @@ License:
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from coro.backends.asr.concurrency import build_admission_controller
@@ -182,6 +181,7 @@ from coro.backends.asr.onnx_canary_split_artifacts import _resolve_artifacts
 from coro.backends.asr.onnx_canary_split_decoder import _split_canary_asr_class
 from coro.backends.asr.onnx_canary_split_language import resolve_canary_language
 from coro.backends.asr.onnx_session import build_asr_session_options
+from coro.core.logger import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -193,7 +193,7 @@ __all__ = [
     "resolve_canary_language",
 ]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _providers_for_device(device: str) -> Sequence[str] | None:

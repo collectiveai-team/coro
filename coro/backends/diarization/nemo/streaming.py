@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+import copy
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, fields
-import copy
-import logging
-import time
 
 import numpy as np
 import torch
@@ -18,9 +17,10 @@ from coro.backends.diarization.nemo.postprocessing import (
     apply_gated_postprocessing,
 )
 from coro.backends.diarization.segments import convert_diarization_segments
+from coro.core.logger import get_logger
 from coro.core.models import SpeakerSegment
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
