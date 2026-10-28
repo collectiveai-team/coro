@@ -1,0 +1,72 @@
+{
+  "diagnostics": [
+    {
+      "path": "docs/adr/0002-claimed-twice.md",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 0,
+          "line": 1,
+          "column": 1
+        },
+        "end": {
+          "offset": 16,
+          "line": 1,
+          "column": 17
+        }
+      },
+      "message": "ADR 0002 is claimed by 2 files, so every reference to it is ambiguous — renumber the one that merged later and repoint its references: 0002-claimed-twice.md, 0002-second.md"
+    },
+    {
+      "path": "docs/adr/0002-second.md",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 0,
+          "line": 1,
+          "column": 1
+        },
+        "end": {
+          "offset": 17,
+          "line": 1,
+          "column": 18
+        }
+      },
+      "message": "ADR 0002 is claimed by 2 files, so every reference to it is ambiguous — renumber the one that merged later and repoint its references: 0002-claimed-twice.md, 0002-second.md"
+    },
+    {
+      "path": "docs/adr/0007_Bad_Name.md",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 0,
+          "line": 1,
+          "column": 1
+        },
+        "end": {
+          "offset": 10,
+          "line": 1,
+          "column": 11
+        }
+      },
+      "message": "ADR filenames must be NNNN-lower-kebab-case.md so the number can be read back: 0007_Bad_Name.md"
+    },
+    {
+      "path": "docs/adr/0008-retired-number.md",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 0,
+          "line": 1,
+          "column": 1
+        },
+        "end": {
+          "offset": 10,
+          "line": 1,
+          "column": 11
+        }
+      },
+      "message": "these ADR numbers are retired and must not return: 0008-retired-number.md"
+    }
+  ]
+}

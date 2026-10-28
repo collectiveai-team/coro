@@ -9,7 +9,7 @@ here: ``scalar_js_url`` defaults to an *unversioned* jsDelivr URL that is
 re-resolved on every page load with no SRI, ``telemetry`` defaults to ``True``,
 and ``agent`` defaults to Scalar's hosted AI chat, which is on by default on
 localhost and uploads the served document to api.scalar.com on first use. The
-``api-docs-scalar-hardened`` ast-grep rule fails the build if any of the three
+botica rule ``coro/api-docs-scalar-hardened`` (COROSEC001) fails the build if any of the three
 is left at its default.
 
 Not overridden, and deliberately so: ``scalar_favicon_url`` is blanked (its

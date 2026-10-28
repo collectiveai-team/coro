@@ -1,0 +1,72 @@
+{
+  "diagnostics": [
+    {
+      "path": "coro/core/assembly.py",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 34,
+          "line": 1,
+          "column": 35
+        },
+        "end": {
+          "offset": 57,
+          "line": 1,
+          "column": 58
+        }
+      },
+      "message": "realign_speaker_flicker must not be reachable from the default assembly path. ADR 0014 dropped the sandwich rule after measuring it; the module survives only as the record of that measurement (issue 17)."
+    },
+    {
+      "path": "coro/core/assembly.py",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 92,
+          "line": 5,
+          "column": 12
+        },
+        "end": {
+          "offset": 115,
+          "line": 5,
+          "column": 35
+        }
+      },
+      "message": "realign_speaker_flicker must not be reachable from the default assembly path. ADR 0014 dropped the sandwich rule after measuring it; the module survives only as the record of that measurement (issue 17)."
+    },
+    {
+      "path": "pipeline.yml",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 17,
+          "line": 2,
+          "column": 5
+        },
+        "end": {
+          "offset": 40,
+          "line": 2,
+          "column": 28
+        }
+      },
+      "message": "realign_speaker_flicker must not be reachable from the default assembly path. ADR 0014 dropped the sandwich rule after measuring it; the module survives only as the record of that measurement (issue 17)."
+    },
+    {
+      "path": "tests/core/test_core_realignment.py",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 0,
+          "line": 1,
+          "column": 1
+        },
+        "end": {
+          "offset": 0,
+          "line": 1,
+          "column": 1
+        }
+      },
+      "message": "the rejection evidence must not be deleted — losing it is how the question gets re-litigated from scratch. Missing: tests/core/test_core_realignment.py"
+    }
+  ]
+}

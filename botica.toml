@@ -76,6 +76,11 @@ extend-select = [
   "pyrefly-strict",
   "no-type-cast",
   "agents-md-refs-exist",
+  # The catalog of this repository, .botica/rules/coro (found through the default rule-dirs).
+  # The two extension rules run as Python scripts with `uv run --script`.
+  "coro/api-docs-scalar-hardened",
+  "coro/adr-numbering",
+  "coro/flicker-rule-rejected",
 ]
 # Findings that carry a measure (cognitive-complexity) and predate the adoption.
 baseline = "botica-baseline.toml"

@@ -1,4 +1,4 @@
-id: api-docs-scalar-hardened
+id: coro/api-docs-scalar-hardened
 language: python
 severity: error
 message: "Scalar reference left on a hostile default. Pass scalar_js_url=<self-hosted or version-pinned bundle>, telemetry=False and agent=AgentScalarConfig(disabled=True). get_scalar_api_reference() defaults scalar_js_url to an unversioned https://cdn.jsdelivr.net/npm/@scalar/api-reference URL (re-resolved on every page load, no SRI), telemetry to True, and agent to Scalar's hosted AI chat — which is on by default on localhost and uploads the served OpenAPI document to api.scalar.com on first message. See coro/api/docs.py for the hardened call."

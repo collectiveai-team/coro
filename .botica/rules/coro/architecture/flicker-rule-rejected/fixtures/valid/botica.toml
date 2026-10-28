@@ -1,0 +1,3 @@
+[rules."coro/flicker-rule-rejected"]
+# A fixture is a handful of files, not a populated repository.
+min-files = 1

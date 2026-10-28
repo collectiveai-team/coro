@@ -65,15 +65,3 @@ rule = "cognitive-complexity"
 path = "coro/pipelines/windowing.py"
 name = "ASRWindowing::stream_chunks"
 value = 20
-
-[[finding]]
-rule = "cognitive-complexity"
-path = "scripts/check_adr_numbering.py"
-name = "main"
-value = 16
-
-[[finding]]
-rule = "cognitive-complexity"
-path = "scripts/check_flicker_rule_rejected.py"
-name = "main"
-value = 16

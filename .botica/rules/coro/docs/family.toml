@@ -1,0 +1,3 @@
+code = "DOCS"
+description = "The records of the repository: how its ADRs are numbered."
+extends = "docs"

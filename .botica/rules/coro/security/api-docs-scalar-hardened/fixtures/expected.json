@@ -1,0 +1,55 @@
+{
+  "diagnostics": [
+    {
+      "path": "docs.py",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 171,
+          "line": 8,
+          "column": 12
+        },
+        "end": {
+          "offset": 224,
+          "line": 8,
+          "column": 65
+        }
+      },
+      "message": "Scalar reference left on a hostile default. Pass scalar_js_url=<self-hosted or version-pinned bundle>, telemetry=False and agent=AgentScalarConfig(disabled=True). get_scalar_api_reference() defaults scalar_js_url to an unversioned https://cdn.jsdelivr.net/npm/@scalar/api-reference URL (re-resolved on every page load, no SRI), telemetry to True, and agent to Scalar's hosted AI chat — which is on by default on localhost and uploads the served OpenAPI document to api.scalar.com on first message. See coro/api/docs.py for the hardened call."
+    },
+    {
+      "path": "docs.py",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 258,
+          "line": 12,
+          "column": 12
+        },
+        "end": {
+          "offset": 374,
+          "line": 14,
+          "column": 6
+        }
+      },
+      "message": "Scalar reference left on a hostile default. Pass scalar_js_url=<self-hosted or version-pinned bundle>, telemetry=False and agent=AgentScalarConfig(disabled=True). get_scalar_api_reference() defaults scalar_js_url to an unversioned https://cdn.jsdelivr.net/npm/@scalar/api-reference URL (re-resolved on every page load, no SRI), telemetry to True, and agent to Scalar's hosted AI chat — which is on by default on localhost and uploads the served OpenAPI document to api.scalar.com on first message. See coro/api/docs.py for the hardened call."
+    },
+    {
+      "path": "docs.py",
+      "severity": "error",
+      "range": {
+        "start": {
+          "offset": 409,
+          "line": 18,
+          "column": 12
+        },
+        "end": {
+          "offset": 487,
+          "line": 18,
+          "column": 90
+        }
+      },
+      "message": "Scalar reference left on a hostile default. Pass scalar_js_url=<self-hosted or version-pinned bundle>, telemetry=False and agent=AgentScalarConfig(disabled=True). get_scalar_api_reference() defaults scalar_js_url to an unversioned https://cdn.jsdelivr.net/npm/@scalar/api-reference URL (re-resolved on every page load, no SRI), telemetry to True, and agent to Scalar's hosted AI chat — which is on by default on localhost and uploads the served OpenAPI document to api.scalar.com on first message. See coro/api/docs.py for the hardened call."
+    }
+  ]
+}

@@ -2,8 +2,8 @@
 
 A typed boundary object rather than a tuple of dicts: each channel module hands
 back exactly one of these, and the assembler merges them without knowing
-anything about either channel's internals (CES-79, and the `no-dict-*`
-ast-grep rules).
+anything about either channel's internals (CES-79, and botica's
+`no-dict-*` rules).
 """
 
 from __future__ import annotations
