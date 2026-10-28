@@ -360,6 +360,7 @@ wheels = [
 name = "coro-asr"
 source = { editable = "." }
 dependencies = [
+    { name = "cyclopts" },
     { name = "fastapi" },
     { name = "faster-whisper" },
     { name = "httpx" },
@@ -370,8 +371,10 @@ dependencies = [
     { name = "onnx-asr", extra = ["hub"] },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
+    { name = "rich" },
     { name = "scalar-fastapi" },
     { name = "soxr" },
+    { name = "structlog" },
     { name = "uvicorn" },
     { name = "websockets" },
 ]
@@ -437,6 +440,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cyclopts", specifier = ">=4" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "faster-whisper", specifier = ">=1.2.0,<1.3.0" },
     { name = "httpx", specifier = ">=0.27.0" },
@@ -456,8 +460,10 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'recipes'", specifier = ">=17.0.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "python-multipart", specifier = ">=0.0.27" },
+    { name = "rich", specifier = ">=14" },
     { name = "scalar-fastapi", specifier = ">=1.8.2" },
     { name = "soxr", specifier = ">=0.5" },
+    { name = "structlog", specifier = ">=25.1" },
     { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.12.1,<4.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "coro-asr", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cuda'", specifier = ">=2.12.1,<4.0" },
     { name = "torchaudio", marker = "extra == 'cpu'", specifier = ">=2.1.0,<4.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "coro-asr", extra = "cpu" } },
@@ -597,6 +603,21 @@ wheels = [
 ]
 
 [[package]]
+name = "cyclopts"
+version = "5.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "docstring-parser" },
+    { name = "rich" },
+    { name = "rich-rst" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/28/c1/3debeeb6e0eb74a51d6f8cf1f273ed7c479e3321631cbf89fb9700e65e28/cyclopts-5.2.0.tar.gz", hash = "sha256:b63c1b1beaadf3ead19214385a0f90b990f152c4107c174e1724c45dc71e9541", size = 246542, upload-time = "2026-10-06T15:02:39.212Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/dd/3f73d04c95f6acc6a54700011637e49362e337139b518be895edf4786f87/cyclopts-5.2.0-py3-none-any.whl", hash = "sha256:5da2a5d65164e03008621fc4795946b88a722b881398b5dfa58afa6218342cff", size = 289196, upload-time = "2026-10-06T15:02:37.57Z" },
+]
+
+[[package]]
 name = "cython"
 version = "3.2.4"
 source = { registry = "https://pypi.org/simple" }
@@ -706,6 +727,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/81/e1/56027a71e31b02ddc53c7d65b01e68edf64dea2932122fe7746a516f75d5/dill-0.4.1.tar.gz", hash = "sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa", size = 187315, upload-time = "2026-01-19T02:36:56.85Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/77/dc8c558f7593132cf8fefec57c4f60c83b16941c574ac5f619abb3ae7933/dill-0.4.1-py3-none-any.whl", hash = "sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d", size = 120019, upload-time = "2026-01-19T02:36:55.663Z" },
+]
+
+[[package]]
+name = "docstring-parser"
+version = "0.18.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/4d/f332313098c1de1b2d2ff91cf2674415cc7cddab2ca1b01ae29774bd5fdf/docstring_parser-0.18.0.tar.gz", hash = "sha256:292510982205c12b1248696f44959db3cdd1740237a968ea1e2e7a900eeb2015", size = 29341, upload-time = "2026-04-14T04:09:19.867Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a7/5f/ed01f9a3cdffbd5a008556fc7b2a08ddb1cc6ace7effa7340604b1d16699/docstring_parser-0.18.0-py3-none-any.whl", hash = "sha256:b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b", size = 22484, upload-time = "2026-04-14T04:09:18.638Z" },
 ]
 
 [[package]]
@@ -2803,6 +2833,19 @@ wheels = [
 ]
 
 [[package]]
+name = "rich-rst"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pygments" },
+    { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cf/0e/faf7c7e36630561e3e9611730c47510cd972dd5fde8f95941ff78f76accd/rich_rst-2.2.0.tar.gz", hash = "sha256:b1e6a67f8f694a6f36035624bf73e2b1a0a4be13edaf3ba5e654d9758b61073a", size = 326270, upload-time = "2026-09-27T19:12:42.163Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/4e/716b42bf066e180c1235783b46f095a5d871d05dca7006d2295aac29c491/rich_rst-2.2.0-py3-none-any.whl", hash = "sha256:1ea1c43813dc4a8d86475fce27ffb74e0ada3d4656c9f8130ba2a59868055fe9", size = 279274, upload-time = "2026-09-27T19:12:40.548Z" },
+]
+
+[[package]]
 name = "ruff"
 version = "0.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3102,6 +3145,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/85/ad/430fb60d90e1d112a62ff57bdd1f286ec73a2a0331272febfddd21f330e1/StrEnum-0.4.15.tar.gz", hash = "sha256:878fb5ab705442070e4dd1929bb5e2249511c0bcf2b0eeacf3bcd80875c82eff", size = 23384, upload-time = "2023-06-29T22:02:58.399Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/69/297302c5f5f59c862faa31e6cb9a4cd74721cd1e052b38e464c5b402df8b/StrEnum-0.4.15-py3-none-any.whl", hash = "sha256:a30cda4af7cc6b5bf52c8055bc4bf4b2b6b14a93b574626da33df53cf7740659", size = 8851, upload-time = "2023-06-29T22:02:56.947Z" },
+]
+
+[[package]]
+name = "structlog"
+version = "26.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5e/89/b4a0bcfdf4f71a3dea31379f095929613d7e4528a0996bca6aa964cd0dca/structlog-26.1.0.tar.gz", hash = "sha256:f63a716cbd1b1291cf7661de7794b455acfa4c43c5bcf1630e6ad5ddc1adb3b7", size = 1459881, upload-time = "2026-06-06T07:33:39.348Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/18/489c97b834dfff9cf2fc2507cede4bcd4b11e67f84bc462acd1992496f86/structlog-26.1.0-py3-none-any.whl", hash = "sha256:e081a26d6c373e6d201eca24eede26d8ffab07f88f477822e679183428d3d91e", size = 73764, upload-time = "2026-06-06T07:33:38.046Z" },
 ]
 
 [[package]]

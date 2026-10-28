@@ -76,6 +76,9 @@ dependencies = [
     "uvicorn>=0.30.0",
     # WebSocket transport for POST-less /v1/listen; uvicorn ships none by default.
     "websockets>=13",
+    "structlog>=25.1",
+    "cyclopts>=4",
+    "rich>=14",
 ]
 
 # Shown in the PyPI sidebar. The `Homepage`/`Source`/`Issues` keys map to the
