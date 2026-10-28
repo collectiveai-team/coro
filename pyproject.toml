@@ -79,6 +79,10 @@ dependencies = [
     "structlog>=25.1",
     "cyclopts>=4",
     "rich>=14",
+    "pydantic>=2.7",
+    "starlette>=0.40",
+    "huggingface-hub>=0.24",
+    "soundfile>=0.12",
 ]
 
 # Shown in the PyPI sidebar. The `Homepage`/`Source`/`Issues` keys map to the
@@ -157,6 +161,7 @@ dev = [
     "pytest-socket>=0.7",
 ]
 bench = [
+    "kaldialign>=0.9",
     # Sliding-window language detection for coro/bench/language_drift.py's
     # four-signal drift metric (issue #64). Import name is `lingua`; was used
     # unconditionally by that module since its introduction (commit 9abf522)
@@ -168,6 +173,7 @@ bench = [
     # Row-group-granular reads of the Hugging Face Parquet corpora behind the
     # Spanish Workload Set (coro/bench/utils/hf_parquet.py).
     "pyarrow>=17.0.0",
+    "regex>=2024.1",
     "rich>=15.0.0",
     "simplejson>=3.0.0",
 ]
@@ -481,3 +487,48 @@ markers = [
 D3 = "info" # Duplicate Assert
 D6 = "info" # Debug Print left in a test
 M2 = "info" # Long Test Method
+
+
+# MARK: deptry
+# CES-109: every import is a declared dependency, and every dependency is imported.
+# Run from the project environment (`uv run --with deptry`), so the import names of the
+# installed distributions resolve.
+[tool.deptry]
+known_first_party = ["coro"]
+extend_exclude = [
+    "\\.botica",
+    "\\.tmp",
+    "\\.scratch",
+    "\\.worktrees",
+    "scripts",
+    "notebooks",
+    "benchmark",
+    "backup",
+    "resources",
+]
+
+[tool.deptry.package_module_name_map]
+"pyannote.audio" = "pyannote"
+
+[tool.deptry.per_rule_ignores]
+# Declared but never imported, on purpose:
+# - torchaudio: pinned to the torch CPU index so pyannote's native lib matches torch.
+# - python-multipart: FastAPI needs it for File()/Form() uploads.
+# - websockets: uvicorn's WebSocket implementation (/v1/listen).
+# - numba, lightning: version floors/pins for nemo-toolkit's resolution.
+# - onnxruntime-gpu, onnxruntime-genai-cuda, nvidia-*: runtimes loaded under their
+#   CPU names (onnxruntime, onnxruntime_genai) or as shared libraries.
+DEP002 = [
+    "torchaudio",
+    "python-multipart",
+    "websockets",
+    "numba",
+    "lightning",
+    "onnxruntime-gpu",
+    "onnxruntime-genai-cuda",
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu13",
+]
+# coro.bench is optional tooling installed with `--group bench`; these imports are lazy
+# and fail with an install hint.
+DEP004 = ["meeteval", "lingua", "pynvml", "kaldialign", "regex"]

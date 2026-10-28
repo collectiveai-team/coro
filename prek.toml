@@ -185,6 +185,18 @@ types = ["python"]
 pass_filenames = false
 priority = 2
 
+# MARK: deptry
+# CES-109. Inside the project environment (not `uvx deptry`), so deptry maps import names
+# to the installed distributions. Configuration: [tool.deptry] in pyproject.toml.
+[[repos.hooks]]
+id = "deptry"
+name = "deptry (unused/missing/misplaced dependencies)"
+entry = "uv run --no-sync --with deptry==0.25.1 deptry ."
+language = "system"
+types_or = ["python", "toml"]
+pass_filenames = false
+priority = 2
+
 # MARK: falsegreen
 # False-green test scanner: flags tests that pass without protecting anything
 # (assertion-free, tautological, swallowed exception, mock typos, dead-code
