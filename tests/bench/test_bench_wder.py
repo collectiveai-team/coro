@@ -286,7 +286,8 @@ class TestBenchmarkIntegration:
         import json
 
         from coro.bench.quality import combine_items, score_item
-        from coro.bench.report import build_report, render_markdown
+        from coro.bench.report import build_report
+        from coro.bench.report_markdown import render_markdown
 
         ref, hyp = stm_pair(
             REF,
@@ -345,7 +346,8 @@ class TestBenchmarkIntegration:
         import json
 
         from coro.bench.quality import combine_items, score_item
-        from coro.bench.report import build_report, render_markdown
+        from coro.bench.report import build_report
+        from coro.bench.report_markdown import render_markdown
 
         ref, hyp = stm_pair(
             REF,

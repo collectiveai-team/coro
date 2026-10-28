@@ -1,4 +1,4 @@
-"""Tests for coro.bench.report module."""
+"""Tests for the coro.bench.report builder and its markdown and stdout renderers."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ from pathlib import Path
 
 
 from coro.bench.models.report import BenchReport, PerformanceRow, QualityRow
-from coro.bench.report import (
+from coro.bench.report import build_report
+from coro.bench.report_markdown import (
     NORMALIZED_LANE_LABEL,
     RAW_LANE_LABEL,
-    build_report,
     render_markdown,
-    render_stdout,
 )
+from coro.bench.report_stdout import render_stdout
 
 
 def _quality_report(**kwargs) -> BenchReport:

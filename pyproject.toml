@@ -326,7 +326,7 @@ max-complexity = 10
 # Parses the AMI benchmark corpus XML/STM (trusted local fixtures).
 "coro/bench/stm.py" = ["S314"]
 # Markdown report tables: header/separator strings exceed the line limit by design.
-"coro/bench/report.py" = ["E501", "BLE001"]
+"coro/bench/report_markdown.py" = ["E501"]
 # Files over botica's file-size-guard limit: a suppression comment would touch them, and a
 # touched file must be split first (botica-0.18 adoption, phase 2). Remove once split.
 "coro/backends/asr/onnx_canary_split.py" = ["A001"]

@@ -80,7 +80,9 @@ def _build_items(
 
 def _render_report(out_dir: Path) -> None:
     """Print the run report to stdout and write ``REPORT.md`` beside the artifacts."""
-    from coro.bench.report import build_report, render_markdown, render_stdout
+    from coro.bench.report import build_report
+    from coro.bench.report_markdown import render_markdown
+    from coro.bench.report_stdout import render_stdout
 
     report = build_report(out_dir)
     render_stdout(report)
