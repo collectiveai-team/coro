@@ -28,8 +28,21 @@ async def _drain(source: LiveAudioSource) -> list[bytes]:
     return [chunk async for chunk in source.chunks()]
 
 
-def _open_fds() -> int:
-    return len(list(Path("/proc/self/fd").iterdir()))
+def _fds_under(directory: Path) -> list[str]:
+    """Targets of the open descriptors of this process that point under ``directory``.
+
+    Counting every descriptor depends on what earlier tests left for the garbage
+    collector, so the count changes with the test order (pytest-randomly).
+    """
+    targets = []
+    for fd in Path("/proc/self/fd").iterdir():
+        try:
+            target = str(fd.readlink())
+        except OSError:
+            continue
+        if target.startswith(str(directory)):
+            targets.append(target)
+    return targets
 
 
 async def test_backlog_beyond_the_memory_limit_is_spilled_to_disk(tmp_path):
@@ -82,20 +95,19 @@ async def test_a_drained_spill_file_is_truncated(tmp_path):
 
 
 async def test_release_closes_the_spill_file_and_leaves_nothing_on_disk(tmp_path):
-    before = _open_fds()
     source = LiveAudioSource(spill_dir=str(tmp_path), memory_limit_bytes=MEMORY_LIMIT)
     for chunk in _chunks(50):
         await source.push(chunk)
+    assert _fds_under(tmp_path) != []
     source.release()
-    assert _open_fds() == before
+    assert _fds_under(tmp_path) == []
     assert list(tmp_path.iterdir()) == []
 
 
 async def test_below_the_memory_limit_nothing_touches_disk(tmp_path):
-    before = _open_fds()
     source = LiveAudioSource(spill_dir=str(tmp_path), memory_limit_bytes=MEMORY_LIMIT)
     for chunk in _chunks(3):
         await source.push(chunk)
     assert source.spilled_bytes == 0
-    assert _open_fds() == before
+    assert _fds_under(tmp_path) == []
     source.release()
