@@ -1,4 +1,4 @@
-"""Terminal renderer for the benchmark report (rich if available, else plain text)."""
+"""Terminal renderer for the benchmark report, drawn with Rich."""
 
 from __future__ import annotations
 
@@ -13,16 +13,12 @@ from coro.bench.report_markdown import (
     _fmt_mib,
     _fmt_pct,
     _wder_rows,
-    render_markdown,
 )
 
 
 def render_stdout(report: BenchReport) -> None:
-    """Render the report to stdout using rich if available, else plain text."""
-    try:
-        _render_stdout_rich(report)
-    except ImportError:
-        _render_stdout_plain(report)
+    """Render the report to stdout with Rich panels and tables."""
+    _render_stdout_rich(report)
 
 
 def _render_stdout_rich(report: BenchReport) -> None:
@@ -200,8 +196,3 @@ def _rich_performance_table(console: object, report: BenchReport) -> None:
         cells.append(row.observed_profile)
         pt.add_row(*cells)
     console.print(pt)  # type: ignore[attr-defined]
-
-
-def _render_stdout_plain(report: BenchReport) -> None:
-    print("# Benchmark Report")
-    print(render_markdown(report))

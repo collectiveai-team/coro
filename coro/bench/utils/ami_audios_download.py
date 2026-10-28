@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-import argparse
 import shutil
 import urllib.error
 import urllib.request
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
+
+from coro.cli_support import fail, invoke, new_app
+from coro.core.logger import get_logger
+
+log = get_logger(__name__)
 
 
 BASE_URL = "https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus"
@@ -32,13 +38,12 @@ def download_file(url: str, output_path: Path, *, force: bool = False) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if output_path.exists() and not force:
-        print(f"skip existing: {output_path}")
+        log.info("skip existing", path=str(output_path))
         return
 
     tmp_path = output_path.with_suffix(output_path.suffix + ".part")
 
-    print(f"download: {url}")
-    print(f"     to: {output_path}")
+    log.info("download", url=url, path=str(output_path))
 
     try:
         with urllib.request.urlopen(url) as response, tmp_path.open("wb") as f:
@@ -83,60 +88,47 @@ def read_meetings_file(path: Path) -> list[str]:
     return meetings
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "meetings",
-        nargs="*",
-        help="AMI meeting IDs, e.g. EN2001a IB4001 IN1001",
-    )
-    parser.add_argument(
-        "--meetings-file",
-        type=Path,
-        help="Text file with one meeting ID per line.",
-    )
-    parser.add_argument(
-        "--out-dir",
-        type=Path,
-        default=Path("amicorpus"),
-    )
-    parser.add_argument(
-        "--mic",
-        default="mix-headset",
-        choices=["mix-headset", "ihm-mix", "sdm"],
-        help="mix-headset/ihm-mix = Mix-Headset WAV; sdm = Array1-01 WAV.",
-    )
-    parser.add_argument(
-        "--annotations",
-        action="store_true",
-        help="Also download AMI manual annotations zip.",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Re-download files even if they already exist.",
-    )
-    args = parser.parse_args()
+app = new_app("ami_audios_download", help="Download AMI meeting audio and annotations.")
 
-    meetings = list(args.meetings)
 
-    if args.meetings_file:
-        meetings.extend(read_meetings_file(args.meetings_file))
+@app.default
+def _download(
+    *meetings: str,
+    meetings_file: Path | None = None,
+    out_dir: Path = Path("amicorpus"),
+    mic: Literal["mix-headset", "ihm-mix", "sdm"] = "mix-headset",
+    annotations: bool = False,
+    force: bool = False,
+) -> None:
+    """Download AMI meeting audio and annotations.
 
-    if not meetings and not args.annotations:
-        parser.error("Provide at least one meeting ID or use --annotations.")
+    Args:
+        meetings: AMI meeting IDs, e.g. EN2001a IB4001 IN1001
+        meetings_file: Text file with one meeting ID per line.
+        out_dir: Directory the corpus is written under.
+        mic: mix-headset/ihm-mix = Mix-Headset WAV; sdm = Array1-01 WAV.
+        annotations: Also download AMI manual annotations zip.
+        force: Re-download files even if they already exist.
 
-    for meeting_id in meetings:
-        download_meeting_audio(
-            meeting_id=meeting_id,
-            out_dir=args.out_dir,
-            mic=args.mic,
-            force=args.force,
-        )
+    """
+    selected = list(meetings)
 
-    if args.annotations:
-        download_annotations(args.out_dir, force=args.force)
+    if meetings_file:
+        selected.extend(read_meetings_file(meetings_file))
 
+    if not selected and not annotations:
+        fail("ami_audios_download", "Provide at least one meeting ID or use --annotations.")
+
+    for meeting_id in selected:
+        download_meeting_audio(meeting_id=meeting_id, out_dir=out_dir, mic=mic, force=force)
+
+    if annotations:
+        download_annotations(out_dir, force=force)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the AMI download command line."""
+    invoke(app, argv)
     return 0
 
 

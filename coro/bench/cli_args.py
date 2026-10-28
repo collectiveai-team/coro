@@ -1,31 +1,36 @@
-"""Argument definition and validation for the coro-bench CLI.
+"""Argument parsing and validation for the coro-bench CLI.
 
 Kept separate from the run orchestration in :mod:`coro.bench.cli` so the flag
-surface can be read and validated on its own.
+surface can be read and validated on its own; the flags themselves are the
+fields of :class:`coro.bench.cli_flags.BenchArgs`.
 """
 
 from __future__ import annotations
 
-import argparse
 import sys
-from datetime import datetime
-from pathlib import Path
+from collections.abc import Callable, Sequence
+from typing import Annotated, NoReturn
 
-from coro.bench.calibration import DEFAULT_CALIBRATION_MARGIN
-from coro.bench.process_lookup import DEFAULT_SERVER_MATCH
+from cyclopts import Parameter
+
+from coro.bench.cli_flags import BenchArgs
 from coro.bench.quarantine import CircularReferenceError, assert_scorable_reference
-from coro.bench.settings import get_settings
-from coro.bench.spanish import SPANISH_PRESETS
+from coro.cli_support import fail, invoke, new_app
 
-_MANAGED_FLAGS = {
-    "server_asr_backend",
-    "server_asr_model",
-    "server_diar_backend",
-    "server_diar_model",
-    "server_pipeline",
-    "server_port",
-    "no_diarization",
-}
+__all__ = ["BenchArgs", "parse_args"]
+
+PROG = "coro-bench"
+SUBCOMMANDS = ("quality", "performance", "all")
+
+_MANAGED_FLAGS = (
+    "--server-asr-backend",
+    "--server-asr-model",
+    "--server-diar-backend",
+    "--server-diar-model",
+    "--server-pipeline",
+    "--server-port",
+    "--no-diarization",
+)
 
 _ATTACHED_FLAGS = ("server_pid", "server_match")
 
@@ -33,197 +38,54 @@ _ATTACHED_FLAGS = ("server_pid", "server_match")
 _SAMPLING_SUBCOMMANDS = frozenset({"performance", "all"})
 
 
-def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
-    env = get_settings()
-    parser.add_argument(
-        "--out-dir",
-        default=env.out_dir or Path(f"/tmp/asr-bench-{datetime.now().strftime('%Y%m%d-%H%M%S')}"),
-        type=Path,
-    )
-    parser.add_argument("--reps", type=int, default=1)
-    parser.add_argument(
-        "--sample-interval",
-        type=float,
-        default=env.sample_interval,
-    )
-    parser.add_argument("--ami-meetings", nargs="+", default=[])
-    parser.add_argument(
-        "--ami-groups",
-        nargs="+",
-        default=[],
-        choices=["IB", "IN", "ES", "IS", "TS", "EN"],
-    )
-    parser.add_argument(
-        "--ami-preset",
-        choices=["sample", "eval", "full"],
-        default=None,
-    )
-    parser.add_argument("--ami-root", type=Path, default=Path("./amicorpus/"))
-    parser.add_argument("--no-download", action="store_true")
-    parser.add_argument(
-        "--reuse-reference-stms",
-        action="store_true",
-        help="Reuse Reference STM files already present under <ami-root>/stm instead "
-        "of regenerating them. Opt-in: reused files are frozen against whatever the "
-        "STM builder looked like when they were first written.",
-    )
-
-    managed = parser.add_argument_group("bench-managed server")
-    managed.add_argument("--server-asr-backend", default=None)
-    managed.add_argument("--server-asr-model", default=None)
-    managed.add_argument("--server-diar-backend", default=None)
-    managed.add_argument("--server-diar-model", default=None)
-    managed.add_argument("--server-pipeline", default=None)
-    managed.add_argument("--no-diarization", action="store_true", default=None)
-    managed.add_argument("--server-port", type=int, default=None)
-
-    attached = parser.add_argument_group("bench-attached server")
-    attached.add_argument("--server-url", type=str, default=None)
-    attached.add_argument(
-        "--server-pid",
-        type=int,
-        default=env.server_pid,
-        help="Root PID of the Server Process Tree to sample. Bench-attached only; "
-        "a Bench-Managed Server reports its own PID.",
-    )
-    attached.add_argument(
-        "--server-match",
-        default=env.server_match,
-        help="Command-line substring identifying the Server Process Tree when "
-        f"--server-pid is not given (default: {DEFAULT_SERVER_MATCH!r}). "
-        "Bench-attached only.",
-    )
-
-    parser.add_argument("--warmup", action="store_true", default=False)
-    parser.add_argument("--warmup-audio", type=Path, default=None)
-    parser.add_argument("--audio", type=Path, default=None)
-    parser.add_argument("--reference-stm", type=Path, default=None)
-    parser.add_argument(
-        "--clips-dir",
-        type=Path,
-        default=None,
-        help="Directory of (<stem>.wav, <stem>.ref.stm) pairs to benchmark as a "
-        "short-clip / curated workload (e.g. make_ami_clip output).",
-    )
-    parser.add_argument("--der-collar", type=float, default=0.0)
-    parser.add_argument("--der-regions", choices=["all", "nooverlap", "single"], default="all")
-    parser.add_argument(
-        "--language",
-        default=None,
-        help="Language hint sent with every transcription request (for example es, "
-        "es-US, or es-ES). Omit it to benchmark automatic language detection.",
-    )
-    parser.add_argument("--stream", action="store_true", default=False)
-    parser.add_argument(
-        "--deepgram",
-        action="store_true",
-        default=False,
-        help="Send audio to the Deepgram-native /v1/listen endpoint instead of the "
-        "OpenAI one. This is the only wire surface that carries per-word speaker "
-        "labels, so WDER scores per-word attribution rather than the segment-level "
-        "majority summary. Allowed on 'quality', unlike --stream.",
-    )
-
-    spanish = parser.add_argument_group("Spanish workload set (public corpora)")
-    spanish.add_argument(
-        "--spanish-preset",
-        choices=sorted(SPANISH_PRESETS),
-        default=None,
-        help="Materialise a Spanish Workload Set from freely-licensed public "
-        "corpora and benchmark it as a --clips-dir workload. Single-speaker: "
-        "WER only, no meaningful DER.",
-    )
-    spanish.add_argument("--spanish-root", type=Path, default=Path("./spanish-corpora/"))
-    spanish.add_argument(
-        "--spanish-limit",
-        type=int,
-        default=None,
-        help="Override the preset's items-per-corpus count.",
-    )
-    spanish.add_argument(
-        "--spanish-fetch-plan",
-        action="store_true",
-        default=False,
-        help="Print the download footprint of --spanish-preset and exit.",
-    )
-    spanish.add_argument(
-        "--calibration-margin",
-        type=float,
-        default=DEFAULT_CALIBRATION_MARGIN,
-        help="Two-sided absolute WER band against published figures "
-        f"(default {DEFAULT_CALIBRATION_MARGIN}). Exceeding it fails the run.",
-    )
-    spanish.add_argument(
-        "--no-calibration",
-        action="store_true",
-        default=False,
-        help="Report calibration without failing the run on a deviation.",
-    )
+def _error(message: str) -> NoReturn:
+    fail(PROG, message)
 
 
-def _apply_defaults(args: argparse.Namespace) -> None:
-    defaults = {
-        "server_asr_backend": "faster-whisper",
-        "server_asr_model": "openai/whisper-medium",
-        "server_diar_backend": "nemo",
-        "server_diar_model": "nvidia/diar_streaming_sortformer_4spk-v2",
-        "server_pipeline": "full-memory",
-        "server_port": 0,
-        "no_diarization": False,
-    }
-    for flag, default in defaults.items():
-        if getattr(args, flag) is None:
-            setattr(args, flag, default)
+def _given_flags(tokens: Sequence[str]) -> set[str]:
+    """Return the ``--flag`` names present in ``tokens``, with any ``=value`` removed."""
+    return {token.split("=", 1)[0] for token in tokens if token.startswith("--")}
 
 
-def _validate_reference_args(
-    args: argparse.Namespace,
-    parser: argparse.ArgumentParser,
-) -> None:
+def _validate_reference_args(args: BenchArgs) -> None:
     """Reject quarantined references and conflicting workload-set selectors."""
     if args.reference_stm is not None:
         try:
             assert_scorable_reference(args.reference_stm)
         except CircularReferenceError as exc:
-            parser.error(str(exc))
+            _error(str(exc))
 
     if args.spanish_preset is not None and args.clips_dir is not None:
-        parser.error("--spanish-preset is mutually exclusive with --clips-dir.")
+        _error("--spanish-preset is mutually exclusive with --clips-dir.")
 
     if args.spanish_fetch_plan and args.spanish_preset is None:
-        parser.error("--spanish-fetch-plan requires --spanish-preset.")
+        _error("--spanish-fetch-plan requires --spanish-preset.")
 
 
-def _validate_transport_args(
-    args: argparse.Namespace,
-    parser: argparse.ArgumentParser,
-) -> None:
+def _validate_transport_args(args: BenchArgs) -> None:
     """Reject transport selections that cannot be honoured.
 
     ``--deepgram`` is deliberately allowed on ``quality``, unlike ``--stream``:
     quality is the subcommand that computes WDER, and the Deepgram endpoint is
     the only surface carrying the per-word speakers WDER is meant to score.
     """
-    stream = getattr(args, "stream", False)
-    deepgram = getattr(args, "deepgram", False)
+    if args.stream and args.subcommand == "quality":
+        _error("--stream is not allowed for the 'quality' subcommand.")
 
-    if stream and args.subcommand == "quality":
-        parser.error("--stream is not allowed for the 'quality' subcommand.")
-
-    if stream and deepgram:
-        parser.error(
+    if args.stream and args.deepgram:
+        _error(
             "--stream and --deepgram select different endpoints; /v1/listen is not an SSE surface."
         )
 
 
-def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    _validate_transport_args(args, parser)
+def _validate_args(args: BenchArgs) -> None:
+    _validate_transport_args(args)
 
     has_attached = args.server_url is not None
-    has_managed_explicit = any(getattr(args, flag) is not None for flag in _MANAGED_FLAGS)
+    has_managed_explicit = not _given_flags(args.cli_args).isdisjoint(_MANAGED_FLAGS)
 
     if has_attached and has_managed_explicit:
-        parser.error(
+        _error(
             "--server-url is mutually exclusive with bench-managed server flags "
             "(--server-asr-backend, --server-asr-model, --server-diar-backend, "
             "--server-diar-model, --server-pipeline, --server-port, --no-diarization)."
@@ -232,13 +94,11 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     if not has_attached:
         for flag in _ATTACHED_FLAGS:
             if getattr(args, flag) is not None:
-                parser.error(
+                _error(
                     f"--{flag.replace('_', '-')} only applies to a bench-attached server; "
                     "a bench-managed server reports its own PID. Pass --server-url to "
                     "attach to an already-running server."
                 )
-
-    _apply_defaults(args)
 
     if args.warmup_audio is not None:
         args.warmup = True
@@ -247,27 +107,52 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         args.server_diar_backend = "none"
 
     if args.reference_stm is not None and args.audio is None:
-        parser.error("--reference-stm requires --audio.")
+        _error("--reference-stm requires --audio.")
 
     if args.audio is not None and args.reference_stm is None and args.subcommand == "quality":
-        parser.error("--audio without --reference-stm is not allowed for the 'quality' subcommand.")
+        _error("--audio without --reference-stm is not allowed for the 'quality' subcommand.")
 
-    _validate_reference_args(args, parser)
+    _validate_reference_args(args)
 
 
-def parse_args(argv=None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Benchmark an ASR HTTP endpoint.",
-        prog="coro-bench",
-    )
-    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+def _subcommand(name: str) -> Callable[..., BenchArgs]:
+    def command(args: BenchArgs | None = None) -> BenchArgs:
+        selected = args if args is not None else BenchArgs()
+        selected.subcommand = name
+        return selected
 
-    for name in ("quality", "performance", "all"):
-        sub = subparsers.add_parser(name)
-        _add_shared_flags(sub)
+    return command
 
-    args = parser.parse_args(argv)
+
+def _missing_subcommand(*tokens: Annotated[str, Parameter(show=False)]) -> NoReturn:
+    if tokens:
+        choices = ", ".join(repr(name) for name in SUBCOMMANDS)
+        _error(f"argument subcommand: invalid choice: {tokens[0]!r} (choose from {choices})")
+    _error("the following arguments are required: subcommand")
+
+
+_app = new_app(PROG, help="Benchmark an ASR HTTP endpoint.")
+_app.default(_missing_subcommand)
+for _name in SUBCOMMANDS:
+    _app.command(_subcommand(_name), name=_name)
+
+
+def parse_args(argv: Sequence[str] | None = None) -> BenchArgs:
+    """Parse and validate coro-bench arguments.
+
+    Args:
+        argv: Arguments after the program name. Defaults to ``sys.argv[1:]``.
+
+    Returns:
+        The validated arguments, with every default filled in.
+
+    Raises:
+        SystemExit: Code 2 on invalid arguments, code 0 after ``--help``.
+
+    """
+    tokens = list(argv) if argv is not None else list(sys.argv[1:])
+    args: BenchArgs = invoke(_app, tokens)
     # Recorded verbatim in the run manifest so a result can be re-run as issued.
-    args.cli_args = list(argv) if argv is not None else sys.argv[1:]
-    _validate_args(args, parser)
+    args.cli_args = tokens
+    _validate_args(args)
     return args

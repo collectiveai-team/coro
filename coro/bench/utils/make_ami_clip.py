@@ -13,11 +13,12 @@ All STM logic lives in the library (ami.clip_reference_stm / stm.slice_stm_windo
 
 from __future__ import annotations
 
-import argparse
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 from coro.bench.ami import clip_reference_stm, get_audio_path
+from coro.cli_support import invoke, new_app, out_console
 
 
 def cut_audio_clip(src: Path, dst: Path, start: float, duration: float) -> None:
@@ -45,38 +46,46 @@ def cut_audio_clip(src: Path, dst: Path, start: float, duration: float) -> None:
     )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Cut a short AMI clip + reference STM.")
-    parser.add_argument("meeting_id")
-    parser.add_argument("--ami-root", type=Path, default=Path("amicorpus"))
-    parser.add_argument("--start", type=float, required=True, help="Clip start (seconds).")
-    parser.add_argument("--duration", type=float, default=60.0, help="Clip length (seconds).")
-    parser.add_argument("--out-dir", type=Path, default=Path("ami-clips"))
-    args = parser.parse_args()
+app = new_app("make_ami_clip", help="Cut a short AMI clip + reference STM.")
 
-    stem = f"{args.meeting_id}_{int(args.start)}_{int(args.duration)}"
-    audio_dst = args.out_dir / f"{stem}.wav"
-    stm_dst = args.out_dir / f"{stem}.ref.stm"
 
-    cut_audio_clip(
-        get_audio_path(args.ami_root, args.meeting_id),
-        audio_dst,
-        args.start,
-        args.duration,
-    )
+@app.default
+def _cut(
+    meeting_id: str,
+    /,
+    *,
+    start: float,
+    ami_root: Path = Path("amicorpus"),
+    duration: float = 60.0,
+    out_dir: Path = Path("ami-clips"),
+) -> None:
+    """Cut a short AMI clip + reference STM.
+
+    Args:
+        meeting_id: AMI meeting to cut from.
+        start: Clip start (seconds).
+        ami_root: Root of the AMI corpus.
+        duration: Clip length (seconds).
+        out_dir: Directory the clip and its Reference STM are written into.
+
+    """
+    stem = f"{meeting_id}_{int(start)}_{int(duration)}"
+    audio_dst = out_dir / f"{stem}.wav"
+    stm_dst = out_dir / f"{stem}.ref.stm"
+
+    cut_audio_clip(get_audio_path(ami_root, meeting_id), audio_dst, start, duration)
     # The clip stem is the benchmark item_id, so the reference session id must
     # match it (the hypothesis STM is keyed by item_id).
-    stm_text = clip_reference_stm(
-        args.ami_root,
-        args.meeting_id,
-        args.start,
-        args.duration,
-        recording_id=stem,
-    )
+    stm_text = clip_reference_stm(ami_root, meeting_id, start, duration, recording_id=stem)
     stm_dst.write_text(stm_text, encoding="utf-8")
 
-    print(f"wrote {audio_dst}")
-    print(f"wrote {stm_dst} ({len(stm_text.splitlines())} lines)")
+    out_console.out(f"wrote {audio_dst}")
+    out_console.out(f"wrote {stm_dst} ({len(stm_text.splitlines())} lines)")
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the AMI clip cutter command line."""
+    invoke(app, argv)
 
 
 if __name__ == "__main__":

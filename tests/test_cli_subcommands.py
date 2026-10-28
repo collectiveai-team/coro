@@ -12,18 +12,21 @@ from unittest.mock import patch
 
 import pytest
 
-from coro.cli import SUBCOMMANDS, main, split_subcommand
+from coro.cli import SUBCOMMANDS, main
 
 
 # MARK: Dispatch
 @pytest.mark.parametrize("command", SUBCOMMANDS)
-def test_a_known_command_is_split_from_its_arguments(command):
-    assert split_subcommand([command, "--flag", "value"]) == (command, ["--flag", "value"])
+def test_a_known_command_receives_the_arguments_after_it(command):
+    with patch(f"coro.cli.{command}", autospec=True) as handler:
+        main([command, "--flag", "value"])
+
+    handler.assert_called_once_with(["--flag", "value"])
 
 
 def test_a_bare_invocation_is_refused(capsys):
     with pytest.raises(SystemExit) as exit_info:
-        split_subcommand([])
+        main([])
 
     assert exit_info.value.code == 2
     assert "serve" in capsys.readouterr().err
@@ -31,7 +34,7 @@ def test_a_bare_invocation_is_refused(capsys):
 
 def test_an_unknown_command_names_the_valid_ones(capsys):
     with pytest.raises(SystemExit) as exit_info:
-        split_subcommand(["transcirbe"])
+        main(["transcirbe"])
 
     assert exit_info.value.code == 2
     message = capsys.readouterr().err
@@ -41,7 +44,7 @@ def test_an_unknown_command_names_the_valid_ones(capsys):
 
 def test_help_before_a_command_succeeds(capsys):
     with pytest.raises(SystemExit) as exit_info:
-        split_subcommand(["--help"])
+        main(["--help"])
 
     assert exit_info.value.code == 0
     assert "coro <command>" in capsys.readouterr().out
@@ -50,7 +53,7 @@ def test_help_before_a_command_succeeds(capsys):
 def test_a_flag_alone_is_not_mistaken_for_a_command(capsys):
     """`coro --port 9000` was valid before; it must now fail rather than serve."""
     with pytest.raises(SystemExit) as exit_info:
-        split_subcommand(["--port", "9000"])
+        main(["--port", "9000"])
 
     assert exit_info.value.code == 2
     assert "unknown command" in capsys.readouterr().err

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import sys
 import tempfile
-import traceback
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +33,10 @@ from coro.bench.models.quality import (
     WerStats,
 )
 from coro.bench.wder import combine_wder, compute_wder
+from coro.cli_support import err_console
+from coro.core.logger import get_logger
+
+log = get_logger(__name__)
 
 
 def _require_meeteval():
@@ -42,13 +45,12 @@ def _require_meeteval():
 
         return meeteval
     except ImportError:
-        print(
+        err_console.out(
             "Error: meeteval is required for quality scoring.\n"
             "The bench tooling is a PEP 735 dependency group, not an installable "
             "extra.\n"
             "Install with: uv sync --group bench\n"
-            "Then run the bench with: uv run --group bench coro-bench ...",
-            file=sys.stderr,
+            "Then run the bench with: uv run --group bench coro-bench ..."
         )
         sys.exit(1)
 
@@ -234,10 +236,11 @@ def _score_normalized_lane(
         n_hyp = _write_normalized_stm(hyp_stm_path, normalized_hyp)
 
         if not n_ref or not n_hyp:
-            print(
-                f"[bench/quality] normalized lane skipped for {hyp_stm_path.name}: "
-                f"{n_ref} reference and {n_hyp} hypothesis lines survived normalization.",
-                file=sys.stderr,
+            log.warning(
+                "normalized lane skipped: too few lines survived normalization",
+                item=hyp_stm_path.name,
+                reference_lines=n_ref,
+                hypothesis_lines=n_hyp,
             )
             return None
 
@@ -348,13 +351,10 @@ def score_item(
             raw=raw,
         )
 
-    except Exception as exc:  # noqa: BLE001
-        # Print full traceback to stderr so the operator can see the real cause
+    except Exception as exc:
+        # Log the full traceback so the operator can see the real cause
         # without having to dig into the JSON artifact.
-        print(
-            f"[bench/quality] scoring failed for {hyp_stm_path.name}:\n{traceback.format_exc()}",
-            file=sys.stderr,
-        )
+        log.exception("scoring failed", item=hyp_stm_path.name)
         return ScoreResult(
             metrics=None,
             error=ScoreError(type=type(exc).__name__, message=str(exc)),

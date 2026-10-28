@@ -14,41 +14,45 @@ Usage:
 
 from __future__ import annotations
 
-import argparse
 import json
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 
+from coro.cli_support import invoke, new_app, out_console
+from coro.core.logger import get_logger
 from coro.recipes.paths import RECIPE_ARTIFACTS_DIR
 
+log = get_logger(__name__)
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--checkpoint",
-        type=Path,
-        required=True,
-        help="Path to a local parakeet-rnnt-1.1b-multilingual-prompt.nemo checkpoint.",
-    )
-    parser.add_argument(
-        "--out-dir",
-        type=Path,
-        default=RECIPE_ARTIFACTS_DIR / "parakeet_prompt",
-        help="Directory to write prompt_kernel_cache.npz/.json into.",
-    )
-    args = parser.parse_args(argv)
 
+app = new_app("parakeet_prompt_kernel_cache", help=__doc__.splitlines()[0])
+
+
+@app.default
+def _extract(
+    *,
+    checkpoint: Path,
+    out_dir: Path = RECIPE_ARTIFACTS_DIR / "parakeet_prompt",
+) -> None:
+    """Extract the prompt_kernel weights and metadata into a cache.
+
+    Args:
+        checkpoint: Path to a local parakeet-rnnt-1.1b-multilingual-prompt.nemo checkpoint.
+        out_dir: Directory to write prompt_kernel_cache.npz/.json into.
+
+    """
     import nemo.collections.asr as nemo_asr
     import torch
 
-    print(f"loading checkpoint {args.checkpoint} ...")
+    log.info("loading checkpoint", checkpoint=str(checkpoint))
     t0 = time.time()
     model = nemo_asr.models.ASRModel.restore_from(
-        str(args.checkpoint), map_location=torch.device("cpu")
+        str(checkpoint), map_location=torch.device("cpu")
     ).eval()
-    print(f"loaded in {time.time() - t0:.1f}s")
+    log.info("loaded checkpoint", seconds=round(time.time() - t0, 1))
 
     tokenizer = model.tokenizer
     vocab_size = tokenizer.vocab_size
@@ -58,9 +62,9 @@ def main(argv: list[str] | None = None) -> None:
         name: param.detach().numpy() for name, param in model.prompt_kernel.state_dict().items()
     }
 
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    cache_npz = args.out_dir / "prompt_kernel_cache.npz"
-    cache_json = args.out_dir / "prompt_kernel_cache.json"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cache_npz = out_dir / "prompt_kernel_cache.npz"
+    cache_json = out_dir / "prompt_kernel_cache.json"
     np.savez(cache_npz, **weights)
     cache_json.write_text(
         json.dumps(
@@ -72,7 +76,12 @@ def main(argv: list[str] | None = None) -> None:
             indent=2,
         )
     )
-    print(f"cached weights -> {cache_npz}")
-    print(f"cached meta -> {cache_json}")
-    print("prompt_dictionary:", prompt_dictionary)
-    print("blank_id:", blank_id, "vocab_size:", vocab_size)
+    out_console.out(f"cached weights -> {cache_npz}")
+    out_console.out(f"cached meta -> {cache_json}")
+    out_console.out("prompt_dictionary:", prompt_dictionary)
+    out_console.out("blank_id:", blank_id, "vocab_size:", vocab_size)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the prompt kernel cache recipe."""
+    invoke(app, argv)

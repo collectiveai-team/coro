@@ -12,16 +12,20 @@ Usage:
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 import tarfile
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import soundfile as sf
 
+from coro.cli_support import invoke, new_app, out_console
+from coro.core.logger import get_logger
 from coro.recipes.paths import RECIPE_ARTIFACTS_DIR
+
+log = get_logger(__name__)
 
 MIN_S, MAX_S = 3.0, 15.0
 # (lang_code, hf_config) pairs streamed remotely -- Spanish is harvested
@@ -62,7 +66,9 @@ def harvest_local_fleurs_es(out_dir: Path, target: int) -> list[dict]:
     out_lang_dir = out_dir / "es"
     out_lang_dir.mkdir(parents=True, exist_ok=True)
     picked: list[dict] = []
-    print(f"scanning {tar_path} for es clips (target={target}, {MIN_S}-{MAX_S}s)...")
+    log.info(
+        "scanning for es clips", archive=str(tar_path), target=target, min_s=MIN_S, max_s=MAX_S
+    )
     with tarfile.open(tar_path, "r:gz") as tar:
         for member in tar:
             if len(picked) >= target:
@@ -89,7 +95,9 @@ def harvest_local_fleurs_es(out_dir: Path, target: int) -> list[dict]:
                 )
             else:
                 tmp_path.unlink()
-    print(f"  picked {len(picked)} es clips, durations={[p['duration_s'] for p in picked]}")
+    log.info(
+        "picked clips", lang="es", count=len(picked), durations=[p["duration_s"] for p in picked]
+    )
     return picked
 
 
@@ -101,9 +109,7 @@ def harvest_remote_fleurs(
 
     out_lang_dir = out_dir / lang_code
     out_lang_dir.mkdir(parents=True, exist_ok=True)
-    print(
-        f"streaming google/fleurs config={hf_config!r} for lang={lang_code!r} (target={target})..."
-    )
+    log.info("streaming google/fleurs", config=hf_config, lang=lang_code, target=target)
     t0 = time.time()
     urls = resolve_shard_urls("google/fleurs", hf_config, "test")
     picked: list[dict] = []
@@ -128,45 +134,56 @@ def harvest_remote_fleurs(
             )
         else:
             wav_path.unlink()
-    print(
-        f"  picked {len(picked)} {lang_code} clips in {time.time() - t0:.1f}s, "
-        f"durations={[p['duration_s'] for p in picked]}"
+    log.info(
+        "picked clips",
+        lang=lang_code,
+        count=len(picked),
+        seconds=round(time.time() - t0, 1),
+        durations=[p["duration_s"] for p in picked],
     )
     return picked
 
 
-def main(argv: list[str] | None = None) -> None:
-    sys.stdout.reconfigure(line_buffering=True)  # pyrefly: ignore[missing-attribute]
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--out-dir",
-        type=Path,
-        default=RECIPE_ARTIFACTS_DIR / "calibration_corpus",
-        help="Directory to write <lang>-<id>.wav clips and the manifest into.",
-    )
-    parser.add_argument(
-        "--per-language-target", type=int, default=8, help="Clips to harvest per language."
-    )
-    args = parser.parse_args(argv)
+app = new_app("calibration_corpus", help=__doc__.splitlines()[0])
 
-    args.out_dir.mkdir(parents=True, exist_ok=True)
+
+@app.default
+def _build(
+    *,
+    out_dir: Path = RECIPE_ARTIFACTS_DIR / "calibration_corpus",
+    per_language_target: int = 8,
+) -> None:
+    """Harvest the calibration clips and write their manifest.
+
+    Args:
+        out_dir: Directory to write <lang>-<id>.wav clips and the manifest into.
+        per_language_target: Clips to harvest per language.
+
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
     manifest: list[dict] = []
 
-    manifest += harvest_local_fleurs_es(args.out_dir, args.per_language_target)
+    manifest += harvest_local_fleurs_es(out_dir, per_language_target)
 
     for lang_code, hf_config in REMOTE_LANGUAGES:
         try:
-            manifest += harvest_remote_fleurs(
-                lang_code, hf_config, args.out_dir, args.per_language_target
-            )
+            manifest += harvest_remote_fleurs(lang_code, hf_config, out_dir, per_language_target)
         except Exception as exc:  # noqa: BLE001
-            print(f"  WARNING: failed to fetch {lang_code} ({hf_config}): {exc}")
+            log.warning("fetch failed", lang=lang_code, config=hf_config, error=str(exc))
 
-    manifest_path = args.out_dir / "calibration_manifest.json"
+    manifest_path = out_dir / "calibration_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2))
     total_s = sum(m["duration_s"] for m in manifest)
     by_lang: dict[str, int] = {}
     for m in manifest:
         by_lang[m["lang"]] = by_lang.get(m["lang"], 0) + 1
-    print(f"\nTotal clips: {len(manifest)}, total duration: {total_s:.1f}s, by language: {by_lang}")
-    print(f"Manifest written to {manifest_path}")
+    out_console.out(
+        f"\nTotal clips: {len(manifest)}, total duration: {total_s:.1f}s, by language: {by_lang}"
+    )
+    out_console.out(f"Manifest written to {manifest_path}")
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the calibration corpus recipe."""
+    sys.stdout.reconfigure(line_buffering=True)  # pyrefly: ignore[missing-attribute]
+    invoke(app, argv)

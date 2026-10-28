@@ -15,10 +15,12 @@ against a base ref that predates the AsyncAPI document.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+
+from coro.cli_support import invoke, new_app, out_console
 
 
 def export_openapi(output_dir: Path) -> Path:
@@ -39,24 +41,30 @@ def export_asyncapi(output_dir: Path) -> Path:
     return target
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Export the contracts into the requested directory."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("output_dir", type=Path, help="Directory to write the documents into.")
-    parser.add_argument(
-        "--openapi-only",
-        action="store_true",
-        help="Skip the AsyncAPI document (for refs that predate it).",
-    )
-    args = parser.parse_args(argv)
+app = new_app("export_contracts", help=__doc__)
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    written = [export_openapi(args.output_dir)]
-    if not args.openapi_only:
-        written.append(export_asyncapi(args.output_dir))
+
+@app.default
+def _export(output_dir: Path, /, *, openapi_only: bool = False) -> None:
+    """Export the contracts into the requested directory.
+
+    Args:
+        output_dir: Directory to write the documents into.
+        openapi_only: Skip the AsyncAPI document (for refs that predate it).
+
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    written = [export_openapi(output_dir)]
+    if not openapi_only:
+        written.append(export_asyncapi(output_dir))
 
     for path in written:
-        print(f"exported {path} ({path.stat().st_size} bytes)")
+        out_console.out(f"exported {path} ({path.stat().st_size} bytes)")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Export the contracts into the requested directory."""
+    invoke(app, argv)
     return 0
 
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -11,7 +10,7 @@ from coro.bench.ami import (
     materialize_reference_stms,
     resolve_workload_set,
 )
-from coro.bench.cli_args import _SAMPLING_SUBCOMMANDS, parse_args
+from coro.bench.cli_args import _SAMPLING_SUBCOMMANDS, BenchArgs, parse_args
 from coro.bench.cli_spanish import (
     prepare_spanish_workload,
     print_spanish_fetch_plan,
@@ -30,7 +29,7 @@ __all__ = ["build_server_handle", "main", "parse_args", "resolve_meetings"]
 
 
 def _build_items(
-    args: argparse.Namespace,
+    args: BenchArgs,
     meetings: list[str],
     *,
     with_references: bool,
@@ -97,7 +96,7 @@ def _require_server_pid(server: ServerHandle) -> int:
 
 
 def _run_performance(
-    args: argparse.Namespace,
+    args: BenchArgs,
     meetings: list[str],
     server: ServerHandle,
 ) -> None:
@@ -125,7 +124,7 @@ def _run_performance(
 
 
 def _run_quality(
-    args: argparse.Namespace,
+    args: BenchArgs,
     meetings: list[str],
     server: ServerHandle,
 ) -> None:
@@ -151,7 +150,7 @@ def _run_quality(
 
 
 def _run_all(
-    args: argparse.Namespace,
+    args: BenchArgs,
     meetings: list[str],
     server: ServerHandle,
 ) -> None:
@@ -180,7 +179,7 @@ def _run_all(
     _render_report(out_dir)
 
 
-def build_server_handle(args: argparse.Namespace) -> ServerHandle:
+def build_server_handle(args: BenchArgs) -> ServerHandle:
     """Build the Bench-Attached or Bench-Managed Server handle for this run.
 
     Bench-attached runs that sample resources resolve the Server Process Tree
@@ -206,7 +205,7 @@ def build_server_handle(args: argparse.Namespace) -> ServerHandle:
     )
 
 
-def resolve_meetings(args: argparse.Namespace) -> list[str]:
+def resolve_meetings(args: BenchArgs) -> list[str]:
     """Resolve the AMI Workload Set and materialize its audio and Reference STMs.
 
     A custom workload (``--clips-dir`` / ``--audio``) suppresses the implicit
@@ -219,7 +218,7 @@ def resolve_meetings(args: argparse.Namespace) -> list[str]:
 
     meetings = resolve_workload_set(
         ami_meetings=args.ami_meetings,
-        ami_groups=args.ami_groups,
+        ami_groups=[str(group) for group in args.ami_groups],
         ami_preset=args.ami_preset,
     )
     if meetings:

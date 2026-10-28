@@ -136,7 +136,7 @@ class TestScoreItem:
     def test_normalized_lane_skipped_when_nothing_survives_normalization(
         self,
         tmp_path: Path,
-        capsys,
+        caplog,
     ):
         """A degenerate normalized lane must not take the Raw Metric Lane down."""
         from coro.bench.quality import score_item
@@ -154,7 +154,7 @@ class TestScoreItem:
         assert result.metrics.cpwer is not None
         assert result.metrics.der is not None
         assert result.metrics.normalized is None
-        assert "normalized lane skipped" in capsys.readouterr().err
+        assert "normalized lane skipped" in caplog.text
 
     def test_both_lanes_reported_per_item(self, tmp_path: Path):
         from coro.bench.quality import score_item
@@ -480,23 +480,19 @@ class TestCLIFlags:
 class TestMeetevalInstallHint:
     """The printed install hint must be a command that actually works."""
 
-    def _hint(self) -> str:
+    def _hint(self, capsys) -> str:
         from coro.bench import quality as quality_mod
 
-        with (
-            patch.dict(sys.modules, {"meeteval": None}),
-            patch("builtins.__import__", side_effect=ImportError("no meeteval")),
-            patch("sys.stderr") as mock_stderr,
-            pytest.raises(SystemExit),
-        ):
+        # A None entry in sys.modules makes `import meeteval` raise ImportError.
+        with patch.dict(sys.modules, {"meeteval": None}), pytest.raises(SystemExit):
             quality_mod._require_meeteval()
-        return "".join(call.args[0] for call in mock_stderr.write.call_args_list)
+        return capsys.readouterr().err
 
-    def test_hint_uses_the_dependency_group_command(self):
-        assert "uv sync --group bench" in self._hint()
+    def test_hint_uses_the_dependency_group_command(self, capsys):
+        assert "uv sync --group bench" in self._hint(capsys)
 
-    def test_hint_does_not_claim_an_installable_extra(self):
-        assert "coro[bench]" not in self._hint()
+    def test_hint_does_not_claim_an_installable_extra(self, capsys):
+        assert "coro[bench]" not in self._hint(capsys)
 
     def test_bench_is_a_dependency_group_not_an_extra(self):
         """Guards the hint against the packaging metadata drifting back."""
