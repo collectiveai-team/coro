@@ -1,10 +1,10 @@
 """onnx-parakeet-prompt backend: prompt-kernel math, adapter, and builder wiring.
 
 Covers:
-- ``_apply_prompt_kernel``'s NumPy replication of the checkpoint's
+- ``apply_prompt_kernel``'s NumPy replication of the checkpoint's
   ``Linear -> ReLU -> Linear`` prompt-conditioning MLP, against a hand-computed
   example.
-- ``_ForcedPrompt``'s set/clear of a fake ASR instance's ``_prompt_id``.
+- ``ForcedPrompt``'s set/clear of a fake ASR instance's ``_prompt_id``.
 - ``OnnxParakeetPromptASRAdapter.transcribe_pcm`` against a stub ASR object
   (no real ONNX Runtime session) -- language resolution, the "no auto
   detection" error, and the serialised Adapter Concurrency Policy.
@@ -28,10 +28,9 @@ import pytest
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.onnx_parakeet_prompt import (
     OnnxParakeetPromptASRAdapter,
-    _apply_prompt_kernel,
-    _ForcedPrompt,
     build_onnx_parakeet_prompt_adapter,
 )
+from coro.backends.asr.onnx_parakeet_prompt_kernel import ForcedPrompt, apply_prompt_kernel
 
 _PROMPT_DICTIONARY = {"es-US": 0, "en-US": 1, "fr": 2}
 _SAMPLE_RATE = 16000
@@ -42,7 +41,7 @@ def _pcm(seconds: float = 1.0) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# _apply_prompt_kernel
+# apply_prompt_kernel
 # ---------------------------------------------------------------------------
 
 
@@ -58,7 +57,7 @@ class TestApplyPromptKernel:
         }
         # Worked by hand: one_hot(prompt_id=0)=[1,0] concatenated onto encoder_out
         # gives [1,2,1,0]; layer0 (Linear+ReLU) gives [2,2]; layer2 (Linear) gives 0.5.
-        result = _apply_prompt_kernel(encoder_out, prompt_id=0, weights=weights)
+        result = apply_prompt_kernel(encoder_out, prompt_id=0, weights=weights)
         assert result.shape == (1, 1, 1)
         assert result[0, 0, 0] == pytest.approx(0.5, abs=1e-6)
 
@@ -72,8 +71,8 @@ class TestApplyPromptKernel:
             "2.weight": rng.standard_normal((4, 8)).astype(np.float32),
             "2.bias": rng.standard_normal(4).astype(np.float32),
         }
-        out_a = _apply_prompt_kernel(encoder_out, prompt_id=0, weights=weights)
-        out_b = _apply_prompt_kernel(encoder_out, prompt_id=1, weights=weights)
+        out_a = apply_prompt_kernel(encoder_out, prompt_id=0, weights=weights)
+        out_b = apply_prompt_kernel(encoder_out, prompt_id=1, weights=weights)
         assert not np.allclose(out_a, out_b)
 
     def test_same_prompt_id_is_deterministic(self):
@@ -85,8 +84,8 @@ class TestApplyPromptKernel:
             "2.weight": rng.standard_normal((4, 8)).astype(np.float32),
             "2.bias": rng.standard_normal(4).astype(np.float32),
         }
-        out_a = _apply_prompt_kernel(encoder_out, prompt_id=1, weights=weights)
-        out_b = _apply_prompt_kernel(encoder_out, prompt_id=1, weights=weights)
+        out_a = apply_prompt_kernel(encoder_out, prompt_id=1, weights=weights)
+        out_b = apply_prompt_kernel(encoder_out, prompt_id=1, weights=weights)
         assert not np.allclose(out_a, 0.0)  # a trivially all-zero result would also compare equal
         np.testing.assert_array_equal(out_a, out_b)
 
@@ -99,12 +98,12 @@ class TestApplyPromptKernel:
             "2.weight": rng.standard_normal((4, 8)).astype(np.float32),
             "2.bias": rng.standard_normal(4).astype(np.float32),
         }
-        result = _apply_prompt_kernel(encoder_out, prompt_id=2, weights=weights)
+        result = apply_prompt_kernel(encoder_out, prompt_id=2, weights=weights)
         assert result.shape == encoder_out.shape
 
 
 # ---------------------------------------------------------------------------
-# _ForcedPrompt
+# ForcedPrompt
 # ---------------------------------------------------------------------------
 
 
@@ -116,18 +115,18 @@ class _FakeAsr:
 class TestForcedPrompt:
     def test_sets_prompt_id_inside_the_context(self):
         asr = _FakeAsr()
-        with _ForcedPrompt(asr, 7):
+        with ForcedPrompt(asr, 7):
             assert asr._prompt_id == 7
 
     def test_clears_prompt_id_after_the_context(self):
         asr = _FakeAsr()
-        with _ForcedPrompt(asr, 7):
+        with ForcedPrompt(asr, 7):
             pass
         assert asr._prompt_id is None
 
     def test_clears_prompt_id_even_on_exception(self):
         asr = _FakeAsr()
-        with pytest.raises(RuntimeError), _ForcedPrompt(asr, 7):
+        with pytest.raises(RuntimeError), ForcedPrompt(asr, 7):
             raise RuntimeError("boom")
         assert asr._prompt_id is None
 
@@ -142,12 +141,13 @@ class _StubAsr:
 
     def __init__(self, result):
         self._result = result
+        self._prompt_id: int | None = None
         self.calls: list[dict] = []
         self.forced_prompt_ids: list[int] = []
 
     def forced_prompt(self, prompt_id: int):
         self.forced_prompt_ids.append(prompt_id)
-        return _ForcedPrompt(self, prompt_id)
+        return ForcedPrompt(self, prompt_id)
 
     def recognize_batch(self, waveforms, waveforms_len, /, **kwargs):
         self.calls.append({"waveforms": waveforms, "waveforms_len": waveforms_len, **kwargs})

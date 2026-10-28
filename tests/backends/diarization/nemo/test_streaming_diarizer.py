@@ -1,17 +1,16 @@
-"""Tests for StreamingDiarizer with mocked Sortformer model.
+"""StreamingDiarizer construction and chunked ingest, with a mocked Sortformer model.
 
-No real NeMo model is loaded. All model interactions use mock objects.
+No real NeMo model is loaded; the mocks come from this directory's
+``conftest.py``. Finalize and post-processing live in
+``test_streaming_diarizer_finalize.py``.
 """
 
 from __future__ import annotations
 
 import struct
-from unittest.mock import MagicMock
 
-import pytest
 import torch
 
-from coro.core.models import SpeakerSegment
 
 SAMPLE_RATE = 16000
 BYTES_PER_SAMPLE = 2
@@ -26,112 +25,9 @@ MIN_CHUNK_BYTES = CHUNK_AUDIO_BYTES + RIGHT_CONTEXT_BYTES
 N_MEL_FEATURES = 128
 
 
-def _make_mock_model():
-    model = MagicMock()
-    model.device = torch.device("cpu")
-    model.grad_enabled_during_forward = []
-
-    sortformer_modules = MagicMock()
-    sortformer_modules.chunk_len = CHUNK_LEN
-    sortformer_modules.subsampling_factor = SUBSAMPLING_FACTOR
-    sortformer_modules.n_spk = 4
-    sortformer_modules.fc_d_model = 512
-    initial_state = {"step": 0}
-    sortformer_modules.init_streaming_state.return_value = initial_state
-    model.sortformer_modules = sortformer_modules
-
-    step_count = [0]
-
-    def _forward_streaming_step(
-        processed_signal, processed_signal_length, streaming_state, total_preds, **kwargs
-    ):
-        model.grad_enabled_during_forward.append(torch.is_grad_enabled())
-        # processed_signal arrives as (batch, time, features) after transpose in _process_chunk.
-        # total_preds is now initialised as (1, 0, n_spk) — never None.
-        step_count[0] += 1
-        new_state = {"step": step_count[0]}
-        chunk_frames = 4  # arbitrary small chunk pred length
-        chunk_preds = torch.rand(1, chunk_frames, 4) * 0.01
-        new_total_preds = torch.cat([total_preds, chunk_preds], dim=1)
-        return new_state, new_total_preds
-
-    model.forward_streaming_step = MagicMock(side_effect=_forward_streaming_step)
-    model._step_count = step_count
-    return model
-
-
-def _make_mock_preprocessor():
-    outputs = []
-    grad_enabled = []
-    inputs = []
-
-    def _process(*, input_signal, length):
-        grad_enabled.append(torch.is_grad_enabled())
-        inputs.append(input_signal.clone())
-        # Called with kwargs — matches the NeMo typecheck requirement.
-        n_samples = input_signal.shape[-1]
-        n_mel_frames = n_samples // 160
-        if n_mel_frames == 0:
-            n_mel_frames = 1
-        mel = torch.randn(1, N_MEL_FEATURES, n_mel_frames)
-        mel_len = torch.tensor([n_mel_frames])
-        outputs.append((mel.clone(), mel_len.clone()))
-        return mel, mel_len
-
-    preprocessor = MagicMock(side_effect=_process)
-    preprocessor.outputs = outputs
-    preprocessor.grad_enabled = grad_enabled
-    preprocessor.inputs = inputs
-    return preprocessor
-
-
-def _make_mock_post_processor():
-    def _post_process(total_preds, n_spk):
-        return [
-            (0.0, 1.0, 0),
-            (1.0, 2.0, 1),
-        ]
-
-    return MagicMock(side_effect=_post_process)
-
-
-def _make_pcm_bytes(duration_seconds: float) -> bytes:
-    n_samples = int(SAMPLE_RATE * duration_seconds)
-    return struct.pack(f"<{n_samples}h", *([1000] * n_samples))
-
-
 def _make_pcm_bytes_n(n_bytes: int) -> bytes:
     n_samples = n_bytes // BYTES_PER_SAMPLE
     return struct.pack(f"<{n_samples}h", *([1000] * n_samples))
-
-
-@pytest.fixture()
-def mock_model():
-    return _make_mock_model()
-
-
-@pytest.fixture()
-def mock_preprocessor():
-    return _make_mock_preprocessor()
-
-
-@pytest.fixture()
-def mock_post_processor():
-    return _make_mock_post_processor()
-
-
-@pytest.fixture()
-def diarizer(mock_model, mock_preprocessor, mock_post_processor):
-    from coro.backends.diarization.nemo.streaming import StreamingDiarizer
-
-    return StreamingDiarizer(
-        mock_model,
-        chunk_len=CHUNK_LEN,
-        subsampling_factor=SUBSAMPLING_FACTOR,
-        n_spk=4,
-        preprocessor=mock_preprocessor,
-        post_processor=mock_post_processor,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -291,64 +187,21 @@ def test_each_chunk_passes_only_its_own_frames(diarizer, mock_model, mock_prepro
 
 
 # ---------------------------------------------------------------------------
-# Test 7: finalize flushes remainder
-# ---------------------------------------------------------------------------
-
-
-def test_finalize_flushes_remainder(diarizer, mock_model, mock_preprocessor, mock_post_processor):
-    pcm = _make_pcm_bytes(CHUNK_AUDIO_SECONDS / 2)
-    diarizer.ingest_pcm_chunk(pcm)
-    mock_model.forward_streaming_step.assert_not_called()
-
-    segments = diarizer.finalize()
-
-    mock_model.forward_streaming_step.assert_called_once()
-    mock_post_processor.assert_called_once()
-    assert isinstance(segments, list)
-    for seg in segments:
-        assert isinstance(seg, SpeakerSegment)
-
-
-# ---------------------------------------------------------------------------
-# Test 8: finalize returns SpeakerSegments with 1-indexed speakers
-# ---------------------------------------------------------------------------
-
-
-def test_finalize_returns_one_indexed_speaker_segments(
-    diarizer, mock_model, mock_preprocessor, mock_post_processor
-):
-    pcm = _make_pcm_bytes(CHUNK_AUDIO_SECONDS)
-    diarizer.ingest_pcm_chunk(pcm)
-
-    segments = diarizer.finalize()
-
-    assert len(segments) > 0
-    for seg in segments:
-        assert seg.speaker >= 1
-
-
-# ---------------------------------------------------------------------------
-# Test 9: finalize with empty buffer returns empty
-# ---------------------------------------------------------------------------
-
-
-def test_finalize_empty_buffer_returns_empty(diarizer, mock_model, mock_post_processor):
-    segments = diarizer.finalize()
-
-    mock_model.forward_streaming_step.assert_not_called()
-    mock_post_processor.assert_not_called()
-    assert segments == []
-
-
-# ---------------------------------------------------------------------------
 # Test 10: two instances do not share state
 # ---------------------------------------------------------------------------
 
 
-def test_two_instances_independent(mock_model, mock_preprocessor, mock_post_processor):
+def test_two_instances_independent(
+    mock_model,
+    mock_preprocessor,
+    mock_post_processor,
+    make_mock_model,
+    make_mock_preprocessor,
+    make_mock_post_processor,
+):
     from coro.backends.diarization.nemo.streaming import StreamingDiarizer
 
-    mock_model2 = _make_mock_model()
+    mock_model2 = make_mock_model()
 
     d1 = StreamingDiarizer(
         mock_model,
@@ -363,8 +216,8 @@ def test_two_instances_independent(mock_model, mock_preprocessor, mock_post_proc
         chunk_len=CHUNK_LEN,
         subsampling_factor=SUBSAMPLING_FACTOR,
         n_spk=4,
-        preprocessor=_make_mock_preprocessor(),
-        post_processor=_make_mock_post_processor(),
+        preprocessor=make_mock_preprocessor(),
+        post_processor=make_mock_post_processor(),
     )
 
     d1.ingest_pcm_chunk(_make_pcm_bytes_n(MIN_CHUNK_BYTES))
@@ -432,81 +285,6 @@ def test_length_tensor_on_same_device_as_audio(mock_model, mock_preprocessor, mo
 
     call_kwargs = mock_preprocessor.call_args.kwargs
     assert call_kwargs["length"].device.type == device.type
-
-
-def test_default_post_process_returns_speaker_segments(mock_model):
-    """_default_post_process must return SpeakerSegments without relying on the
-    post_processor override — exercises ts_vad_post_processing integration."""
-    from coro.backends.diarization.nemo.streaming import StreamingDiarizer
-
-    mock_preprocessor = _make_mock_preprocessor()
-    # No post_processor — forces _default_post_process path
-    d = StreamingDiarizer(
-        mock_model,
-        chunk_len=CHUNK_LEN,
-        subsampling_factor=SUBSAMPLING_FACTOR,
-        n_spk=4,
-        preprocessor=mock_preprocessor,
-    )
-
-    # Seed total_preds with realistic sigmoid-like values: (1, 20, 4)
-    d._total_preds = torch.sigmoid(torch.randn(1, 20, 4))
-    d._total_audio_bytes = int(20 * SUBSAMPLING_FACTOR * 0.01 * SAMPLE_RATE * BYTES_PER_SAMPLE)
-
-    segments = d._default_post_process(
-        duration=d._total_audio_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
-    )
-
-    assert isinstance(segments, list)
-    for seg in segments:
-        assert isinstance(seg, SpeakerSegment)
-        assert seg.speaker >= 1
-        assert seg.start >= 0.0
-        assert seg.end > seg.start
-
-
-def test_default_post_process_uses_resolved_postprocessing_yaml(mock_model):
-    """A resolved Diarization Post-Processing Configuration path changes the
-    thresholds ts_vad_post_processing actually uses — not just a stored
-    attribute. Compares a vendored preset's segments against the raw
-    baseline (None) on identical predictions. See ADR 0010."""
-    from coro.backends.diarization.nemo.postprocessing import resolve_postprocessing_yaml
-    from coro.backends.diarization.nemo.streaming import StreamingDiarizer
-
-    torch.manual_seed(0)
-    preds = torch.sigmoid(torch.randn(1, 20, 4))
-    audio_bytes = int(20 * SUBSAMPLING_FACTOR * 0.01 * SAMPLE_RATE * BYTES_PER_SAMPLE)
-    duration = audio_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
-
-    def _segments_with(postprocessing_yaml: str | None) -> list[SpeakerSegment]:
-        d = StreamingDiarizer(
-            mock_model,
-            chunk_len=CHUNK_LEN,
-            subsampling_factor=SUBSAMPLING_FACTOR,
-            n_spk=4,
-            preprocessor=_make_mock_preprocessor(),
-            postprocessing_yaml=postprocessing_yaml,
-        )
-        d._total_preds = preds.clone()
-        d._total_audio_bytes = audio_bytes
-        return d._default_post_process(duration=duration)
-
-    baseline = _segments_with(None)
-    preset_path = resolve_postprocessing_yaml("dihard3-dev")
-    tuned = _segments_with(preset_path)
-
-    # Both must still be valid SpeakerSegment lists...
-    for segments in (baseline, tuned):
-        for seg in segments:
-            assert isinstance(seg, SpeakerSegment)
-    # ...but a materially different threshold set (raw 0.5/0.5/no-padding
-    # baseline vs. dihard3-dev's padded, hysteretic thresholds) must not
-    # silently resolve to the identical segment boundaries on the same
-    # random predictions -- otherwise the resolved path was never threaded
-    # through to ts_vad_post_processing at all.
-    assert [(round(s.start, 6), round(s.end, 6), s.speaker) for s in baseline] != [
-        (round(s.start, 6), round(s.end, 6), s.speaker) for s in tuned
-    ]
 
 
 # ---------------------------------------------------------------------------

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from coro.core.logger import get_logger
@@ -142,7 +142,7 @@ class AdmissionController:
         return self._queued
 
     @asynccontextmanager
-    async def admit(self) -> AsyncIterator[None]:
+    async def admit(self) -> AsyncGenerator[None]:
         """Hold one admission permit for the duration of the context.
 
         Yields:

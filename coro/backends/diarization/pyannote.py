@@ -9,7 +9,7 @@ incompatible with the Streaming Pipeline (rejected at startup in settings).
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Protocol, cast
 
 import numpy as np
 import torch
@@ -18,6 +18,11 @@ from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.backends.diarization.segments import convert_diarization_segments
 from coro.core.logger import get_logger
 from coro.core.models import SpeakerSegment
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from pyannote.audio import Pipeline
 
 logger = get_logger(__name__)
 
@@ -35,7 +40,23 @@ def _pcm_to_waveform(pcm: bytes) -> torch.Tensor:
     return torch.from_numpy(samples).unsqueeze(0)
 
 
-def _extract_annotation(output: Any) -> Any:
+class _TimeSegment(Protocol):
+    @property
+    def start(self) -> float: ...
+
+    @property
+    def end(self) -> float: ...
+
+
+class PyannoteAnnotation(Protocol):
+    """The slice of a ``pyannote.core.Annotation`` this backend reads."""
+
+    def itertracks(self, *, yield_label: bool) -> Iterable[tuple[_TimeSegment, object, object]]:
+        """Yield ``(segment, track, label)`` per speaker turn."""
+        ...
+
+
+def _extract_annotation(output: object) -> PyannoteAnnotation:
     """Return the speaker-diarization Annotation from a pyannote output.
 
     community-1 returns a result object exposing ``speaker_diarization``
@@ -43,15 +64,13 @@ def _extract_annotation(output: Any) -> Any:
     Annotation directly. Handle both shapes.
     """
     annotation = getattr(output, "speaker_diarization", None)
-    if annotation is not None:
-        return annotation
-    return output
+    return cast("PyannoteAnnotation", output if annotation is None else annotation)  # noqa: BTTOOL004 -- pyannote is untyped here (replace-imports-with-any); both shapes are Annotations
 
 
 class PyannoteDiarizationAdapter:
     """DiarizationAdapter that wraps a pyannote.audio pipeline."""
 
-    def __init__(self, pipeline) -> None:
+    def __init__(self, pipeline: Pipeline) -> None:
         self._pipeline = pipeline
 
     async def diarize_pcm(self, pcm: bytes) -> list[SpeakerSegment]:

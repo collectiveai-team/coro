@@ -173,17 +173,17 @@ _LID_VOCAB = {
 }
 
 
-class _LidStubAsr:
-    """Fakes the private encode/decode surface ``detect_language`` drives.
+class _LidStubAsr(_StubAsr):
+    """Adds the private encode/decode surface ``detect_language`` drives.
 
     Scripts the two decoder steps directly, mirroring ``_partial_prompt_lid``'s
     own encode -> 2-step-decode sequence, without a real ONNX graph.
     """
 
     def __init__(self, *, emitted_tokens: tuple[str, str]) -> None:
+        super().__init__(None, language_token_ids={"es": 4, "en": 5})
         self._vocab = dict(_LID_VOCAB)
         self._tokens = {token: id for id, token in self._vocab.items()}  # noqa: A001
-        self.language_token_ids = {"es": 4, "en": 5}
         self._emitted_ids = [self._tokens[t] for t in emitted_tokens]
         self._decoder = SimpleNamespace(
             get_inputs=lambda: [SimpleNamespace(name="decoder_mems", shape=(2, 1, 0, 4))]

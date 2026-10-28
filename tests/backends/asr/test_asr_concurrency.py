@@ -173,6 +173,8 @@ class _SleepingOnnxAsrModel:
 class _SleepingWhisperModel:
     """Stub faster-whisper model whose transcribe() blocks for a fixed duration."""
 
+    supported_languages: tuple[str, ...] = ()
+
     def __init__(self) -> None:
         self.concurrent = 0
         self.peak_concurrent = 0

@@ -8,7 +8,7 @@ checkpoint/device wiring. No NeMo checkpoint is downloaded.
 
 The fake model's ``transcribe`` mirrors the real
 ``EncDecHybridRNNTCTCBPEModelWithPrompt.transcribe`` signature closely enough
-for ``_resolve_override_config_type``'s introspection to work (a typed,
+for ``resolve_override_config_type``'s introspection to work (a typed,
 optional ``override_config`` parameter) -- this is what makes the
 forced-language tests below meaningful: they exercise the same code path
 that discovered, against the real checkpoint, that a bare ``target_lang``
@@ -18,21 +18,16 @@ docstring and ``.scratch/issue-64-language-constrained-asr/findings.md``).
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
-from coro.backends.asr.nemo import (
-    NemoASRAdapter,
-    _build_forced_language_config,
-    _frame_timestamps_to_seconds,
-    _resolve_frame_conversion_factors,
-    _resolve_override_config_type,
-    _tokens_from_hypothesis,
+from coro.backends.asr.nemo import NemoASRAdapter
+from coro.backends.asr.nemo_checkpoint import (
+    build_forced_language_config,
+    resolve_override_config_type,
     resolve_target_language,
 )
 
@@ -95,7 +90,7 @@ class _FakeNoOverrideConfigModel:
     """A model whose ``transcribe`` has no typed ``override_config`` param.
 
     Represents a plain (non-prompt) checkpoint, or an unusual Prompt subclass
-    that doesn't declare the parameter -- ``_build_forced_language_config``
+    that doesn't declare the parameter -- ``build_forced_language_config``
     must raise loudly rather than silently drop the language request.
     """
 
@@ -261,124 +256,17 @@ class TestNemoASRAdapter:
         assert adapter.admission.max_concurrency == 1
 
 
-class _FakeTensorTimestamp:
-    """Duck-types a torch.Tensor closely enough to trip the guard in
-    ``_tokens_from_hypothesis`` (has ``.numel()``) without a torch dependency
-    in this test module. Deliberately not iterable -- the guard must
-    short-circuit on the ``numel`` check alone, matching the real bug: the
-    original code crashed evaluating ``X or []`` truthiness *before* ever
-    reaching iteration.
-    """
-
-    def numel(self) -> int:
-        return 37
-
-
-class TestTokensFromHypothesis:
-    def test_tensor_timestamp_is_discarded_not_treated_as_seconds(self):
-        """A raw per-token frame-index Tensor (verified shape from the real
-        checkpoint) must never be treated as flat per-token seconds -- that
-        would silently produce garbled word timing. Falls back to
-        evenly-spaced text timing instead.
-        """
-        hyp = SimpleNamespace(
-            y_sequence=(11, 12, 13, 14),
-            timestamp=_FakeTensorTimestamp(),
-            text="hola, mundo.",
-        )
-        tokens = _tokens_from_hypothesis(hyp, _FakeTokenizer(), span_end=1.0)
-        assert [t.text for t in tokens] == [" hola,", " mundo."]
-        assert tokens[0].start == 0.0
-
-    def test_prefers_y_sequence_over_legacy_y_attribute(self):
-        """y_sequence is the real NeMo Hypothesis field; a stale/wrong ``y``
-        value (99s aren't in the fake tokenizer's piece table) proves
-        ``y_sequence`` -- not ``y`` -- is what actually gets read.
-        """
-        hyp = SimpleNamespace(
-            y_sequence=(11, 12, 13, 14),
-            y=(99, 99, 99, 99),
-            timestamp=[0.1, 0.2, 0.5, 0.6],
-            text="hola, mundo.",
-        )
-        tokens = _tokens_from_hypothesis(hyp, _FakeTokenizer(), span_end=1.0)
-        assert [t.text for t in tokens] == [" hola,", " mundo."]
-
-    def test_falls_back_to_legacy_y_attribute_when_y_sequence_absent(self):
-        hyp = SimpleNamespace(
-            y=(11, 12, 13, 14), timestamp=[0.1, 0.2, 0.5, 0.6], text="hola, mundo."
-        )
-        tokens = _tokens_from_hypothesis(hyp, _FakeTokenizer(), span_end=1.0)
-        assert [t.text for t in tokens] == [" hola,", " mundo."]
-
-
-class TestFrameTimestampsToSeconds:
-    def test_converts_frame_indices_using_window_stride_and_subsampling(self):
-        """Matches values verified directly against the real checkpoint."""
-        seconds = _frame_timestamps_to_seconds([7, 9, 10, 72], _REAL_FRAME_CONVERSION)
-        assert seconds == pytest.approx([0.56, 0.72, 0.8, 5.76], abs=1e-9)
-
-    def test_returns_none_when_raw_timestamp_is_none(self):
-        assert _frame_timestamps_to_seconds(None, _REAL_FRAME_CONVERSION) is None
-
-    def test_returns_none_when_frame_conversion_is_none(self):
-        assert _frame_timestamps_to_seconds([7, 9], None) is None
-
-    def test_unwraps_tensor_like_via_tolist(self):
-        class _FakeTensor:
-            def tolist(self):
-                return [7, 9]
-
-        seconds = _frame_timestamps_to_seconds(_FakeTensor(), _REAL_FRAME_CONVERSION)
-        assert seconds == pytest.approx([0.56, 0.72], abs=1e-9)
-
-    def test_discards_structured_dict_shape(self):
-        """The auto-detection path's {"word": ..., "char": ..., "segment":
-        ...} shape must never be misread as a flat frame-index sequence.
-        """
-        assert _frame_timestamps_to_seconds({"word": []}, _REAL_FRAME_CONVERSION) is None
-
-
-class TestResolveFrameConversionFactors:
-    def test_reads_window_stride_and_encoder_subsampling_factor(self):
-        model = SimpleNamespace(
-            cfg=SimpleNamespace(preprocessor=SimpleNamespace(window_stride=0.01)),
-            encoder=SimpleNamespace(subsampling_factor=8),
-        )
-        assert _resolve_frame_conversion_factors(model) == (0.01, 8)
-
-    def test_returns_none_when_window_stride_is_missing(self):
-        model = SimpleNamespace(
-            cfg=SimpleNamespace(preprocessor=SimpleNamespace()),
-            encoder=SimpleNamespace(subsampling_factor=8),
-        )
-        assert _resolve_frame_conversion_factors(model) is None
-
-    def test_returns_none_when_encoder_has_no_subsampling_factor(self):
-        model = SimpleNamespace(
-            cfg=SimpleNamespace(preprocessor=SimpleNamespace(window_stride=0.01)),
-            encoder=SimpleNamespace(),
-        )
-        assert _resolve_frame_conversion_factors(model) is None
-
-    def test_returns_none_when_model_has_no_encoder(self):
-        model = SimpleNamespace(
-            cfg=SimpleNamespace(preprocessor=SimpleNamespace(window_stride=0.01))
-        )
-        assert _resolve_frame_conversion_factors(model) is None
-
-
 class TestResolveOverrideConfigType:
     def test_discovers_type_from_typed_optional_parameter(self):
-        assert _resolve_override_config_type(_FakePromptModel()) is _FakeTranscribeConfig
+        assert resolve_override_config_type(_FakePromptModel()) is _FakeTranscribeConfig
 
     def test_returns_none_when_parameter_is_untyped(self):
-        assert _resolve_override_config_type(_FakeNoOverrideConfigModel()) is None
+        assert resolve_override_config_type(_FakeNoOverrideConfigModel()) is None
 
 
 class TestBuildForcedLanguageConfig:
     def test_forces_use_lhotse_false_and_zero_workers(self):
-        config = _build_forced_language_config(_FakePromptModel(), "es-US")
+        config = build_forced_language_config(_FakePromptModel(), "es-US")
         assert isinstance(config, _FakeTranscribeConfig)
         assert config.target_lang == "es-US"
         assert config.use_lhotse is False
@@ -388,86 +276,7 @@ class TestBuildForcedLanguageConfig:
 
     def test_raises_loudly_when_no_override_config_type_is_discoverable(self):
         with pytest.raises(ValueError, match="override_config") as excinfo:
-            _build_forced_language_config(_FakeNoOverrideConfigModel(), "es")
+            build_forced_language_config(_FakeNoOverrideConfigModel(), "es")
         # A checkpoint/NeMo API mismatch is the deployment's fault, not the
         # request's: it must stay a server error rather than a language 400.
         assert not isinstance(excinfo.value, AsrUnsupportedLanguageError)
-
-
-def _build_fake_asr_model(fake_model):
-    """Wire a fake NeMo model behind the module-patching build_nemo_asr_adapter needs."""
-    fake_model.eval = lambda: fake_model
-    fake_model.to = lambda device: fake_model
-    asr_mod = SimpleNamespace(
-        models=SimpleNamespace(
-            ASRModel=SimpleNamespace(
-                from_pretrained=lambda name: fake_model,
-                restore_from=lambda path: fake_model,
-            )
-        )
-    )
-    coll_mod = SimpleNamespace(asr=asr_mod)
-    nemo_mod = SimpleNamespace(collections=coll_mod)
-    torch_mod = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
-    return patch.dict(
-        sys.modules,
-        {
-            "nemo": nemo_mod,
-            "nemo.collections": coll_mod,
-            "nemo.collections.asr": asr_mod,
-            "torch": torch_mod,
-        },
-    )
-
-
-class TestBuildNemoAsrAdapter:
-    def test_builds_adapter_with_checkpoint_metadata(self):
-        # model.tokenizer is used directly (not unwrapped via a `.tokenizer`
-        # inner attribute) -- see the module docstring's note on why
-        # unwrapping reaches into an implementation-specific inner object
-        # lacking `ids_to_tokens` on a real SentencePieceTokenizer checkpoint.
-        fake_model = SimpleNamespace(
-            cfg={"model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}},
-            tokenizer=_FakeTokenizer(),
-        )
-
-        from coro.backends.asr.nemo import build_nemo_asr_adapter
-
-        with _build_fake_asr_model(fake_model):
-            adapter = build_nemo_asr_adapter("nvidia/parakeet-rnnt-1.1b-prompt", device="cpu")
-
-        assert isinstance(adapter, NemoASRAdapter)
-        assert adapter.admission.max_concurrency == 1
-        assert adapter._tokenizer is fake_model.tokenizer
-
-    def test_resolves_frame_conversion_when_cfg_and_encoder_expose_it(self):
-        fake_model = SimpleNamespace(
-            cfg=SimpleNamespace(
-                get=lambda key, default=None: {
-                    "model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}
-                }.get(key, default),
-                preprocessor=SimpleNamespace(window_stride=0.01),
-            ),
-            encoder=SimpleNamespace(subsampling_factor=8),
-            tokenizer=_FakeTokenizer(),
-        )
-
-        from coro.backends.asr.nemo import build_nemo_asr_adapter
-
-        with _build_fake_asr_model(fake_model):
-            adapter = build_nemo_asr_adapter("nvidia/parakeet-rnnt-1.1b-prompt", device="cpu")
-
-        assert adapter.frame_conversion == (0.01, 8)
-
-    def test_frame_conversion_is_none_when_checkpoint_lacks_the_attributes(self):
-        fake_model = SimpleNamespace(
-            cfg={"model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}},
-            tokenizer=_FakeTokenizer(),
-        )
-
-        from coro.backends.asr.nemo import build_nemo_asr_adapter
-
-        with _build_fake_asr_model(fake_model):
-            adapter = build_nemo_asr_adapter("nvidia/parakeet-rnnt-1.1b-prompt", device="cpu")
-
-        assert adapter.frame_conversion is None

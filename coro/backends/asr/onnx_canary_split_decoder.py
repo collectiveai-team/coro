@@ -8,14 +8,18 @@ Holds the ``NemoConformerAED`` subclass that drives ``xattn_kv.onnx`` and
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, override
 
 import numpy as np
 
 from coro.backends.asr.onnx_canary_split_language import _LANGUAGE_TOKEN_RE
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
+
+    from onnx_asr.asr import Preprocessor
+    from onnx_asr.onnx import OnnxSessionOptions
 
 # The 16 cross-attention K/V frontier tensors -- see `.tmp/split_canary_decoder.py`'s
 # module docstring for why these tensors (not the shallower MatMul outputs) are
@@ -52,8 +56,8 @@ def _split_canary_asr_class() -> type:
         def __init__(
             self,
             model_files: dict[str, Path],
-            preprocessor_factory: Any,
-            onnx_options: Any,
+            preprocessor_factory: Callable[[str], Preprocessor],
+            onnx_options: OnnxSessionOptions,
         ) -> None:
             # `_NemoConformer` (NemoConformerAED's other parent) defines no
             # `__init__`, so this reaches `_AsrWithDecoding.__init__` (vocab,
@@ -110,6 +114,7 @@ def _split_canary_asr_class() -> type:
         # in `onnx_canary_split.py` constructs `model_files` directly against this backend's own
         # artifact directory contract instead.
 
+        @override
         def _decode(
             self,
             input_ids: np.ndarray,

@@ -22,12 +22,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from coro.core.logger import get_logger
 
 if TYPE_CHECKING:
     import torch
+    from nemo.collections.asr.parts.utils.vad_utils import PostProcessingParams
 
 logger = get_logger(__name__)
 
@@ -138,7 +139,7 @@ def preset_provenance() -> tuple[PostProcessingPreset, ...]:
     return tuple(_PRESETS[name] for name in sorted(_PRESETS))
 
 
-def baseline_postprocessing_params() -> Any:
+def baseline_postprocessing_params() -> PostProcessingParams:
     """Return a fresh copy of NeMo's own unconfigured post-processing baseline.
 
     A new object every call: ``ts_vad_post_processing`` mutates the params it
@@ -151,7 +152,7 @@ def baseline_postprocessing_params() -> Any:
     return load_postprocessing_from_yaml(None)  # pyrefly: ignore[bad-argument-type]
 
 
-def load_postprocessing_params(postprocessing_yaml: str | None) -> Any:
+def load_postprocessing_params(postprocessing_yaml: str | None) -> PostProcessingParams:
     """Load post-processing parameters from a resolved YAML path, or the baseline."""
     if postprocessing_yaml is None:
         return baseline_postprocessing_params()
@@ -223,7 +224,7 @@ def segments_from_predictions(
     preds: torch.Tensor,
     *,
     n_spk: int,
-    params: Any,
+    params: PostProcessingParams,
     subsampling_factor: int = 8,
 ) -> list[tuple[float, float, int]]:
     """Run NeMo's per-speaker VAD post-processing over raw predictions.
@@ -249,8 +250,8 @@ def segments_from_predictions(
     for spk_id in range(n_spk):
         ts_mat = ts_vad_post_processing(
             matrix[:, spk_id],
-            # NeMo consumes the PostProcessingParams dataclass; stub types OmegaConf.
-            cfg_vad_params=params,
+            # NeMo consumes the PostProcessingParams dataclass; its annotation says OmegaConf.
+            cfg_vad_params=params,  # pyrefly: ignore[bad-argument-type]
             unit_10ms_frame_count=subsampling_factor,
             bypass_postprocessing=False,
         )

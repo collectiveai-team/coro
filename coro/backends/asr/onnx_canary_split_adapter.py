@@ -7,7 +7,7 @@ Adapter Concurrency Policy and the forced-language and auto-LID design.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Protocol, cast
 
 import numpy as np
 
@@ -18,12 +18,36 @@ from coro.backends.asr.onnx_canary_split_language import (
     _partial_prompt_lid,
     resolve_canary_language,
 )
-from coro.core.models import TranscriptToken
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from coro.backends.asr.onnx_canary_split_language import CanaryLidModel
+
+    import numpy.typing as npt
+
+    from coro.core.models import TranscriptToken
 
 _SAMPLE_RATE = 16000
 # Admission queue depth used when an adapter is built without explicit settings
 # (direct construction in tests and tooling); the factory always passes one.
 _DEFAULT_QUEUE_DEPTH = 32
+
+
+class SplitCanaryAsr(Protocol):
+    """The split-decode ``NemoConformerAED`` surface the adapter calls."""
+
+    language_token_ids: dict[str, int]
+
+    def recognize_batch(
+        self,
+        waveforms: npt.NDArray[np.float32],
+        waveforms_len: npt.NDArray[np.int64],
+        /,
+        **kwargs: object,
+    ) -> Iterator[object]:
+        """Recognize a waveform batch, one result per waveform."""
+        ...
 
 
 class OnnxCanarySplitASRAdapter:
@@ -42,7 +66,7 @@ class OnnxCanarySplitASRAdapter:
 
     def __init__(
         self,
-        asr: Any,
+        asr: SplitCanaryAsr,
         *,
         admission: AdmissionController | None = None,
         fallback_language: str = "en",
@@ -117,7 +141,8 @@ class OnnxCanarySplitASRAdapter:
         """
 
         def _detect() -> str | None:
-            code = _partial_prompt_lid(self._asr, pcm)
+            lid_model = cast("CanaryLidModel", self._asr)  # noqa: BTTOOL004 -- the split-decode class has these private NemoConformerAED internals; SplitCanaryAsr does not name them
+            code = _partial_prompt_lid(lid_model, pcm)
             return code if code in self._language_tokens else None
 
         async with self._admission.admit():
@@ -150,7 +175,7 @@ class OnnxCanarySplitASRAdapter:
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
         duration = len(audio) / _SAMPLE_RATE
 
-        def _recognize():
+        def _recognize() -> object:
             waveforms = audio[None, :]
             waveforms_len = np.array([len(audio)], dtype=np.int64)
             return next(

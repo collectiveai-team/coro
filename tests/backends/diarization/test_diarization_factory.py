@@ -8,7 +8,7 @@ model is loaded — the provider builder is patched.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -79,7 +79,7 @@ def test_build_streaming_diarizer_factory_nemo():
     """A NeMo adapter yields a streaming factory bound to its shared model."""
     from coro.backends.diarization.nemo.diarization import NemoDiarizationAdapter
 
-    fake_model = object()
+    fake_model = MagicMock()
     adapter = NemoDiarizationAdapter(fake_model)
 
     with patch(
@@ -100,7 +100,7 @@ def test_build_streaming_diarizer_factory_reuses_resolved_postprocessing():
     """
     from coro.backends.diarization.nemo.diarization import NemoDiarizationAdapter
 
-    fake_model = object()
+    fake_model = MagicMock()
     adapter = NemoDiarizationAdapter(fake_model, postprocessing_yaml="/resolved/path.yaml")
 
     with patch(

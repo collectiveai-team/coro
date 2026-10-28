@@ -7,13 +7,18 @@ hardening and Auto-LID sections) for the design these functions implement.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
-from coro.backends.asr.nemo import resolve_target_language
+from coro.backends.asr.nemo_checkpoint import resolve_target_language
 from coro.cache.fingerprint import normalise_language
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    import numpy.typing as npt
 
 # Matches exactly the two-letter language switch tokens in Canary's vocab
 # (`<|en|>`, `<|es|>`, ...) -- deliberately narrower than any `<|...|>` token,
@@ -22,13 +27,49 @@ from coro.cache.fingerprint import normalise_language
 _LANGUAGE_TOKEN_RE = re.compile(r"<\|([a-z]{2})\|>")
 
 
+class _DecoderInput(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def shape(self) -> Sequence[int]: ...
+
+
+class _DecoderSession(Protocol):
+    def get_inputs(self) -> Sequence[_DecoderInput]: ...
+
+
+class CanaryLidModel(Protocol):
+    """The private ``NemoConformerAED`` internals the partial-prompt LID probe drives."""
+
+    _tokens: dict[str, int]
+    _vocab: dict[int, str]
+    _decoder: _DecoderSession
+    _preprocessor: Callable[
+        [npt.NDArray[np.float32], npt.NDArray[np.int64]],
+        tuple[npt.NDArray[np.float32], npt.NDArray[np.int64]],
+    ]
+
+    def _encode(
+        self, features: npt.NDArray[np.float32], features_lens: npt.NDArray[np.int64]
+    ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.int64]]: ...
+
+    def _decode(
+        self,
+        input_ids: npt.NDArray[np.int64],
+        encoder_embeddings: npt.NDArray[np.float32],
+        encoder_mask: npt.NDArray[np.int64],
+        decoder_mems: npt.NDArray[np.float32],
+    ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]: ...
+
+
 def resolve_canary_language(language: str | None, language_tokens: dict[str, int]) -> str | None:
     """Resolve a request language to a Canary ``<|xx|>`` vocab code.
 
     Composed from the two normalisers the codebase already has (no third one
     is added): :func:`coro.cache.fingerprint.normalise_language` handles the
     spelling (strip / lowercase / underscore-to-hyphen), then NeMo's
-    :func:`~coro.backends.asr.nemo.resolve_target_language` does the
+    :func:`~coro.backends.asr.nemo_checkpoint.resolve_target_language` does the
     exact-then-primary-subtag match against the vocab-derived token map --
     so ``es-US``, ``es_US`` and ``" ES "`` all resolve to ``es``.
 
@@ -53,7 +94,7 @@ def resolve_canary_language(language: str | None, language_tokens: dict[str, int
         raise AsrUnsupportedLanguageError(normalised, supported_languages=language_tokens) from exc
 
 
-def _partial_prompt_lid(asr: Any, pcm: bytes) -> str | None:
+def _partial_prompt_lid(asr: CanaryLidModel, pcm: bytes) -> str | None:
     """Run NeMo's Canary2 partial-prompt LID probe on one PCM window.
 
     NeMo's ``Canary2PromptFormatter`` documents a ``user_partial`` role
