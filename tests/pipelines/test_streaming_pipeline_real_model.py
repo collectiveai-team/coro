@@ -22,10 +22,12 @@ from __future__ import annotations
 import os
 import struct
 from dataclasses import asdict
+from typing import cast
 from unittest.mock import patch
 
 import pytest
 
+from coro.backends.diarization.nemo.sortformer import StreamingSortformerModel
 from coro.core.models import TranscriptToken
 
 REAL_MODEL_TESTS = os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") == "1"
@@ -43,14 +45,14 @@ skip_unless_real = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-def _load_sortformer():
+def _load_sortformer() -> StreamingSortformerModel:
     """The streaming Sortformer checkpoint, in inference mode."""
     from nemo.collections.asr.models import SortformerEncLabelModel
 
     model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
     # NeMo stub types from_pretrained as str.
     model.eval()  # pyrefly: ignore[missing-attribute]
-    return model
+    return cast("StreamingSortformerModel", model)
 
 
 def _noise_pcm(seconds: int, sample_rate: int) -> bytes:
