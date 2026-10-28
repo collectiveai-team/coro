@@ -15,7 +15,7 @@ blocking the event loop would make enabling the cache degrade concurrency.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from coro.cache.fingerprint import resolved_language_key, window_key
 from coro.core.logger import get_logger
@@ -23,11 +23,12 @@ from coro.core.logger import get_logger
 if TYPE_CHECKING:
     from coro.cache.store import ASRCacheStore
     from coro.core.models import TranscriptToken
+    from coro.core.protocols import ASRAdapter
 
 logger = get_logger(__name__)
 
 
-def unwrap_asr_adapter(adapter: Any) -> Any:
+def unwrap_asr_adapter(adapter: ASRAdapter) -> ASRAdapter:
     """Return the adapter beneath any ASR window cache decorator.
 
     Server Warmup uses this: warmup exists to prove the model loads and runs, so
@@ -41,11 +42,11 @@ def unwrap_asr_adapter(adapter: Any) -> Any:
         The wrapped adapter, or ``adapter`` itself when it is not a decorator.
 
     """
-    inner = getattr(adapter, "inner", None)
+    inner: ASRAdapter | None = getattr(adapter, "inner", None)
     return adapter if inner is None else inner
 
 
-def adapter_honours_prompt(adapter: Any) -> bool:
+def adapter_honours_prompt(adapter: object) -> bool:
     """Return whether an ASR Adapter honours the prompt it is given.
 
     Args:
@@ -65,7 +66,7 @@ class CachingASRAdapter:
 
     def __init__(
         self,
-        inner: Any,
+        inner: ASRAdapter,
         *,
         store: ASRCacheStore,
         fingerprint: str,
@@ -99,7 +100,7 @@ class CachingASRAdapter:
         self._misses = 0
 
     @property
-    def inner(self) -> Any:
+    def inner(self) -> ASRAdapter:
         """The wrapped ASR Adapter, for callers that must reach the real model."""
         return self._inner
 

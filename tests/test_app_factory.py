@@ -5,6 +5,8 @@ the expected shape without loading any real ASR model.
 """
 
 import logging
+from dataclasses import dataclass
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -64,8 +66,16 @@ async def test_health_not_ready_when_no_asr_adapter(app):
     assert response.json()["ready"] is False
 
 
+@dataclass(frozen=True)
+class WarmupReadiness:
+    """The two readiness flags /health reports."""
+
+    ready: bool
+    warmup_ready: bool
+
+
 @pytest.fixture
-def warmup_disabled_health(caplog) -> dict:
+def warmup_disabled_health(caplog) -> WarmupReadiness:
     """/health of a server started with CORO_WARMUP=disabled, WARNING logs captured."""
     from unittest.mock import patch
 
@@ -78,14 +88,15 @@ def warmup_disabled_health(caplog) -> dict:
 
         with caplog.at_level(logging.WARNING, logger="coro.app"), TestClient(application) as client:
             response = client.get("/health")
-    return response.json()
+    body = response.json()
+    return WarmupReadiness(ready=body["ready"], warmup_ready=body["warmup_ready"])
 
 
 @pytest.mark.integration  # reaches the Hugging Face Hub at startup
 def test_warmup_disabled_reports_ready(warmup_disabled_health):
     """CORO_WARMUP=disabled skips Server Warmup and reports ready."""
-    assert warmup_disabled_health["warmup_ready"] is True
-    assert warmup_disabled_health["ready"] is True
+    assert warmup_disabled_health.warmup_ready is True
+    assert warmup_disabled_health.ready is True
 
 
 @pytest.mark.integration  # reaches the Hugging Face Hub at startup

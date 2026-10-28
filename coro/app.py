@@ -10,6 +10,7 @@ Usage (ASGI):
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -26,7 +27,7 @@ from coro.runtime import RuntimeState
 from coro.settings import ServerSettings, get_settings
 
 if TYPE_CHECKING:
-    pass
+    from coro.core.protocols import ASRAdapter, DiarizationAdapter
 
 logger = get_logger(__name__)
 
@@ -72,6 +73,89 @@ def api_metadata(summary: str, license_expression: str) -> tuple[str, dict[str, 
 API_DESCRIPTION, API_LICENSE_INFO = api_metadata(coro.__summary__, coro.__license__)
 
 
+def _build_diarization(
+    settings: ServerSettings, runtime: RuntimeState
+) -> DiarizationAdapter | None:
+    """Build the optional diarization adapter and, when supported, its streaming factory.
+
+    Both are recorded on ``runtime``; the adapter is also returned for the
+    pipeline build.
+    """
+    from coro.backends.diarization import factory as diarization_factory
+
+    if settings.backend_diarization == "none":
+        return None
+    diarization_model = settings.model_diarization
+    if not diarization_model:
+        # Strict Startup Validation already rejects this combination; failing
+        # here too keeps the invariant enforced at the point of use, so an
+        # enabled provider can never silently degrade to an ASR-Only Server.
+        msg = (
+            f"Diarization Backend Provider '{settings.backend_diarization}' is "
+            "selected but the Diarization Model Selection is empty."
+        )
+        raise ValueError(msg)
+    diarization_adapter = diarization_factory.build_diarization_adapter(
+        settings.backend_diarization,
+        diarization_model,
+        device=settings.diarization_device,
+        hf_token=settings.hf_token.get_secret_value() if settings.hf_token else None,
+        postprocessing=settings.diarization_postprocessing,
+        postprocessing_max_speakers=settings.diarization_postprocessing_max_speakers,
+    )
+    runtime.diarization_adapter = diarization_adapter
+
+    if settings.pipeline == "streaming" and diarization_factory.supports_streaming(
+        settings.backend_diarization
+    ):
+        runtime.streaming_diarizer_factory = diarization_factory.build_streaming_diarizer_factory(
+            settings.backend_diarization,
+            diarization_adapter,
+            tier=settings.diarization_latency,
+        )
+        runtime.diarization_latency = settings.diarization_latency
+    return diarization_adapter
+
+
+async def _warm_up(
+    settings: ServerSettings,
+    runtime: RuntimeState,
+    asr_adapter: ASRAdapter,
+    diarization_adapter: DiarizationAdapter | None,
+) -> None:
+    """Run Server Warmup when enabled, then mark the runtime warmed up."""
+    if settings.warmup != "enabled":
+        logger.warning("Server Warmup is disabled — first request may pay cold-model costs.")
+        runtime.warmup_ready = True
+        return
+
+    from coro.audio import AudioInput
+    from coro.bench.data import WARMUP_AUDIO_PATH
+    from coro.cache.adapter import unwrap_asr_adapter
+    from coro.pipelines.factory import build_pipeline
+
+    # Warmup runs against the *wrapped* adapter, never the ASR window
+    # cache: its whole purpose is to prove the model loads and runs, and
+    # a cached warmup would let readiness report success on every start
+    # after the first without anything having been loaded.
+    warmup_pipeline = build_pipeline(
+        settings,
+        asr=unwrap_asr_adapter(asr_adapter),
+        diarization=diarization_adapter,
+        streaming_diarizer_factory=runtime.streaming_diarizer_factory,
+    )
+    warmup_audio = AudioInput(WARMUP_AUDIO_PATH.read_bytes())
+    # asr_fallback_language is consulted by onnx-canary-split only (see
+    # its ServerSettings description); other backends keep warming up
+    # with no language hint (their own auto-LID/default), unchanged.
+    warmup_language = (
+        settings.asr_fallback_language if settings.backend_asr == "onnx-canary-split" else None
+    )
+    logger.info("Server Warmup using ASR language=%s", warmup_language)
+    await warmup_pipeline.transcribe(warmup_audio, language=warmup_language)
+    runtime.warmup_ready = True
+
+
 def create_app(settings: ServerSettings | None = None) -> FastAPI:
     """Create and configure a FastAPI application.
 
@@ -94,10 +178,8 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     )
 
     @asynccontextmanager
-    async def lifespan(application: FastAPI):
+    async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
         from coro.backends.asr.factory import build_asr_adapter_stack
-        from coro.backends.diarization import factory as diarization_factory
-        from coro.cache.adapter import unwrap_asr_adapter
         from coro.pipelines.factory import build_pipeline
 
         application.state.settings = settings
@@ -114,41 +196,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         # wrapped by the ASR window cache when that is enabled.
         asr_adapter = build_asr_adapter_stack(settings)
         runtime.asr_adapter = asr_adapter
-
-        # Build optional diarization adapter via the diarization Backend Adapter Factory.
-        diarization_adapter = None
-        if settings.backend_diarization != "none":
-            diarization_model = settings.model_diarization
-            if not diarization_model:
-                # Strict Startup Validation already rejects this combination; failing
-                # here too keeps the invariant enforced at the point of use, so an
-                # enabled provider can never silently degrade to an ASR-Only Server.
-                msg = (
-                    f"Diarization Backend Provider '{settings.backend_diarization}' is "
-                    "selected but the Diarization Model Selection is empty."
-                )
-                raise ValueError(msg)
-            diarization_adapter = diarization_factory.build_diarization_adapter(
-                settings.backend_diarization,
-                diarization_model,
-                device=settings.diarization_device,
-                hf_token=settings.hf_token.get_secret_value() if settings.hf_token else None,
-                postprocessing=settings.diarization_postprocessing,
-                postprocessing_max_speakers=settings.diarization_postprocessing_max_speakers,
-            )
-            runtime.diarization_adapter = diarization_adapter
-
-            if settings.pipeline == "streaming" and diarization_factory.supports_streaming(
-                settings.backend_diarization
-            ):
-                runtime.streaming_diarizer_factory = (
-                    diarization_factory.build_streaming_diarizer_factory(
-                        settings.backend_diarization,
-                        diarization_adapter,
-                        tier=settings.diarization_latency,
-                    )
-                )
-                runtime.diarization_latency = settings.diarization_latency
+        diarization_adapter = _build_diarization(settings, runtime)
 
         runtime.pipeline = build_pipeline(
             settings,
@@ -156,37 +204,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             diarization=diarization_adapter,
             streaming_diarizer_factory=runtime.streaming_diarizer_factory,
         )
-
-        # Server Warmup
-        if settings.warmup == "enabled":
-            from coro.audio import AudioInput
-            from coro.bench.data import WARMUP_AUDIO_PATH
-
-            # Warmup runs against the *wrapped* adapter, never the ASR window
-            # cache: its whole purpose is to prove the model loads and runs, and
-            # a cached warmup would let readiness report success on every start
-            # after the first without anything having been loaded.
-            warmup_pipeline = build_pipeline(
-                settings,
-                asr=unwrap_asr_adapter(asr_adapter),
-                diarization=diarization_adapter,
-                streaming_diarizer_factory=runtime.streaming_diarizer_factory,
-            )
-            warmup_audio = AudioInput(WARMUP_AUDIO_PATH.read_bytes())
-            # asr_fallback_language is consulted by onnx-canary-split only (see
-            # its ServerSettings description); other backends keep warming up
-            # with no language hint (their own auto-LID/default), unchanged.
-            warmup_language = (
-                settings.asr_fallback_language
-                if settings.backend_asr == "onnx-canary-split"
-                else None
-            )
-            logger.info("Server Warmup using ASR language=%s", warmup_language)
-            await warmup_pipeline.transcribe(warmup_audio, language=warmup_language)
-            runtime.warmup_ready = True
-        else:
-            logger.warning("Server Warmup is disabled — first request may pay cold-model costs.")
-            runtime.warmup_ready = True
+        await _warm_up(settings, runtime, asr_adapter, diarization_adapter)
 
         yield
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from coro.core.models.events import (
     PipelineStreamEvent,
+    RenderedDoneFrame,
     StreamEvent,
     TokenBatchEvent,
     TranscriptDeltaEvent,
@@ -32,6 +33,7 @@ __all__ = [
     "DiarizationItem",
     "PipelineStreamEvent",
     "RawWord",
+    "RenderedDoneFrame",
     "ResponseSegment",
     "SpeakerSegment",
     "StreamEvent",

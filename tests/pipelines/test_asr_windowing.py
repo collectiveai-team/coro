@@ -2,40 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 
 import pytest
 
-from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
+from coro.audio import BYTES_PER_SAMPLE
 from coro.core.models import TranscriptDeltaEvent, TranscriptToken, TokenBatchEvent
-from coro.pipelines.windowing import ASRWindowing, LanguageState
-
-_BYTES_PER_SECOND = SAMPLE_RATE * BYTES_PER_SAMPLE
-
-
-class _FakeASR:
-    """Emit one token at the midpoint of whichever window it is handed.
-
-    Mid-window placement keeps the token clear of every reconciliation
-    boundary, so tests about prompt carry-over or event shape stay independent
-    of overlap reconciliation.
-    """
-
-    def __init__(self) -> None:
-        self.prompts: list[str | None] = []
-
-    async def transcribe_pcm(self, pcm: bytes, *, language=None, prompt=None):
-        self.prompts.append(prompt)
-        call = len(self.prompts)
-        midpoint = len(pcm) / _BYTES_PER_SECOND / 2
-        return [
-            TranscriptToken(
-                start=midpoint,
-                end=midpoint + 0.25,
-                text=f" word{call}",
-                probability=1.0,
-            )
-        ]
+from coro.pipelines.windowing import ASRWindowing
+from support.windowing import (
+    BYTES_PER_SECOND as _BYTES_PER_SECOND,
+    FakeASR as _FakeASR,
+    async_chunks as _async_chunks,
+    grid_chunks as _grid_chunks,
+    pcm_seconds as _pcm_seconds,
+)
 
 
 class _OverlapEchoASR:
@@ -53,37 +33,6 @@ class _OverlapEchoASR:
         self.prompts.append(prompt)
         call = len(self.prompts)
         return [TranscriptToken(start=0.0, end=0.25, text=f" word{call}", probability=1.0)]
-
-
-class _WindowRecordingASR:
-    """Record the exact window bytes handed to the adapter."""
-
-    def __init__(self) -> None:
-        self.windows: list[bytes] = []
-
-    async def transcribe_pcm(self, pcm: bytes, *, language=None, prompt=None):
-        self.windows.append(pcm)
-        return []
-
-
-def _pcm_seconds(seconds: float) -> bytes:
-    return b"\x00\x00" * int(SAMPLE_RATE * seconds)
-
-
-@pytest.mark.asyncio
-async def test_asr_windowing_calls_adapter_for_every_planned_window():
-    asr = _FakeASR()
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
-
-    result = await windowing.transcribe_pcm(
-        _pcm_seconds(2.0),
-        asr=asr,
-        language="es",
-        prompt="hint",
-    )
-
-    assert len(asr.prompts) == 3
-    assert [token.text for token in result.tokens] == [" word1", " word2", " word3"]
 
 
 @pytest.mark.asyncio
@@ -167,11 +116,6 @@ def test_window_bytes_are_even_for_pcm_alignment():
     assert windowing.window_bytes % BYTES_PER_SAMPLE == 0
 
 
-async def _async_chunks(chunks: list[bytes]) -> AsyncIterator[bytes]:
-    for chunk in chunks:
-        yield chunk
-
-
 # ---------------------------------------------------------------------------
 # Boundary reconciliation across all three transcription paths
 # ---------------------------------------------------------------------------
@@ -225,11 +169,6 @@ class _ScriptedASR:
         ]
         self.raw_token_count += len(tokens)
         return tokens
-
-
-def _grid_chunks(pcm: bytes) -> list[bytes]:
-    chunk_size = int(_BYTES_PER_SECOND * 0.4)
-    return [pcm[i : i + chunk_size] for i in range(0, len(pcm), chunk_size)]
 
 
 @pytest.mark.asyncio
@@ -297,267 +236,3 @@ async def test_streaming_deltas_contain_no_duplicated_text():
     expected = [word.strip() for word in _EXPECTED_WORDS]
     assert " ".join(stream_deltas).split() == expected
     assert " ".join(chunk_deltas).split() == expected
-
-
-@pytest.mark.asyncio
-async def test_stream_chunks_event_equivalence_with_stream_pcm():
-    asr_chunks = _FakeASR()
-    asr_pcm = _FakeASR()
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
-    pcm = _pcm_seconds(2.0)
-    chunks = _grid_chunks(pcm)
-
-    events_pcm = [
-        e async for e in windowing.stream_pcm(pcm, asr=asr_pcm, language="es", prompt="hint")
-    ]
-    events_chunks = [
-        e
-        async for e in windowing.stream_chunks(
-            _async_chunks(chunks), asr=asr_chunks, language="es", prompt="hint"
-        )
-    ]
-
-    deltas_pcm = [e.delta for e in events_pcm if isinstance(e, TranscriptDeltaEvent)]
-    deltas_chunks = [e.delta for e in events_chunks if isinstance(e, TranscriptDeltaEvent)]
-    assert deltas_chunks == deltas_pcm
-
-    batches_pcm = [e.tokens for e in events_pcm if isinstance(e, TokenBatchEvent)]
-    batches_chunks = [e.tokens for e in events_chunks if isinstance(e, TokenBatchEvent)]
-    assert len(batches_chunks) == len(batches_pcm)
-    for pcm_toks, chunk_toks in zip(batches_pcm, batches_chunks, strict=True):
-        assert [(t.start, t.end, t.text) for t in chunk_toks] == [
-            (t.start, t.end, t.text) for t in pcm_toks
-        ]
-
-
-@pytest.mark.parametrize(
-    ("seconds", "label"),
-    [
-        (0.5, "shorter than one window"),
-        (1.0, "exactly one window"),
-        (1.75, "one step past a full window"),
-        (2.5, "two steps past a full window"),
-        (2.0, "ragged tail"),
-        (3.0, "ragged tail, several windows"),
-    ],
-)
-@pytest.mark.asyncio
-async def test_stream_chunks_dispatches_the_same_windows_as_stream_pcm(seconds, label):
-    """Both paths must hand the adapter byte-identical windows.
-
-    When the stream length is exactly ``window + k * step`` the buffered path
-    used to dispatch one extra window containing only the leftover overlap: a
-    wasted inference over a region the previous window already covered, with
-    the tail transcribed as an isolated overlap-length fragment rather than in
-    the context of its full window. Reconciliation discarded the duplicate
-    tokens, so the response still looked correct and only the window sequence
-    reveals it — which is why this compares windows rather than output.
-    """
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
-    pcm = _pcm_seconds(seconds)
-
-    from_pcm = _WindowRecordingASR()
-    async for _ in windowing.stream_pcm(pcm, asr=from_pcm, language="es", prompt=None):
-        pass
-
-    from_chunks = _WindowRecordingASR()
-    async for _ in windowing.stream_chunks(
-        _async_chunks(_grid_chunks(pcm)), asr=from_chunks, language="es", prompt=None
-    ):
-        pass
-
-    assert [len(w) for w in from_chunks.windows] == [len(w) for w in from_pcm.windows], label
-    assert from_chunks.windows == from_pcm.windows, label
-
-
-@pytest.mark.asyncio
-async def test_stream_chunks_buffer_never_exceeds_window_plus_max_chunk():
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
-    pcm = _pcm_seconds(3.0)
-    chunks = _grid_chunks(pcm)
-    max_chunk = max(len(c) for c in chunks)
-
-    asr = _FakeASR()
-    events = [
-        e
-        async for e in windowing.stream_chunks(
-            _async_chunks(chunks), asr=asr, language=None, prompt=None
-        )
-    ]
-
-    assert events is not None
-    assert windowing._stream_chunks_buffer_highwater <= windowing.window_bytes + max_chunk
-
-
-@pytest.mark.asyncio
-async def test_stream_chunks_processes_partial_tail():
-    asr = _FakeASR()
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
-    pcm = _pcm_seconds(1.5)
-    half = len(pcm) // 2
-    chunks = [pcm[:half], pcm[half:]]
-
-    events = [
-        e
-        async for e in windowing.stream_chunks(
-            _async_chunks(chunks), asr=asr, language=None, prompt=None
-        )
-    ]
-
-    batches = [e for e in events if isinstance(e, TokenBatchEvent)]
-    assert len(batches) == 2
-    # The 0.5 s tail window starts at 1.0 s; its token sits at the midpoint.
-    tail_start = batches[1].tokens[0].start
-    assert tail_start == pytest.approx(1.25, abs=0.01)
-
-
-@pytest.mark.asyncio
-async def test_stream_chunks_prompt_carry_is_bounded_over_long_stream():
-    """Prompt carry must reflect only recent tokens, never the whole transcript.
-
-    With one token emitted per window, after many windows the earliest token
-    text must have aged out of the carry, proving retention is bounded and does
-    not grow O(audio length).
-    """
-    asr = _FakeASR()
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
-    pcm = _pcm_seconds(80.0)  # ~80 windows, well past the 50-token carry bound
-    chunk_size = int(_BYTES_PER_SECOND * 1.0)
-    chunks = [pcm[i : i + chunk_size] for i in range(0, len(pcm), chunk_size)]
-
-    _ = [
-        e
-        async for e in windowing.stream_chunks(
-            _async_chunks(chunks), asr=asr, language=None, prompt=None
-        )
-    ]
-
-    last_prompt = asr.prompts[-1] or ""
-    assert len(last_prompt) <= 200
-    # word1 (the first emitted token) must have aged out of the bounded carry.
-    assert "word1 " not in last_prompt
-    # but a recent token must still be present.
-    assert f"word{len(asr.prompts) - 1}" in last_prompt
-
-
-# ---------------------------------------------------------------------------
-# Sticky auto-LID (ticket 05, core + Full-Memory Pipeline slice)
-# ---------------------------------------------------------------------------
-
-
-class _AutoLIDASR:
-    """A canary-like fake exposing ``detect_language``, scripted per call."""
-
-    def __init__(self, detections: list[str | None]) -> None:
-        self._detections = list(detections)
-        self.detect_calls = 0
-        self.transcribe_languages: list[str | None] = []
-
-    async def detect_language(self, pcm: bytes) -> str | None:
-        detected = self._detections[self.detect_calls]
-        self.detect_calls += 1
-        return detected
-
-    async def transcribe_pcm(self, pcm: bytes, *, language=None, prompt=None):
-        self.transcribe_languages.append(language)
-        return []
-
-
-@pytest.mark.asyncio
-async def test_transcribe_pcm_sticks_to_the_first_successful_detection():
-    asr = _AutoLIDASR([None, "es"])
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
-
-    result = await windowing.transcribe_pcm(_pcm_seconds(2.5), asr=asr, language=None, prompt=None)
-
-    assert asr.detect_calls == 2  # window 3 never re-runs detection
-    assert asr.transcribe_languages == [None, "es", "es"]
-    assert result.detected_language == "es"
-
-
-@pytest.mark.asyncio
-async def test_no_successful_detection_falls_back_every_window_and_reports_none():
-    asr = _AutoLIDASR([None, None, None])
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
-
-    result = await windowing.transcribe_pcm(_pcm_seconds(2.5), asr=asr, language=None, prompt=None)
-
-    assert asr.detect_calls == 3
-    assert asr.transcribe_languages == [None, None, None]
-    assert result.detected_language is None
-
-
-@pytest.mark.asyncio
-async def test_explicit_language_never_calls_detect_language():
-    asr = _AutoLIDASR(["es", "es", "es"])  # would detect if ever consulted
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
-
-    result = await windowing.transcribe_pcm(_pcm_seconds(2.5), asr=asr, language="fr", prompt=None)
-
-    assert asr.detect_calls == 0
-    assert asr.transcribe_languages == ["fr", "fr", "fr"]
-    assert result.detected_language is None
-
-
-@pytest.mark.asyncio
-async def test_a_backend_without_detect_language_is_unaffected():
-    """Every backend but onnx-canary-split: unchanged, None reaches transcribe_pcm."""
-    asr = _FakeASR()
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
-
-    result = await windowing.transcribe_pcm(_pcm_seconds(1.0), asr=asr, language=None, prompt=None)
-
-    assert result.detected_language is None
-
-
-@pytest.mark.asyncio
-async def test_stream_chunks_without_a_language_state_behaves_as_before_auto_lid():
-    """No language_state passed (a caller not yet wired for auto-LID): unchanged."""
-    asr = _AutoLIDASR(["es", "es", "es"])
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
-    pcm = _pcm_seconds(2.5)
-
-    async for _ in windowing.stream_chunks(
-        _async_chunks([pcm]), asr=asr, language=None, prompt=None
-    ):
-        pass
-
-    assert asr.detect_calls == 0
-    assert asr.transcribe_languages == [None, None, None]
-
-
-@pytest.mark.asyncio
-async def test_stream_chunks_sticks_to_the_first_successful_detection():
-    """stream_chunks honours a passed language_state exactly like stream_pcm does."""
-    asr = _AutoLIDASR([None, "es"])
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.0)
-    pcm = _pcm_seconds(2.5)
-    state = LanguageState()
-
-    async for _ in windowing.stream_chunks(
-        _async_chunks([pcm]), asr=asr, language=None, prompt=None, language_state=state
-    ):
-        pass
-
-    assert asr.detect_calls == 2  # window 3 never re-runs detection
-    assert asr.transcribe_languages == [None, "es", "es"]
-    assert state.resolved == "es"
-
-
-@pytest.mark.asyncio
-async def test_stream_chunks_prompt_carry_over_matches_stream_pcm():
-    asr_chunks = _FakeASR()
-    asr_pcm = _FakeASR()
-    windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
-    pcm = _pcm_seconds(2.0)
-    chunks = _grid_chunks(pcm)
-
-    [e async for e in windowing.stream_pcm(pcm, asr=asr_pcm, language="es", prompt="initial")]
-    [
-        e
-        async for e in windowing.stream_chunks(
-            _async_chunks(chunks), asr=asr_chunks, language="es", prompt="initial"
-        )
-    ]
-
-    assert asr_chunks.prompts == asr_pcm.prompts

@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from dataclasses import asdict
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, convert_path_to_pcm_bytes
 from coro.core.response import build_transcription_response
 from coro.core.protocols import ASRAdapter, DiarizationAdapter
-from coro.core.models import TokenBatchEvent, TranscriptDoneEvent, TranscriptionResult
+from coro.core.models import (
+    PipelineStreamEvent,
+    SpeakerSegment,
+    TokenBatchEvent,
+    TranscriptDoneEvent,
+    TranscriptionResult,
+    TranscriptToken,
+)
 from coro.pipelines.windowing import ASRWindowing, LanguageState
 
 
@@ -57,7 +65,7 @@ class FullMemoryPipeline:
                 language=language,
                 prompt=prompt,
             )
-            timeline = []
+            timeline: list[SpeakerSegment] = []
             if self._diarization is not None:
                 timeline = await self._diarization.diarize_pcm(pcm)
             return build_transcription_response(
@@ -73,11 +81,11 @@ class FullMemoryPipeline:
         *,
         language: str | None = None,
         prompt: str | None = None,
-    ):
+    ) -> AsyncIterator[PipelineStreamEvent]:
         try:
             pcm = await self._pcm(audio)
             duration = len(pcm) / (SAMPLE_RATE * BYTES_PER_SAMPLE)
-            tokens = []
+            tokens: list[TranscriptToken] = []
             state = LanguageState()
             async for event in self._windowing.stream_pcm(
                 pcm,
@@ -90,7 +98,7 @@ class FullMemoryPipeline:
                     tokens.extend(event.tokens)
                     continue
                 yield event
-            timeline = []
+            timeline: list[SpeakerSegment] = []
             if self._diarization is not None:
                 timeline = await self._diarization.diarize_pcm(pcm)
             yield TranscriptDoneEvent(

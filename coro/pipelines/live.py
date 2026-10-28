@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.core.logger import get_logger
 from coro.core.models import SpeakerSegment, TokenBatchEvent, TranscriptToken
-from coro.core.protocols import ASRAdapter
+from coro.core.protocols import ASRAdapter, StreamingDiarizerFactory
 from coro.pipelines.live_source import LiveAudioSource
 from coro.pipelines.windowing import ASRWindowing, LanguageState
 
@@ -42,7 +42,7 @@ class LiveTranscriptionSession:
         *,
         asr: ASRAdapter,
         windowing: ASRWindowing | None = None,
-        streaming_diarizer_factory=None,
+        streaming_diarizer_factory: StreamingDiarizerFactory | None = None,
         language: str | None = None,
         prompt: str | None = None,
     ) -> None:

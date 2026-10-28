@@ -29,8 +29,7 @@ from coro.audio import AudioConversionError
 from coro.backends.asr.concurrency import AsrCapacityError
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.logger import get_logger
-from coro.core.models import PipelineStreamEvent
-from coro.pipelines.done_frame import StreamingDoneFrame
+from coro.core.models import PipelineStreamEvent, RenderedDoneFrame
 
 logger = get_logger(__name__)
 
@@ -49,7 +48,7 @@ SSE_MEDIA_TYPE = "text/event-stream"
 _TERMINATOR_FRAME = f"data: {SSE_TERMINATOR}\n\n"
 
 
-async def _sse_generator(event_source: AsyncIterator[PipelineStreamEvent]):
+async def _sse_generator(event_source: AsyncIterator[PipelineStreamEvent]) -> AsyncIterator[str]:
     r"""Yield SSE-framed lines from an async event source.
 
     The event source must yield ``PipelineStreamEvent`` dataclasses.
@@ -58,7 +57,7 @@ async def _sse_generator(event_source: AsyncIterator[PipelineStreamEvent]):
     """
     try:
         async for event in event_source:
-            if isinstance(event, StreamingDoneFrame):
+            if isinstance(event, RenderedDoneFrame):
                 # Rendered straight from the spill store, one row at a time, so
                 # the final frame never materialises the whole transcript.
                 for line in event.iter_sse():

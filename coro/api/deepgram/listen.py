@@ -32,6 +32,7 @@ from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.language import canonical_language
 from coro.core.logger import get_logger
+from coro.core.protocols import TranscriptionPipeline
 from coro.core.transcript_source import TranscriptSource
 from coro.pipelines.source import transcript_source
 from coro.settings import ServerSettings
@@ -174,7 +175,7 @@ async def listen(
         "delivered, so a client awaiting one would wait forever.",
     ),
     authorization: str | None = Header(default=None, description="Accepted but not validated."),
-    pipeline=Depends(get_pipeline),
+    pipeline: TranscriptionPipeline = Depends(get_pipeline),
     settings: ServerSettings = Depends(get_settings),
 ) -> Response:
     """Transcribe a raw audio body and return Deepgram's pre-recorded shape.

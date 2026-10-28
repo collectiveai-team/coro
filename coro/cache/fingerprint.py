@@ -30,7 +30,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from coro.pipelines.windowing import DEFAULT_OVERLAP_SECONDS, DEFAULT_WINDOW_SECONDS
 from coro.settings.host import host_environment
@@ -244,7 +244,7 @@ class FingerprintComponents:
     window_seconds: float
     overlap_seconds: float
     honours_prompt: bool
-    provider_settings: tuple[tuple[str, Any], ...] = ()
+    provider_settings: tuple[tuple[str, str | float | None], ...] = ()
 
 
 def fingerprint_components(

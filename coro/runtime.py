@@ -8,7 +8,15 @@ test-injectable — no module-level globals.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from coro.core.protocols import (
+        ASRAdapter,
+        DiarizationAdapter,
+        StreamingDiarizerFactory,
+        TranscriptionPipeline,
+    )
 
 
 # MARK: Singleton Runtime State
@@ -19,22 +27,22 @@ class RuntimeState:
     An instance with ``asr_adapter=None`` is considered not ready.
     The runtime is injected into the FastAPI app via ``app.state``.
 
-    ``pipeline`` is typed as ``Any`` so protocol-compatible fakes can be used
-    in tests without subclassing.
+    Every component is typed by its Core Boundary protocol, so
+    protocol-compatible fakes can be used in tests without subclassing.
     """
 
-    pipeline: Any | None = None
+    pipeline: TranscriptionPipeline | None = None
     pipeline_selector: str = "full-memory"
     asr_provider: str = "faster-whisper"
     asr_model: str = "openai/whisper-medium"
     diarization_provider: str = "none"
     diarization_model: str | None = None
-    asr_adapter: Any | None = None
-    diarization_adapter: Any | None = None
-    streaming_diarizer_factory: Any | None = None
+    asr_adapter: ASRAdapter | None = None
+    diarization_adapter: DiarizationAdapter | None = None
+    streaming_diarizer_factory: StreamingDiarizerFactory | None = None
     diarization_latency: str | None = None
     warmup_ready: bool = False
-    _extra: dict = field(default_factory=dict, repr=False)
+    _extra: dict[str, object] = field(default_factory=dict, repr=False)
 
     # Capability Readiness --------------------------------------------------
     @property

@@ -14,9 +14,9 @@ drops unset optionals.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 # The spec version the emitted document declares. FastStream emits 3.0.0/2.6.0
 # only, so 3.0.0 is also the interoperable choice if a broker surface is ever
@@ -61,8 +61,8 @@ class Message(_Node):
     content_type: Annotated[str | None, Field(alias="contentType")] = None
     # JSON Schema is genuinely a free-form document here: it is derived from the
     # wire types at build time, so there is no fixed shape to model.
-    payload: dict[str, Any] | None = None
-    bindings: dict[str, Any] | None = None
+    payload: dict[str, JsonValue] | None = None
+    bindings: dict[str, JsonValue] | None = None
 
 
 class Channel(_Node):
@@ -78,7 +78,7 @@ class Channel(_Node):
     description: str | None = None
     messages: dict[str, Reference] = Field(default_factory=dict)
     servers: list[Reference] | None = None
-    bindings: dict[str, Any] | None = None
+    bindings: dict[str, JsonValue] | None = None
 
 
 class Operation(_Node):
@@ -94,14 +94,14 @@ class Operation(_Node):
     summary: str | None = None
     description: str | None = None
     messages: list[Reference] = Field(default_factory=list)
-    bindings: dict[str, Any] | None = None
+    bindings: dict[str, JsonValue] | None = None
 
 
 class Components(_Node):
     """Reusable message and schema definitions."""
 
     messages: dict[str, Message] = Field(default_factory=dict)
-    schemas: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    schemas: dict[str, dict[str, JsonValue]] = Field(default_factory=dict)
 
 
 class AsyncAPIDocument(_Node):

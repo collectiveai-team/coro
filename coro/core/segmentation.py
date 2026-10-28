@@ -102,7 +102,8 @@ class SegmentAccumulator:
         return span >= self._max_segment_seconds
 
     def _close(self) -> list[TranscriptToken]:
-        run, self._open = self._open, []
+        run = self._open
+        self._open = []
         return run
 
 

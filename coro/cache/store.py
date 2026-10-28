@@ -80,7 +80,7 @@ class ASRCacheStore:
         """
         Path(directory).mkdir(parents=True, exist_ok=True)
         self._path = str(Path(directory) / DATABASE_FILENAME)
-        self._max_bytes = max(0, int(max_bytes))
+        self._max_bytes = max(0, max_bytes)
         self._ttl_seconds = max(0.0, float(ttl_seconds))
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(self._path, check_same_thread=False)
@@ -220,5 +220,5 @@ class ASRCacheStore:
     def __enter__(self) -> ASRCacheStore:
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()

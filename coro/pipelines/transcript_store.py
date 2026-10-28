@@ -153,7 +153,7 @@ class TranscriptSpillStore:
                 self._segment_count,
                 float(start),
                 float(end),
-                str(text),
+                text,
                 json.dumps([asdict(t) for t in tokens]),
             ),
         )
@@ -175,7 +175,7 @@ class TranscriptSpillStore:
             rows.append(
                 (
                     self._raw_word_count,
-                    str(w.word),
+                    w.word,
                     float(w.start),
                     float(w.end),
                     None if w.score is None else float(w.score),
@@ -223,5 +223,5 @@ class TranscriptSpillStore:
     def __enter__(self) -> TranscriptSpillStore:
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()

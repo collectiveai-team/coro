@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import Request
 
 from coro.api.exceptions import TranscriptionReadinessError
+from coro.core.protocols import TranscriptionPipeline
 from coro.settings import ServerSettings
 
 
@@ -14,9 +15,9 @@ def get_settings(request: Request) -> ServerSettings:
     return request.app.state.settings
 
 
-def get_pipeline(request: Request):
+def get_pipeline(request: Request) -> TranscriptionPipeline:
     """Return the Singleton Runtime configured pipeline."""
-    pipeline = getattr(request.app.state.runtime, "pipeline", None)
+    pipeline: TranscriptionPipeline | None = getattr(request.app.state.runtime, "pipeline", None)
     if pipeline is None:
         raise TranscriptionReadinessError("Server is not ready. No pipeline is available.")
     return pipeline

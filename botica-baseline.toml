@@ -2,18 +2,6 @@
 
 [[finding]]
 rule = "cognitive-complexity"
-path = "coro/app.py"
-name = "create_app"
-value = 16
-
-[[finding]]
-rule = "cognitive-complexity"
-path = "coro/audio.py"
-name = "stream_pcm_from_file"
-value = 22
-
-[[finding]]
-rule = "cognitive-complexity"
 path = "coro/backends/asr/nemo.py"
 name = "_tokens_from_hypothesis"
 value = 21
@@ -59,9 +47,3 @@ rule = "cognitive-complexity"
 path = "coro/bench/stm.py"
 name = "word_segments_to_stm"
 value = 19
-
-[[finding]]
-rule = "cognitive-complexity"
-path = "coro/pipelines/windowing.py"
-name = "ASRWindowing::stream_chunks"
-value = 20

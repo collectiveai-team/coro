@@ -8,7 +8,7 @@ address, direction, prose.
 
 from __future__ import annotations
 
-from typing import Any
+from pydantic import JsonValue
 
 from coro.api.asyncapi.contribution import ChannelContribution
 from coro.api.asyncapi.models import Channel, Message, Operation, Reference
@@ -35,7 +35,7 @@ _CHANNEL_DESCRIPTION = (
 
 # The terminator has no wire dataclass to derive from — it is a bare string —
 # so its schema is stated once here, pinned to the constant the SSE writer uses.
-_TERMINATOR_SCHEMA: dict[str, Any] = {
+_TERMINATOR_SCHEMA: dict[str, JsonValue] = {
     "type": "string",
     "const": SSE_TERMINATOR,
     "title": "StreamTerminator",
@@ -43,7 +43,7 @@ _TERMINATOR_SCHEMA: dict[str, Any] = {
 }
 
 
-def _messages() -> tuple[dict[str, Message], dict[str, dict[str, Any]]]:
+def _messages() -> tuple[dict[str, Message], dict[str, dict[str, JsonValue]]]:
     """Build every message on the stream channel, plus the schemas they reference."""
     delta_payload, delta_defs = payload_schema(TranscriptDeltaEvent)
     done_payload, done_defs = payload_schema(TranscriptDoneEvent)

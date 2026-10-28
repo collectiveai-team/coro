@@ -31,7 +31,6 @@ import json
 import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any
 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -49,7 +48,7 @@ TEXT_SENTINEL = "\x00coro-response-text\x00"
 _ELEMENT_SEPARATOR = ","
 
 
-def dumps(value: Any) -> str:
+def dumps(value: object) -> str:
     """Serialise exactly as Starlette's ``JSONResponse`` does.
 
     Every keyword matters: the compact separators, the unescaped non-ASCII and

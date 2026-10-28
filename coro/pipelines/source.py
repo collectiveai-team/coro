@@ -12,14 +12,13 @@ protocol, including every test double, still works and simply is not flat.
 
 from __future__ import annotations
 
-from typing import Any
-
 from coro.audio import AudioInput
+from coro.core.protocols import TranscriptionPipeline
 from coro.core.transcript_source import MemoryTranscriptSource, TranscriptSource
 
 
 async def transcript_source(
-    pipeline: Any,
+    pipeline: TranscriptionPipeline,
     audio: AudioInput,
     *,
     language: str | None = None,

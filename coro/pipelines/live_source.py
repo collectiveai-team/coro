@@ -17,8 +17,6 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import BinaryIO
 
-_SENTINEL = object()
-
 # About 33 s of canonical 16 kHz s16 PCM: more than one ASR window's worth of
 # audio in flight, so a stream that keeps up never touches the disk.
 DEFAULT_MEMORY_LIMIT_BYTES = 1 << 20
@@ -41,8 +39,9 @@ class LiveAudioSource:
         spill_dir: str | None = None,
         memory_limit_bytes: int = DEFAULT_MEMORY_LIMIT_BYTES,
     ) -> None:
-        # Items are bytes held in memory, or (offset, length) into the spill file.
-        self._queue: asyncio.Queue = asyncio.Queue()
+        # Items are bytes held in memory, (offset, length) into the spill file,
+        # or None once the producer has closed the stream.
+        self._queue: asyncio.Queue[bytes | tuple[int, int] | None] = asyncio.Queue()
         self._closed = False
         self._spill_dir = spill_dir
         self._memory_limit = memory_limit_bytes
@@ -95,7 +94,7 @@ class LiveAudioSource:
         if self._closed:
             return
         self._closed = True
-        self._queue.put_nowait(_SENTINEL)
+        self._queue.put_nowait(None)
 
     def release(self) -> None:
         """Close the spill file; pending audio is discarded."""
@@ -108,7 +107,7 @@ class LiveAudioSource:
         """Yield PCM chunks until the producer closes the stream."""
         while True:
             item = await self._queue.get()
-            if item is _SENTINEL:
+            if item is None:
                 return
             if isinstance(item, bytes):
                 self._memory_bytes -= len(item)

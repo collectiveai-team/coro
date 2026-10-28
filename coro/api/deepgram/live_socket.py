@@ -13,6 +13,7 @@ import math
 
 from fastapi import WebSocket
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.websockets import WebSocketState
 
 from coro.api.deepgram.live_schemas import DeepgramLiveError
@@ -49,7 +50,7 @@ def socket_open(websocket: WebSocket) -> bool:
     )
 
 
-async def send_frame(websocket: WebSocket, model) -> None:
+async def send_frame(websocket: WebSocket, model: BaseModel) -> None:
     """Send a JSON frame, or nothing once either side has closed."""
     if socket_open(websocket):
         await websocket.send_text(model.model_dump_json(exclude_none=True))

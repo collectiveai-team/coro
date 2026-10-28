@@ -12,9 +12,16 @@ import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from coro.audio_probe import probe_duration_seconds
 from coro.core.logger import get_logger
+
+if TYPE_CHECKING:
+    from starlette.requests import HTTPConnection
+
+    from coro.audio import AudioInput
+    from coro.settings import ServerSettings
 
 logger = get_logger(__name__)
 
@@ -126,7 +133,7 @@ class ClientRateLimits:
         )
 
     @classmethod
-    def from_settings(cls, settings) -> ClientRateLimits:
+    def from_settings(cls, settings: ServerSettings) -> ClientRateLimits:
         """Build the limits, failing startup if the audio limit cannot be enforced.
 
         Raises:
@@ -169,7 +176,7 @@ class RateLimited:
     retry_after_seconds: float
 
 
-def admit_request(connection) -> RateLimited | None:
+def admit_request(connection: HTTPConnection) -> RateLimited | None:
     """Count one transcription request from this connection's client."""
     limits = rate_limits_of(connection)
     if limits is None:
@@ -183,7 +190,7 @@ def admit_request(connection) -> RateLimited | None:
     return RateLimited(REQUESTS_EXCEEDED_MESSAGE, wait)
 
 
-def audio_quota_empty(connection) -> RateLimited | None:
+def audio_quota_empty(connection: HTTPConnection) -> RateLimited | None:
     """Reject a stream at connect time when the client has no audio left."""
     limits = rate_limits_of(connection)
     if limits is None or limits.audio is None:
@@ -192,7 +199,7 @@ def audio_quota_empty(connection) -> RateLimited | None:
     return None if wait is None else RateLimited(AUDIO_EXCEEDED_MESSAGE, wait)
 
 
-async def admit_upload(connection, audio) -> RateLimited | None:
+async def admit_upload(connection: HTTPConnection, audio: AudioInput) -> RateLimited | None:
     """Charge an upload's duration, measured before any decoding.
 
     ``audio`` is an ``AudioInput``; it is spooled to disk only when the audio
@@ -218,7 +225,7 @@ async def admit_upload(connection, audio) -> RateLimited | None:
     return RateLimited(AUDIO_EXCEEDED_MESSAGE, wait)
 
 
-def client_key(connection) -> str:
+def client_key(connection: HTTPConnection) -> str:
     """Return the rate-limit key of an HTTP request or WebSocket: the client IP.
 
     Behind a reverse proxy this is the proxy's address unless uvicorn trusts
@@ -228,6 +235,6 @@ def client_key(connection) -> str:
     return client.host if client is not None and client.host else UNKNOWN_CLIENT
 
 
-def rate_limits_of(connection) -> ClientRateLimits | None:
+def rate_limits_of(connection: HTTPConnection) -> ClientRateLimits | None:
     """Return the app's limits, or None for an app built without them."""
     return getattr(connection.app.state, "rate_limits", None)
