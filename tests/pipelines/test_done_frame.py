@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import json
+import sys
+from pathlib import Path
 
 import pytest
 
+from coro.core import models
 from coro.core.models import SpeakerSegment, TranscriptDoneEvent, TranscriptToken
-from coro.pipelines import done_frame
 from coro.pipelines.done_frame import StreamingDoneFrame
 from coro.pipelines.finalizer import (
     StreamingTranscriptFinalizer,
@@ -87,11 +90,21 @@ def test_iter_sse_closes_store(tmp_path):
     store = TranscriptSpillStore(directory=str(tmp_path))
     _populate(store)
     path = store.path
-    from pathlib import Path
-
     assert Path(path).exists()
     _ = "".join(StreamingDoneFrame(store=store, timeline=[]).iter_sse())
     assert not Path(path).exists()
+
+
+def _import_done_frame_with(monkeypatch, **model_types):
+    """Import a fresh ``coro.pipelines.done_frame`` against substituted response models.
+
+    The module checks its renderers against the models when it is imported,
+    which is the only time production code meets that check.
+    """
+    for name, model_type in model_types.items():
+        monkeypatch.setattr(models, name, model_type)
+    monkeypatch.delitem(sys.modules, "coro.pipelines.done_frame")
+    return importlib.import_module("coro.pipelines.done_frame")
 
 
 @dataclasses.dataclass
@@ -102,9 +115,9 @@ class _EventDroppingItsText:
         self.text = ""
 
 
-def test_an_event_without_a_text_slot_cannot_frame_the_response():
+def test_an_event_without_a_text_slot_cannot_frame_the_response(monkeypatch):
     with pytest.raises(RuntimeError, match="text slot"):
-        done_frame._done_frame_affixes(_EventDroppingItsText)
+        _import_done_frame_with(monkeypatch, TranscriptDoneEvent=_EventDroppingItsText)
 
 
 @dataclasses.dataclass
@@ -113,20 +126,38 @@ class _ItemWithAnUnknownField:
     confidence_band: str
 
 
-def test_an_item_field_missing_from_the_segment_is_rejected():
+def test_an_item_field_missing_from_the_segment_is_rejected(monkeypatch):
     with pytest.raises(RuntimeError, match=r"\['confidence_band'\]"):
-        done_frame._segment_projection(_ItemWithAnUnknownField)
+        _import_done_frame_with(monkeypatch, TranscriptItem=_ItemWithAnUnknownField)
 
 
-def test_a_response_field_without_a_renderer_is_rejected():
-    fields = (*done_frame._RESPONSE_FIELDS, "summary")
+_RESPONSE_FIELD_NAMES = [field.name for field in dataclasses.fields(models.TranscriptionResult)]
+
+
+def test_a_response_field_without_a_renderer_is_rejected(monkeypatch):
+    response = dataclasses.make_dataclass(
+        "TranscriptionResult", [*_RESPONSE_FIELD_NAMES, "summary"]
+    )
 
     with pytest.raises(RuntimeError, match=r"unrendered fields \['summary'\]"):
-        done_frame._check_renderers_cover(fields)
+        _import_done_frame_with(monkeypatch, TranscriptionResult=response)
 
 
-def test_a_renderer_without_a_response_field_is_rejected():
-    fields = tuple(name for name in done_frame._RESPONSE_FIELDS if name != "raw_words")
+def test_a_renderer_without_a_response_field_is_rejected(monkeypatch):
+    response = dataclasses.make_dataclass(
+        "TranscriptionResult", [name for name in _RESPONSE_FIELD_NAMES if name != "raw_words"]
+    )
 
     with pytest.raises(RuntimeError, match=r"unknown renderers \['raw_words'\]"):
-        done_frame._check_renderers_cover(fields)
+        _import_done_frame_with(monkeypatch, TranscriptionResult=response)
+
+
+def test_a_fresh_import_against_the_real_models_still_frames_the_response(monkeypatch, tmp_path):
+    module = _import_done_frame_with(monkeypatch)
+    store = TranscriptSpillStore(directory=str(tmp_path))
+    _populate(store)
+    expected = _expected_frame(store, [])
+
+    streamed = "".join(module.StreamingDoneFrame(store=store, timeline=[]).iter_sse())
+
+    assert streamed == expected

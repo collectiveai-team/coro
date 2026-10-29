@@ -1,4 +1,4 @@
-"""Shared ASR fakes and PCM helpers for the ASR Windowing tests."""
+"""In-memory ASR Adapters and PCM helpers for the ASR Windowing tests."""
 
 from __future__ import annotations
 
@@ -11,17 +11,22 @@ BYTES_PER_SECOND = SAMPLE_RATE * BYTES_PER_SAMPLE
 
 
 class FakeASR:
-    """Emit one token at the midpoint of whichever window it is handed.
+    """An ASR Adapter emitting one token at the midpoint of each window it is handed.
 
     Mid-window placement keeps the token clear of every reconciliation
     boundary, so tests about prompt carry-over or event shape stay independent
     of overlap reconciliation.
     """
 
+    honours_prompt = True
+
     def __init__(self) -> None:
         self.prompts: list[str | None] = []
 
-    async def transcribe_pcm(self, pcm: bytes, *, language=None, prompt=None):
+    async def transcribe_pcm(
+        self, pcm: bytes, *, language: str | None = None, prompt: str | None = None
+    ) -> list[TranscriptToken]:
+        """Return one token named after the call number, at the window midpoint."""
         self.prompts.append(prompt)
         call = len(self.prompts)
         midpoint = len(pcm) / BYTES_PER_SECOND / 2
@@ -33,6 +38,36 @@ class FakeASR:
                 probability=1.0,
             )
         ]
+
+
+class WindowRecordingASR:
+    """An ASR Adapter that keeps the exact window bytes it is handed and hears nothing."""
+
+    honours_prompt = True
+
+    def __init__(self) -> None:
+        self.windows: list[bytes] = []
+
+    async def transcribe_pcm(
+        self, pcm: bytes, *, language: str | None = None, prompt: str | None = None
+    ) -> list[TranscriptToken]:
+        """Keep the window and return no tokens."""
+        self.windows.append(pcm)
+        return []
+
+
+class CountingChunkSource:
+    """A chunk stream that counts how many bytes its consumer has pulled so far."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = chunks
+        self.pulled_bytes = 0
+
+    async def stream(self) -> AsyncIterator[bytes]:
+        """Yield the chunks in order, counting each one as it is handed out."""
+        for chunk in self._chunks:
+            self.pulled_bytes += len(chunk)
+            yield chunk
 
 
 def pcm_seconds(seconds: float) -> bytes:

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from coro.audio_input import AudioInput, _suffix_from_filename
+from coro.audio_input import AudioInput
 
 
 class _FakeUpload:
@@ -70,15 +70,15 @@ class _ChunkedUpload:
         return self._chunk
 
 
-async def _with_peak_traced_memory(awaitable):
-    """Await ``awaitable`` under tracemalloc; return its result and the peak bytes traced."""
+async def _with_traced_memory(awaitable):
+    """Await ``awaitable`` under tracemalloc; return its result and the (retained, peak) bytes."""
     tracemalloc.start()
     try:
         result = await awaitable
-        _, peak = tracemalloc.get_traced_memory()
+        retained, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
-    return result, peak
+    return result, retained, peak
 
 
 @pytest.mark.asyncio
@@ -94,12 +94,12 @@ async def test_audio_input_from_upload_does_not_hold_the_upload_in_memory():
     chunk_count = 16
     expected_size = len(chunk) * chunk_count
 
-    audio, peak = await _with_peak_traced_memory(
+    audio, retained, peak = await _with_traced_memory(
         AudioInput.from_upload(_ChunkedUpload(chunk, count=chunk_count))
     )
 
     try:
-        assert audio._data is None, "file-backed input must not retain the encoded bytes"
+        assert retained < len(chunk), "file-backed input must not retain the encoded bytes"
         assert audio.size == expected_size
         assert Path(await audio.temp_path()).stat().st_size == expected_size  # noqa: ASYNC240
         assert peak < 4 * len(chunk), (
@@ -180,9 +180,25 @@ async def test_audio_input_from_upload_leaves_no_file_when_spooling_fails():
         ("x." + "y" * 40, ".media"),  # absurdly long suffix
     ],
 )
-def test_suffix_from_filename_sanitizes_untrusted_input(filename, expected):
+@pytest.mark.asyncio
+async def test_spooled_upload_suffix_sanitizes_untrusted_filenames(filename, expected):
     """Only short, plain-alphanumeric extensions survive; the rest fall back."""
-    assert _suffix_from_filename(filename) == expected
+    audio = await AudioInput.from_upload(_FakeUpload([b"media"], filename=filename))
+
+    try:
+        assert (await audio.temp_path()).endswith(expected)
+    finally:
+        await audio.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_in_memory_input_spools_with_the_same_sanitized_suffix():
+    audio = AudioInput(b"media", filename="danger.mp4\n")
+
+    try:
+        assert (await audio.temp_path()).endswith(".media")
+    finally:
+        await audio.cleanup()
 
 
 # ---------------------------------------------------------------------------

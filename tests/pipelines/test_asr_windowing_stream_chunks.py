@@ -4,25 +4,32 @@ from __future__ import annotations
 
 import pytest
 
-from coro.core.models import TranscriptDeltaEvent, TokenBatchEvent
+from coro.core.models import TranscriptDeltaEvent, TokenBatchEvent, TranscriptToken
 from coro.pipelines.windowing import ASRWindowing
 from support.windowing import (
     BYTES_PER_SECOND as _BYTES_PER_SECOND,
+    CountingChunkSource,
     FakeASR as _FakeASR,
+    WindowRecordingASR as _WindowRecordingASR,
     async_chunks as _async_chunks,
     grid_chunks as _grid_chunks,
     pcm_seconds as _pcm_seconds,
 )
 
 
-class _WindowRecordingASR:
-    """Record the exact window bytes handed to the adapter."""
+class _LookaheadProbeASR:
+    """An ASR Adapter noting how many bytes the source had handed out at each window."""
 
-    def __init__(self) -> None:
-        self.windows: list[bytes] = []
+    honours_prompt = True
 
-    async def transcribe_pcm(self, pcm: bytes, *, language=None, prompt=None):
-        self.windows.append(pcm)
+    def __init__(self, source: CountingChunkSource) -> None:
+        self._source = source
+        self.pulled_at_window: list[int] = []
+
+    async def transcribe_pcm(
+        self, pcm: bytes, *, language: str | None = None, prompt: str | None = None
+    ) -> list[TranscriptToken]:
+        self.pulled_at_window.append(self._source.pulled_bytes)
         return []
 
 
@@ -118,21 +125,27 @@ async def test_stream_chunks_dispatches_the_same_windows_as_stream_pcm(seconds, 
 
 @pytest.mark.asyncio
 async def test_stream_chunks_buffer_never_exceeds_window_plus_max_chunk():
+    """Each window is dispatched with at most one chunk read past it.
+
+    Bytes pulled from the source minus the bytes already stepped past is what
+    the windowing holds, so bounding it at every dispatch bounds the buffer.
+    """
     windowing = ASRWindowing(window_seconds=1.0, overlap_seconds=0.25)
     pcm = _pcm_seconds(3.0)
     chunks = _grid_chunks(pcm)
     max_chunk = max(len(c) for c in chunks)
+    source = CountingChunkSource(chunks)
+    asr = _LookaheadProbeASR(source)
 
-    asr = _FakeASR()
-    events = [
-        e
-        async for e in windowing.stream_chunks(
-            _async_chunks(chunks), asr=asr, language=None, prompt=None
-        )
+    async for _ in windowing.stream_chunks(source.stream(), asr=asr, language=None, prompt=None):
+        pass
+
+    held = [
+        pulled - index * windowing.step_bytes for index, pulled in enumerate(asr.pulled_at_window)
     ]
-
-    assert events is not None
-    assert windowing._stream_chunks_buffer_highwater <= windowing.window_bytes + max_chunk
+    assert len(held) == 4
+    assert max(held) <= windowing.window_bytes + max_chunk
+    assert source.pulled_bytes == len(pcm)
 
 
 @pytest.mark.asyncio
