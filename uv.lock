@@ -443,12 +443,14 @@ botica = [
     { name = "botica" },
 ]
 contracts = [
+    { name = "cyclopts" },
     { name = "fastapi" },
     { name = "numpy" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "scalar-fastapi" },
     { name = "soxr" },
+    { name = "structlog" },
 ]
 dev = [
     { name = "anyio" },
@@ -519,12 +521,14 @@ bench = [
 ]
 botica = [{ name = "botica", specifier = "==0.18.0" }]
 contracts = [
+    { name = "cyclopts" },
     { name = "fastapi" },
     { name = "numpy" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "scalar-fastapi" },
     { name = "soxr" },
+    { name = "structlog" },
 ]
 dev = [
     { name = "anyio", specifier = ">=4.0.0" },
