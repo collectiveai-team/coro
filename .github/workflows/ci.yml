@@ -137,7 +137,7 @@ jobs:
           git checkout --detach "${{ github.event.pull_request.head.sha }}"
 
       - name: Diff for breaking changes
-        uses: oasdiff/oasdiff-action/breaking@514e22ec2f1d1654fb78ac3bb7dc00d8f3c6c4d9 # main as of 2026-10-06
+        uses: oasdiff/oasdiff-action/breaking@9ce3a29eb0e6478dd0140932a678c7fb59d08f22 # main as of 2026-10-06
         with:
           base: .tmp/base/openapi.json
           revision: .tmp/head/openapi.json
