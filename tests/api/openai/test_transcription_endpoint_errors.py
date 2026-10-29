@@ -6,7 +6,7 @@ status code and error body the public Transcription API Contract promises.
 
 from __future__ import annotations
 
-from typing import cast
+from unittest.mock import MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -116,14 +116,11 @@ async def test_transcription_endpoint_rejects_language_forcing_on_a_non_prompt_n
     """The real nemo adapter, built on a checkpoint without a prompt dictionary, answers a
     forced language with a 400 naming ``language`` (was a generic 500)."""
     from coro.backends.asr.nemo import NemoASRAdapter
-    from coro.backends.asr.nemo_checkpoint import NemoTranscriber
-    from coro.backends.asr.nemo_hypothesis import SubwordTokenizer
 
-    # Bare objects: the adapter must refuse the language before it touches either.
+    # spec_set=[]: any attribute access fails, so the adapter must refuse the
+    # language before it touches the model or the tokenizer.
     adapter = NemoASRAdapter(
-        cast("NemoTranscriber", object()),
-        tokenizer=cast("SubwordTokenizer", object()),
-        prompt_dictionary=None,
+        MagicMock(spec_set=[]), tokenizer=MagicMock(spec_set=[]), prompt_dictionary=None
     )
 
     class _NemoPipeline:

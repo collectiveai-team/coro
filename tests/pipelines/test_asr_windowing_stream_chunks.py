@@ -42,6 +42,18 @@ async def test_asr_windowing_calls_adapter_for_every_planned_window():
     assert [token.text for token in result.tokens] == [" word1", " word2", " word3"]
 
 
+def _deltas(events: list[object]) -> list[str]:
+    return [e.delta for e in events if isinstance(e, TranscriptDeltaEvent)]
+
+
+def _token_batches(events: list[object]) -> list[list[tuple[float, float, str]]]:
+    return [
+        [(t.start, t.end, t.text) for t in e.tokens]
+        for e in events
+        if isinstance(e, TokenBatchEvent)
+    ]
+
+
 @pytest.mark.asyncio
 async def test_stream_chunks_event_equivalence_with_stream_pcm():
     asr_chunks = _FakeASR()
@@ -60,15 +72,8 @@ async def test_stream_chunks_event_equivalence_with_stream_pcm():
         )
     ]
 
-    deltas_pcm = [e.delta for e in events_pcm if isinstance(e, TranscriptDeltaEvent)]
-    deltas_chunks = [e.delta for e in events_chunks if isinstance(e, TranscriptDeltaEvent)]
-    assert deltas_chunks == deltas_pcm
-
-    batches_pcm = [e.tokens for e in events_pcm if isinstance(e, TokenBatchEvent)]
-    batches_chunks = [e.tokens for e in events_chunks if isinstance(e, TokenBatchEvent)]
-    assert [[(t.start, t.end, t.text) for t in toks] for toks in batches_chunks] == [
-        [(t.start, t.end, t.text) for t in toks] for toks in batches_pcm
-    ]
+    assert _deltas(events_chunks) == _deltas(events_pcm)
+    assert _token_batches(events_chunks) == _token_batches(events_pcm)
 
 
 @pytest.mark.parametrize(

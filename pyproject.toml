@@ -83,6 +83,7 @@ dependencies = [
     "starlette>=0.40",
     "huggingface-hub>=0.24",
     "soundfile>=0.12",
+    "typing-extensions>=4.13",
 ]
 
 # Shown in the PyPI sidebar. The `Homepage`/`Source`/`Issues` keys map to the
@@ -423,13 +424,7 @@ preset = "strict"
 required-version = ">=1.4,<2"
 
 [tool.pyrefly.errors]
-# Adopted in steps: each kind that still has errors in coro/ stays a warning and
-# goes back to `true` once its errors are fixed (counts at adoption, 2026-10-28).
-explicit-any = "warn"                 # 134 botica: ignore[external-config-weakened] -- staged adoption, 134 errors in coro/
-implicit-any-type-argument = "warn"   # 79
-implicit-any-parameter = "warn"       # 56
-missing-override-decorator = "warn"   # 10
-implicit-any-empty-container = "warn" # 3
+explicit-any = true
 missing-attribute-patch-target = "error"
 unused-coroutine = "error"
 

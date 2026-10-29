@@ -379,6 +379,7 @@ dependencies = [
     { name = "soxr" },
     { name = "starlette" },
     { name = "structlog" },
+    { name = "typing-extensions" },
     { name = "uvicorn" },
     { name = "websockets" },
 ]
@@ -478,6 +479,7 @@ requires-dist = [
     { name = "torch", marker = "extra == 'cuda'", specifier = ">=2.12.1,<4.0" },
     { name = "torchaudio", marker = "extra == 'cpu'", specifier = ">=2.1.0,<4.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "coro-asr", extra = "cpu" } },
     { name = "torchaudio", marker = "extra == 'cuda'", specifier = ">=2.1.0,<4.0" },
+    { name = "typing-extensions", specifier = ">=4.13" },
     { name = "uvicorn", specifier = ">=0.30.0" },
     { name = "websockets", specifier = ">=13" },
 ]

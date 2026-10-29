@@ -52,7 +52,7 @@ def _load_sortformer() -> StreamingSortformerModel:
     model = SortformerEncLabelModel.from_pretrained("nvidia/diar_streaming_sortformer_4spk-v2")
     # NeMo stub types from_pretrained as str.
     model.eval()  # pyrefly: ignore[missing-attribute]
-    return cast("StreamingSortformerModel", model)
+    return cast("StreamingSortformerModel", model)  # noqa: BTTOOL004 -- NeMo types it as str
 
 
 def _noise_pcm(seconds: int, sample_rate: int) -> bytes:
