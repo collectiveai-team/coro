@@ -49,28 +49,38 @@ def _cut(
         recording_id: Session id base (default: RTTM filename stem).
 
     """
-    session = recording_id or rttm.stem
     # The clip stem is the benchmark item_id, so the reference session id must
     # match it (the hypothesis STM is keyed by item_id).
-    stem = f"{session}_{int(start)}_{int(duration)}"
+    stem = f"{recording_id or rttm.stem}_{int(start)}_{int(duration)}"
     audio_dst = out_dir / f"{stem}.wav"
     stm_dst = out_dir / f"{stem}.ref.stm"
 
     cut_audio_clip(audio, audio_dst, start, duration)
-
-    stm_dst.parent.mkdir(parents=True, exist_ok=True)
-    full_stm = rttm_to_stm(rttm.read_text(encoding="utf-8"), stem)
-    stm_text = slice_stm_window(
-        full_stm,
-        start,
-        start + duration,
-        rebase=True,
-        recording_id=stem,
-    )
-    stm_dst.write_text(stm_text, encoding="utf-8")
+    line_count = write_clip_stm(rttm, stm_dst, stem, start, duration)
 
     out_console.out(f"wrote {audio_dst}")
-    out_console.out(f"wrote {stm_dst} ({len(stm_text.splitlines())} lines)")
+    out_console.out(f"wrote {stm_dst} ({line_count} lines)")
+
+
+def write_clip_stm(rttm: Path, stm_dst: Path, stem: str, start: float, duration: float) -> int:
+    """Write the diarization-only Reference STM of one clip window.
+
+    Args:
+        rttm: RTTM speaker turns of the whole recording.
+        stm_dst: Path of the STM to write.
+        stem: Session id of the clip.
+        start: Clip start (seconds).
+        duration: Clip length (seconds).
+
+    Returns:
+        The number of STM lines written.
+
+    """
+    full_stm = rttm_to_stm(rttm.read_text(encoding="utf-8"), stem)
+    stm_text = slice_stm_window(full_stm, start, start + duration, rebase=True, recording_id=stem)
+    stm_dst.parent.mkdir(parents=True, exist_ok=True)
+    stm_dst.write_text(stm_text, encoding="utf-8")
+    return len(stm_text.splitlines())
 
 
 def main(argv: Sequence[str] | None = None) -> None:

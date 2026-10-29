@@ -32,20 +32,22 @@ Name the users and workflow. Explain how their goals change the impact.
 
 ## Options
 
-Give real alternatives with costs, including doing nothing. For a decision issue,
-this is the most important section; the Proposal section may stay empty.
+Real alternatives with their costs, doing nothing included. In an issue that asks
+for a decision this section is the point, and Proposal may stay empty.
 
-**A.**
-
-- Cost:
-- Risk:
-
-**B.**
+### A
 
 - Cost:
 - Risk:
 
-**C. Do nothing**: what it costs to leave this as it is.
+### B
+
+- Cost:
+- Risk:
+
+### C: do nothing
+
+- Cost of leaving it as it is:
 
 ## Proposal
 
@@ -60,4 +62,4 @@ Write criteria a reviewer can prove, in the same units as the Evidence section.
 
 ## Out of scope
 
-Explicit exclusions, with links to the issues covering them instead.
+What this issue leaves out, with links to the issues that cover it.

@@ -1,32 +1,30 @@
 ---
 name: Bug report
-about: Something behaves, renders, or resolves incorrectly
+about: Something behaves or resolves incorrectly
 title: ''
 labels: bug
 assignees: ''
 ---
 
-<!-- Report evidence, not impressions. Delete sections that do not apply, but keep
-"Measured evidence" and "Steps to reproduce". Redact secrets and personal data. -->
+<!-- Delete the sections that do not apply, but keep "Measured evidence" and
+"Steps to reproduce". Redact secrets and personal data. -->
 
 ## Summary
 
-One or two sentences. What is wrong, and where.
+What is wrong, and where, in one or two sentences.
 
 ## Where it happens
 
 | Field | Value |
 | --- | --- |
-| Entry point | Route, command, API endpoint, or module |
-| Environment | OS, runtime/browser version; viewport and DPR for UI bugs |
-| Scope | Affected configurations; configurations that work |
-| Commit / version | Commit, release, or deploy date |
+| Entry point | Route, command, API endpoint or module |
+| Platform | OS, Python version, CPU or GPU |
+| Scope | Configurations that fail; configurations that work |
+| Version | coro version (`coro --version`) or commit |
 
 ## Measured evidence
 
-Actual output, errors, timings, counts, or computed styles. State the instrument
-and the standard or threshold being violated. Screenshots can support the evidence.
-For contrast reports, include resolved foreground/background and the applicable threshold.
+The output, errors, timings or counts you saw, and the threshold they break.
 
 ## Steps to reproduce
 
@@ -36,30 +34,30 @@ For contrast reports, include resolved foreground/background and the applicable 
 
 ### Verification snippet
 
-A minimal command, test, script, or DevTools snippet a reviewer can run to confirm
-the bug and later verify the fix. Include prerequisites and expected output.
+A command or test a reviewer can run to see the bug and, later, check the fix.
+Include what it needs and what it prints.
 
-## Expected vs actual
+## Expected and actual
 
-- **Expected:**
-- **Actual:**
+- Expected:
+- Actual:
 
 ## Source
 
-`path/to/file:123` and the mechanism, if known. Say when the cause is unknown.
+`path/to/file:123` and the mechanism, if known. Say so when the cause is unknown.
 
 ## Impact
 
-Who is affected and how badly. Name the user-facing task or workflow.
+Who is affected, in which task.
 
-- [ ] **critical**: a primary workflow is broken, or data is lost/exposed
-- [ ] **major**: measurably harms task completion, reading, or performance
-- [ ] **minor**: polish
+- [ ] critical: a main workflow is broken, or data is lost or exposed
+- [ ] major: a task gets measurably slower, harder or wrong
+- [ ] minor: polish
 
-## Not in scope for this issue
+## Out of scope
 
-Explicit exclusions; link related issues instead of expanding this one.
+What this issue leaves out, with links to the issues that cover it.
 
 ## Ruled out
 
-What you investigated and found correct, so the next person need not re-derive it.
+What you checked and found correct.

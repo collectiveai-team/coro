@@ -1,26 +1,24 @@
-<!-- Keep prose brief. Use the project's domain language. -->
+<!-- Keep it short. Use the project's domain terms. -->
 
 ## Summary
 
-<!-- Pick the smallest visual that explains the change: diff, pseudocode,
-call tree, file tree, or Mermaid. Add only the context a reviewer needs. -->
+<!-- What changes, shown with the smallest thing that explains it: a diff, a call
+tree, a file tree or a Mermaid diagram. -->
 
 ## Related issues
 
-<!-- Link the issue/spec. Use "Closes #..." only when this PR fully resolves it. -->
+<!-- Link the issue. Write "Closes #..." only when this PR resolves all of it. -->
 
 ## Evidence
 
-<!-- Give reproducible evidence, not just "tests pass". Include exact commands
-and results; use screenshots for visual changes. Mark anything not run. -->
+<!-- The commands you ran and what they printed; screenshots for visual changes.
+Say what you did not run. -->
 
-- **Before:**
-- **After:**
+- Before:
+- After:
 
-## Merge Danger
+## Merge danger
 
-**Door:** <!-- one-way (hard to reverse) or two-way (cheap to roll back) -->
-
-**Blast Radius:** <!-- affected users, consumers, routes, or modules -->
-
-**Rollback:** <!-- how to undo it; note migrations or irreversible effects -->
+- Door: <!-- one-way (hard to undo) or two-way (cheap to roll back) -->
+- Blast radius: <!-- the users, consumers, routes or modules it reaches -->
+- Rollback: <!-- how to undo it, and any migration or effect that cannot be undone -->
