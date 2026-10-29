@@ -83,13 +83,7 @@ async def _with_traced_memory(awaitable):
 
 @pytest.mark.asyncio
 async def test_audio_input_from_upload_does_not_hold_the_upload_in_memory():
-    """A large upload is spooled chunk-by-chunk rather than accumulated and joined.
-
-    Collecting the chunks into a list and joining them cost roughly twice the
-    upload size in resident RAM before any decoding began, so a multi-gigabyte
-    upload could exhaust the host before a model ever ran. Peak traced memory
-    must stay near one chunk, not near the upload size.
-    """
+    """A large upload is spooled chunk by chunk: peak traced memory stays near one chunk."""
     chunk = b"\x01" * (1024 * 1024)
     chunk_count = 16
     expected_size = len(chunk) * chunk_count
@@ -175,10 +169,11 @@ async def test_audio_input_from_upload_leaves_no_file_when_spooling_fails():
         ("archive.tar.gz", ".gz"),
         (None, ".media"),
         ("noextension", ".media"),
-        ("weird name.m p4", ".media"),  # space -> not a real extension
-        ("danger.mp4\n", ".media"),  # control char
-        ("x." + "y" * 40, ".media"),  # absurdly long suffix
+        ("weird name.m p4", ".media"),
+        ("danger.mp4\n", ".media"),
+        ("x." + "y" * 40, ".media"),
     ],
+    ids=["mp4", "upper", "double", "none", "bare", "space", "control-char", "too-long"],
 )
 @pytest.mark.asyncio
 async def test_spooled_upload_suffix_sanitizes_untrusted_filenames(filename, expected):
@@ -201,9 +196,6 @@ async def test_in_memory_input_spools_with_the_same_sanitized_suffix():
         await audio.cleanup()
 
 
-# ---------------------------------------------------------------------------
-# Referencing a file without owning it
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_from_path_cleanup_leaves_the_referenced_file_alone(tmp_path):
     """The offline command depends on this: both pipelines clean up in a finally."""
