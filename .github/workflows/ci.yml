@@ -49,6 +49,15 @@ jobs:
       - name: Lint, format & type check (prek)
         run: uvx prek run --all-files --show-diff-on-failure
 
+      # meeteval's DER downloads md-eval-22.pl into its own package on first use
+      # (meeteval/der/md_eval.py), and pytest runs with --disable-socket.
+      - name: Fetch md-eval-22.pl for meeteval
+        run: >-
+          curl -fsSL --retry 3
+          -o "$(uv run --no-sync python -c 'import meeteval.der, pathlib;
+          print(pathlib.Path(meeteval.der.__file__).parent / "md-eval-22.pl")')"
+          https://raw.githubusercontent.com/nryant/dscore/3207c6c65a9b48429dcb52e720edcabfeb3d3f35/scorelib/md-eval-22.pl
+
       - name: Run tests
         run: uv run --no-sync pytest
 
