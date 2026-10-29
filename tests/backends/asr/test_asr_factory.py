@@ -22,7 +22,7 @@ def test_dispatches_to_faster_whisper():
     settings = ServerSettings(backend_asr="faster-whisper", model_asr="m")
     sentinel = object()
     with patch(
-        "coro.backends.asr.faster_whisper.build_asr_adapter", return_value=sentinel
+        "coro.backends.asr.faster_whisper.build_asr_adapter", return_value=sentinel, autospec=True
     ) as mock_build:
         adapter = build_asr_adapter(settings)
 
@@ -41,7 +41,7 @@ def test_dispatches_to_onnx_asr():
     settings = ServerSettings(backend_asr="onnx-asr", model_asr="m", asr_onnx_vad="enabled")
     sentinel = object()
     with patch(
-        "coro.backends.asr.onnx_asr.build_onnx_asr_adapter", return_value=sentinel
+        "coro.backends.asr.onnx_asr.build_onnx_asr_adapter", return_value=sentinel, autospec=True
     ) as mock_build:
         adapter = build_asr_adapter(settings)
 
@@ -59,6 +59,7 @@ def test_dispatches_to_onnx_parakeet_prompt():
     with patch(
         "coro.backends.asr.onnx_parakeet_prompt.build_onnx_parakeet_prompt_adapter",
         return_value=sentinel,
+        autospec=True,
     ) as mock_build:
         adapter = build_asr_adapter(settings)
 
@@ -91,6 +92,7 @@ def test_dispatches_to_onnx_canary_split(monkeypatch):
     with patch(
         "coro.backends.asr.onnx_canary_split.build_onnx_canary_split_adapter",
         return_value=sentinel,
+        autospec=True,
     ) as mock_build:
         adapter = build_asr_adapter(settings)
 
@@ -119,6 +121,7 @@ def test_dispatches_to_onnx_canary_split_with_hf_token(monkeypatch):
     with patch(
         "coro.backends.asr.onnx_canary_split.build_onnx_canary_split_adapter",
         return_value=sentinel,
+        autospec=True,
     ) as mock_build:
         adapter = build_asr_adapter(settings)
 
@@ -132,7 +135,9 @@ def test_dispatches_to_onnx_genai():
     settings = ServerSettings(backend_asr="onnx-genai", model_asr="m")
     sentinel = object()
     with patch(
-        "coro.backends.asr.onnx_genai.build_onnx_genai_adapter", return_value=sentinel
+        "coro.backends.asr.onnx_genai.build_onnx_genai_adapter",
+        return_value=sentinel,
+        autospec=True,
     ) as mock_build:
         adapter = build_asr_adapter(settings)
 
@@ -145,7 +150,7 @@ def test_dispatches_to_nemo():
     settings = ServerSettings(backend_asr="nemo", model_asr="m")
     sentinel = object()
     with patch(
-        "coro.backends.asr.nemo.build_nemo_asr_adapter", return_value=sentinel
+        "coro.backends.asr.nemo.build_nemo_asr_adapter", return_value=sentinel, autospec=True
     ) as mock_build:
         adapter = build_asr_adapter(settings)
 
@@ -260,7 +265,11 @@ def test_build_emits_the_ignored_setting_warning(caplog):
     settings = ServerSettings(backend_asr="onnx-asr", model_asr="m", asr_compute_type="int8")
     with (
         caplog.at_level(logging.WARNING, logger="coro.backends.asr.factory"),
-        patch("coro.backends.asr.onnx_asr.build_onnx_asr_adapter", return_value=object()),
+        patch(
+            "coro.backends.asr.onnx_asr.build_onnx_asr_adapter",
+            return_value=object(),
+            autospec=True,
+        ),
     ):
         build_asr_adapter(settings)
 

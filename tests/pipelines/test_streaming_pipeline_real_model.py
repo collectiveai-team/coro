@@ -83,12 +83,13 @@ async def test_streaming_pipeline_real_model_transcribes_warmup_audio():
     )
 
     audio = AudioInput(WARMUP_AUDIO_PATH.read_bytes())
-    result = await pipeline.transcribe(audio, language="es")
+    result = await pipeline.transcribe(audio, language="en")
 
-    EXPECTED_KEYS = {"segments", "word_segments", "transcript", "diarization", "raw_words"}
-    assert set(asdict(result)) >= EXPECTED_KEYS
-    assert len(result.transcript) > 0, "Expected non-empty transcript"
-    assert len(result.segments) > 0, "Expected at least one segment"
+    assert [(t.start, t.end, t.text) for t in result.transcript] == [
+        (s.start, s.end, s.text) for s in result.segments
+    ]
+    # The clip is JFK's "ask not what your country can do for you" line.
+    assert "country" in " ".join(s.text for s in result.segments).lower()
 
 
 @skip_unless_real
@@ -164,7 +165,8 @@ async def test_streaming_pipeline_warmup_mocked():
 
     with patch(
         "coro.pipelines.streaming.stream_pcm_from_file",
-        new=_fake_stream,
+        autospec=True,
+        side_effect=_fake_stream,
     ):
         result = await pipeline.transcribe(audio)
 

@@ -79,7 +79,7 @@ class TestMeetevalVizArgv:
 class TestVisualizeQualityDir:
     def test_combines_and_invokes_meeteval_viz(self, tmp_path: Path):
         out = _make_run(tmp_path, {"a": ("a 1 A 0.0 1.0 hi\n", "a 1 A 0.0 1.0 hi\n")})
-        with patch("coro.bench.viz.subprocess.run") as run:
+        with patch("coro.bench.viz.subprocess.run", autospec=True) as run:
             viz_dir = viz.visualize_quality_dir(out, alignments=["tcp", "cp"])
         assert viz_dir == out / "viz"
         assert (out / "viz" / "_combined.ref.stm").exists()
@@ -89,6 +89,6 @@ class TestVisualizeQualityDir:
 
     def test_no_pairs_returns_none_without_invoking(self, tmp_path: Path):
         (tmp_path / "ref").mkdir()
-        with patch("coro.bench.viz.subprocess.run") as run:
+        with patch("coro.bench.viz.subprocess.run", autospec=True) as run:
             assert viz.visualize_quality_dir(tmp_path) is None
         run.assert_not_called()

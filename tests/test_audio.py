@@ -33,9 +33,8 @@ def _pcm_bytes(n_samples: int) -> bytes:
 def test_chunks_are_aligned_to_two_bytes():
     """Every yielded chunk has an even byte length (16-bit PCM alignment)."""
     pcm = _pcm_bytes(100)
-    chunks = list(iter_aligned_pcm_chunks(iter([pcm]), target_bytes=30))
-    for chunk in chunks:
-        assert len(chunk) % 2 == 0, f"Unaligned chunk: {len(chunk)} bytes"
+    chunks = list(iter_aligned_pcm_chunks(iter([pcm[:77], pcm[77:]]), target_bytes=31))
+    assert [len(chunk) for chunk in chunks] == [30, 30, 30, 30, 30, 30, 20]
 
 
 def test_total_bytes_preserved():
@@ -66,8 +65,7 @@ def test_chunks_respect_target_bytes_upper_bound():
     pcm = _pcm_bytes(1000)
     target = 64
     chunks = list(iter_aligned_pcm_chunks(iter([pcm]), target_bytes=target))
-    for chunk in chunks:
-        assert len(chunk) <= target
+    assert [len(chunk) for chunk in chunks] == [target] * 31 + [16]
 
 
 def test_sample_rate_constant():

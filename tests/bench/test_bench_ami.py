@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sys
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -122,8 +121,8 @@ class TestEnsureAudioAndAnnotations:
             zf.writestr("dummy.txt", "test")
 
         with (
-            patch("coro.bench.ami.download_meeting_audio") as mock_dl,
-            patch("coro.bench.ami.download_annotations", return_value=zip_path),
+            patch("coro.bench.ami.download_meeting_audio", autospec=True) as mock_dl,
+            patch("coro.bench.ami.download_annotations", return_value=zip_path, autospec=True),
         ):
             ensure_audio_and_annotations(["IB4001"], tmp_path)
             mock_dl.assert_called_once_with("IB4001", tmp_path)
@@ -138,7 +137,7 @@ class TestEnsureAudioAndAnnotations:
         marker = tmp_path / ".ami_annotations_extracted"
         marker.touch()
 
-        with patch("coro.bench.ami.download_meeting_audio") as mock_dl:
+        with patch("coro.bench.ami.download_meeting_audio", autospec=True) as mock_dl:
             ensure_audio_and_annotations(["IB4001"], tmp_path)
             mock_dl.assert_called_once()
 
@@ -179,22 +178,25 @@ class TestEnsureAudioAndAnnotations:
         zip_path.touch()
 
         with (
-            patch("coro.bench.ami.download_meeting_audio"),
-            patch("coro.bench.ami.download_annotations", return_value=zip_path),
+            patch("coro.bench.ami.download_meeting_audio", autospec=True),
+            patch(
+                "coro.bench.ami.download_annotations", return_value=zip_path, autospec=True
+            ) as mock_ann,
         ):
             ensure_audio_and_annotations(["IB4001"], tmp_path)
             assert (tmp_path / ".ami_annotations_extracted").exists()
+            mock_ann.assert_called_once()
 
-            with patch("coro.bench.ami.download_annotations") as mock_ann:
-                ensure_audio_and_annotations(["IB4001"], tmp_path)
-                mock_ann.assert_not_called()
+            mock_ann.reset_mock()
+            ensure_audio_and_annotations(["IB4001"], tmp_path)
+            mock_ann.assert_not_called()
 
 
 class TestMaterializeReferenceStms:
     def test_writes_stm_file(self, tmp_path: Path):
         from coro.bench.ami import materialize_reference_stms
 
-        with patch("coro.bench.ami.ami_meeting_to_stm", return_value="STM_CONTENT"):
+        with patch("coro.bench.ami.ami_meeting_to_stm", return_value="STM_CONTENT", autospec=True):
             materialize_reference_stms(["IB4001"], tmp_path)
 
         stm_path = tmp_path / "stm" / "IB4001.ref.stm"
@@ -210,7 +212,9 @@ class TestMaterializeReferenceStms:
         stm_path = stm_dir / "IB4001.ref.stm"
         stm_path.write_text("STALE")
 
-        with patch("coro.bench.ami.ami_meeting_to_stm", return_value="FRESH") as mock_stm:
+        with patch(
+            "coro.bench.ami.ami_meeting_to_stm", return_value="FRESH", autospec=True
+        ) as mock_stm:
             materialize_reference_stms(["IB4001"], tmp_path)
             mock_stm.assert_called_once()
 
@@ -224,7 +228,7 @@ class TestMaterializeReferenceStms:
         stm_path = stm_dir / "IB4001.ref.stm"
         stm_path.write_text("EXISTING")
 
-        with patch("coro.bench.ami.ami_meeting_to_stm") as mock_stm:
+        with patch("coro.bench.ami.ami_meeting_to_stm", autospec=True) as mock_stm:
             materialize_reference_stms(["IB4001"], tmp_path, reuse_existing=True)
             mock_stm.assert_not_called()
 
@@ -233,7 +237,7 @@ class TestMaterializeReferenceStms:
     def test_opt_in_reuse_still_writes_a_missing_stm(self, tmp_path: Path):
         from coro.bench.ami import materialize_reference_stms
 
-        with patch("coro.bench.ami.ami_meeting_to_stm", return_value="STM_CONTENT"):
+        with patch("coro.bench.ami.ami_meeting_to_stm", return_value="STM_CONTENT", autospec=True):
             materialize_reference_stms(["IB4001"], tmp_path, reuse_existing=True)
 
         assert (tmp_path / "stm" / "IB4001.ref.stm").read_text() == "STM_CONTENT"
@@ -244,7 +248,7 @@ class TestMaterializeReferenceStms:
         def fake_stm(root, meeting_id):
             return f"STM_{meeting_id}"
 
-        with patch("coro.bench.ami.ami_meeting_to_stm", side_effect=fake_stm):
+        with patch("coro.bench.ami.ami_meeting_to_stm", side_effect=fake_stm, autospec=True):
             materialize_reference_stms(["IB4001", "IN1001"], tmp_path)
 
         assert (tmp_path / "stm" / "IB4001.ref.stm").read_text() == "STM_IB4001"
@@ -260,25 +264,15 @@ class TestMainIntegration:
             zf.writestr("dummy.txt", "test")
 
         with (
-            patch.object(
-                sys,
-                "argv",
-                [
-                    "coro-bench",
-                    "quality",
-                    "--ami-meetings",
-                    "IB4001",
-                    "--ami-root",
-                    str(tmp_path),
-                ],
+            patch("coro.bench.ami.download_meeting_audio", autospec=True),
+            patch("coro.bench.ami.download_annotations", return_value=zip_path, autospec=True),
+            patch("coro.bench.ami.ami_meeting_to_stm", return_value="STM", autospec=True),
+            patch(
+                "coro.bench.cli.build_server_handle", return_value=stub_server_handle, autospec=True
             ),
-            patch("coro.bench.ami.download_meeting_audio"),
-            patch("coro.bench.ami.download_annotations", return_value=zip_path),
-            patch("coro.bench.ami.ami_meeting_to_stm", return_value="STM"),
-            patch("coro.bench.cli.build_server_handle", return_value=stub_server_handle),
-            patch("coro.bench.cli._run_quality") as mock_quality,
+            patch("coro.bench.cli._run_quality", autospec=True) as mock_quality,
         ):
-            main()
+            main(["quality", "--ami-meetings", "IB4001", "--ami-root", str(tmp_path)])
             mock_quality.assert_called_once()
 
         assert (tmp_path / "stm" / "IB4001.ref.stm").exists()
@@ -289,11 +283,15 @@ class TestMainIntegration:
         from coro.bench.cli import main
 
         with (
-            patch.object(
-                sys,
-                "argv",
+            patch("coro.bench.cli.ensure_audio_and_annotations", autospec=True),
+            patch("coro.bench.cli.materialize_reference_stms", autospec=True) as mock_materialize,
+            patch(
+                "coro.bench.cli.build_server_handle", return_value=stub_server_handle, autospec=True
+            ),
+            patch("coro.bench.cli._run_quality", autospec=True),
+        ):
+            main(
                 [
-                    "coro-bench",
                     "quality",
                     "--ami-meetings",
                     "IB4001",
@@ -301,14 +299,8 @@ class TestMainIntegration:
                     str(tmp_path),
                     "--no-download",
                     "--reuse-reference-stms",
-                ],
-            ),
-            patch("coro.bench.cli.ensure_audio_and_annotations"),
-            patch("coro.bench.cli.materialize_reference_stms") as mock_materialize,
-            patch("coro.bench.cli.build_server_handle", return_value=stub_server_handle),
-            patch("coro.bench.cli._run_quality"),
-        ):
-            main()
+                ]
+            )
 
         assert mock_materialize.call_args.kwargs["reuse_existing"] is True
 
@@ -316,25 +308,23 @@ class TestMainIntegration:
         from coro.bench.cli import main
 
         with (
-            patch.object(
-                sys,
-                "argv",
+            patch("coro.bench.cli.ensure_audio_and_annotations", autospec=True),
+            patch("coro.bench.cli.materialize_reference_stms", autospec=True) as mock_materialize,
+            patch(
+                "coro.bench.cli.build_server_handle", return_value=stub_server_handle, autospec=True
+            ),
+            patch("coro.bench.cli._run_quality", autospec=True),
+        ):
+            main(
                 [
-                    "coro-bench",
                     "quality",
                     "--ami-meetings",
                     "IB4001",
                     "--ami-root",
                     str(tmp_path),
                     "--no-download",
-                ],
-            ),
-            patch("coro.bench.cli.ensure_audio_and_annotations"),
-            patch("coro.bench.cli.materialize_reference_stms") as mock_materialize,
-            patch("coro.bench.cli.build_server_handle", return_value=stub_server_handle),
-            patch("coro.bench.cli._run_quality"),
-        ):
-            main()
+                ]
+            )
 
         assert mock_materialize.call_args.kwargs["reuse_existing"] is False
 
@@ -342,22 +332,18 @@ class TestMainIntegration:
         from coro.bench.cli import main
 
         with (
-            patch.object(
-                sys,
-                "argv",
+            pytest.raises(RuntimeError, match="Missing audio"),
+        ):
+            main(
                 [
-                    "coro-bench",
                     "quality",
                     "--ami-meetings",
                     "IB4001",
                     "--ami-root",
                     str(tmp_path),
                     "--no-download",
-                ],
-            ),
-            pytest.raises(RuntimeError, match="Missing audio"),
-        ):
-            main()
+                ]
+            )
 
 
 @pytest.mark.skipif(

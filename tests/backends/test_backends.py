@@ -52,8 +52,8 @@ def test_convert_asr_segments_applies_offset():
     words = [_fake_word(" hi", 1.0, 2.0)]
     segs = [_fake_segment(words)]
     tokens = convert_asr_segments(segs, offset_seconds=10.0)
-    assert tokens[0].start == pytest.approx(11.0)
-    assert tokens[0].end == pytest.approx(12.0)
+    assert tokens[0].start == pytest.approx(11.0, abs=1e-9)
+    assert tokens[0].end == pytest.approx(12.0, abs=1e-9)
 
 
 def test_convert_asr_segments_filters_no_speech():
@@ -68,7 +68,7 @@ def test_convert_asr_segments_keeps_probability():
     """Token probability matches the native word probability."""
     words = [_fake_word(" test", 0.0, 1.0, probability=0.75)]
     tokens = convert_asr_segments([_fake_segment(words)], offset_seconds=0.0)
-    assert tokens[0].probability == pytest.approx(0.75)
+    assert tokens[0].probability == pytest.approx(0.75, abs=1e-9)
 
 
 # ---------------------------------------------------------------------------

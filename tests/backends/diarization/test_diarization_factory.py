@@ -32,6 +32,7 @@ def test_build_diarization_adapter_dispatches_to_nemo():
     with patch(
         "coro.backends.diarization.nemo.diarization.build_nemo_diarization_adapter",
         return_value=sentinel,
+        autospec=True,
     ) as mock_build:
         adapter = factory.build_diarization_adapter("nemo", "some/model", device="cpu")
 
@@ -46,6 +47,7 @@ def test_build_diarization_adapter_passes_postprocessing_to_nemo():
     with patch(
         "coro.backends.diarization.nemo.diarization.build_nemo_diarization_adapter",
         return_value=object(),
+        autospec=True,
     ) as mock_build:
         factory.build_diarization_adapter(
             "nemo", "some/model", device="cpu", postprocessing="dihard3-dev"
@@ -61,6 +63,7 @@ def test_build_diarization_adapter_ignores_postprocessing_for_pyannote():
     with patch(
         "coro.backends.diarization.pyannote.build_pyannote_diarization_adapter",
         return_value=object(),
+        autospec=True,
     ) as mock_build:
         factory.build_diarization_adapter(
             "pyannote", "some/model", device="cpu", postprocessing="dihard3-dev"
@@ -83,7 +86,7 @@ def test_build_streaming_diarizer_factory_nemo():
     adapter = NemoDiarizationAdapter(fake_model)
 
     with patch(
-        "coro.backends.diarization.nemo.streaming.NemoStreamingDiarizerFactory"
+        "coro.backends.diarization.nemo.streaming.NemoStreamingDiarizerFactory", autospec=True
     ) as mock_factory:
         factory.build_streaming_diarizer_factory("nemo", adapter, tier="low")
 
@@ -104,7 +107,7 @@ def test_build_streaming_diarizer_factory_reuses_resolved_postprocessing():
     adapter = NemoDiarizationAdapter(fake_model, postprocessing_yaml="/resolved/path.yaml")
 
     with patch(
-        "coro.backends.diarization.nemo.streaming.NemoStreamingDiarizerFactory"
+        "coro.backends.diarization.nemo.streaming.NemoStreamingDiarizerFactory", autospec=True
     ) as mock_factory:
         factory.build_streaming_diarizer_factory("nemo", adapter, tier="low")
 

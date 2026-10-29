@@ -367,7 +367,7 @@ class TestCLIFlags:
         from coro.bench.cli import parse_args
 
         args = parse_args(["quality", "--der-collar", "0.25"])
-        assert args.der_collar == 0.25
+        assert args.der_collar == pytest.approx(0.25, abs=1e-12)
 
     def test_der_regions_flag_accepted(self):
         from coro.bench.cli import parse_args

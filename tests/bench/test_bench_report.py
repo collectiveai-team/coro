@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from coro.bench.models.report import BenchReport, PerformanceRow, QualityRow
 from coro.bench.report_markdown import render_markdown
 from coro.bench.report_stdout import render_stdout
@@ -179,14 +181,33 @@ def test_render_markdown_includes_artifacts_section():
     assert "## Artifacts" in md
 
 
-def test_render_stdout_runs_without_exception(capsys):
-    report = _quality_report()
-    render_stdout(report)
+@pytest.fixture
+def wide_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rich sizes its tables to COLUMNS; a wide terminal keeps every cell on one line."""
+    monkeypatch.setenv("COLUMNS", "240")
 
 
-def test_render_stdout_performance_runs_without_exception(capsys):
-    report = _performance_report()
-    render_stdout(report)
+@pytest.mark.usefixtures("wide_terminal")
+def test_render_stdout_prints_header_and_quality_rows(capsys):
+    render_stdout(_quality_report())
+
+    out = capsys.readouterr().out
+    assert "Git SHA   : abc1234" in out
+    assert "Quality Results" in out
+    assert "IB4001" in out
+    assert "IB4002" in out
+    assert "COMBINED" in out
+    assert "Performance Results" not in out
+
+
+@pytest.mark.usefixtures("wide_terminal")
+def test_render_stdout_prints_performance_table(capsys):
+    render_stdout(_performance_report())
+
+    out = capsys.readouterr().out
+    assert "Performance Results" in out
+    assert "cpu-only" in out
+    assert "Quality Results" not in out
 
 
 def test_both_renderers_produce_consistent_session_ids():

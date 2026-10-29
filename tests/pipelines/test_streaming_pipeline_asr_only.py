@@ -127,7 +127,7 @@ async def test_asr_only_stream_emits_delta_events():
     with _mock_stream():
         events = [e async for e in pipeline.stream(audio)]
     deltas = [e for e in events if isinstance(e, TranscriptDeltaEvent)]
-    assert len(deltas) >= 1
+    assert deltas == [TranscriptDeltaEvent(delta="hello.")]
 
 
 @pytest.mark.asyncio

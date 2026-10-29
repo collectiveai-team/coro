@@ -58,9 +58,10 @@ def test_server_settings_warmup_default_enabled():
     assert s.warmup == "enabled"
 
 
-def test_server_settings_warmup_accepts_disabled():
-    """ServerSettings.warmup accepts 'disabled'."""
-    s = ServerSettings(warmup="disabled")
+def test_server_settings_warmup_accepts_disabled(monkeypatch):
+    """ServerSettings.warmup accepts 'disabled' from CORO_WARMUP."""
+    monkeypatch.setenv("CORO_WARMUP", "disabled")
+    s = ServerSettings(_env_file=None)
     assert s.warmup == "disabled"
 
 

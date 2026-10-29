@@ -14,8 +14,6 @@ are required by the vendor schema and coro emitted none of them.
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import json
 import wave
 
@@ -143,7 +141,7 @@ class TestRealServerTransport:
     async def test_results_arrive_before_the_client_closes(self):
         async with _LiveServer(_app()) as server, websockets.connect(server.ws_url) as ws:
             await _send_audio(ws, 31)
-            frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=30))
+            frame = json.loads(await ws.recv())
             await _close_stream(ws)
         assert frame["type"] == "Results"
 
@@ -205,7 +203,9 @@ class TestRealClientRejection:
             _LiveServer(_app()) as server,
             websockets.connect(server.ws_url + "?encoding=opus") as ws,
         ):
-            frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(ws.recv(), timeout=5)
+            frame = json.loads(await ws.recv())
+            with pytest.raises(websockets.ConnectionClosed) as closed:
+                await ws.recv()
         assert frame["type"] == "Error"
+        assert closed.value.rcvd is not None
+        assert closed.value.rcvd.code == 1008  # RFC 6455 Policy Violation

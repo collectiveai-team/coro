@@ -205,12 +205,11 @@ priority = 2
 # therefore finds nothing in a clean CI checkout, making the gate silently
 # vacuous. Scanning tests/ explicitly keeps `prek run --all-files` honest.
 #
-# --baseline records the findings that predate adoption, so only NEW findings
-# fail. Config (severity tiers) lives in pyproject.toml [tool.falsegreen].
+# Config (severity tiers) lives in pyproject.toml [tool.falsegreen].
 [[repos.hooks]]
 id = "falsegreen"
 name = "falsegreen"
-entry = "uvx falsegreen==0.9.2 tests/ --baseline .falsegreen-baseline.json --summary"
+entry = "uvx falsegreen==0.9.2 tests/ --summary"
 language = "system"
 types = ["python"]
 pass_filenames = false

@@ -20,6 +20,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+import torch
 
 from coro.backends.diarization.pyannote import (
     PyannoteDiarizationAdapter,
@@ -75,7 +76,7 @@ class _FakePipeline:
 def test_pcm_to_waveform_shape_and_dtype():
     waveform = _pcm_to_waveform(_FAKE_PCM)
     assert tuple(waveform.shape) == (1, 16000)
-    assert str(waveform.dtype) == "torch.float32"
+    assert waveform.dtype == torch.float32
 
 
 def test_pcm_to_waveform_normalizes_full_scale():
@@ -115,7 +116,7 @@ async def test_diarize_pcm_converts_tracks_to_segments():
     assert all(isinstance(s, SpeakerSegment) for s in timeline)
     assert [s.speaker for s in timeline] == [1, 2]  # 0-indexed labels -> 1-indexed
     assert timeline[0].start == 0.0
-    assert timeline[1].end == pytest.approx(1.0)
+    assert timeline[1].end == pytest.approx(1.0, abs=1e-9)
 
 
 @pytest.mark.asyncio
@@ -158,7 +159,9 @@ def test_build_adapter_wraps_loaded_pipeline():
     fake_pipeline = _FakePipeline(_FakeAnnotation([]))
     # The builder imports ``Pipeline`` lazily from pyannote.audio, so patching
     # ``from_pretrained`` on the real class is sufficient (no model download).
-    with patch("pyannote.audio.Pipeline.from_pretrained", return_value=fake_pipeline):
+    with patch(
+        "pyannote.audio.Pipeline.from_pretrained", return_value=fake_pipeline, autospec=True
+    ):
         adapter = build_pyannote_diarization_adapter(
             "pyannote/speaker-diarization-community-1",
             device="cpu",
@@ -170,7 +173,7 @@ def test_build_adapter_wraps_loaded_pipeline():
 def test_build_adapter_raises_on_failed_load():
     pytest.importorskip("pyannote.audio")
     with (
-        patch("pyannote.audio.Pipeline.from_pretrained", return_value=None),
+        patch("pyannote.audio.Pipeline.from_pretrained", return_value=None, autospec=True),
         pytest.raises(RuntimeError, match="HF_TOKEN"),
     ):
         build_pyannote_diarization_adapter(

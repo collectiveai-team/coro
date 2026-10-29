@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -23,10 +23,8 @@ async def test_full_memory_pipeline_decodes_the_spooled_upload_and_windows_it():
     pipeline = FullMemoryPipeline(asr=_FakeASR())
     audio = AudioInput(b"encoded")
 
-    with patch(
-        "coro.pipelines.full_memory.convert_path_to_pcm_bytes",
-        new=AsyncMock(return_value=b"\x00\x00" * 16000),
-    ) as convert:
+    with patch("coro.pipelines.full_memory.convert_path_to_pcm_bytes", autospec=True) as convert:
+        convert.return_value = b"\x00\x00" * 16000
         result = await pipeline.transcribe(audio, prompt="hint")
 
     # ffmpeg decodes from the spooled path, so the encoded upload never has to
@@ -42,10 +40,8 @@ async def test_pipeline_stream_emits_delta_and_done():
     pipeline = FullMemoryPipeline(asr=_FakeASR())
     audio = AudioInput(b"encoded")
 
-    with patch(
-        "coro.pipelines.full_memory.convert_path_to_pcm_bytes",
-        new=AsyncMock(return_value=b"\x00\x00" * 16000),
-    ):
+    with patch("coro.pipelines.full_memory.convert_path_to_pcm_bytes", autospec=True) as convert:
+        convert.return_value = b"\x00\x00" * 16000
         events = [event async for event in pipeline.stream(audio)]
 
     assert isinstance(events[0], TranscriptDeltaEvent)

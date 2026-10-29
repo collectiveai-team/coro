@@ -4,25 +4,40 @@ from __future__ import annotations
 
 import csv
 import json
-import time
+import threading
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from coro.bench.models.gpu import GpuSample
 from coro.bench.models.performance import PerRepSummary
+from coro.bench.models.resource import ProcessTreeSample
+from coro.bench.sampling import Sampler
 from coro.bench.schema import RESOURCE_FIELDNAMES
 from support.bench_http import mock_sample_fn, placeholder_audio, results_dir
 from support.network import LOOPBACK
 
 
-def _sampled(pid: int, seconds: float) -> Any:
-    """A Sampler that ran for ``seconds`` against the mock process tree."""
-    from coro.bench.sampling import Sampler
+_SAMPLE_WAIT_S = 5.0
 
-    sampler = Sampler(pid=pid, interval=0.05, sample_fn=mock_sample_fn)
+
+def _sampled(pid: int, samples: int) -> Sampler:
+    """A Sampler stopped once it has taken ``samples`` samples of the mock process tree."""
+    taken = 0
+    reached = threading.Event()
+
+    def sample_fn(root_pid: int) -> ProcessTreeSample:
+        nonlocal taken
+        taken += 1
+        if taken >= samples:
+            reached.set()
+        return mock_sample_fn(root_pid)
+
+    sampler = Sampler(pid=pid, interval=0.01, sample_fn=sample_fn)
     sampler.start()
-    time.sleep(seconds)
+    assert reached.wait(_SAMPLE_WAIT_S)
     sampler.stop()
     return sampler
 
@@ -41,20 +56,15 @@ def _names_by_mtime(directory: Path, pattern: str) -> list[str]:
 
 class TestSampler:
     def test_collects_samples_when_started(self):
-        from coro.bench.sampling import Sampler
-
-        sampler = Sampler(pid=123, interval=0.05, sample_fn=mock_sample_fn)
-        with patch("coro.bench.sampling.sample_gpu", return_value=GpuSample()):
-            sampler.start()
-            time.sleep(0.2)
-            sampler.stop()
+        with patch("coro.bench.sampling.sample_gpu", return_value=GpuSample(), autospec=True):
+            sampler = _sampled(pid=123, samples=2)
 
         assert len(sampler.samples) >= 2
         assert sampler.samples[0]["root_pid"] == 123
         assert sampler.samples[0]["pss_kb"] == 100123
 
     def test_write_csv_writes_valid_resource_csv(self, tmp_path: Path):
-        sampler = _sampled(pid=123, seconds=0.15)
+        sampler = _sampled(pid=123, samples=2)
 
         csv_path = tmp_path / "perf" / "resource_item1_rep1.csv"
         sampler.write_csv(csv_path)
@@ -68,19 +78,16 @@ class TestSampler:
         assert "time_to_first_delta_s" in headers
 
     def test_backfill_sets_fields_on_all_rows(self):
-        from coro.bench.sampling import Sampler
-
-        sampler = Sampler(pid=1, interval=0.05, sample_fn=mock_sample_fn)
-        sampler.start()
-        time.sleep(0.15)
-        sampler.stop()
+        sampler = _sampled(pid=1, samples=2)
 
         sampler.backfill(wall_seconds=1.234, audio_seconds=5.0, transcription_throughput=4.05)
 
-        for row in sampler.samples:
-            assert row["wall_seconds"] == 1.234
-            assert row["audio_seconds"] == 5.0
-            assert row["transcription_throughput"] == 4.05
+        backfilled = [
+            (row["wall_seconds"], row["audio_seconds"], row["transcription_throughput"])
+            for row in sampler.samples
+        ]
+        assert len(backfilled) >= 2
+        assert backfilled == [pytest.approx((1.234, 5.0, 4.05), abs=1e-12)] * len(backfilled)
 
 
 def _write_resource_csv(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -133,12 +140,14 @@ class TestComputePerRepSummary:
         _write_resource_csv(csv_path, rows)
 
         summary = compute_per_rep_summary(csv_path)
-        assert summary.peak_pss_kb == 150000.0
-        assert summary.peak_cpu_pct == 75.5
-        assert summary.wall_seconds == 2.0
-        assert summary.transcription_throughput == 5.0
         assert summary.observed_hardware_profile == "cpu-only"
-        assert summary.audio_seconds == 10.0
+        assert (
+            summary.peak_pss_kb,
+            summary.peak_cpu_pct,
+            summary.wall_seconds,
+            summary.transcription_throughput,
+            summary.audio_seconds,
+        ) == pytest.approx((150000, 75.5, 2, 5, 10), abs=1e-9)
 
     def test_handles_multiple_rows_with_varying_peaks(self, tmp_path: Path):
         from coro.bench.performance import compute_per_rep_summary
@@ -151,8 +160,7 @@ class TestComputePerRepSummary:
         _write_resource_csv(csv_path, all_rows)
 
         summary = compute_per_rep_summary(csv_path)
-        assert summary.peak_pss_kb == 200000.0
-        assert summary.peak_cpu_pct == 80.0
+        assert (summary.peak_pss_kb, summary.peak_cpu_pct) == pytest.approx((200000, 80), abs=1e-9)
 
     def test_extracts_gpu_and_baseline_adjusted_memory(self, tmp_path: Path):
         from coro.bench.performance import compute_per_rep_summary
@@ -168,13 +176,15 @@ class TestComputePerRepSummary:
         _write_resource_csv(csv_path, rows)
 
         summary = compute_per_rep_summary(csv_path)
-        assert summary.peak_pss_kb == 180000.0
-        assert summary.baseline_pss_kb == 100000.0
-        assert summary.peak_pss_delta_kb == 80000.0
-        assert summary.peak_vram_mib == 2048.0
-        assert summary.baseline_vram_mib == 1536.0
-        assert summary.peak_vram_delta_mib == 512.0
-        assert summary.peak_gpu_util_pct == 91.0
+        assert (
+            summary.peak_pss_kb,
+            summary.baseline_pss_kb,
+            summary.peak_pss_delta_kb,
+            summary.peak_vram_mib,
+            summary.baseline_vram_mib,
+            summary.peak_vram_delta_mib,
+            summary.peak_gpu_util_pct,
+        ) == pytest.approx((180000, 100000, 80000, 2048, 1536, 512, 91), abs=1e-9)
 
 
 class TestAggregateAcrossReps:
@@ -208,6 +218,16 @@ class TestAggregateAcrossReps:
         assert agg.peak_pss_kb is not None
         assert agg.peak_pss_kb.median == 100
         assert agg.peak_pss_kb.stddev == 0
+
+
+_PER_REP_KEYS = {
+    "wall_seconds",
+    "transcription_throughput",
+    "peak_pss_kb",
+    "peak_pss_delta_kb",
+    "peak_cpu_pct",
+    "observed_hardware_profile",
+}
 
 
 class TestFullPerformanceRun:
@@ -273,13 +293,8 @@ class TestFullPerformanceRun:
         item_ids = [r["item_id"] for r in summary["per_rep"]]
         assert item_ids == ["meeting1", "meeting1", "meeting2", "meeting2"]
 
-        for row in summary["per_rep"]:
-            assert "wall_seconds" in row
-            assert "transcription_throughput" in row
-            assert "peak_pss_kb" in row
-            assert "peak_pss_delta_kb" in row
-            assert "peak_cpu_pct" in row
-            assert "observed_hardware_profile" in row
+        missing = [{key for key in _PER_REP_KEYS if key not in row} for row in summary["per_rep"]]
+        assert missing == [set()] * 4
 
         assert "meeting1" in summary["per_item_aggregation"]
         assert "meeting2" in summary["per_item_aggregation"]

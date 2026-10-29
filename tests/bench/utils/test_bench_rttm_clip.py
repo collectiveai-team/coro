@@ -28,7 +28,7 @@ def test_make_rttm_clip_writes_windowed_diarization_only_stm(tmp_path: Path):
     out_dir = tmp_path / "clips"
 
     # Patch the ffmpeg cut so no external binary / real audio is needed.
-    with patch("coro.bench.utils.make_rttm_clip.cut_audio_clip") as cut:
+    with patch("coro.bench.utils.make_rttm_clip.cut_audio_clip", autospec=True) as cut:
         _run(
             [
                 "make_rttm_clip",
@@ -62,7 +62,7 @@ def test_make_rttm_clip_uses_recording_id_override(tmp_path: Path):
     audio.write_bytes(b"RIFF")
     out_dir = tmp_path / "clips"
 
-    with patch("coro.bench.utils.make_rttm_clip.cut_audio_clip"):
+    with patch("coro.bench.utils.make_rttm_clip.cut_audio_clip", autospec=True):
         _run(
             [
                 "make_rttm_clip",

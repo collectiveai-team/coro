@@ -373,11 +373,8 @@ markers = [
 
 # MARK: falsegreen
 # False-green test scanner: flags tests that pass without protecting anything.
-# Exit contract is 0 clean / 10 low-only / 20 high. The prek hook runs it
-# against .falsegreen-baseline.json, so the findings that already existed when
-# the tool was adopted are recorded debt and only NEW findings fail the build.
-# Regenerate the baseline deliberately, never to silence a fresh finding:
-#   uvx falsegreen==0.9.2 tests/ --write-baseline .falsegreen-baseline.json
+# Exit contract is 0 clean / 10 low-only / 20 high. The prek hook runs it with
+# no baseline, so any finding fails the build.
 # MARK: Falsegreen
 [tool.falsegreen]
 

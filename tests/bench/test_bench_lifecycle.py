@@ -42,7 +42,7 @@ class TestBuildServerHandle:
 
         env = build_server_handle(parse_args(["all"]))._build_env()
         assert env["CORO_BACKEND_DIARIZATION"] == "nemo"
-        assert env["CORO_MODEL_DIARIZATION"]
+        assert env["CORO_MODEL_DIARIZATION"] == "nvidia/diar_streaming_sortformer_4spk-v2"
 
     def test_no_diarization_flag_disables_diarization(self):
         from coro.bench.cli import build_server_handle
@@ -77,7 +77,7 @@ class TestBuildServerHandle:
             ["all", "--server-url", "http://localhost:8000", "--server-match", "my-server"]
         )
         resolver = "coro.bench.process_lookup.resolve_server_pid"
-        with patch(resolver, return_value=9876) as mock_resolve:
+        with patch(resolver, return_value=9876, autospec=True) as mock_resolve:
             handle = build_server_handle(args)
 
         assert mock_resolve.call_args.args[0] == "my-server"
@@ -89,7 +89,7 @@ class TestBuildServerHandle:
 
         args = parse_args(["quality", "--server-url", "http://localhost:8000"])
         resolver = "coro.bench.process_lookup.resolve_server_pid"
-        with patch(resolver) as mock_resolve:
+        with patch(resolver, autospec=True) as mock_resolve:
             handle = build_server_handle(args)
 
         mock_resolve.assert_not_called()
@@ -163,7 +163,7 @@ class TestBenchManagedServer:
         mock_proc.poll.return_value = None
         popen = "coro.bench.server_lifecycle.subprocess.Popen"
         health = "coro.bench.server_lifecycle.poll_health"
-        with patch(popen, return_value=mock_proc), patch(health):
+        with patch(popen, return_value=mock_proc, autospec=True), patch(health, autospec=True):
             with managed as handle:
                 assert handle.base_url == "http://127.0.0.1:18888"
                 assert handle.server_pid == 55555
@@ -189,7 +189,11 @@ class TestBenchManagedServer:
         mock_proc.poll.return_value = None
         popen = "coro.bench.server_lifecycle.subprocess.Popen"
         health = "coro.bench.server_lifecycle.poll_health"
-        with patch(popen, return_value=mock_proc) as mock_popen, patch(health), managed:
+        with (
+            patch(popen, return_value=mock_proc, autospec=True) as mock_popen,
+            patch(health, autospec=True),
+            managed,
+        ):
             pass
 
         argv = mock_popen.call_args.args[0]
@@ -212,8 +216,8 @@ class TestBenchManagedServer:
         popen = "coro.bench.server_lifecycle.subprocess.Popen"
         health = "coro.bench.server_lifecycle.poll_health"
         with (
-            patch(popen, return_value=mock_proc),
-            patch(health),
+            patch(popen, return_value=mock_proc, autospec=True),
+            patch(health, autospec=True),
             pytest.raises(RuntimeError),
             managed,
         ):
@@ -255,7 +259,11 @@ class TestBenchManagedServerOutput:
         mock_proc.poll.return_value = None
         popen = "coro.bench.server_lifecycle.subprocess.Popen"
         health = "coro.bench.server_lifecycle.poll_health"
-        with patch(popen, return_value=mock_proc) as mock_popen, patch(health), managed:
+        with (
+            patch(popen, return_value=mock_proc, autospec=True) as mock_popen,
+            patch(health, autospec=True),
+            managed,
+        ):
             pass
 
         kwargs = mock_popen.call_args.kwargs
@@ -272,7 +280,11 @@ class TestBenchManagedServerOutput:
         mock_proc.poll.return_value = None
         popen = "coro.bench.server_lifecycle.subprocess.Popen"
         health = "coro.bench.server_lifecycle.poll_health"
-        with patch(popen, return_value=mock_proc), patch(health), managed:
+        with (
+            patch(popen, return_value=mock_proc, autospec=True),
+            patch(health, autospec=True),
+            managed,
+        ):
             pass
 
         assert log_path.exists()
@@ -285,15 +297,12 @@ class TestBenchManagedServerOutput:
         mock_proc.pid = 55555
         popen = "coro.bench.server_lifecycle.subprocess.Popen"
         health = "coro.bench.server_lifecycle.poll_health"
-        # The raiser is `managed.__enter__`, not a call in the body, so the block
-        # is legitimately empty.
-        with (  # falsegreen: ignore
-            patch(popen, return_value=mock_proc),
-            patch(health, side_effect=TimeoutError("never ready")),
-            pytest.raises(TimeoutError),
-            managed,
+        with (
+            patch(popen, return_value=mock_proc, autospec=True),
+            patch(health, side_effect=TimeoutError("never ready"), autospec=True),
+            pytest.raises(TimeoutError, match="never ready"),
         ):
-            pass
+            managed.__enter__()
 
         mock_proc.terminate.assert_called()
 
@@ -307,7 +316,7 @@ class TestPollHealth:
         dead.returncode = 1
         getter = "coro.bench.server_lifecycle._get_health_json"
         with (
-            patch(getter, side_effect=ConnectionRefusedError),
+            patch(getter, side_effect=ConnectionRefusedError, autospec=True),
             pytest.raises(RuntimeError, match="exited with code 1"),
         ):
             poll_health("http://localhost:8000", timeout=30, interval=0.01, proc=dead)
@@ -326,7 +335,7 @@ class TestPollHealth:
             return not_ready if call_count < 3 else ready
 
         getter = "coro.bench.server_lifecycle._get_health_json"
-        with patch(getter, side_effect=fake_get_json):
+        with patch(getter, side_effect=fake_get_json, autospec=True):
             poll_health("http://localhost:8000", timeout=5, interval=0.01)
         assert call_count == 3
 
@@ -339,7 +348,10 @@ class TestPollHealth:
             return not_ready
 
         getter = "coro.bench.server_lifecycle._get_health_json"
-        with patch(getter, side_effect=fake_get_json), pytest.raises(TimeoutError, match="warmup"):
+        with (
+            patch(getter, side_effect=fake_get_json, autospec=True),
+            pytest.raises(TimeoutError, match="warmup"),
+        ):
             poll_health("http://localhost:8000", timeout=0.05, interval=0.01)
 
 

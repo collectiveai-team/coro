@@ -312,8 +312,8 @@ class TestSpeakerTimelineToStm:
         from coro.bench.stm import DIARIZATION_ONLY_TEXT, speaker_timeline_to_stm
 
         out = speaker_timeline_to_stm(self._timeline(), "MEET1")
-        for line in out.splitlines():
-            assert line.split(maxsplit=5)[5] == DIARIZATION_ONLY_TEXT
+        texts = [line.split(maxsplit=5)[5] for line in out.splitlines()]
+        assert texts == [DIARIZATION_ONLY_TEXT, DIARIZATION_ONLY_TEXT]
 
     def test_lines_use_recording_id_and_speaker_label(self):
         from coro.bench.stm import speaker_timeline_to_stm
