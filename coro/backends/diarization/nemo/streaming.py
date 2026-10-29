@@ -78,6 +78,21 @@ class NemoStreamingDiarizerFactory:
         self._subsampling_factor = getattr(model.sortformer_modules, "subsampling_factor", 8)
         self._n_spk = getattr(model.sortformer_modules, "n_spk", 4)
 
+    @property
+    def tier(self) -> str:
+        """The Diarization Latency tier every diarizer of this factory runs at."""
+        return self._tier
+
+    @property
+    def postprocessing_yaml(self) -> str | None:
+        """The resolved Diarization Post-Processing Configuration path, or None."""
+        return self._postprocessing_yaml
+
+    @property
+    def max_speakers(self) -> int:
+        """The Speaker-Count Post-Processing Gate ceiling."""
+        return self._max_speakers
+
     def __call__(self) -> StreamingDiarizer:
         return StreamingDiarizer(
             self._model,

@@ -11,6 +11,7 @@ benchmark results uninterpretable: the run looks configured but is not.
 
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING
 
 from coro.core.logger import get_logger
@@ -106,12 +107,55 @@ def warn_ignored_asr_settings(settings: ServerSettings) -> list[str]:
     return ignored
 
 
-def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
+# MARK: Provider Builders
+# Each ASR Backend Provider's adapter builder, as (module, function). The module
+# is imported only when its provider is selected, so one provider's heavy
+# dependencies are never imported for another.
+_PROVIDER_BUILDERS: dict[str, tuple[str, str]] = {
+    "onnx-asr": ("coro.backends.asr.onnx_asr", "build_onnx_asr_adapter"),
+    "onnx-parakeet-prompt": (
+        "coro.backends.asr.onnx_parakeet_prompt",
+        "build_onnx_parakeet_prompt_adapter",
+    ),
+    "onnx-canary-split": ("coro.backends.asr.onnx_canary_split", "build_onnx_canary_split_adapter"),
+    "onnx-genai": ("coro.backends.asr.onnx_genai", "build_onnx_genai_adapter"),
+    "nemo": ("coro.backends.asr.nemo", "build_nemo_asr_adapter"),
+    "faster-whisper": ("coro.backends.asr.faster_whisper", "build_asr_adapter"),
+}
+
+
+def load_asr_adapter_builder(provider: str) -> Callable[..., ASRAdapter]:
+    """Import and return the adapter builder of an ASR Backend Provider.
+
+    Args:
+        provider: ASR Backend Provider selector.
+
+    Returns:
+        The provider's builder, called with the ASR Model Selection and its
+        provider-specific options.
+
+    Raises:
+        ValueError: If the ASR Backend Provider is unknown.
+
+    """
+    if provider not in _PROVIDER_BUILDERS:
+        msg = f"Unknown ASR backend provider: {provider!r}"
+        raise ValueError(msg)
+    module, name = _PROVIDER_BUILDERS[provider]
+    return getattr(importlib.import_module(module), name)
+
+
+def build_asr_adapter(
+    settings: ServerSettings,
+    *,
+    load_builder: Callable[[str], Callable[..., ASRAdapter]] = load_asr_adapter_builder,
+) -> ASRAdapter:
     """Build an ASR Adapter for the configured ASR Backend Provider.
 
     Args:
         settings: Server Startup Selection providing the ASR Backend Provider,
             ASR Model Selection, and provider-specific options.
+        load_builder: Returns the adapter builder of a provider.
 
     Returns:
         A ready-to-use ASR Adapter.
@@ -122,11 +166,10 @@ def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
     """
     provider = settings.backend_asr
     warn_ignored_asr_settings(settings)
+    build = load_builder(provider)
 
     if provider == "onnx-asr":
-        from coro.backends.asr.onnx_asr import build_onnx_asr_adapter
-
-        return build_onnx_asr_adapter(
+        return build(
             settings.model_asr,
             device=settings.asr_device,
             quantization=settings.asr_quantization,
@@ -137,9 +180,7 @@ def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
         )
 
     if provider == "onnx-parakeet-prompt":
-        from coro.backends.asr.onnx_parakeet_prompt import build_onnx_parakeet_prompt_adapter
-
-        return build_onnx_parakeet_prompt_adapter(
+        return build(
             settings.model_asr,
             device=settings.asr_device,
             quantization=settings.asr_quantization,
@@ -147,9 +188,7 @@ def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
         )
 
     if provider == "onnx-canary-split":
-        from coro.backends.asr.onnx_canary_split import build_onnx_canary_split_adapter
-
-        return build_onnx_canary_split_adapter(
+        return build(
             settings.model_asr,
             device=settings.asr_device,
             quantization=settings.asr_quantization,
@@ -161,9 +200,7 @@ def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
         )
 
     if provider == "onnx-genai":
-        from coro.backends.asr.onnx_genai import build_onnx_genai_adapter
-
-        return build_onnx_genai_adapter(
+        return build(
             settings.model_asr,
             device=settings.asr_device,
             quantization=settings.asr_quantization,
@@ -171,18 +208,14 @@ def build_asr_adapter(settings: ServerSettings) -> ASRAdapter:
         )
 
     if provider == "nemo":
-        from coro.backends.asr.nemo import build_nemo_asr_adapter
-
-        return build_nemo_asr_adapter(
+        return build(
             settings.model_asr,
             device=settings.asr_device,
             max_queue_depth=settings.asr_max_queue_depth,
         )
 
     if provider == "faster-whisper":
-        from coro.backends.asr.faster_whisper import build_asr_adapter as build_faster_whisper
-
-        return build_faster_whisper(
+        return build(
             settings.model_asr,
             device=settings.asr_device,
             compute_type=settings.asr_compute_type,

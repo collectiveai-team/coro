@@ -1,10 +1,15 @@
-"""Tests for the make_rttm_clip diarization-clip maker (VoxConverse-style)."""
+"""Tests for the make_rttm_clip diarization-clip maker (VoxConverse-style).
+
+The clip is cut by the real ffmpeg, which CI installs as a runtime dependency.
+"""
 
 from __future__ import annotations
 
-import sys
+import wave
 from pathlib import Path
-from unittest.mock import patch
+
+from coro.bench.utils.make_rttm_clip import main
+from support.corpus import write_silent_wav
 
 _RTTM = (
     "SPEAKER abjxc 1 0.50 2.00 <NA> <NA> spk0 <NA> <NA>\n"
@@ -13,40 +18,45 @@ _RTTM = (
 )
 
 
-def _run(argv: list[str]) -> None:
-    from coro.bench.utils.make_rttm_clip import main
+def _recording(tmp_path: Path, stem: str) -> tuple[Path, Path]:
+    rttm = tmp_path / f"{stem}.rttm"
+    rttm.write_text(_RTTM)
+    audio = tmp_path / f"{stem}.wav"
+    write_silent_wav(audio, seconds=2.0)
+    return audio, rttm
 
-    with patch.object(sys, "argv", argv):
-        main()
+
+def _wav_format(path: Path) -> tuple[int, int]:
+    """The channel count and sample rate of a WAV file."""
+    with wave.open(str(path)) as clip:
+        return clip.getnchannels(), clip.getframerate()
+
+
+def _stm_lines(path: Path) -> list[str]:
+    return path.read_text().strip().splitlines()
 
 
 def test_make_rttm_clip_writes_windowed_diarization_only_stm(tmp_path: Path):
-    rttm = tmp_path / "abjxc.rttm"
-    rttm.write_text(_RTTM)
-    audio = tmp_path / "abjxc.wav"
-    audio.write_bytes(b"RIFF")
+    audio, rttm = _recording(tmp_path, "abjxc")
     out_dir = tmp_path / "clips"
 
-    # Patch the ffmpeg cut so no external binary / real audio is needed.
-    with patch("coro.bench.utils.make_rttm_clip.cut_audio_clip", autospec=True) as cut:
-        _run(
-            [
-                "make_rttm_clip",
-                "--audio",
-                str(audio),
-                "--rttm",
-                str(rttm),
-                "--start",
-                "0",
-                "--duration",
-                "60",
-                "--out-dir",
-                str(out_dir),
-            ]
-        )
-        cut.assert_called_once()
+    main(
+        [
+            "--audio",
+            str(audio),
+            "--rttm",
+            str(rttm),
+            "--start",
+            "0",
+            "--duration",
+            "60",
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
 
-    stm = (out_dir / "abjxc_0_60.ref.stm").read_text().strip().splitlines()
+    assert _wav_format(out_dir / "abjxc_0_60.wav") == (1, 16000)
+    stm = _stm_lines(out_dir / "abjxc_0_60.ref.stm")
     # The 70s turn is outside the [0,60) window and must be dropped; the two
     # early turns are kept, rebased, session id == clip stem, sentinel text.
     assert stm == [
@@ -56,29 +66,25 @@ def test_make_rttm_clip_writes_windowed_diarization_only_stm(tmp_path: Path):
 
 
 def test_make_rttm_clip_uses_recording_id_override(tmp_path: Path):
-    rttm = tmp_path / "session.rttm"
-    rttm.write_text(_RTTM)
-    audio = tmp_path / "session.wav"
-    audio.write_bytes(b"RIFF")
+    audio, rttm = _recording(tmp_path, "session")
     out_dir = tmp_path / "clips"
 
-    with patch("coro.bench.utils.make_rttm_clip.cut_audio_clip", autospec=True):
-        _run(
-            [
-                "make_rttm_clip",
-                "--audio",
-                str(audio),
-                "--rttm",
-                str(rttm),
-                "--start",
-                "0",
-                "--duration",
-                "10",
-                "--out-dir",
-                str(out_dir),
-                "--recording-id",
-                "vox01",
-            ]
-        )
+    main(
+        [
+            "--audio",
+            str(audio),
+            "--rttm",
+            str(rttm),
+            "--start",
+            "0",
+            "--duration",
+            "10",
+            "--out-dir",
+            str(out_dir),
+            "--recording-id",
+            "vox01",
+        ]
+    )
 
-    assert (out_dir / "vox01_0_10.ref.stm").exists()
+    assert (out_dir / "vox01_0_10.wav").exists()
+    assert (out_dir / "vox01_0_10.ref.stm").read_text().startswith("vox01_0_10 1 spk0 0.500")

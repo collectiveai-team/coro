@@ -11,7 +11,7 @@ import time
 import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
-from typing import IO, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, Protocol
 
 from coro.core.logger import get_logger
 
@@ -19,6 +19,53 @@ if TYPE_CHECKING:
     from coro.bench.models.response import HealthResponse
 
 logger = get_logger(__name__)
+
+
+class ServerProcess(Protocol):
+    """Port: a running server process, as ``subprocess.Popen`` exposes it."""
+
+    @property
+    def pid(self) -> int:
+        """The process id."""
+        ...
+
+    @property
+    def returncode(self) -> int | None:
+        """The exit code, or None while the process runs."""
+        ...
+
+    def poll(self) -> int | None:
+        """Return the exit code once the process has exited, else None."""
+        ...
+
+    def terminate(self) -> None:
+        """Ask the process to stop."""
+        ...
+
+    def kill(self) -> None:
+        """Force the process to stop."""
+        ...
+
+    def wait(self, timeout: float | None = None) -> int:
+        """Block until the process exits and return its exit code."""
+        ...
+
+
+class ServerLauncher(Protocol):
+    """Port: starts the server command line as a child process."""
+
+    def __call__(
+        self, argv: list[str], *, env: Mapping[str, str], stdout: int | IO[bytes], stderr: int
+    ) -> ServerProcess:
+        """Start ``argv`` with ``env``, sending its output to ``stdout`` and ``stderr``."""
+        ...
+
+
+def spawn_server_process(
+    argv: list[str], *, env: Mapping[str, str], stdout: int | IO[bytes], stderr: int
+) -> subprocess.Popen[bytes]:
+    """Adapter of the server launcher port: a real child process."""
+    return subprocess.Popen(argv, env=env, stdout=stdout, stderr=stderr)
 
 
 def find_free_port() -> int:
@@ -38,7 +85,7 @@ def poll_health(
     *,
     timeout: float = 600.0,
     interval: float = 1.0,
-    proc: subprocess.Popen[bytes] | None = None,
+    proc: ServerProcess | None = None,
 ) -> HealthResponse:
     """Block until ``/health`` reports Capability Readiness and Warmup Readiness.
 
@@ -66,7 +113,7 @@ def _ready_health(base_url: str) -> HealthResponse | None:
 
 
 def _raise_if_unreachable(
-    base_url: str, *, proc: subprocess.Popen[bytes] | None, deadline: float, timeout: float
+    base_url: str, *, proc: ServerProcess | None, deadline: float, timeout: float
 ) -> None:
     """Raise when the managed server has exited or the deadline has passed."""
     if proc is not None and proc.poll() is not None:
@@ -101,6 +148,7 @@ class BenchManagedServer:
         pipeline: str = "full-memory",
         port: int = 0,
         log_path: Path | None = None,
+        launcher: ServerLauncher = spawn_server_process,
     ) -> None:
         self._asr_backend = asr_backend
         self._asr_model = asr_model
@@ -109,13 +157,15 @@ class BenchManagedServer:
         self._pipeline = pipeline
         self._requested_port = port
         self._log_path = log_path
+        self._launcher = launcher
         self._port: int | None = None
         self.base_url: str = ""
         self.server_pid: int | None = None
-        self._proc: subprocess.Popen[bytes] | None = None
+        self._proc: ServerProcess | None = None
         self._log_file: IO[bytes] | None = None
 
-    def _build_env(self) -> Mapping[str, str]:
+    def server_env(self) -> Mapping[str, str]:
+        """The environment the server process starts with: this one plus the server selection."""
         import os
 
         env = dict(os.environ)  # botica: ignore[settings-module] -- the child inherits it
@@ -144,11 +194,11 @@ class BenchManagedServer:
     def __enter__(self) -> BenchManagedServer:
         self._port = self._requested_port if self._requested_port != 0 else find_free_port()
         self.base_url = f"http://127.0.0.1:{self._port}"
-        env = self._build_env()
+        env = self.server_env()
         output = self._open_output()
         logger.info("Starting bench-managed server on %s", self.base_url)
         try:
-            self._proc = subprocess.Popen(
+            self._proc = self._launcher(
                 ["coro", "serve", "--port", str(self._port)],
                 env=env,
                 stdout=output,

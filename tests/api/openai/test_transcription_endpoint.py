@@ -1,109 +1,54 @@
 """Public Transcription Endpoint behavior.
 
-Tests use a fake pipeline injected into RuntimeState so no real ASR model
-is loaded.  All assertions target the public Transcription API Contract.
+Requests run through the real Full-Memory Pipeline, with ffmpeg decoding the
+upload, and in-memory ASR and diarization adapters in place of the models.
+All assertions target the public Transcription API Contract.
 """
 
 from __future__ import annotations
 
-import io
-import struct
-import wave
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from coro.app import create_app
-from coro.core.models import (
-    DiarizationItem,
-    ResponseSegment,
-    TranscriptionResult,
-    TranscriptItem,
-    TranscriptWord,
-)
-from coro.runtime import RuntimeState
-from coro.settings import ServerSettings
+from coro.core.models import SpeakerSegment, TranscriptToken
+from coro.pipelines.full_memory import FullMemoryPipeline
+from support.adapters import FixedDiarization, RecordingASR
+from support.factories import make_app, make_wav
+
+ONE_SECOND_WAV = make_wav(frames=16000)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-_PIPELINE_RESULT = TranscriptionResult(
-    segments=[
-        ResponseSegment(start=0.0, end=1.0, text="hello world", speaker="agent", words=[]),
-    ],
-    word_segments=[
-        TranscriptWord(word="hello", start=0.0, end=0.4, score=1.0, speaker="agent"),
-        TranscriptWord(word="world", start=0.5, end=1.0, score=1.0, speaker="agent"),
-    ],
-    transcript=[TranscriptItem(start=0.0, end=1.0, text="hello world")],
-    diarization=[DiarizationItem(start=0.0, end=1.0, speaker="agent")],
-    raw_words=[],
-)
+def _asr() -> RecordingASR:
+    """An ASR Adapter that hears "hello world" in every window."""
+    return RecordingASR(
+        [
+            TranscriptToken(start=0.0, end=0.4, text=" hello", probability=1.0),
+            TranscriptToken(start=0.5, end=1.0, text=" world", probability=1.0),
+        ]
+    )
 
 
-def _minimal_wav_bytes() -> bytes:
-    """Produce a tiny valid WAV file (100 ms silence, 16 kHz mono 16-bit)."""
-    buf = io.BytesIO()
-    n_frames = 1600  # 100 ms at 16 kHz
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(16000)
-        wf.writeframes(struct.pack("<" + "h" * n_frames, *([0] * n_frames)))
-    return buf.getvalue()
+def _app(asr: RecordingASR | None = None):
+    """Build an app whose pipeline transcribes with ``asr`` and finds one speaker."""
+    diarization = FixedDiarization([SpeakerSegment(start=0.0, end=1.0, speaker=0)])
+    return make_app(FullMemoryPipeline(asr=asr or _asr(), diarization=diarization))
 
 
-class _FakePipeline:
-    """Fake configured pipeline that returns a fixed transcription response."""
-
-    async def transcribe(self, audio, *, language=None, prompt=None):
-        return _PIPELINE_RESULT
-
-
-class _RecordingPipeline(_FakePipeline):
-    """Fake pipeline that records the language hint of every call."""
-
-    def __init__(self):
-        self.languages: list[str | None] = []
-
-    async def transcribe(self, audio, *, language=None, prompt=None):
-        self.languages.append(language)
-        return _PIPELINE_RESULT
-
-
-def _app_with_pipeline(pipeline):
-    """Build app with the given pipeline injected into RuntimeState."""
-    from fastapi import FastAPI
-
-    application: FastAPI = create_app(ServerSettings())
-    runtime = RuntimeState(asr_adapter=object())  # non-None → ready=True
-    runtime.pipeline = pipeline
-    application.state.runtime = runtime
-    return application
-
-
-def _app_with_fake_pipeline():
-    """Build app with a fake configured pipeline injected into RuntimeState."""
-    return _app_with_pipeline(_FakePipeline())
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+async def _post(app, data: dict, *, upload: bytes = ONE_SECOND_WAV, filename: str = "test.wav"):
+    """POST one transcription request to ``app``."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        return await client.post(
+            "/v1/audio/transcriptions",
+            files={"file": (filename, upload, "audio/wav")},
+            data=data,
+        )
 
 
 @pytest.mark.asyncio
 async def test_transcription_endpoint_returns_default_openai_json():
     """POST /v1/audio/transcriptions returns default OpenAI JSON."""
-    app = _app_with_fake_pipeline()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/audio/transcriptions",
-            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
-            data={"model": "whisper-1"},
-        )
+    response = await _post(_app(), {"model": "whisper-1"})
+
     assert response.status_code == 200
     body = response.json()
     assert body["text"] == "hello world"
@@ -113,34 +58,28 @@ async def test_transcription_endpoint_returns_default_openai_json():
 @pytest.mark.asyncio
 async def test_transcription_endpoint_accepts_openai_compatible_form_params():
     """POST /v1/audio/transcriptions accepts OpenAI-compatible form fields."""
-    app = _app_with_fake_pipeline()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/audio/transcriptions",
-            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
-            data={
-                "model": "whisper-1",
-                "language": "es",
-                "prompt": "some hint",
-                "response_format": "verbose_json",
-                "temperature": "0",
-                "timestamp_granularities[]": ["word", "segment"],
-                "stream": "false",
-            },
-        )
+    response = await _post(
+        _app(),
+        {
+            "model": "whisper-1",
+            "language": "es",
+            "prompt": "some hint",
+            "response_format": "verbose_json",
+            "temperature": "0",
+            "timestamp_granularities[]": ["word", "segment"],
+            "stream": "false",
+        },
+    )
+
     assert response.status_code == 200
+    assert response.json()["text"] == "hello world"
 
 
 @pytest.mark.asyncio
 async def test_transcription_endpoint_empty_upload_returns_openai_style_error():
     """POST /v1/audio/transcriptions with empty body returns OpenAI-style error."""
-    app = _app_with_fake_pipeline()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/audio/transcriptions",
-            files={"file": ("empty.wav", b"", "audio/wav")},
-            data={"model": "whisper-1"},
-        )
+    response = await _post(_app(), {"model": "whisper-1"}, upload=b"", filename="empty.wav")
+
     assert response.status_code == 400
     body = response.json()
     # OpenAI-style error: {"error": {"message": "...", "type": "...", ...}}
@@ -151,13 +90,8 @@ async def test_transcription_endpoint_empty_upload_returns_openai_style_error():
 @pytest.mark.asyncio
 async def test_transcription_endpoint_rejects_invalid_language_tag():
     """A non-BCP-47 language hint returns a 400, not a generic 500."""
-    app = _app_with_fake_pipeline()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/audio/transcriptions",
-            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
-            data={"model": "whisper-1", "language": "string"},
-        )
+    response = await _post(_app(), {"model": "whisper-1", "language": "string"})
+
     assert response.status_code == 400
     body = response.json()
     assert body["error"]["type"] == "invalid_request_error"
@@ -166,38 +100,30 @@ async def test_transcription_endpoint_rejects_invalid_language_tag():
 
 @pytest.mark.asyncio
 async def test_transcription_endpoint_passes_the_canonical_language_to_the_pipeline():
-    """Equivalent spellings of a language reach the pipeline in one BCP-47 form."""
-    pipeline = _RecordingPipeline()
-    app = _app_with_pipeline(pipeline)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        for spelling in ("ES", "es_ar", " es-US "):
-            response = await client.post(
-                "/v1/audio/transcriptions",
-                files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
-                data={"model": "whisper-1", "language": spelling},
-            )
-            assert response.status_code == 200, spelling
+    """Equivalent spellings of a language reach the ASR Adapter in one BCP-47 form."""
+    asr = _asr()
+    app = _app(asr)
+    statuses = [
+        (await _post(app, {"model": "whisper-1", "language": spelling})).status_code
+        for spelling in ("ES", "es_ar", " es-US ")
+    ]
 
-    assert pipeline.languages == ["es", "es-AR", "es-US"]
+    assert statuses == [200, 200, 200]
+    assert asr.languages == ["es", "es-AR", "es-US"]
 
 
 @pytest.mark.asyncio
 async def test_transcription_endpoint_treats_blank_language_as_unset():
     """An empty / whitespace-only language hint is coerced to None and succeeds."""
-    pipeline = _RecordingPipeline()
-    app = _app_with_pipeline(pipeline)
-    statuses = []
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        for blank in ("", "   "):
-            response = await client.post(
-                "/v1/audio/transcriptions",
-                files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
-                data={"model": "whisper-1", "language": blank},
-            )
-            statuses.append(response.status_code)
+    asr = _asr()
+    app = _app(asr)
+    statuses = [
+        (await _post(app, {"model": "whisper-1", "language": blank})).status_code
+        for blank in ("", "   ")
+    ]
 
     assert statuses == [200, 200]
-    assert pipeline.languages == [None, None]
+    assert asr.languages == [None, None]
 
 
 @pytest.mark.asyncio
@@ -207,43 +133,50 @@ async def test_transcription_endpoint_tolerates_swagger_blank_fields():
     The empty ``known_speaker_references[]`` value must not fail UploadFile
     parsing with a 422; blanks are treated as unset.
     """
-    app = _app_with_fake_pipeline()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/audio/transcriptions",
-            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
-            data={
-                "stream": "",
-                "prompt": "",
-                "timestamp_granularities[]": "",
-                "known_speaker_references[]": "",
-                "model": "",
-                "include[]": "",
-                "known_speaker_names[]": "",
-                "temperature": "",
-                "response_format": "diarized_json",
-                "language": "",
-                "chunking_strategy": "",
-            },
-        )
+    response = await _post(
+        _app(),
+        {
+            "stream": "",
+            "prompt": "",
+            "timestamp_granularities[]": "",
+            "known_speaker_references[]": "",
+            "model": "",
+            "include[]": "",
+            "known_speaker_names[]": "",
+            "temperature": "",
+            "response_format": "diarized_json",
+            "language": "",
+            "chunking_strategy": "",
+        },
+    )
+
     assert response.status_code == 200, response.text
 
 
 @pytest.mark.asyncio
 async def test_transcription_endpoint_returns_diarized_json():
     """diarized_json returns speaker-annotated OpenAI segments."""
-    app = _app_with_fake_pipeline()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/v1/audio/transcriptions",
-            files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
-            data={"model": "gpt-4o-transcribe-diarize", "response_format": "diarized_json"},
-        )
+    response = await _post(
+        _app(), {"model": "gpt-4o-transcribe-diarize", "response_format": "diarized_json"}
+    )
+
     assert response.status_code == 200
     body = response.json()
     assert body["task"] == "transcribe"
     assert body["segments"][0]["type"] == "transcript.text.segment"
-    assert body["segments"][0]["speaker"] == "agent"
+    assert body["segments"][0]["speaker"] == "0"
+
+
+class _AutoLIDSpanishASR:
+    """An ASR Adapter with auto-LID that detects Spanish and hears "hola mundo"."""
+
+    honours_prompt = False
+
+    async def detect_language(self, pcm: bytes) -> str | None:
+        return "es"
+
+    async def transcribe_pcm(self, pcm: bytes, *, language=None, prompt=None):
+        return [TranscriptToken(start=0.0, end=1.0, text=" hola mundo", probability=0.9)]
 
 
 @pytest.mark.asyncio
@@ -252,38 +185,11 @@ async def test_verbose_json_reports_the_auto_detected_language_for_an_undeclared
 
     Exercises the real chain end to end: FullMemoryPipeline -> ASRWindowing's
     sticky LanguageState -> TranscriptionResult.detected_language ->
-    MemoryTranscriptSource -> render_for_format's verbose_json body -- not a
-    pipeline stub, so a wiring break anywhere in that chain fails this test.
+    MemoryTranscriptSource -> render_for_format's verbose_json body.
     """
-    from unittest.mock import patch
+    app = make_app(FullMemoryPipeline(asr=_AutoLIDSpanishASR(), diarization=None))
 
-    from coro.core.models import TranscriptToken
-    from coro.pipelines.full_memory import FullMemoryPipeline
-
-    class _AutoLIDSpanishASR:
-        honours_prompt = False
-
-        async def detect_language(self, pcm: bytes) -> str | None:
-            return "es"
-
-        async def transcribe_pcm(self, pcm: bytes, *, language=None, prompt=None):
-            return [TranscriptToken(start=0.0, end=1.0, text=" hola mundo", probability=0.9)]
-
-    pipeline = FullMemoryPipeline(asr=_AutoLIDSpanishASR(), diarization=None)
-    app = _app_with_pipeline(pipeline)
-
-    raw_pcm = struct.pack("<1600h", *([0] * 1600))  # 100 ms silence, s16le mono
-    with patch(
-        "coro.pipelines.full_memory.convert_path_to_pcm_bytes",
-        autospec=True,
-        return_value=raw_pcm,
-    ):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/v1/audio/transcriptions",
-                files={"file": ("test.wav", _minimal_wav_bytes(), "audio/wav")},
-                data={"model": "whisper-1", "response_format": "verbose_json"},
-            )
+    response = await _post(app, {"model": "whisper-1", "response_format": "verbose_json"})
 
     assert response.status_code == 200
     body = response.json()

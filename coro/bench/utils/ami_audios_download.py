@@ -79,6 +79,18 @@ def download_annotations(out_dir: Path, *, force: bool = False) -> Path:
     return output_path
 
 
+class AmiMirrorDownloads:
+    """Adapter of the AMI downloads port: the Edinburgh AMI corpus mirror."""
+
+    def download_meeting_audio(self, meeting_id: str, out_dir: Path) -> Path:
+        """Download the Mix-Headset audio of one meeting under ``out_dir``."""
+        return download_meeting_audio(meeting_id, out_dir)
+
+    def download_annotations(self, out_dir: Path) -> Path:
+        """Download the AMI manual annotations archive into ``out_dir``."""
+        return download_annotations(out_dir)
+
+
 def read_meetings_file(path: Path) -> list[str]:
     meetings = []
     for line in path.read_text(encoding="utf-8").splitlines():

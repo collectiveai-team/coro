@@ -18,7 +18,7 @@ from coro.bench.cli_spanish import (
 )
 from coro.bench.errors import ServerPidUnresolvedError, ServerUnreachableError
 from coro.bench.models.workload import WorkloadItem
-from coro.bench.process_lookup import DEFAULT_SERVER_MATCH
+from coro.bench.process_lookup import DEFAULT_SERVER_MATCH, ProcessEntry
 from coro.bench.quarantine import CircularReferenceError
 from coro.bench.server_lifecycle import (
     BenchAttachedServer,
@@ -26,7 +26,13 @@ from coro.bench.server_lifecycle import (
     ServerHandle,
 )
 
-__all__ = ["build_server_handle", "main", "parse_args", "resolve_meetings"]
+__all__ = [
+    "build_server_handle",
+    "main",
+    "parse_args",
+    "require_server_pid",
+    "resolve_meetings",
+]
 
 
 def _build_items(
@@ -89,7 +95,7 @@ def _render_report(out_dir: Path) -> None:
     (out_dir / "REPORT.md").write_text(render_markdown(report))
 
 
-def _require_server_pid(server: ServerHandle) -> int:
+def require_server_pid(server: ServerHandle) -> int:
     """Return the Server Process Tree root PID, refusing to sample an unrelated one."""
     if server.server_pid is None:
         raise ServerPidUnresolvedError(DEFAULT_SERVER_MATCH)
@@ -112,7 +118,7 @@ def _run_performance(
         base_url=server.base_url,
         out_dir=out_dir,
         reps=args.reps,
-        server_pid=_require_server_pid(server),
+        server_pid=require_server_pid(server),
         sample_interval=args.sample_interval,
         cli_args=args.cli_args,
         stream=args.stream,
@@ -166,7 +172,7 @@ def _run_all(
         base_url=server.base_url,
         out_dir=out_dir,
         reps=args.reps,
-        server_pid=_require_server_pid(server),
+        server_pid=require_server_pid(server),
         sample_interval=args.sample_interval,
         cli_args=args.cli_args,
         der_collar=args.der_collar,
@@ -180,19 +186,23 @@ def _run_all(
     _render_report(out_dir)
 
 
-def build_server_handle(args: BenchArgs) -> ServerHandle:
+def build_server_handle(
+    args: BenchArgs, *, processes: list[ProcessEntry] | None = None
+) -> ServerHandle:
     """Build the Bench-Attached or Bench-Managed Server handle for this run.
 
     Bench-attached runs that sample resources resolve the Server Process Tree
     root from ``--server-pid`` or ``--server-match``; a Bench-Managed Server
     spawns the server itself and therefore already knows its PID.
+    ``processes`` is the process table that ``--server-match`` searches; None
+    reads ``/proc``.
     """
     from coro.bench.process_lookup import resolve_server_pid
 
     if args.server_url is not None:
         pid = args.server_pid
         if pid is None and args.subcommand in _SAMPLING_SUBCOMMANDS:
-            pid = resolve_server_pid(args.server_match or DEFAULT_SERVER_MATCH)
+            pid = resolve_server_pid(args.server_match or DEFAULT_SERVER_MATCH, processes=processes)
         return BenchAttachedServer(args.server_url, pid=pid)
 
     return BenchManagedServer(

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 from coro.bench import viz
 
@@ -79,16 +78,23 @@ class TestMeetevalVizArgv:
 class TestVisualizeQualityDir:
     def test_combines_and_invokes_meeteval_viz(self, tmp_path: Path):
         out = _make_run(tmp_path, {"a": ("a 1 A 0.0 1.0 hi\n", "a 1 A 0.0 1.0 hi\n")})
-        with patch("coro.bench.viz.subprocess.run", autospec=True) as run:
-            viz_dir = viz.visualize_quality_dir(out, alignments=["tcp", "cp"])
+        commands: list[list[str]] = []
+        viz_dir = viz.visualize_quality_dir(
+            out, alignments=["tcp", "cp"], run_command=commands.append
+        )
         assert viz_dir == out / "viz"
-        assert (out / "viz" / "_combined.ref.stm").exists()
-        run.assert_called_once()
-        argv = run.call_args.args[0]
-        assert "--alignment" in argv and "tcp" in argv and "cp" in argv
+        assert (out / "viz" / "_combined.ref.stm").read_text() == "a 1 A 0.0 1.0 hi\n"
+        assert commands == [
+            viz.meeteval_viz_argv(
+                out / "viz" / "_combined.ref.stm",
+                out / "viz" / "_combined.hyp.stm",
+                out / "viz",
+                alignments=["tcp", "cp"],
+            )
+        ]
 
     def test_no_pairs_returns_none_without_invoking(self, tmp_path: Path):
         (tmp_path / "ref").mkdir()
-        with patch("coro.bench.viz.subprocess.run", autospec=True) as run:
-            assert viz.visualize_quality_dir(tmp_path) is None
-        run.assert_not_called()
+        commands: list[list[str]] = []
+        assert viz.visualize_quality_dir(tmp_path, run_command=commands.append) is None
+        assert commands == []
