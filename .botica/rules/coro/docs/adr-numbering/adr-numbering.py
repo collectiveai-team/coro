@@ -1,10 +1,10 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["botica[sdk]==0.18.0"]
+# dependencies = ["botica[sdk]"]
 #
 # [tool.uv]
-# # The exact pin is the botica that prek.toml and CI already run; the 7-day cooldown of
-# # pyproject.toml would otherwise hold it back for a week after each upgrade.
+# # botica runs this script with the SDK of its own version (uv run --with); the 7-day
+# # cooldown of pyproject.toml would otherwise hold that version back after each upgrade.
 # exclude-newer-package = { botica = false }
 # ///
 """Fail if two ADRs claim the same number, or a retired number returns.
