@@ -212,6 +212,15 @@ exclude-newer = "7 days"
 exclude-newer-package = { botica = false }
 conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
 default-groups = ["dev", "botica"]
+# Security fixes past caps that nemo-toolkit 3.0.0 sets (hydra-core<=1.3.2) and that its
+# lightning 2.4.0 sets (fsspec<2026). Lightning itself stays at 2.4.0: on 2.6 NeMo's
+# nv-one-logger trainer fails to import (osv-scanner.toml). Re-check on each nemo release
+# and drop the line it no longer needs. The wheel keeps nemo's caps.
+override-dependencies = [
+    "hydra-core>=1.3.6",
+    "fsspec>=2026.6.0",
+]
+constraint-dependencies = ["transformers>=5.10"]
 
 # Drop faster-whisper's unconditional `onnxruntime` dep so it does not pull the CPU
 # wheel into the cuda resolution (where it would shadow onnxruntime-gpu). The runtime
