@@ -202,7 +202,7 @@ contracts = [
     "structlog",
 ]
 botica = [
-    "botica==0.18.0",
+    "botica==0.18.1",
 ]
 
 # MARK: uv
