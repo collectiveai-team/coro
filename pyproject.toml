@@ -2,8 +2,7 @@
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
-# Distribution name `coro` is taken on PyPI; publish as `coro-asr` while the
-# import package stays `coro`. Version is derived from git tags (vX.Y.Z) via hatch-vcs.
+# PyPI name `coro-asr` (`coro` is taken); the version comes from git tags (hatch-vcs).
 [tool.hatch.version]
 source = "vcs"
 
@@ -17,7 +16,6 @@ packages = ["coro"]
 name = "coro-asr"
 dynamic = ["version"]
 description = "Coro: OpenAI-compatible ASR + speaker-diarization server with pluggable backends."
-# Rendered as the long description on the PyPI project page.
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -35,9 +33,7 @@ keywords = [
     "openai-compatible",
     "fastapi",
 ]
-# NB: with the SPDX `license` expression above, the legacy "License :: OSI
-# Approved" trove classifier is intentionally omitted (PEP 639 / hatchling
-# rejects declaring both).
+# No OSI trove classifier: PEP 639 forbids it beside an SPDX `license`.
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -53,28 +49,20 @@ dependencies = [
     "faster-whisper>=1.2.0,<1.3.0",
     "lightning==2.4.0",
     "nemo-toolkit[asr]>=3.0.0,<3.1.0",
-    # nemo-toolkit -> librosa -> numba (floor only, no numpy ceiling). On a fresh
-    # resolution (uvx / uv tool install, which ignore uv.lock) uv picks the newest
-    # numpy, finds no recent numba supports it, and backtracks numba down to 0.53.1
-    # — a wheel that only builds on Python <3.10. Pin a numba floor that ships
-    # py3.12 wheels so the backtrack can't reach the broken release.
+    # A floor with py3.12 wheels; a fresh resolve (uvx) otherwise backtracks to 0.53.1.
     "numba>=0.61",
     "numpy>=1.26",
-    # `coro run --server-url` uploads to an already-running server; imported
-    # lazily, so it costs nothing on the in-process path.
+    # `coro run --server-url`, imported lazily.
     "httpx>=0.27.0",
     "onnx-asr[hub]>=0.11.0",
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.27",
-    # Renders the OpenAPI and AsyncAPI contracts from one /docs URL. Official
-    # MIT integration published from the scalar/scalar org; the JS bundle it
-    # loads is pinned and self-hosted (see coro/api/docs.py).
+    # Serves /docs; its JS bundle is pinned and self-hosted (coro/api/docs.py).
     "scalar-fastapi>=1.8.2",
-    # Streaming resample for the Deepgram WebSocket: clients declare their own
-    # sample_rate, the pipeline is fixed at 16 kHz.
+    # Resamples Deepgram WebSocket audio to the pipeline's 16 kHz.
     "soxr>=0.5",
     "uvicorn>=0.30.0",
-    # WebSocket transport for POST-less /v1/listen; uvicorn ships none by default.
+    # uvicorn ships no WebSocket transport (/v1/listen).
     "websockets>=13",
     "structlog>=25.1",
     "cyclopts>=4",
@@ -86,8 +74,6 @@ dependencies = [
     "typing-extensions>=4.13",
 ]
 
-# Shown in the PyPI sidebar. The `Homepage`/`Source`/`Issues` keys map to the
-# well-known icons; others render as plain links.
 [project.urls]
 Homepage = "https://github.com/collectiveai-team/coro"
 Source = "https://github.com/collectiveai-team/coro"
@@ -95,14 +81,9 @@ Issues = "https://github.com/collectiveai-team/coro/issues"
 Changelog = "https://github.com/collectiveai-team/coro/releases"
 
 
-# onnxruntime and onnxruntime-genai each ship as two mutually-exclusive wheels (CPU vs GPU),
-# so they are split across the existing cpu/cuda conflicting extras alongside torch.
-# onnxruntime 1.24.1 is excluded for a known onnx-asr incompatibility.
-# onnxruntime-genai powers the optional onnx-genai (nemotron streaming) backend.
-# faster-whisper unconditionally requires `onnxruntime` (its Silero VAD); under the
-# cuda extra that CPU wheel installs alongside onnxruntime-gpu and shadows the GPU
-# build at import time. tool.uv.dependency-metadata (below) strips that dependency so
-# the runtime is supplied solely by the selected extra (onnxruntime / onnxruntime-gpu).
+# onnxruntime and onnxruntime-genai ship CPU and GPU wheels, split across the conflicting
+# cpu/cuda extras. 1.24.1 breaks onnx-asr. faster-whisper's own onnxruntime is stripped
+# below ([[tool.uv.dependency-metadata]]).
 [project.optional-dependencies]
 cpu = [
     "torch>=2.12.1,<4.0",
@@ -111,40 +92,26 @@ cpu = [
     "onnxruntime-genai>=0.14.0",
 ]
 cuda = [
-    # CTranslate2 (faster-whisper) is still built against CUDA 12 cuBLAS; keep this
-    # until it ships a CUDA 13 build (OpenNMT/CTranslate2#1933).
+    # CTranslate2 still needs CUDA 12 cuBLAS (OpenNMT/CTranslate2#1933).
     "nvidia-cublas-cu12>=12.0.0.0",
-    # torch (cu13) pins nvidia-cudnn-cu13 exactly. A second cuDNN from the cu12 wheel
-    # lands in the same nvidia/cudnn dir and mixes sublibrary versions
-    # (CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH), so declare the cu13 wheel instead.
+    # torch cu13 pins cudnn-cu13; a cu12 cuDNN beside it mixes sublibrary versions.
     "nvidia-cudnn-cu13>=9.0.0.0",
     "torch>=2.12.1,<4.0",
     "torchaudio>=2.1.0,<4.0",
     "onnxruntime-gpu!=1.24.1,>=1.27.0",
     "onnxruntime-genai-cuda>=0.14.0",
 ]
-# Optional, gated batch-only diarization backend (pyannote community-1).
-# Heavy dependency kept out of the core install; enable with `--extra diar-pyannote`.
+# Gated, batch-only diarization (pyannote community-1).
 diar-pyannote = [
     "pyannote.audio>=4.0",
 ]
-# coro.recipes: reproducible ONNX export/quantization scripts that feed the
-# comparative-reference ASR backends' artifact-directory contracts (see
-# coro/recipes/__init__.py). Dev/export-time tooling, never imported by the
-# server itself -- kept out of the core install with its own extra.
-# `onnx` is already pulled in transitively today (nemo-toolkit -> onnx), but
-# these recipes depend on it structurally (onnx.utils.extract_model,
-# onnx.shape_inference), not incidentally, so it is declared directly here
-# rather than relying on another package's transitive dependency to keep
-# providing it. `pyarrow` powers coro.recipes.calibration_corpus's streaming
-# Parquet reads via coro.bench.utils.hf_parquet (duplicated from the `bench`
-# group, which is uv-only and not installable via pip extras).
+# ONNX export/quantization scripts (coro/recipes), never imported by the server.
+# pyarrow repeats the bench group, which pip cannot install.
 recipes = [
     "onnx>=1.21.0",
     "pyarrow>=17.0.0",
 ]
 
-# Internal-only groups (PEP 735). Not exposed via pip; uv-native.
 [dependency-groups]
 dev = [
     "matplotlib>=3.11.0",
@@ -163,36 +130,21 @@ dev = [
 ]
 bench = [
     "kaldialign>=0.9",
-    # Sliding-window language detection for coro/bench/language_drift.py's
-    # four-signal drift metric (issue #64). Import name is `lingua`; was used
-    # unconditionally by that module since its introduction (commit 9abf522)
-    # but never actually declared here -- a gap this closes rather than
-    # scope this session added.
+    # coro/bench/language_drift.py (issue #64).
     "lingua-language-detector>=2.0.0",
     "meeteval>=0.4.3",
     "nvidia-ml-py>=12.0.0",
-    # Row-group-granular reads of the Hugging Face Parquet corpora behind the
-    # Spanish Workload Set (coro/bench/utils/hf_parquet.py).
+    # Parquet reads of the Spanish Workload Set corpora.
     "pyarrow>=17.0.0",
     "regex>=2024.1",
     "rich>=15.0.0",
     "simplejson>=3.0.0",
 ]
-# Everything needed to import coro.app and export the generated API contracts,
-# and nothing else. `uv sync --only-group contracts` skips the project and the ML
-# stack, so the CI breaking-change gate does not download ~2 GB of CUDA wheels
-# just to serialise two JSON documents.
-#
-# Versions are deliberately unconstrained: uv resolves them from uv.lock, so the
-# export runs against the same versions the app ships, while
-# [project].dependencies stays the single place constraints are declared. If the
-# app's module-import path ever grows a new dependency, the export fails loudly
-# here with ModuleNotFoundError rather than drifting silently.
+# Enough to import coro.app and export the API contracts in CI without the ML stack.
+# Unconstrained: the versions come from uv.lock.
 contracts = [
     "fastapi",
-    # The WebSocket route's PCM converter (coro/pcm.py) is imported when the app
-    # is built, so exporting the contract now needs the resample stack. Both are
-    # small wheels; the ~2 GB the group exists to avoid is torch/CUDA.
+    # coro/pcm.py, imported when the app is built.
     "numpy",
     "pydantic-settings",
     "python-multipart",
@@ -201,17 +153,14 @@ contracts = [
 ]
 
 # MARK: uv
-# CES-128: uv resolves only the files that were uploaded to the index at least
-# 7 days ago.
+# CES-128: only releases at least 7 days old.
 [tool.uv]
 exclude-newer = "7 days"
 conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
 default-groups = ["dev"]
 
-# Drop faster-whisper's unconditional `onnxruntime` dep so it does not pull the CPU
-# wheel into the cuda resolution (where it would shadow onnxruntime-gpu). The runtime
-# is provided by the cpu extra (onnxruntime) or cuda extra (onnxruntime-gpu). Mirrors
-# faster-whisper 1.2.x base requires-dist minus onnxruntime; re-check on upgrade.
+# faster-whisper's requires-dist without onnxruntime, whose CPU wheel would shadow
+# onnxruntime-gpu. Mirrors faster-whisper 1.2.x; re-check on upgrade.
 [[tool.uv.dependency-metadata]]
 name = "faster-whisper"
 requires-dist = [
@@ -224,8 +173,7 @@ requires-dist = [
 
 [tool.uv.sources]
 torch = [{ index = "torch-cpu", extra = "cpu" }]
-# pyannote.audio (diar-pyannote extra) pulls torchaudio; pin it to the same CPU
-# index as torch so its native lib matches the installed torch ABI under --extra cpu.
+# torchaudio from torch's CPU index, so its native library matches torch.
 torchaudio = [{ index = "torch-cpu", extra = "cpu" }]
 
 [[tool.uv.index]]
@@ -251,64 +199,19 @@ exclude = [
 
 [tool.ruff.lint]
 select = [
-    "E",      # rules that indicate likely bugs or errors in code
-    "F",      # rules that indicate likely bugs or errors in code
-    "B",      # flake8-bugbear rules for likely bugs and design problems
-    "SIM",    # rules for code simplification
-    "RET",    # rules for improving code readability
-    "C4",     # rules for enforcing consistent code style
-    "DTZ",    # rules for datetime handling
-    "PTH",    # rules for path handling
-    "LOG",    # rules for logging
-    "S",      # rules for security
-    "C90",    # rules for C90 compatibility
-    "G",      # flake8-logging rules for logging best practices
-    "UP",     # pyupgrade rules for Python version compatibility
-    "RUF",    # Ruff specific rules
-    "ERA001", # Erradicate - commented-out-code
-    "FAST",   # FastAPI specific rules
-    "D200",   # one-line docstring should fit on one line
-    "D205",   # blank line required between summary and description
-    "D212",   # multi-line summary should start at first line
-    "D300",   # use triple double quotes
-    "D301",   # use r""" if backslashes in docstring
-    "D400",   # first line should end with a period
-    "D401",   # first line should be in imperative mood
-    "D403",   # first word of docstring should be capitalized
-    "D405",   # section name should be capitalized
-    "D406",   # section name should end with newline
-    "D407",   # missing dashed underline after section
-    "D408",   # section underline should follow section name
-    "D409",   # section underline should match section name length
-    "D410",   # blank line after section
-    "D411",   # blank line before section
-    "D412",   # no blank lines between section header and content
-    "D413",   # blank line after last section
-    "D414",   # section has no content
-    "D415",   # first line should end with punctuation
-    "D417",   # missing argument descriptions
-    "D418",   # no docstring on @overload
-    "D419",   # empty docstring
-    # botica ruff-selection (BTTOOL002)
-    "ASYNC",   # blocking calls inside async def
-    "A",       # names that shadow builtins
-    "BLE",     # broad except that neither re-raises nor logs
-    "SLOT",    # str/tuple/NamedTuple subclasses without __slots__
-    "PLR0124", # comparison of a name with itself
-    "PLR0133", # comparison of two constants
-    # botica ruff-heavy-imports-in-function (BTTOOL005), until Python 3.15
-    "TID253",
-    # botica docstring-matches-signature (BTDOCS001); preview rules, named in full
-    "DOC102",
-    "DOC202",
-    "DOC403",
+    "E", "F", "B", "SIM", "RET", "C4", "DTZ", "PTH", "LOG", "G", "S", "UP", "RUF", "FAST",
+    "ERA001",
+    "D",
+    # botica ruff-selection, ruff-heavy-imports-in-function, docstring-matches-signature
+    "ASYNC", "A", "BLE", "SLOT", "PLR0124", "PLR0133", "TID253", "DOC102", "DOC202", "DOC403",
 ]
-# DOC102, DOC202 and DOC403 are preview rules. `explicit-preview-rules` keeps every
-# other preview rule off, and `preview` stays in `lint` so the formatter is unchanged.
+# Missing docstrings are not enforced; the docstrings that exist follow the Google convention.
+ignore = ["D1"]
+# The DOC codes are preview rules; only the ones named in full turn on.
 preview = true
 explicit-preview-rules = true
 task-tags = ["TODO", "FIXME", "XXX", "MARK"]
-# `botica lint` suppressions in `# noqa: BTxxx` comments; without this ruff reports RUF102.
+# botica's `# noqa: BTxxx` codes (RUF102 otherwise).
 external = ["BT"]
 
 [tool.ruff.lint.flake8-tidy-imports]
@@ -317,79 +220,34 @@ banned-module-level-imports = ["torch", "tensorflow", "jax", "transformers", "cv
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.ruff.lint.mccabe]
-max-complexity = 10
-
 [tool.ruff.lint.per-file-ignores]
-# Tests assert/lack docstrings, use fixed /tmp paths for deterministic fixtures,
-# and pass dummy tokens (S106) to gated-model settings/adapters.
+# Tests: asserts, fixed /tmp paths and dummy tokens.
 "tests/**" = ["S101", "D", "S108", "S106", "TID253"]
-# The adapters, which exist to use a heavy library, import it at the top.
+# Adapters exist to use a heavy library, so they import it at the top.
 "coro/backends/**" = ["TID253"]
-# FastAPI routes use the idiomatic `= File(...)` / `= Form(...)` / `= Query(...)`
-# default style.
+# FastAPI's `= File(...)` / `= Form(...)` / `= Query(...)` defaults.
 "coro/api/openai/transcriptions.py" = ["FAST002", "B008"]
 "coro/api/deepgram/listen.py" = ["FAST002", "B008"]
-"coro/audio.py" = ["C901"]
-# Best-effort NVML telemetry: failures are intentionally swallowed per-device.
-"coro/bench/gpu.py" = ["S112", "S110", "SIM105"]
-# Parses the AMI benchmark corpus XML/STM (trusted local fixtures).
-"coro/bench/stm.py" = ["S314"]
-# Markdown report tables: header/separator strings exceed the line limit by design.
+# Markdown table rows are longer than a line.
 "coro/bench/report_markdown.py" = ["E501"]
-# Downloads the AMI corpus over http(s) from a fixed mirror.
-"coro/bench/utils/ami_audios_download.py" = ["S310"]
-# Bench/CLI tools use subprocess calls with partial paths (system tools).
-# PTH123/PTH108 — /proc reads use builtins; SIM105 — benchmark exception swallowing is intentional.
-# C901 — _run_rep is naturally complex due to benchmark sampling orchestration.
-"coro/bench/run.py" = [
-    "S603",
-    "S607",
-    "S110",
-    "S108",
-    "PTH123",
-    "SIM105",
-    "C901",
-]
-"coro/bench/cli.py" = ["S108", "DTZ005"]
-# The default --out-dir is a local, non-secret scratch path stamped with local wall time.
-"coro/bench/cli_args.py" = ["S108", "DTZ005"]
-# Mirrors coro/bench/run.py: the sampler's tests must spawn a real process tree
-# (`sh`, and `pgrep` as the reference implementation) to have anything to walk.
-"tests/bench/test_bench_run.py" = ["S603", "S607"]
-# Decodes the bundled public recording with the system ffmpeg by name — the same
-# convention as the clip utilities below, on a fixed local path with no shell.
-"tests/api/deepgram/test_listen_websocket_e2e.py" = ["S607"]
-# Builds a WebM with the system ffmpeg and reads it back with ffprobe, by name:
-# container handling is what is under test, so a mock would only restate it.
-"tests/test_audio_probe.py" = ["S603", "S607"]
-# Asks git for the tracked-file list by name, with no shell and no interpolated
-# input. Reading the index is the point: it is what excludes untracked scratch
-# output and virtualenvs from the call-site scan by construction.
-"coro/bench/server_lifecycle.py" = ["S603", "S607", "S310", "S110"]
-# Clip utilities shell out to the system ffmpeg binary by name.
-"coro/bench/utils/make_ami_clip.py" = ["S603", "S607"]
-"coro/bench/utils/audio_clips.py" = ["S603", "S607"]
-# Fetches public corpora over https from the Hugging Face Parquet index.
-"coro/bench/utils/hf_parquet.py" = ["S310"]
+# Bench tooling runs system tools by name (ffmpeg, pgrep), reads /proc and fetches public corpora.
+"coro/bench/run.py" = ["PTH123", "SIM105"]
+"coro/bench/server_lifecycle.py" = ["S603", "S607", "S310"]
 "coro/bench/transport.py" = ["S310"]
-"coro/bench/orchestrate.py" = [
-    "S310",
-    "S603",
-    "S607",
-    "S110",
-    "SIM105",
-    "UP017",
-]
-# Settings and CLI use 0.0.0.0 intentionally.
+"coro/bench/utils/ami_audios_download.py" = ["S310"]
+"coro/bench/utils/audio_clips.py" = ["S603", "S607"]
+"coro/bench/utils/hf_parquet.py" = ["S310"]
+"coro/bench/utils/make_ami_clip.py" = ["S603", "S607"]
+# Tests of the real tools (pgrep, ffmpeg, ffprobe).
+"tests/bench/test_bench_run.py" = ["S603", "S607"]
+"tests/test_audio_probe.py" = ["S603", "S607"]
+# The server binds 0.0.0.0 by default.
 "coro/settings/server.py" = ["S104"]
-"coro/cli.py" = ["S104"]
 
 
 # MARK: Pyrefly
 [tool.pyrefly]
-# Scope checking to first-party sources. Without this, a bare `pyrefly check`
-# (e.g. from the prek hook or CI) walks the whole tree incl. site-packages.
+# Without it, `pyrefly check` walks site-packages too.
 project-includes = ["coro", "tests"]
 project-excludes = [
     "**/node_modules",
@@ -399,7 +257,7 @@ project-excludes = [
     "**/.uv_cache/**/*",
     # Generated by hatch-vcs at build time.
     "coro/_version.py",
-    # Prototype scripts — excluded from active verification per PRD.
+    # Prototype scripts.
     "custom_server.py",
     "custom_server_chunked.py",
     "run_transcription.py",
@@ -413,13 +271,8 @@ project-excludes = [
 use-ignore-files = false
 disable-project-excludes-heuristics = true
 python-interpreter-path = ".venv/bin/python"
-# onnxruntime_genai is a compiled extension shipping no type stubs; treat its
-# attributes as Any rather than reporting every og.* access as missing.
-# pyannote.audio is an optional, gated diarization backend behind the
-# `diar-pyannote` extra; it is not installed in the default (or CI) env, so
-# treat its lazy import as Any rather than reporting a missing module.
+# No stubs (onnxruntime_genai), or not installed by default (pyannote.audio).
 replace-imports-with-any = ["onnxruntime_genai", "pyannote.audio"]
-# botica pyrefly-strict (BTTOOL003).
 preset = "strict"
 required-version = ">=1.4,<2"
 
@@ -437,15 +290,13 @@ implicit-any-parameter = false
 
 # MARK: Pytest
 [tool.pytest.ini_options]
-# CES-125. pytest 9.0 ignores --strict-markers and --strict-config in addopts (pytest#14442), and
-# pytest 8 does not know the strict_* keys: minversion stops it instead.
+# pytest 8 does not know the strict_* keys; minversion stops it.
 minversion = "9.0"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 # Makes the `support` helper package importable from every directory of the tree.
 pythonpath = ["tests"]
-# botica test-no-network (BTTEST010): tests get no network unless marked
-# integration/e2e (see tests/conftest.py) or allow_hosts/enable_socket.
+# Sockets are off unless a test is integration/e2e (tests/conftest.py) or allow_hosts.
 addopts = ["-ra", "--disable-socket", "--allow-unix-socket"]
 strict_config = true
 strict_markers = true
@@ -455,7 +306,7 @@ empty_parameter_set_mark = "fail_at_collect"
 required_plugins = ["pytest-asyncio", "pytest-socket", "pytest-timeout"]
 # Seconds for each test; a slower test takes @pytest.mark.timeout(N).
 timeout = 60
-# Seconds for the whole run. pytest-timeout checks it after each test and stops the run there.
+# Seconds for the whole run.
 session_timeout = 900
 markers = [
   "unit: fast isolated tests, no external deps",
@@ -465,19 +316,11 @@ markers = [
 
 
 # MARK: Falsegreen
-# False-green test scanner: flags tests that pass without protecting anything.
-# Exit contract is 0 clean / 10 low-only / 20 high. The prek hook runs it
-# against .falsegreen-baseline.json, so the findings that already existed when
-# the tool was adopted are recorded debt and only NEW findings fail the build.
-# Regenerate the baseline deliberately, never to silence a fresh finding:
-#   uvx falsegreen==0.9.2 tests/ --write-baseline .falsegreen-baseline.json
+# .falsegreen-baseline.json holds the findings that predate adoption; only new ones fail.
+# Never regenerate it to silence a new finding.
 [tool.falsegreen]
 
-# The diagnostic tier is off by default upstream; opt in only where the signal
-# is worth the noise. "info" findings never affect the exit code.
-# D1 (Assertion Roulette, 182 hits) and D5 (Inline Setup Excess, 51 hits) are
-# deliberately left off: both are readability nits rather than ways a test stays
-# green while broken, and at that volume they bury the findings that matter.
+# D1 and D5 stay off: readability nits that would bury the findings that matter.
 [tool.falsegreen.severity]
 D3 = "info" # Duplicate Assert
 D6 = "info" # Debug Print left in a test
@@ -485,9 +328,6 @@ M2 = "info" # Long Test Method
 
 
 # MARK: deptry
-# CES-109: every import is a declared dependency, and every dependency is imported.
-# Run from the project environment (`uv run --with deptry`), so the import names of the
-# installed distributions resolve.
 [tool.deptry]
 known_first_party = ["coro"]
 extend_exclude = [
@@ -506,13 +346,8 @@ extend_exclude = [
 "pyannote.audio" = "pyannote"
 
 [tool.deptry.per_rule_ignores]
-# Declared but never imported, on purpose:
-# - torchaudio: pinned to the torch CPU index so pyannote's native lib matches torch.
-# - python-multipart: FastAPI needs it for File()/Form() uploads.
-# - websockets: uvicorn's WebSocket implementation (/v1/listen).
-# - numba, lightning: version floors/pins for nemo-toolkit's resolution.
-# - onnxruntime-gpu, onnxruntime-genai-cuda, nvidia-*: runtimes loaded under their
-#   CPU names (onnxruntime, onnxruntime_genai) or as shared libraries.
+# Declared, never imported: torchaudio (torch's index), python-multipart (FastAPI forms),
+# websockets (uvicorn), numba and lightning (resolver pins), GPU runtimes and libraries.
 DEP002 = [
     "torchaudio",
     "python-multipart",
@@ -524,6 +359,5 @@ DEP002 = [
     "nvidia-cublas-cu12",
     "nvidia-cudnn-cu13",
 ]
-# coro.bench is optional tooling installed with `--group bench`; these imports are lazy
-# and fail with an install hint.
+# Lazy imports of the optional bench group.
 DEP004 = ["meeteval", "lingua", "pynvml", "kaldialign", "regex"]

@@ -52,7 +52,6 @@ rev = "v1.5.0"
 hooks = [{ id = "betterleaks", priority = 0 }]
 
 # MARK: agents-conventional-commits
-# CES-75. Merge, revert and fixup subjects are exempt.
 [[repos]]
 repo = "local"
 
@@ -64,7 +63,6 @@ language = "system"
 stages = ["commit-msg"]
 
 # MARK: no-ai-coauthorship
-# CES-91. `--no-verify` skips this hook; `commit-policy.yml` checks the commits again in CI.
 [[repos.hooks]]
 id = "no-ai-coauthorship"
 name = "no-ai-coauthorship (commit-msg)"
@@ -73,9 +71,7 @@ language = "system"
 stages = ["commit-msg"]
 
 # MARK: jscpd
-# CES-118. `--threshold` is the gate; do not add `--exit-code`, which fails on any clone.
-# Lockfiles are tracked, so they are ignored by name.
-# Set --threshold just above the duplicated-lines percentage of `npx --yes jscpd@5.4.2 .` in the repo.
+# The threshold sits just above the repository's 2.96% at adoption.
 [[repos.hooks]]
 id = "jscpd"
 name = "jscpd (copy-paste duplication)"
@@ -85,31 +81,22 @@ pass_filenames = false
 priority = 2
 
 # MARK: botica
-# The hooks read the selection from `botica.toml`, as the editor does. The mirror
-# installs botica from PyPI at the release `rev` names.
 [[repos]]
 repo = "https://github.com/collectiveai-team/botica-pre-commit"
 rev = "v0.18.0"
 
-# The rules that look at one file, run on the files of the commit.
-# `--staged`: only the findings on the lines a commit adds (the findings that predate the
-# adoption are debt, tracked in .scratch/botica-0.18-adoption/PLAN.md). CI lints the pull
-# request with `--diff` instead, since `prek run --all-files` stages nothing.
+# Only the lines a commit adds fail; CI runs `--diff` instead, as `--all-files` stages nothing.
 [[repos.hooks]]
 id = "botica"
 args = ["--staged"]
 priority = 2
 
-# The rules that read the whole project (import-layers, settings-env-schema, external-config), run
-# once per commit with no file names.
 [[repos.hooks]]
 id = "botica-project"
 args = ["--staged"]
 priority = 2
 
-# The block of AGENTS.md and the rubric of abide, against the catalog and the configuration. After a
-# change to the selection, or a new file, run `botica rules export --format agents-md --output
-# AGENTS.md` and `botica rules export --format abide`.
+# Fix with `botica rules export --format agents-md --output AGENTS.md` and `--format abide`.
 [[repos.hooks]]
 id = "botica-agents-md"
 priority = 2
@@ -119,9 +106,7 @@ id = "botica-rubric"
 priority = 2
 
 # MARK: hadolint
-# CES-114. Lints every file that prek tags `dockerfile`, in any folder, and does nothing in a repo
-# without one. The mirror installs the release binary of hadolint that `rev` names, with no Docker.
-# DL3008 is ignored because Debian and Ubuntu drop old package versions from their archives:
+# DL3008: Debian and Ubuntu drop old package versions from their archives,
 # https://github.com/hadolint/hadolint/issues/884
 [[repos]]
 repo = "https://github.com/AleksaC/hadolint-py"
@@ -129,10 +114,6 @@ rev = "v2.15.1"
 hooks = [{ id = "hadolint", args = ["--failure-threshold=warning", "--ignore=DL3008"], priority = 2 }]
 
 # MARK: docker-compose-config
-# CES-114. Checks each Compose file against the schema of Compose, with no daemon. It runs only on
-# files named compose*.y*ml or docker-compose*.y*ml, so a repo without one needs no Docker. The two
-# flags keep a missing .env and unset variables from failing it. `docker compose config` takes
-# service names as arguments, so the entry passes each file with `--file`.
 [[repos]]
 repo = "local"
 
@@ -186,8 +167,7 @@ pass_filenames = false
 priority = 2
 
 # MARK: deptry
-# CES-109. Inside the project environment (not `uvx deptry`), so deptry maps import names
-# to the installed distributions. Configuration: [tool.deptry] in pyproject.toml.
+# In the project's venv, not `uvx`: deptry maps import names through the installed packages.
 [[repos.hooks]]
 id = "deptry"
 name = "deptry (unused/missing/misplaced dependencies)"

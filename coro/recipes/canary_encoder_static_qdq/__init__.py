@@ -193,7 +193,6 @@ def _quantize(
         out_dir: Directory to write encoder-model.<selector>.onnx into.
 
     """
-
     out_dir.mkdir(parents=True, exist_ok=True)
     preprocessed = out_dir / "encoder-model.preprocessed.onnx"
     static_out = out_dir / f"encoder-model.{ACCEPTED_SELECTOR}.onnx"
