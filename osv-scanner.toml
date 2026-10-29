@@ -1,0 +1,19 @@
+[[IgnoredVulns]]
+id = "GHSA-wf6j-7hvr-gr93"
+ignoreUntil = 2026-11-30
+reason = "hydra-core: fixed in 1.3.8, not on PyPI yet (latest stable 1.3.7; 1.4.0rc3 is a pre-release). coro reaches hydra only through NeMo loading NVIDIA's own checkpoints. Bump hydra-core and drop this entry when 1.3.8 ships."
+
+# Both are in LightningModule.load_from_checkpoint. lightning stays at 2.4.0 because
+# nemo-toolkit 3.0.0 caps it there, and on 2.6 the nv-one-logger trainer that NeMo imports
+# fails (OneLoggerPTLTrainer.save_checkpoint signature). coro loads models with NeMo's
+# restore_from/from_pretrained, which do not call load_from_checkpoint; the optional
+# pyannote backend loads pyannote's own Hub checkpoints.
+[[IgnoredVulns]]
+id = "PYSEC-2026-3624"
+ignoreUntil = 2027-01-31
+reason = "lightning 2.4.0 load_from_checkpoint _instantiator RCE; fix (2.6.6) breaks NeMo 3.0.0. Not on coro's load path. Re-check on each nemo-toolkit release."
+
+[[IgnoredVulns]]
+id = "PYSEC-2026-3972"
+ignoreUntil = 2027-01-31
+reason = "lightning load_from_checkpoint unpickles without weights_only; no fixed release. Not on coro's load path. Re-check on each nemo-toolkit release."
