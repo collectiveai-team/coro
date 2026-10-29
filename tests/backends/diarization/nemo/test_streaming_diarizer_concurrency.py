@@ -97,12 +97,11 @@ def _run_overlapping_requests() -> _FakeSortformerModel:
             assert a_returned.wait(timeout=5), "request A never returned"
 
     model = _FakeSortformerModel(_hook)
-    factory = NemoStreamingDiarizerFactory(model, tier=TIER)
+    factory = NemoStreamingDiarizerFactory(model, tier=TIER, preprocessor=_preprocessor)
     pcm = _one_chunk_of_pcm()
 
     def _request():
         diarizer = factory()
-        diarizer._preprocessor = _preprocessor
         diarizer.ingest_pcm_chunk(pcm)
         if threading.current_thread().name == "A":
             a_returned.set()

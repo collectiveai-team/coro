@@ -67,10 +67,33 @@ def reference(adapter, pcm, tmp_path_factory):
     return _diarize_reference(adapter.model, pcm, tmp_path_factory.mktemp("reference"))
 
 
+class _ActivityRecorder:
+    """The real Sortformer, keeping each activity matrix its ``forward`` returns."""
+
+    def __init__(self, model):
+        self._model = model
+        self.activity = []
+
+    @property
+    def device(self):
+        return self._model.device
+
+    def forward(self, *, audio_signal, audio_signal_length):
+        preds = self._model.forward(
+            audio_signal=audio_signal, audio_signal_length=audio_signal_length
+        )
+        self.activity.append(preds.detach().cpu())
+        return preds
+
+
 def test_forward_activity_matrix_matches_diarize(adapter, pcm, reference):
-    """Same activity matrix as ``diarize()``."""
+    """Same activity matrix as ``diarize()``, as the adapter's model call returns it."""
+    from coro.backends.diarization.nemo.diarization import NemoDiarizationAdapter
+
     _, ref_preds = reference
-    direct_preds = adapter._predict(pcm)
+    recorder = _ActivityRecorder(adapter.model)
+    asyncio.run(NemoDiarizationAdapter(recorder).diarize_pcm(pcm))
+    (direct_preds,) = recorder.activity
 
     assert direct_preds.shape == ref_preds.shape
     assert (direct_preds - ref_preds.cpu()).abs().max().item() <= 1e-5

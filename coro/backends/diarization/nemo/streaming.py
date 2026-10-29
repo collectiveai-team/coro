@@ -59,7 +59,13 @@ class NemoStreamingDiarizerFactory:
         tier: str = "very-high",
         postprocessing_yaml: str | None = None,
         max_speakers: int = DEFAULT_MAX_SPEAKERS,
+        preprocessor: MelPreprocessor | None = None,
     ) -> None:
+        """Bind ``model`` to ``tier``.
+
+        ``preprocessor`` is shared by every diarizer of the factory; None gives
+        each diarizer NeMo's own mel preprocessor, built on first use.
+        """
         self._tier = tier
         self._tier_params = get_latency_tier_params(tier)
         # Every request of this factory shares one tier-bound view; building it
@@ -68,6 +74,7 @@ class NemoStreamingDiarizerFactory:
         self._model.sortformer_modules._check_streaming_parameters()
         self._postprocessing_yaml = postprocessing_yaml
         self._max_speakers = max_speakers
+        self._preprocessor = preprocessor
         self._subsampling_factor = getattr(model.sortformer_modules, "subsampling_factor", 8)
         self._n_spk = getattr(model.sortformer_modules, "n_spk", 4)
 
@@ -78,6 +85,7 @@ class NemoStreamingDiarizerFactory:
             chunk_right_context=self._tier_params.chunk_right_context,
             subsampling_factor=self._subsampling_factor,
             n_spk=self._n_spk,
+            preprocessor=self._preprocessor,
             postprocessing_yaml=self._postprocessing_yaml,
             max_speakers=self._max_speakers,
         )

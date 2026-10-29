@@ -2,7 +2,8 @@
 
 Covers :func:`coro.backends.asr.nemo_checkpoint.resolve_frame_conversion_factors`
 and :func:`coro.backends.asr.nemo.build_nemo_asr_adapter`'s checkpoint/device
-wiring. ``nemo`` and ``torch`` are replaced by module doubles; no NeMo
+wiring. The ``nemo`` and ``torch`` modules are replaced by stand-ins whose
+loaders return the in-memory checkpoint of ``support.fake_nemo_asr``; no NeMo
 checkpoint is downloaded.
 """
 
@@ -10,20 +11,15 @@ from __future__ import annotations
 
 import sys
 from types import SimpleNamespace
-from unittest.mock import patch
+
+import pytest
+from support.fake_nemo_asr import FakeNemoPromptModel
 
 from coro.backends.asr.nemo import NemoASRAdapter, build_nemo_asr_adapter
 from coro.backends.asr.nemo_checkpoint import resolve_frame_conversion_factors
 
 _PROMPT_DICTIONARY = {"es-US": 0, "es-ES": 1, "en-US": 2}
-
-# SentencePiece pieces for the fake hypothesis below.
-_PIECES = {11: "▁hola", 12: ",", 13: "▁mundo", 14: "."}
-
-
-class _FakeTokenizer:
-    def ids_to_tokens(self, ids):
-        return [_PIECES[i] for i in ids]
+_CHECKPOINT = "nvidia/parakeet-rnnt-1.1b-prompt"
 
 
 class TestResolveFrameConversionFactors:
@@ -55,74 +51,65 @@ class TestResolveFrameConversionFactors:
         assert resolve_frame_conversion_factors(model) is None
 
 
-def _build_fake_asr_model(fake_model):
-    """Wire a fake NeMo model behind the module-patching build_nemo_asr_adapter needs."""
-    fake_model.eval = lambda: fake_model
-    fake_model.to = lambda device: fake_model
-    asr_mod = SimpleNamespace(
-        models=SimpleNamespace(
-            ASRModel=SimpleNamespace(
-                from_pretrained=lambda name: fake_model,
-                restore_from=lambda path: fake_model,
+@pytest.fixture()
+def load_checkpoint(monkeypatch):
+    """Make ``build_nemo_asr_adapter`` load ``model`` for any checkpoint name, on a CPU host."""
+
+    def _install(model: FakeNemoPromptModel) -> None:
+        asr_mod = SimpleNamespace(
+            models=SimpleNamespace(
+                ASRModel=SimpleNamespace(
+                    from_pretrained=lambda name: model,
+                    restore_from=lambda path: model,
+                )
             )
         )
-    )
-    coll_mod = SimpleNamespace(asr=asr_mod)
-    nemo_mod = SimpleNamespace(collections=coll_mod)
-    torch_mod = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
-    return patch.dict(
-        sys.modules,
-        {
-            "nemo": nemo_mod,
-            "nemo.collections": coll_mod,
-            "nemo.collections.asr": asr_mod,
-            "torch": torch_mod,
-        },
-    )
+        coll_mod = SimpleNamespace(asr=asr_mod)
+        torch_mod = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
+        monkeypatch.setitem(sys.modules, "nemo", SimpleNamespace(collections=coll_mod))
+        monkeypatch.setitem(sys.modules, "nemo.collections", coll_mod)
+        monkeypatch.setitem(sys.modules, "nemo.collections.asr", asr_mod)
+        monkeypatch.setitem(sys.modules, "torch", torch_mod)
+
+    return _install
+
+
+def _cfg_with_prompt_dictionary(**fields):
+    defaults = {"model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}}
+    return SimpleNamespace(get=lambda key, default=None: defaults.get(key, default), **fields)
 
 
 class TestBuildNemoAsrAdapter:
-    def test_builds_adapter_with_checkpoint_metadata(self):
-        # model.tokenizer is used directly (not unwrapped via a `.tokenizer`
-        # inner attribute) -- see the module docstring's note on why
-        # unwrapping reaches into an implementation-specific inner object
-        # lacking `ids_to_tokens` on a real SentencePieceTokenizer checkpoint.
-        fake_model = SimpleNamespace(
-            cfg={"model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}},
-            tokenizer=_FakeTokenizer(),
-        )
+    async def test_builds_a_serialised_adapter_that_forces_the_checkpoint_languages(
+        self, load_checkpoint
+    ):
+        """The adapter decodes with the checkpoint's own ``model.tokenizer``:
+        on a real SentencePieceTokenizer, ``model.tokenizer.tokenizer`` has no
+        ``ids_to_tokens`` (see build_nemo_asr_adapter)."""
+        load_checkpoint(FakeNemoPromptModel(cfg=_cfg_with_prompt_dictionary()))
 
-        with _build_fake_asr_model(fake_model):
-            adapter = build_nemo_asr_adapter("nvidia/parakeet-rnnt-1.1b-prompt", device="cpu")
+        adapter = build_nemo_asr_adapter(_CHECKPOINT, device="cpu")
+        tokens = await adapter.transcribe_pcm(b"\x00\x00" * 16000, language="en")
 
         assert isinstance(adapter, NemoASRAdapter)
         assert adapter.admission.max_concurrency == 1
-        assert adapter._tokenizer is fake_model.tokenizer
+        assert [t.text for t in tokens] == [" hello", " world"]
 
-    def test_resolves_frame_conversion_when_cfg_and_encoder_expose_it(self):
-        fake_model = SimpleNamespace(
-            cfg=SimpleNamespace(
-                get=lambda key, default=None: {
-                    "model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}
-                }.get(key, default),
-                preprocessor=SimpleNamespace(window_stride=0.01),
-            ),
-            encoder=SimpleNamespace(subsampling_factor=8),
-            tokenizer=_FakeTokenizer(),
+    def test_resolves_frame_conversion_when_cfg_and_encoder_expose_it(self, load_checkpoint):
+        load_checkpoint(
+            FakeNemoPromptModel(
+                cfg=_cfg_with_prompt_dictionary(preprocessor=SimpleNamespace(window_stride=0.01)),
+                encoder=SimpleNamespace(subsampling_factor=8),
+            )
         )
 
-        with _build_fake_asr_model(fake_model):
-            adapter = build_nemo_asr_adapter("nvidia/parakeet-rnnt-1.1b-prompt", device="cpu")
+        adapter = build_nemo_asr_adapter(_CHECKPOINT, device="cpu")
 
         assert adapter.frame_conversion == (0.01, 8)
 
-    def test_frame_conversion_is_none_when_checkpoint_lacks_the_attributes(self):
-        fake_model = SimpleNamespace(
-            cfg={"model_defaults": {"prompt_dictionary": dict(_PROMPT_DICTIONARY)}},
-            tokenizer=_FakeTokenizer(),
-        )
+    def test_frame_conversion_is_none_when_checkpoint_lacks_the_attributes(self, load_checkpoint):
+        load_checkpoint(FakeNemoPromptModel(cfg=_cfg_with_prompt_dictionary()))
 
-        with _build_fake_asr_model(fake_model):
-            adapter = build_nemo_asr_adapter("nvidia/parakeet-rnnt-1.1b-prompt", device="cpu")
+        adapter = build_nemo_asr_adapter(_CHECKPOINT, device="cpu")
 
         assert adapter.frame_conversion is None
