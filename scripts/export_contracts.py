@@ -11,6 +11,10 @@ Usage::
 
 ``--openapi-only`` exists for the breaking-change gate, which re-runs this
 against a base ref that predates the AsyncAPI document.
+
+The gate runs this copy of the script against the base ref's source, so it
+imports from coro only the modules that build the documents, which every ref
+has; the command line uses Cyclopts directly instead of ``coro.cli_support``.
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from coro.cli_support import invoke, new_app, out_console
+import cyclopts
 
 
 def export_openapi(output_dir: Path) -> Path:
@@ -41,7 +45,13 @@ def export_asyncapi(output_dir: Path) -> Path:
     return target
 
 
-app = new_app("export_contracts", help=__doc__)
+app = cyclopts.App(
+    name="export_contracts",
+    help=__doc__,
+    version_flags=(),
+    help_format="plaintext",
+    default_parameter=cyclopts.Parameter(negative=()),
+)
 
 
 @app.default
@@ -59,12 +69,12 @@ def _export(output_dir: Path, /, *, openapi_only: bool = False) -> None:
         written.append(export_asyncapi(output_dir))
 
     for path in written:
-        out_console.out(f"exported {path} ({path.stat().st_size} bytes)")
+        sys.stdout.write(f"exported {path} ({path.stat().st_size} bytes)\n")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Export the contracts into the requested directory."""
-    invoke(app, argv)
+    app(list(argv) if argv is not None else sys.argv[1:], exit_on_error=True)
     return 0
 
 
