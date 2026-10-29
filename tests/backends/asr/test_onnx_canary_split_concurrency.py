@@ -9,10 +9,9 @@ ONNX graphs (no mocks anywhere on the K/V path): two *different* windows are
 transcribed sequentially, then concurrently through the same adapter, and each
 concurrent result must equal its sequential result.
 
-Opt-in because it loads the full model from local artifacts (several hundred
-MB, seconds of load time) -- same convention as
-``test_asr_determinism.py``. Skips unless both the env var is set and the
-artifacts/audio exist.
+Opt-in because it loads the default model, ``collectiveai/canary-1b-v2-onnx-split-int8``
+from the Hugging Face Hub (about 1.29 GB on the first run, seconds of load
+time) -- the ``real_model`` marker, same as ``test_asr_determinism.py``.
 
 To run:
 
@@ -29,38 +28,17 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_ARTIFACTS = _REPO_ROOT / ".tmp" / "onnx_export" / "canary_split"
-_AUDIO = (
-    _REPO_ROOT
-    / ".tmp"
-    / "bench-runs"
-    / "spanish-corpora"
-    / "mtedx-longform"
-    / "mtedx-HLIJkmy3vy8.wav"
-)
-
-_ARTIFACTS_PRESENT = (
-    (_ARTIFACTS / "encoder-model.static_qdq_v4_pct_excl.onnx").is_file()
-    and (_ARTIFACTS / "decoder_step.dynamic_v1_quint8.onnx").is_file()
-    and _AUDIO.is_file()
-)
-skip_without_artifacts = pytest.mark.skipif(
-    not _ARTIFACTS_PRESENT,
-    reason=(
-        "Skipping real-model concurrency check: the .tmp/onnx_export/canary_split "
-        "artifacts and the mtedx wav must be present."
-    ),
-)
+_MODEL = "collectiveai/canary-1b-v2-onnx-split-int8"
+_AUDIO = Path(__file__).resolve().parents[3] / "coro" / "bench" / "data" / "jfk.wav"
 
 _WINDOW_SECONDS = 2.5
 _SAMPLE_RATE = 16000
-# Two different speech windows, far enough apart that they never share audio.
-_WINDOW_STARTS = (60.0, 120.0)
+# Two different speech windows of the 11 s clip that never share audio.
+_WINDOW_STARTS = (1.0, 6.5)
 
 
 def _window_pcm(start_seconds: float) -> bytes:
-    """Carve one s16le mono 16 kHz window from the mtedx wav (no ffmpeg needed)."""
+    """Carve one s16le mono 16 kHz window from the wav (no ffmpeg needed)."""
     frames = int(_WINDOW_SECONDS * _SAMPLE_RATE)
     with wave.open(str(_AUDIO)) as wav:
         wav.setpos(int(start_seconds * _SAMPLE_RATE))
@@ -73,7 +51,7 @@ def adapter():
     from coro.backends.asr.onnx_canary_split import build_onnx_canary_split_adapter
 
     built = build_onnx_canary_split_adapter(
-        str(_ARTIFACTS),
+        _MODEL,
         device="cpu",
         quantization="static_qdq_v4_pct_excl",
         decoder_quantization="dynamic_v1_quint8",
@@ -83,18 +61,17 @@ def adapter():
 
 
 @pytest.mark.real_model
-@skip_without_artifacts
 async def test_concurrent_windows_match_sequential_results(adapter):
     """Two overlapping decodes on one shared instance each keep their own K/V."""
     windows = [_window_pcm(start) for start in _WINDOW_STARTS]
 
     sequential = [
-        [asdict(t) for t in await adapter.transcribe_pcm(window, language="es")]
+        [asdict(t) for t in await adapter.transcribe_pcm(window, language="en")]
         for window in windows
     ]
     concurrent_pair, concurrent_solo = await asyncio.gather(
-        adapter.transcribe_pcm(windows[0], language="es"),
-        adapter.transcribe_pcm(windows[1], language="es"),
+        adapter.transcribe_pcm(windows[0], language="en"),
+        adapter.transcribe_pcm(windows[1], language="en"),
     )
 
     assert [asdict(t) for t in concurrent_pair] == sequential[0]
