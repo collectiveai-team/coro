@@ -47,22 +47,35 @@ def poll_health(
     """
     deadline = time.monotonic() + timeout
     while True:
-        # Not listening yet, mid-startup, or answering with a non-JSON page:
-        # all mean "not ready", and the loop polls again.
-        with contextlib.suppress(OSError, ValueError, http.client.HTTPException):
-            data = _get_health_json(base_url)
-            if data.get("ready") and data.get("warmup_ready"):
-                return data
-        if proc is not None and proc.poll() is not None:
-            raise RuntimeError(
-                f"Bench-managed server at {base_url} exited with code {proc.returncode} "
-                "before becoming warmup-ready."
-            )
-        if time.monotonic() >= deadline:
-            raise TimeoutError(
-                f"Server at {base_url} did not become warmup-ready within {timeout}s"
-            )
+        health = _ready_health(base_url)
+        if health is not None:
+            return health
+        _raise_if_unreachable(base_url, proc=proc, deadline=deadline, timeout=timeout)
         time.sleep(interval)
+
+
+def _ready_health(base_url: str) -> HealthResponse | None:
+    """Return the ``/health`` body when the server is ready and warmed up, else None."""
+    # Not listening yet, mid-startup, or answering with a non-JSON page: all mean
+    # "not ready", and the caller polls again.
+    with contextlib.suppress(OSError, ValueError, http.client.HTTPException):
+        health = _get_health_json(base_url)
+        if health.get("ready") and health.get("warmup_ready"):
+            return health
+    return None
+
+
+def _raise_if_unreachable(
+    base_url: str, *, proc: subprocess.Popen[bytes] | None, deadline: float, timeout: float
+) -> None:
+    """Raise when the managed server has exited or the deadline has passed."""
+    if proc is not None and proc.poll() is not None:
+        raise RuntimeError(
+            f"Bench-managed server at {base_url} exited with code {proc.returncode} "
+            "before becoming warmup-ready."
+        )
+    if time.monotonic() >= deadline:
+        raise TimeoutError(f"Server at {base_url} did not become warmup-ready within {timeout}s")
 
 
 class BenchAttachedServer:

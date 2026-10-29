@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +45,34 @@ def _extract(
         out_dir: Directory to write prompt_kernel_cache.npz/.json into.
 
     """
+    cache = read_kernel_cache(checkpoint)
+    cache_npz, cache_json = write_kernel_cache(cache, out_dir)
+    out_console.out(f"cached weights -> {cache_npz}")
+    out_console.out(f"cached meta -> {cache_json}")
+    out_console.out("prompt_dictionary:", cache.prompt_dictionary)
+    out_console.out("blank_id:", cache.blank_id, "vocab_size:", cache.vocab_size)
+
+
+@dataclass(frozen=True)
+class KernelCache:
+    """The prompt_kernel weights of a checkpoint and the metadata the backend needs with them."""
+
+    weights: Mapping[str, np.ndarray]
+    vocab_size: int
+    blank_id: int
+    prompt_dictionary: Mapping[str, int]
+
+
+def read_kernel_cache(checkpoint: Path) -> KernelCache:
+    """Load a NeMo checkpoint on CPU and read its prompt_kernel weights and metadata.
+
+    Args:
+        checkpoint: Path to a local parakeet-rnnt-1.1b-multilingual-prompt.nemo checkpoint.
+
+    Returns:
+        The weights and metadata to cache.
+
+    """
     import nemo.collections.asr as nemo_asr
     import torch
 
@@ -53,33 +82,38 @@ def _extract(
         str(checkpoint), map_location=torch.device("cpu")
     ).eval()
     log.info("loaded checkpoint", seconds=round(time.time() - t0, 1))
+    return KernelCache(
+        weights={
+            name: param.detach().numpy() for name, param in model.prompt_kernel.state_dict().items()
+        },
+        vocab_size=model.tokenizer.vocab_size,
+        blank_id=model.joint.num_classes_with_blank - 1,
+        prompt_dictionary=dict(model.cfg.model_defaults.get("prompt_dictionary") or {}),
+    )
 
-    tokenizer = model.tokenizer
-    vocab_size = tokenizer.vocab_size
-    blank_id = model.joint.num_classes_with_blank - 1
-    prompt_dictionary = dict(model.cfg.model_defaults.get("prompt_dictionary") or {})
-    weights = {
-        name: param.detach().numpy() for name, param in model.prompt_kernel.state_dict().items()
-    }
 
+def write_kernel_cache(cache: KernelCache, out_dir: Path) -> tuple[Path, Path]:
+    """Write the weights to prompt_kernel_cache.npz and the metadata to its .json.
+
+    Args:
+        cache: The weights and metadata to write.
+        out_dir: Directory to write into.
+
+    Returns:
+        The paths of the .npz and the .json.
+
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     cache_npz = out_dir / "prompt_kernel_cache.npz"
     cache_json = out_dir / "prompt_kernel_cache.json"
-    np.savez(cache_npz, **weights)
-    cache_json.write_text(
-        json.dumps(
-            {
-                "vocab_size": vocab_size,
-                "blank_id": blank_id,
-                "prompt_dictionary": prompt_dictionary,
-            },
-            indent=2,
-        )
-    )
-    out_console.out(f"cached weights -> {cache_npz}")
-    out_console.out(f"cached meta -> {cache_json}")
-    out_console.out("prompt_dictionary:", prompt_dictionary)
-    out_console.out("blank_id:", blank_id, "vocab_size:", vocab_size)
+    np.savez(cache_npz, allow_pickle=False, **cache.weights)
+    meta = {
+        "vocab_size": cache.vocab_size,
+        "blank_id": cache.blank_id,
+        "prompt_dictionary": dict(cache.prompt_dictionary),
+    }
+    cache_json.write_text(json.dumps(meta, indent=2))
+    return cache_npz, cache_json
 
 
 def main(argv: Sequence[str] | None = None) -> None:
