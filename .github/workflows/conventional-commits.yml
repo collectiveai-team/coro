@@ -29,7 +29,12 @@ jobs:
           version: "0.13.3"
           enable-cache: false
 
+      - name: Read botica's version from uv.lock
+        run: >-
+          echo "BOTICA=$(uv export --frozen --no-hashes --no-header --no-annotate
+          --only-group botica | grep -m1 '^botica==')" >> "$GITHUB_ENV"
+
       - name: Validate Conventional Commits format
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
-        run: uvx botica@0.18.0 lint --select conventional-commits --pr-title="$PR_TITLE"
+        run: uvx --from "$BOTICA" botica lint --select conventional-commits --pr-title="$PR_TITLE"

@@ -42,12 +42,17 @@ jobs:
           version: "0.13.3"
           enable-cache: false
 
+      - name: Read botica's version from uv.lock
+        run: >-
+          echo "BOTICA=$(uv export --frozen --no-hashes --no-header --no-annotate
+          --only-group botica | grep -m1 '^botica==')" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
 
       - name: Check the rubric
-        run: uvx botica@0.18.0 rules export --format abide --check
+        run: uvx --from "$BOTICA" botica rules export --format abide --check
 
       - name: Judge the diff
         run: |
@@ -65,7 +70,7 @@ jobs:
             npx --yes @coldtea/abide@0.0.11 check --json --diff "$RUNNER_TEMP/abide/pr.diff" \
               > "$RUNNER_TEMP/abide/abide.json" || status=$?
             # abide exits with 1 when a verdict is in the band act; botica decides.
-            if [ "$status" -le 1 ] && uvx botica@0.18.0 lint --judged "$RUNNER_TEMP/abide/abide.json" \
+            if [ "$status" -le 1 ] && uvx --from "$BOTICA" botica lint --judged "$RUNNER_TEMP/abide/abide.json" \
               --fail-on warning > /dev/null 2>&1; then
               break
             fi
@@ -80,11 +85,11 @@ jobs:
           {
             echo "## Judgment rules"
             echo
-            uvx botica@0.18.0 lint --judged "$RUNNER_TEMP/abide/abide.json" --output-format markdown \
+            uvx --from "$BOTICA" botica lint --judged "$RUNNER_TEMP/abide/abide.json" --output-format markdown \
               --exit-zero
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail on the findings
         run: |
-          uvx botica@0.18.0 lint --judged "$RUNNER_TEMP/abide/abide.json" --output-format github \
+          uvx --from "$BOTICA" botica lint --judged "$RUNNER_TEMP/abide/abide.json" --output-format github \
             --fail-on warning

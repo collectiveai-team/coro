@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "compiledAt": "2026-10-29T00:10:22Z",
+  "compiledAt": "2026-10-29T01:12:44Z",
   "compiledBy": "botica 0.18.0",
   "manual": true,
   "sources": [
@@ -17,16 +17,6 @@
         "line": 142
       },
       "scope": [
-        ".github/**/*.js",
-        ".github/**/*.jsx",
-        ".github/**/*.mjs",
-        ".github/**/*.cjs",
-        ".github/**/*.py",
-        ".github/**/*.pyi",
-        ".github/**/*.ts",
-        ".github/**/*.tsx",
-        ".github/**/*.mts",
-        ".github/**/*.cts",
         "coro/**/*.js",
         "coro/**/*.jsx",
         "coro/**/*.mjs",
@@ -234,7 +224,6 @@
         ".devcontainer/docker-compose.yml",
         ".github/dependabot.yml",
         ".github/zizmor.yml",
-        ".github/scripts/**",
         ".github/workflows/**",
         "coro/__init__.py",
         "coro/app.py",
@@ -342,7 +331,6 @@
         "README.md",
         ".github/pull_request_template.md",
         ".github/ISSUE_TEMPLATE/**",
-        ".github/scripts/**",
         "coro/__init__.py",
         "coro/app.py",
         "coro/audio.py",

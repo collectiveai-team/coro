@@ -31,6 +31,11 @@ jobs:
           version: "0.13.3"
           enable-cache: false
 
+      - name: Read botica's version from uv.lock
+        run: >-
+          echo "BOTICA=$(uv export --frozen --no-hashes --no-header --no-annotate
+          --only-group botica | grep -m1 '^botica==')" >> "$GITHUB_ENV"
+
       - name: Check commit messages
         env:
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
@@ -41,4 +46,4 @@ jobs:
           if [ -z "${BASE_SHA//0/}" ]; then
             range="$HEAD_SHA"
           fi
-          uvx botica@0.18.0 lint --select no-ai-coauthorship --commits "$range"
+          uvx --from "$BOTICA" botica lint --select no-ai-coauthorship --commits "$range"

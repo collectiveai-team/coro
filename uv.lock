@@ -32,6 +32,9 @@ conflicts = [[
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P7D"
 
+[options.exclude-newer-package]
+botica = false
+
 [[manifest.dependency-metadata]]
 name = "faster-whisper"
 requires-dist = ["ctranslate2>=4.0,<5", "huggingface-hub>=0.21", "tokenizers>=0.13,<1", "av>=11", "tqdm"]
@@ -227,6 +230,20 @@ wheels = [
 ]
 
 [[package]]
+name = "botica"
+version = "0.18.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/1c/5e94c40c5c0e36056d447be2edac3986e3f0ec053a902b43b5057172dcd6/botica-0.18.0-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:2c26fb7f953e685e99a13cda1ef920d88fbd3cd0b164ca41415392da0e4ed7f5", size = 4784565, upload-time = "2026-10-28T05:26:26.966Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/37/5c256a9bf8125581fdaa6222b9511fecfeb8a7ead1bc735fa4a6d77c7e33/botica-0.18.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:6f92502777500b00eb3174420ec64479df5cb52b7b8d64ea4872921f09a97d7a", size = 4457873, upload-time = "2026-10-28T05:26:28.856Z" },
+    { url = "https://files.pythonhosted.org/packages/82/cd/914566d891debbad85837b2247c0d3a8e8287d19bc435337e64986954f04/botica-0.18.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:427b13c585e34c94a88680795f4dc1a00e64b2ccc5388c68eb6d7a30a71d780a", size = 4618456, upload-time = "2026-10-28T05:26:30.694Z" },
+    { url = "https://files.pythonhosted.org/packages/af/9c/b59f41a86deea758e592b9b55490c67390ef89d6d41755df0970e2c6b269/botica-0.18.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:52278936e9f2124f98a6127d1861afb208206cdfbf88b33a056b2420dd5718d0", size = 4946771, upload-time = "2026-10-28T05:26:32.176Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/66/6e812f793cd8199bda426cfb78fd9ee421d2ff61404ec8b56472336182f3/botica-0.18.0-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:eb9f6c2daddcdd3fc388d9eb83133bf3418aa4a23ed9ad4ebe417eeea163a4bf", size = 4600748, upload-time = "2026-10-28T05:26:34.308Z" },
+    { url = "https://files.pythonhosted.org/packages/33/87/bd58c3317fbe7dd47c9f4f43541bbe191f86b01ba1b3abb7e940b618d31c/botica-0.18.0-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:be24d94a92550e7e68255f9b329ac872f3f1f45ab35859c7242cbbc046ecd299", size = 5029600, upload-time = "2026-10-28T05:26:36.124Z" },
+    { url = "https://files.pythonhosted.org/packages/09/07/17c7f0bd2048016937e0e8a5b127e582d3771ab34daa094b81a79305356b/botica-0.18.0-py3-none-win_amd64.whl", hash = "sha256:14ca3fdb8aa7ab5cdc9477cc0ac63b855aec0d86bd0fc7a22884a2e5bc8adbdc", size = 4684430, upload-time = "2026-10-28T05:26:37.887Z" },
+]
+
+[[package]]
 name = "braceexpand"
 version = "0.1.7"
 source = { registry = "https://pypi.org/simple" }
@@ -359,6 +376,7 @@ wheels = [
 [[package]]
 name = "coro-asr"
 source = { editable = "." }
+default-groups = ["botica", "dev"]
 dependencies = [
     { name = "cyclopts" },
     { name = "fastapi" },
@@ -420,6 +438,9 @@ bench = [
     { name = "regex" },
     { name = "rich" },
     { name = "simplejson" },
+]
+botica = [
+    { name = "botica" },
 ]
 contracts = [
     { name = "fastapi" },
@@ -496,6 +517,7 @@ bench = [
     { name = "rich", specifier = ">=15.0.0" },
     { name = "simplejson", specifier = ">=3.0.0" },
 ]
+botica = [{ name = "botica", specifier = "==0.18.0" }]
 contracts = [
     { name = "fastapi" },
     { name = "numpy" },

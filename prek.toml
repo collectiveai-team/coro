@@ -58,7 +58,7 @@ repo = "local"
 [[repos.hooks]]
 id = "agents-conventional-commits"
 name = "agents-conventional-commits (commit-msg)"
-entry = "uvx botica@0.18.0 lint --select conventional-commits --commit-msg"
+entry = "uv run --no-sync botica lint --select conventional-commits --commit-msg"
 language = "system"
 stages = ["commit-msg"]
 
@@ -66,7 +66,7 @@ stages = ["commit-msg"]
 [[repos.hooks]]
 id = "no-ai-coauthorship"
 name = "no-ai-coauthorship (commit-msg)"
-entry = "uvx botica@0.18.0 lint --select no-ai-coauthorship --commit-msg"
+entry = "uv run --no-sync botica lint --select no-ai-coauthorship --commit-msg"
 language = "system"
 stages = ["commit-msg"]
 
@@ -81,28 +81,46 @@ pass_filenames = false
 priority = 2
 
 # MARK: botica
+# botica is a uv dependency (group `botica`), so dependabot moves its version in uv.lock.
 [[repos]]
-repo = "https://github.com/collectiveai-team/botica-pre-commit"
-rev = "v0.18.0"
+repo = "local"
 
-# Only the lines a commit adds fail; CI runs `--diff` instead, as `--all-files` stages nothing.
 [[repos.hooks]]
 id = "botica"
-args = ["--staged"]
+name = "botica"
+entry = "uv run --no-sync botica lint --scope file --force-exclude"
+language = "system"
+types = ["file"]
+verbose = true
 priority = 2
 
 [[repos.hooks]]
 id = "botica-project"
-args = ["--staged"]
+name = "botica (rules of project scope)"
+entry = "uv run --no-sync botica lint --scope project"
+language = "system"
+pass_filenames = false
+always_run = true
+verbose = true
 priority = 2
 
 # Fix with `botica rules export --format agents-md --output AGENTS.md` and `--format abide`.
 [[repos.hooks]]
 id = "botica-agents-md"
+name = "botica (block of the judgment rules in AGENTS.md)"
+entry = "uv run --no-sync botica rules export --format agents-md --output AGENTS.md --check"
+language = "system"
+pass_filenames = false
+always_run = true
 priority = 2
 
 [[repos.hooks]]
 id = "botica-rubric"
+name = "botica (rubric of abide)"
+entry = "uv run --no-sync botica rules export --format abide --check"
+language = "system"
+pass_filenames = false
+always_run = true
 priority = 2
 
 # MARK: hadolint

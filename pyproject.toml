@@ -199,12 +199,17 @@ contracts = [
     "scalar-fastapi",
     "soxr",
 ]
+botica = [
+    "botica==0.18.0",
+]
 
 # MARK: uv
 [tool.uv]
 exclude-newer = "7 days"
+# dependabot's own 7-day cooldown already gates botica; this lets uv lock what it proposes.
+exclude-newer-package = { botica = false }
 conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
-default-groups = ["dev"]
+default-groups = ["dev", "botica"]
 
 # Drop faster-whisper's unconditional `onnxruntime` dep so it does not pull the CPU
 # wheel into the cuda resolution (where it would shadow onnxruntime-gpu). The runtime

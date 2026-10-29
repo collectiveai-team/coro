@@ -135,33 +135,10 @@ jobs:
           fail-on: ERR
 
   # MARK: botica
-  # Gate: only the findings on the lines this pull request adds fail. The findings that
-  # predate the adoption of botica are debt (botica-baseline.toml and the full report below).
+  # The whole tree is clean, so every finding fails, warnings included. A dependabot bump of
+  # botica runs its new rules here before it merges ("all" in botica.toml selects them).
   botica:
-    name: botica (new lines)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    env:
-      BASE_REF: ${{ github.base_ref }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.11.12"
-          enable-cache: false
-
-      - name: Lint the lines of the pull request
-        run: uvx botica@0.18.0 lint --diff "origin/$BASE_REF" --output-format github
-
-  # Every rule botica can run here, over the whole tree, as a table in the job summary.
-  # Never fails: it measures the debt that the gate above leaves alone.
-  botica-report:
-    name: botica (full report)
+    name: botica
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -174,12 +151,28 @@ jobs:
           version: "0.11.12"
           enable-cache: false
 
-      - name: Report every finding
+      - name: Read botica's version from uv.lock
+        run: >-
+          echo "BOTICA=$(uv export --frozen --no-hashes --no-header --no-annotate
+          --only-group botica | grep -m1 '^botica==')" >> "$GITHUB_ENV"
+
+      # dependabot does not read the PEP 723 headers of the extension rules.
+      - name: The extension rules pin the locked botica
+        run: |
+          pins=$(grep -rhoE 'botica\[sdk\]==[^"]+' .botica/rules | sort -u)
+          if [ "$pins" != "${BOTICA/botica==/botica[sdk]==}" ]; then
+            echo "::error::.botica/rules pins $pins; uv.lock has $BOTICA"
+            exit 1
+          fi
+
+      - name: Lint the whole tree
+        run: uvx --from "$BOTICA" botica lint --output-format github --fail-on warning
+
+      - name: Report
+        if: always()
         run: |
           {
-            echo "## botica: full report"
+            echo "## botica"
             echo
-            uvx botica@0.18.0 lint --statistics --exit-zero
-            echo
-            uvx botica@0.18.0 lint --output-format markdown --exit-zero
+            uvx --from "$BOTICA" botica lint --output-format markdown --exit-zero
           } >> "$GITHUB_STEP_SUMMARY"
