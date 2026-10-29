@@ -19,12 +19,41 @@ import json
 import urllib.request
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Protocol, override
+
+if TYPE_CHECKING:
+    from _typeshed import WriteableBuffer
 
 PARQUET_INDEX_URL = "https://huggingface.co/api/datasets/{dataset}/parquet/{config}/{split}"
 
 _DEFAULT_TIMEOUT = 60
 _FOOTER_READ_BYTES = 64 * 1024
+
+type ParquetRowTable = dict[str, object]
+"""One Parquet row as ``pyarrow`` returns it: column name to Python value."""
+
+
+class _ColumnChunkMetadata(Protocol):
+    @property
+    def path_in_schema(self) -> str: ...
+    @property
+    def total_compressed_size(self) -> int: ...
+
+
+class _RowGroupMetadata(Protocol):
+    @property
+    def num_columns(self) -> int: ...
+    @property
+    def num_rows(self) -> int: ...
+    def column(self, i: int) -> _ColumnChunkMetadata: ...
+
+
+class ParquetMetadata(Protocol):
+    """The part of ``pyarrow.parquet.FileMetaData`` the fetch planner reads."""
+
+    @property
+    def num_row_groups(self) -> int: ...
+    def row_group(self, i: int) -> _RowGroupMetadata: ...
 
 
 def _require_pyarrow():
@@ -77,18 +106,22 @@ class HttpRangeFile(io.RawIOBase):
         self.bytes_fetched = 0
         self._pos = 0
 
+    @override
     def readable(self) -> bool:
         """Return True; the file is always opened for reading."""
         return True
 
+    @override
     def seekable(self) -> bool:
         """Return True; ranged requests give random access."""
         return True
 
+    @override
     def tell(self) -> int:
         """Return the current read offset."""
         return self._pos
 
+    @override
     def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
         """Move the read offset and return the new absolute position."""
         if whence == io.SEEK_SET:
@@ -99,7 +132,8 @@ class HttpRangeFile(io.RawIOBase):
             self._pos = self.size + offset
         return self._pos
 
-    def read(self, size: int = -1) -> bytes:
+    @override
+    def read(self, size: int | None = -1) -> bytes:
         """Read up to ``size`` bytes from the current offset."""
         if size is None or size < 0:
             size = self.size - self._pos
@@ -115,9 +149,11 @@ class HttpRangeFile(io.RawIOBase):
         self._pos += len(data)
         return data
 
-    def readinto(self, buffer) -> int:
-        data = self.read(len(buffer))
-        buffer[: len(data)] = data
+    @override
+    def readinto(self, buffer: WriteableBuffer) -> int:
+        view = memoryview(buffer)
+        data = self.read(len(view))
+        view[: len(data)] = data
         return len(data)
 
 
@@ -146,7 +182,7 @@ def resolve_shard_urls(
     return [str(item) for item in payload]
 
 
-def _row_group_bytes(metadata, index: int, columns: Sequence[str] | None) -> int:
+def _row_group_bytes(metadata: ParquetMetadata, index: int, columns: Sequence[str] | None) -> int:
     """Return the compressed size of the column chunks a read would fetch."""
     row_group = metadata.row_group(index)
     total = 0
@@ -201,7 +237,7 @@ def iter_parquet_rows(
     limit: int,
     columns: Sequence[str] | None = None,
     timeout: int = _DEFAULT_TIMEOUT,
-) -> Iterator[dict[str, Any]]:
+) -> Iterator[ParquetRowTable]:
     """Yield up to ``limit`` rows in shard/row-group order as plain dicts.
 
     Row groups are downloaded one at a time and released before the next one is

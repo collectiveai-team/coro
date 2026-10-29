@@ -23,8 +23,10 @@ import json
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import override
 
 import numpy as np
+import numpy.typing as npt
 from onnxruntime.quantization import CalibrationDataReader, QuantType, quantize_static
 from onnxruntime.quantization.shape_inference import quant_pre_process
 
@@ -51,6 +53,10 @@ def _load_calibration_wavs(manifest_path: Path) -> list[str]:
     return [m["path"] for m in manifest]
 
 
+type _EncoderFeed = dict[str, npt.NDArray[np.generic]]
+"""One calibration input: the encoder's ``audio_signal`` and ``length`` tensors."""
+
+
 class ParakeetEncoderCalibrationReader(CalibrationDataReader):
     """Feeds real mel-spectrogram features through the encoder's ONNX input contract.
 
@@ -65,7 +71,7 @@ class ParakeetEncoderCalibrationReader(CalibrationDataReader):
         manager = Manager(providers=["CPUExecutionProvider"])
         preprocessor = manager._create_preprocessor("nemo80")
 
-        self._inputs: list[dict] = []
+        self._inputs: list[_EncoderFeed] = []
         for path in wav_paths:
             audio, sr = sf.read(path, dtype="float32")
             if sr != 16000:
@@ -77,7 +83,8 @@ class ParakeetEncoderCalibrationReader(CalibrationDataReader):
             self._inputs.append({"audio_signal": features, "length": features_lens})
         self._iter = iter(self._inputs)
 
-    def get_next(self) -> dict | None:  # pyrefly: ignore[bad-override]
+    @override
+    def get_next(self) -> _EncoderFeed | None:  # pyrefly: ignore[bad-override]
         return next(self._iter, None)
 
 

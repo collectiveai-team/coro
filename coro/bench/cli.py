@@ -17,6 +17,7 @@ from coro.bench.cli_spanish import (
     run_calibration,
 )
 from coro.bench.errors import ServerPidUnresolvedError, ServerUnreachableError
+from coro.bench.models.workload import WorkloadItem
 from coro.bench.process_lookup import DEFAULT_SERVER_MATCH
 from coro.bench.quarantine import CircularReferenceError
 from coro.bench.server_lifecycle import (
@@ -33,7 +34,7 @@ def _build_items(
     meetings: list[str],
     *,
     with_references: bool,
-) -> list[dict]:
+) -> list[WorkloadItem]:
     """Assemble the Workload Set from AMI meetings, --audio, and --clips-dir.
 
     ``with_references`` attaches a Reference STM to each item; the performance
@@ -41,7 +42,7 @@ def _build_items(
     """
     from coro.bench.ami import get_audio_path
 
-    items: list[dict] = []
+    items: list[WorkloadItem] = []
     for meeting_id in meetings:
         audio_path = get_audio_path(args.ami_root, meeting_id)
         if not audio_path.exists():

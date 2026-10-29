@@ -1,105 +1,26 @@
-"""Tests for performance benchmark: Sampler, aggregation, full run."""
+"""Tests for the performance benchmark: Sampler, per-rep summary, aggregation, full run."""
 
 from __future__ import annotations
 
 import csv
 import json
-import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
 from coro.bench.models.gpu import GpuSample
 from coro.bench.models.performance import PerRepSummary
-from coro.bench.models.resource import ProcessTreeSample
 from coro.bench.schema import RESOURCE_FIELDNAMES
+from support.bench_http import mock_sample_fn, placeholder_audio, results_dir
 from support.network import LOOPBACK
-
-
-CANNED_RESPONSE = {
-    "task": "transcribe",
-    "duration": 3.5,
-    "text": "hello world",
-    "segments": [],
-    "usage": {"type": "duration", "seconds": 4},
-}
-
-CANNED_HEALTH = {
-    "status": "ok",
-    "ready": True,
-    "warmup_ready": True,
-    "startup_selection": {},
-    "capability_readiness": {"asr": True},
-}
-
-
-class _StubHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/health":
-            body = json.dumps(CANNED_HEALTH).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def do_POST(self):
-        if self.path == "/v1/audio/transcriptions":
-            content_length = int(self.headers.get("Content-Length", 0))
-            self.rfile.read(content_length)
-            body = json.dumps(CANNED_RESPONSE).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def log_message(self, format, *args):  # noqa: A002
-        pass
-
-
-@pytest.fixture()
-def stub_server():
-    server = HTTPServer(("127.0.0.1", 0), _StubHandler)
-    port = server.server_address[1]
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{port}"
-    server.shutdown()
-    thread.join()
-
-
-def _mock_sample_fn(pid: int) -> ProcessTreeSample:
-    return ProcessTreeSample(
-        pids={pid, pid + 1},
-        pss_kb=100000 + pid,
-        uss_kb=50000,
-        rss_kb=120000,
-        vsz_kb=200000,
-        cpu_user_s=1.5,
-        cpu_system_s=0.3,
-        rchar=1000000,
-        wchar=500000,
-        read_bytes=300000,
-        write_bytes=200000,
-        thread_count=8,
-    )
 
 
 def _sampled(pid: int, seconds: float) -> Any:
     """A Sampler that ran for ``seconds`` against the mock process tree."""
     from coro.bench.sampling import Sampler
 
-    sampler = Sampler(pid=pid, interval=0.05, sample_fn=_mock_sample_fn)
+    sampler = Sampler(pid=pid, interval=0.05, sample_fn=mock_sample_fn)
     sampler.start()
     time.sleep(seconds)
     sampler.stop()
@@ -113,19 +34,6 @@ def _read_csv(path: Path) -> tuple[list[str] | None, list[dict[str, str]]]:
         return (list(reader.fieldnames) if reader.fieldnames else None), rows
 
 
-def _audio(tmp_path: Path, stem: str, size: int = 200) -> Path:
-    """A placeholder WAV upload; the stub server never decodes it."""
-    path = tmp_path / f"{stem}.wav"
-    path.write_bytes(b"RIFF" + b"\x00" * size)
-    return path
-
-
-def _out_dir(tmp_path: Path) -> Path:
-    out_dir = tmp_path / "results"
-    out_dir.mkdir()
-    return out_dir
-
-
 def _names_by_mtime(directory: Path, pattern: str) -> list[str]:
     files = sorted(directory.glob(pattern), key=lambda p: p.stat().st_mtime)
     return [f.stem for f in files]
@@ -135,7 +43,7 @@ class TestSampler:
     def test_collects_samples_when_started(self):
         from coro.bench.sampling import Sampler
 
-        sampler = Sampler(pid=123, interval=0.05, sample_fn=_mock_sample_fn)
+        sampler = Sampler(pid=123, interval=0.05, sample_fn=mock_sample_fn)
         with patch("coro.bench.sampling.sample_gpu", return_value=GpuSample()):
             sampler.start()
             time.sleep(0.2)
@@ -162,7 +70,7 @@ class TestSampler:
     def test_backfill_sets_fields_on_all_rows(self):
         from coro.bench.sampling import Sampler
 
-        sampler = Sampler(pid=1, interval=0.05, sample_fn=_mock_sample_fn)
+        sampler = Sampler(pid=1, interval=0.05, sample_fn=mock_sample_fn)
         sampler.start()
         time.sleep(0.15)
         sampler.stop()
@@ -308,13 +216,10 @@ class TestFullPerformanceRun:
     def test_produces_artifacts_per_item_rep(self, stub_server, tmp_path: Path):
         from coro.bench.orchestrate import run_performance_workload
 
-        audio1 = tmp_path / "meeting1.wav"
-        audio1.write_bytes(b"RIFF" + b"\x00" * 200)
-        audio2 = tmp_path / "meeting2.wav"
-        audio2.write_bytes(b"RIFF" + b"\x00" * 200)
+        audio1 = placeholder_audio(tmp_path, "meeting1")
+        audio2 = placeholder_audio(tmp_path, "meeting2")
 
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
+        out_dir = results_dir(tmp_path)
 
         items = [
             {"item_id": "meeting1", "audio_path": audio1, "ref_stm_path": None},
@@ -327,7 +232,7 @@ class TestFullPerformanceRun:
             out_dir=out_dir,
             reps=2,
             server_pid=1,
-            sample_fn=_mock_sample_fn,
+            sample_fn=mock_sample_fn,
             sample_interval=0.05,
         )
 
@@ -341,13 +246,10 @@ class TestFullPerformanceRun:
     def test_summary_has_correct_structure(self, stub_server, tmp_path: Path):
         from coro.bench.orchestrate import run_performance_workload
 
-        audio1 = tmp_path / "meeting1.wav"
-        audio1.write_bytes(b"RIFF" + b"\x00" * 200)
-        audio2 = tmp_path / "meeting2.wav"
-        audio2.write_bytes(b"RIFF" + b"\x00" * 200)
+        audio1 = placeholder_audio(tmp_path, "meeting1")
+        audio2 = placeholder_audio(tmp_path, "meeting2")
 
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
+        out_dir = results_dir(tmp_path)
 
         items = [
             {"item_id": "meeting1", "audio_path": audio1, "ref_stm_path": None},
@@ -360,7 +262,7 @@ class TestFullPerformanceRun:
             out_dir=out_dir,
             reps=2,
             server_pid=1,
-            sample_fn=_mock_sample_fn,
+            sample_fn=mock_sample_fn,
             sample_interval=0.05,
         )
 
@@ -395,11 +297,9 @@ class TestFullPerformanceRun:
     def test_csv_has_no_legacy_columns(self, stub_server, tmp_path: Path):
         from coro.bench.orchestrate import run_performance_workload
 
-        audio1 = tmp_path / "meeting1.wav"
-        audio1.write_bytes(b"RIFF" + b"\x00" * 200)
+        audio1 = placeholder_audio(tmp_path, "meeting1")
 
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
+        out_dir = results_dir(tmp_path)
 
         items = [
             {"item_id": "meeting1", "audio_path": audio1, "ref_stm_path": None},
@@ -411,7 +311,7 @@ class TestFullPerformanceRun:
             out_dir=out_dir,
             reps=1,
             server_pid=1,
-            sample_fn=_mock_sample_fn,
+            sample_fn=mock_sample_fn,
             sample_interval=0.05,
         )
 
@@ -426,9 +326,9 @@ class TestFullPerformanceRun:
     def test_reps_grouped_by_item_order(self, stub_server, tmp_path: Path):
         from coro.bench.orchestrate import run_performance_workload
 
-        audio1 = _audio(tmp_path, "a1", size=100)
-        audio2 = _audio(tmp_path, "a2", size=100)
-        out_dir = _out_dir(tmp_path)
+        audio1 = placeholder_audio(tmp_path, "a1", size=100)
+        audio2 = placeholder_audio(tmp_path, "a2", size=100)
+        out_dir = results_dir(tmp_path)
 
         items = [
             {"item_id": "a1", "audio_path": audio1, "ref_stm_path": None},
@@ -441,7 +341,7 @@ class TestFullPerformanceRun:
             out_dir=out_dir,
             reps=2,
             server_pid=1,
-            sample_fn=_mock_sample_fn,
+            sample_fn=mock_sample_fn,
             sample_interval=0.05,
         )
 
@@ -449,260 +349,3 @@ class TestFullPerformanceRun:
         assert names.index("resource_a1_rep1") < names.index("resource_a1_rep2")
         assert names.index("resource_a1_rep2") < names.index("resource_a2_rep1")
         assert names.index("resource_a2_rep1") < names.index("resource_a2_rep2")
-
-
-SSE_SEGMENTS = [{"start": 0.0, "end": 1.5, "text": "hello world", "speaker": "A"}]
-
-SSE_RESPONSE_BODY = (
-    b"event: transcript.text.delta\r\n"
-    b'data: {"type": "transcript.text.delta", "delta": "hello"}\r\n'
-    b"\r\n"
-    b"event: transcript.text.done\r\n"
-    + b'data: {"type": "transcript.text.done", "text": '
-    + json.dumps(json.dumps({"segments": SSE_SEGMENTS})).encode()
-    + b"}\r\n"
-    b"\r\n"
-)
-
-
-class _SSEStubHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/health":
-            body = json.dumps(CANNED_HEALTH).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def do_POST(self):
-        if self.path == "/v1/audio/transcriptions":
-            content_length = int(self.headers.get("Content-Length", 0))
-            self.rfile.read(content_length)
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-cache")
-            self.end_headers()
-            self.wfile.write(SSE_RESPONSE_BODY)
-            self.wfile.flush()
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def log_message(self, format, *args):  # noqa: A002
-        pass
-
-
-@pytest.fixture()
-def sse_stub_server():
-    server = HTTPServer(("127.0.0.1", 0), _SSEStubHandler)
-    port = server.server_address[1]
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{port}"
-    server.shutdown()
-    thread.join()
-
-
-class TestStreamingPerformanceRun:
-    pytestmark = LOOPBACK
-
-    def test_ttft_column_non_empty_in_streaming_run(self, sse_stub_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_performance_workload
-
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
-        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
-
-        run_performance_workload(
-            items=items,
-            base_url=sse_stub_server,
-            out_dir=out_dir,
-            reps=1,
-            server_pid=1,
-            sample_fn=_mock_sample_fn,
-            sample_interval=0.05,
-            stream=True,
-        )
-
-        csv_path = out_dir / "performance" / "resource_meeting1_rep1.csv"
-        with csv_path.open() as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-
-        assert len(rows) > 0
-        ttft_values = [r["time_to_first_delta_s"] for r in rows]
-        assert all(v != "" for v in ttft_values), f"Expected non-empty TTFT, got: {ttft_values}"
-
-    def test_ttft_column_empty_in_non_streaming_run(self, stub_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_performance_workload
-
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
-        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
-
-        run_performance_workload(
-            items=items,
-            base_url=stub_server,
-            out_dir=out_dir,
-            reps=1,
-            server_pid=1,
-            sample_fn=_mock_sample_fn,
-            sample_interval=0.05,
-            stream=False,
-        )
-
-        csv_path = out_dir / "performance" / "resource_meeting1_rep1.csv"
-        with csv_path.open() as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-
-        assert len(rows) > 0
-        ttft_values = [r["time_to_first_delta_s"] for r in rows]
-        assert all(v == "" for v in ttft_values), f"Expected empty TTFT, got: {ttft_values}"
-
-    def test_summary_includes_ttft_aggregates_when_streaming(self, sse_stub_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_performance_workload
-
-        audio = _audio(tmp_path, "meeting1")
-        out_dir = _out_dir(tmp_path)
-        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
-
-        run_performance_workload(
-            items=items,
-            base_url=sse_stub_server,
-            out_dir=out_dir,
-            reps=2,
-            server_pid=1,
-            sample_fn=_mock_sample_fn,
-            sample_interval=0.05,
-            stream=True,
-        )
-
-        summary = json.loads((out_dir / "performance" / "summary.json").read_text())
-        m1_agg = summary["per_item_aggregation"]["meeting1"]
-        assert "time_to_first_delta_s" in m1_agg, f"Expected TTFT aggregates, got: {list(m1_agg)}"
-        ttft_agg = m1_agg["time_to_first_delta_s"]
-        for key in ("median", "min", "max", "mean", "stddev"):
-            assert key in ttft_agg, f"Missing {key} in TTFT aggregates"
-
-    def test_summary_excludes_ttft_when_not_streaming(self, stub_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_performance_workload
-
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
-        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
-
-        run_performance_workload(
-            items=items,
-            base_url=stub_server,
-            out_dir=out_dir,
-            reps=1,
-            server_pid=1,
-            sample_fn=_mock_sample_fn,
-            sample_interval=0.05,
-            stream=False,
-        )
-
-        summary = json.loads((out_dir / "performance" / "summary.json").read_text())
-        m1_agg = summary["per_item_aggregation"]["meeting1"]
-        assert m1_agg["time_to_first_delta_s"] is None
-
-    def test_manifest_records_stream_true(self, sse_stub_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_performance_workload
-
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
-        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
-
-        run_performance_workload(
-            items=items,
-            base_url=sse_stub_server,
-            out_dir=out_dir,
-            reps=1,
-            server_pid=1,
-            sample_fn=_mock_sample_fn,
-            sample_interval=0.05,
-            stream=True,
-        )
-
-        manifest = json.loads((out_dir / "manifest.json").read_text())
-        assert manifest["stream"] is True
-
-    def test_manifest_records_stream_false(self, stub_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_performance_workload
-
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
-        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
-
-        run_performance_workload(
-            items=items,
-            base_url=stub_server,
-            out_dir=out_dir,
-            reps=1,
-            server_pid=1,
-            sample_fn=_mock_sample_fn,
-            sample_interval=0.05,
-            stream=False,
-        )
-
-        manifest = json.loads((out_dir / "manifest.json").read_text())
-        assert manifest["stream"] is False
-
-    def test_manifest_records_a_forced_language(self, stub_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_performance_workload
-
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
-        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
-
-        run_performance_workload(
-            items=items,
-            base_url=stub_server,
-            out_dir=out_dir,
-            reps=1,
-            server_pid=1,
-            sample_fn=_mock_sample_fn,
-            sample_interval=0.05,
-            language="es-US",
-        )
-
-        manifest = json.loads((out_dir / "manifest.json").read_text())
-        assert manifest["language"] == "es-US"
-
-    def test_manifest_records_none_for_auto_language_detection(self, stub_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_performance_workload
-
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
-        items = [{"item_id": "meeting1", "audio_path": audio, "ref_stm_path": None}]
-
-        run_performance_workload(
-            items=items,
-            base_url=stub_server,
-            out_dir=out_dir,
-            reps=1,
-            server_pid=1,
-            sample_fn=_mock_sample_fn,
-            sample_interval=0.05,
-        )
-
-        manifest = json.loads((out_dir / "manifest.json").read_text())
-        assert manifest["language"] is None

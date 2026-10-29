@@ -140,7 +140,7 @@ def _read_proc_smaps_rollup(pid: int) -> SmapsRollup:
             private_clean=data.get("Private_Clean", 0),
             private_dirty=data.get("Private_Dirty", 0),
         )
-    except Exception:  # noqa: BLE001
+    except OSError:
         return SmapsRollup()
 
 
@@ -161,7 +161,7 @@ def _read_proc_io(pid: int) -> ProcIo:
             read_bytes=data.get("read_bytes", 0),
             write_bytes=data.get("write_bytes", 0),
         )
-    except Exception:  # noqa: BLE001
+    except OSError:
         return ProcIo()
 
 
@@ -194,7 +194,7 @@ def _read_proc_status(pid: int) -> ProcStatus:
                         except ValueError:
                             pass
         return ProcStatus(vmrss=data.get("VmRSS", 0), vmsize=data.get("VmSize", 0))
-    except Exception:  # noqa: BLE001
+    except OSError:
         return ProcStatus()
 
 

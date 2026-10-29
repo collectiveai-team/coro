@@ -6,14 +6,17 @@ import json
 import mimetypes
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 from coro.bench.errors import ServerUnreachableError
 
-TranscribeFn = Callable[[str, Path], tuple[Any, float | None]]
+if TYPE_CHECKING:
+    from coro.bench.models.response import TranscriptResponse
+
+type TranscribeFn = Callable[[str, Path], tuple[TranscriptResponse, float | None]]
 """A transport: takes ``(base_url, audio_path)``, returns ``(response, ttft)``.
 
 ``ttft`` is the time to first delta, which only the SSE transport can measure;
@@ -57,7 +60,7 @@ def transcribe_audio(
     *,
     language: str | None = None,
     timeout_seconds: float = 14400.0,
-) -> Any:
+) -> TranscriptResponse:
     import urllib.request
 
     url = f"{base_url.rstrip('/')}/v1/audio/transcriptions"
@@ -101,7 +104,7 @@ def transcribe_audio_deepgram(
     *,
     language: str | None = None,
     timeout_seconds: float = 14400.0,
-) -> Any:
+) -> TranscriptResponse:
     """POST the audio to the Deepgram-native ``/v1/listen`` endpoint.
 
     Deepgram takes a **raw audio body**, not multipart, so this cannot reuse
@@ -134,7 +137,7 @@ def transcribe_audio_deepgram(
         raise
 
 
-def _parse_sse_events(resp) -> tuple[Any, float]:
+def _parse_sse_events(resp: Iterable[bytes]) -> tuple[TranscriptResponse, float]:
     """Parse an SSE response stream; return (done_payload, time_to_first_delta_s).
 
     ``time_to_first_delta_s`` falls back to total stream time when no delta
@@ -142,7 +145,7 @@ def _parse_sse_events(resp) -> tuple[Any, float]:
     """
     start_time = time.monotonic()
     first_delta_time: float | None = None
-    done_payload: Any | None = None
+    done_payload: TranscriptResponse | None = None
     event_type = ""
 
     for raw_line in resp:
@@ -170,7 +173,7 @@ def transcribe_audio_sse(
     *,
     language: str | None = None,
     timeout_seconds: float = 14400.0,
-) -> tuple[Any, float]:
+) -> tuple[TranscriptResponse, float]:
     """POST with stream=true, parse SSE events.
 
     Returns (diarized_json_from_done_event, time_to_first_delta_s).

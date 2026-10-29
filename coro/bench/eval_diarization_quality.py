@@ -40,10 +40,10 @@ import json
 import time
 import wave
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-
-import torch  # noqa: TID253
+from typing import TYPE_CHECKING
 
 from coro.backends.diarization import factory as diarization_factory
 from coro.backends.diarization.nemo.postprocessing import preset_for_collar
@@ -64,6 +64,9 @@ from coro.bench.stm import speaker_timeline_to_stm
 from coro.cli_support import out_console
 from coro.core.logger import get_logger
 from coro.settings import get_settings
+
+if TYPE_CHECKING:
+    from coro.core.protocols import DiarizationAdapter
 
 log = get_logger(__name__)
 
@@ -130,7 +133,7 @@ def combine_der(per_item: list[DerStats]) -> DerStats:
     return DerStats(der=errors / scored if scored else 0.0, **totals)
 
 
-def _tier_scope(adapter, tier: str | None):
+def _tier_scope(adapter: DiarizationAdapter, tier: str | None) -> AbstractContextManager[None]:
     """Apply a latency tier around each model call, or nothing when unset.
 
     Left unset, NeMo runs at whatever streaming configuration the checkpoint
@@ -149,7 +152,7 @@ def _tier_scope(adapter, tier: str | None):
 
 def _run_backend(
     name: str,
-    adapter,
+    adapter: DiarizationAdapter,
     items: list[DiarItem],
     out_dir: Path,
     collar: float,
@@ -213,8 +216,10 @@ def _run_backend(
     return result
 
 
-def _free(adapter) -> None:
+def _free(adapter: DiarizationAdapter) -> None:
     """Drop an adapter and reclaim GPU memory before loading the next model."""
+    import torch
+
     del adapter
     gc.collect()
     if torch.cuda.is_available():

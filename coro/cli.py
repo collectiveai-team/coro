@@ -59,19 +59,17 @@ def serve(argv: list[str]) -> None:
 
     application = create_app(settings)
 
-    uvicorn_kwargs: dict = {
-        "app": application,
-        "host": settings.host,
-        "port": settings.port,
-        "log_level": settings.log_level.lower(),
-        "lifespan": "on",
-    }
-
-    if settings.ssl_certfile and settings.ssl_keyfile:
-        uvicorn_kwargs["ssl_certfile"] = settings.ssl_certfile
-        uvicorn_kwargs["ssl_keyfile"] = settings.ssl_keyfile
-
-    uvicorn.run(**uvicorn_kwargs)
+    # TLS only when both halves are configured; None is uvicorn's own default.
+    tls = bool(settings.ssl_certfile and settings.ssl_keyfile)
+    uvicorn.run(
+        app=application,
+        host=settings.host,
+        port=settings.port,
+        log_level=settings.log_level.lower(),
+        lifespan="on",
+        ssl_certfile=settings.ssl_certfile if tls else None,
+        ssl_keyfile=settings.ssl_keyfile if tls else None,
+    )
 
 
 # MARK: run
@@ -88,7 +86,7 @@ _run_app = new_app(
 
 @_run_app.default
 def _transcribe(
-    input: str,  # noqa: A002
+    input: str,  # noqa: A002 -- names the INPUT positional in --help
     /,
     *settings_flags: Forwarded,
     output: Annotated[str | None, Parameter(name=["--output", "-o"])] = None,

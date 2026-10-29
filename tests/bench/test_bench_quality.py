@@ -7,36 +7,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from support.paths import PYPROJECT
 
 from coro.bench.models.quality import ScoreError, ScoreResult
-
-
-class TestPyprojectBenchExtra:
-    def test_pyproject_declares_bench_optional_extra(self):
-        text = PYPROJECT.read_text()
-        assert "[project.optional-dependencies]" in text
-        assert "bench = [" in text
-        assert "meeteval" in text
-        assert "rich" in text
-
-
-class TestRequireMeeteval:
-    def test_require_meeteval_exits_with_helpful_message(self):
-        with patch.dict(sys.modules, {"meeteval": None}):
-            from coro.bench.quality import _require_meeteval
-
-            with pytest.raises(SystemExit) as exc_info:
-                _require_meeteval()
-            assert exc_info.value.code == 1
-
-    def test_require_meeteval_returns_module_when_available(self):
-        mock_meeteval = MagicMock()
-        with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from coro.bench.quality import _require_meeteval
-
-            result = _require_meeteval()
-            assert result is mock_meeteval
 
 
 def _write_stm_pair(tmp_path: Path, name: str, ref: str, hyp: str) -> tuple[Path, Path]:
@@ -49,54 +21,6 @@ def _write_stm_pair(tmp_path: Path, name: str, ref: str, hyp: str) -> tuple[Path
 
 
 class TestScoreItem:
-    def test_normalize_transcript_text_applies_basic_normalizer(self):
-        from coro.bench.quality import normalize_transcript_text
-
-        assert normalize_transcript_text("Hello,   world!! [cough]") == "hello world"
-
-    def test_normalize_transcript_text_preserves_spanish_diacritics(self):
-        from coro.bench.quality import normalize_transcript_text
-
-        assert normalize_transcript_text("¿Está el señor Ibáñez?") == "está el señor ibáñez"
-
-    def test_write_normalized_stm_preserves_metadata_and_normalizes_text(
-        self,
-        tmp_path: Path,
-    ):
-        from coro.bench.quality import _write_normalized_stm
-
-        src = tmp_path / "in.stm"
-        dst = tmp_path / "out.stm"
-        src.write_text("meeting 1 A 0.000 1.500 Hello,   world!!\n")
-
-        _write_normalized_stm(src, dst)
-
-        assert dst.read_text() == "meeting 1 A 0.000 1.500 hello world\n"
-
-    def test_write_normalized_stm_keeps_diacritics_in_text_field(self, tmp_path: Path):
-        from coro.bench.quality import _write_normalized_stm
-
-        src = tmp_path / "in.stm"
-        dst = tmp_path / "out.stm"
-        src.write_text("sesion 1 A 0.000 1.500 ¿Cuántos años más?\n")
-
-        _write_normalized_stm(src, dst)
-
-        assert dst.read_text() == "sesion 1 A 0.000 1.500 cuántos años más\n"
-
-    def test_write_normalized_stm_leaves_source_untouched(self, tmp_path: Path):
-        """Normalization happens at scoring time; STM artifacts stay intact."""
-        from coro.bench.quality import _write_normalized_stm
-
-        src = tmp_path / "in.stm"
-        dst = tmp_path / "out.stm"
-        original = "meeting 1 A 0.000 1.500 Hello,   world!!\n"
-        src.write_text(original)
-
-        _write_normalized_stm(src, dst)
-
-        assert src.read_text() == original
-
     def test_normalized_lane_applies_identically_to_ref_and_hyp(self, tmp_path: Path):
         """Casing/punctuation-only differences vanish in the Normalized Metric Lane."""
         from coro.bench.quality import score_item
@@ -405,13 +329,6 @@ class TestDiarizationOnly:
     _REF = "rec 1 spkA 0.000 2.000 <sd>\nrec 1 spkB 2.500 4.000 <sd>\n"
     _HYP = "rec 1 0 0.100 2.100 hola mundo\nrec 1 1 2.600 3.900 que tal\n"
 
-    def test_is_diarization_only_stm_detects_sentinel(self, tmp_path: Path):
-        from coro.bench.quality import is_diarization_only_stm
-
-        ref, hyp = _write_stm_pair(tmp_path, "rec", self._REF, self._HYP)
-        assert is_diarization_only_stm(ref) is True
-        assert is_diarization_only_stm(hyp) is False
-
     def test_score_item_skips_wer_keeps_der(self, tmp_path: Path):
         from coro.bench.quality import score_item
 
@@ -475,29 +392,3 @@ class TestCLIFlags:
 
         with pytest.raises(SystemExit):
             parse_args(["quality", "--der-regions", "invalid"])
-
-
-class TestMeetevalInstallHint:
-    """The printed install hint must be a command that actually works."""
-
-    def _hint(self, capsys) -> str:
-        from coro.bench import quality as quality_mod
-
-        # A None entry in sys.modules makes `import meeteval` raise ImportError.
-        with patch.dict(sys.modules, {"meeteval": None}), pytest.raises(SystemExit):
-            quality_mod._require_meeteval()
-        return capsys.readouterr().err
-
-    def test_hint_uses_the_dependency_group_command(self, capsys):
-        assert "uv sync --group bench" in self._hint(capsys)
-
-    def test_hint_does_not_claim_an_installable_extra(self, capsys):
-        assert "coro[bench]" not in self._hint(capsys)
-
-    def test_bench_is_a_dependency_group_not_an_extra(self):
-        """Guards the hint against the packaging metadata drifting back."""
-        import tomllib
-
-        pyproject = tomllib.loads(Path("pyproject.toml").read_text())
-        assert "bench" in pyproject["dependency-groups"]
-        assert "bench" not in pyproject["project"].get("optional-dependencies", {})

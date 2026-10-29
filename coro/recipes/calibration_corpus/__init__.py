@@ -18,6 +18,7 @@ import tarfile
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TypedDict
 
 import soundfile as sf
 
@@ -31,6 +32,15 @@ MIN_S, MAX_S = 3.0, 15.0
 # (lang_code, hf_config) pairs streamed remotely -- Spanish is harvested
 # separately from a local FLEURS snapshot (see harvest_local_fleurs_es).
 REMOTE_LANGUAGES = [("en", "en_us"), ("fr", "fr_fr"), ("de", "de_de"), ("pt", "pt_br")]
+
+
+class CalibrationClip(TypedDict):
+    """One entry of ``calibration_manifest.json``."""
+
+    path: str
+    lang: str
+    duration_s: float
+    source: str
 
 
 def clip_duration(path: Path) -> float:
@@ -56,7 +66,7 @@ def _resolve_fleurs_es_snapshot() -> Path:
     return snapshot_dir / "data" / "es_419"
 
 
-def harvest_local_fleurs_es(out_dir: Path, target: int) -> list[dict]:
+def harvest_local_fleurs_es(out_dir: Path, target: int) -> list[CalibrationClip]:
     """Extract a handful of clips from the FLEURS es_419 test shard.
 
     Spans a spread of durations without extracting the whole archive to disk.
@@ -65,7 +75,7 @@ def harvest_local_fleurs_es(out_dir: Path, target: int) -> list[dict]:
     tar_path = fleurs_es_dir / "audio" / "test.tar.gz"
     out_lang_dir = out_dir / "es"
     out_lang_dir.mkdir(parents=True, exist_ok=True)
-    picked: list[dict] = []
+    picked: list[CalibrationClip] = []
     log.info(
         "scanning for es clips", archive=str(tar_path), target=target, min_s=MIN_S, max_s=MAX_S
     )
@@ -103,7 +113,7 @@ def harvest_local_fleurs_es(out_dir: Path, target: int) -> list[dict]:
 
 def harvest_remote_fleurs(
     lang_code: str, hf_config: str, out_dir: Path, target: int, overfetch: int = 60
-) -> list[dict]:
+) -> list[CalibrationClip]:
     from coro.bench.utils.audio_clips import transcode_bytes_to_wav
     from coro.bench.utils.hf_parquet import iter_parquet_rows, resolve_shard_urls
 
@@ -112,12 +122,12 @@ def harvest_remote_fleurs(
     log.info("streaming google/fleurs", config=hf_config, lang=lang_code, target=target)
     t0 = time.time()
     urls = resolve_shard_urls("google/fleurs", hf_config, "test")
-    picked: list[dict] = []
+    picked: list[CalibrationClip] = []
     for row in iter_parquet_rows(urls, limit=overfetch, columns=["id", "audio"]):
         if len(picked) >= target:
             break
-        audio = row.get("audio") or {}
-        data = audio.get("bytes")
+        audio = row.get("audio")
+        data = audio.get("bytes") if isinstance(audio, dict) else None
         if not data:
             continue
         wav_path = out_lang_dir / f"{lang_code}-{row['id']}.wav"
@@ -161,15 +171,18 @@ def _build(
 
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    manifest: list[dict] = []
+    manifest: list[CalibrationClip] = []
 
     manifest += harvest_local_fleurs_es(out_dir, per_language_target)
 
     for lang_code, hf_config in REMOTE_LANGUAGES:
         try:
             manifest += harvest_remote_fleurs(lang_code, hf_config, out_dir, per_language_target)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("fetch failed", lang=lang_code, config=hf_config, error=str(exc))
+        except Exception as exc:
+            # One unreachable language must not cost the clips already harvested.
+            log.warning(
+                "fetch failed", lang=lang_code, config=hf_config, error=str(exc), exc_info=True
+            )
 
     manifest_path = out_dir / "calibration_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2))

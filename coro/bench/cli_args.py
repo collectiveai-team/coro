@@ -15,7 +15,7 @@ from cyclopts import Parameter
 
 from coro.bench.cli_flags import BenchArgs
 from coro.bench.quarantine import CircularReferenceError, assert_scorable_reference
-from coro.cli_support import fail, invoke, new_app
+from coro.cli_support import fail, invoke_for, new_app
 
 __all__ = ["BenchArgs", "parse_args"]
 
@@ -151,7 +151,7 @@ def parse_args(argv: Sequence[str] | None = None) -> BenchArgs:
 
     """
     tokens = list(argv) if argv is not None else list(sys.argv[1:])
-    args: BenchArgs = invoke(_app, tokens)
+    args = invoke_for(_app, BenchArgs, tokens)
     # Recorded verbatim in the run manifest so a result can be re-run as issued.
     args.cli_args = tokens
     _validate_args(args)

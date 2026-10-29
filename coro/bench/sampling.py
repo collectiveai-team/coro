@@ -5,16 +5,32 @@ from __future__ import annotations
 import csv
 import threading
 import time
-from pathlib import Path
 from collections.abc import Callable
-from dataclasses import asdict
-from typing import Any
+from dataclasses import dataclass
+from pathlib import Path
 
 from coro.bench.gpu import sample_gpu
 from coro.bench.models.resource import ProcessTreeSample, ResourceBaseline
 from coro.bench.schema import RESOURCE_FIELDNAMES
 
 SampleFn = Callable[[int], ProcessTreeSample]
+
+type ResourceCell = int | float | str
+type ResourceRowTable = dict[str, ResourceCell]
+"""One Resource CSV row; ``""`` marks a column with no value yet."""
+
+
+@dataclass(frozen=True)
+class _PrevSample:
+    """Cumulative counters of the previous sample, for per-interval rates."""
+
+    elapsed_s: float
+    cpu_user_s: float
+    cpu_system_s: float
+    io_rchar_bytes: int
+    io_wchar_bytes: int
+    io_read_bytes: int
+    io_write_bytes: int
 
 
 def _default_sample_fn(root_pid: int) -> ProcessTreeSample:
@@ -46,11 +62,11 @@ class Sampler:
         self.pid = pid
         self.interval = interval
         self._sample_fn = sample_fn or _default_sample_fn
-        self.samples: list[dict[str, Any]] = []
+        self.samples: list[ResourceRowTable] = []
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._start_time: float = 0.0
-        self._prev_sample: dict[str, Any] | None = None
+        self._prev_sample: _PrevSample | None = None
         self._prev_pids: set[int] = set()
         self._sampling_warning: bool = False
 
@@ -66,7 +82,7 @@ class Sampler:
             self._thread.join()
             self._thread = None
 
-    def backfill(self, **fields: Any) -> None:
+    def backfill(self, **fields: ResourceCell) -> None:
         for row in self.samples:
             for key, value in fields.items():
                 if key in RESOURCE_FIELDNAMES:
@@ -79,98 +95,98 @@ class Sampler:
             writer.writeheader()
             writer.writerows(self.samples)
 
+    def _cpu_pct_and_dt(self, raw: ProcessTreeSample, elapsed: float) -> tuple[float, float]:
+        """Return ``(cpu_pct, sample_dt)`` against the previous sample."""
+        prev = self._prev_sample
+        if prev is None:
+            return 0.0, self.interval
+        dt = elapsed - prev.elapsed_s
+        if dt <= 0:
+            return 0.0, self.interval
+        du = raw.cpu_user_s - prev.cpu_user_s
+        ds = raw.cpu_system_s - prev.cpu_system_s
+        if dt > self.interval * 2:
+            self._sampling_warning = True
+        return 100.0 * (du + ds) / dt, dt
+
+    def _io_rates(self, raw: ProcessTreeSample, dt: float) -> ResourceRowTable:
+        """Return the per-second IO columns, zero for the first sample."""
+        prev = self._prev_sample
+        if prev is None or dt <= 0:
+            return {
+                "io_rchar_bps": 0.0,
+                "io_wchar_bps": 0.0,
+                "io_read_bps": 0.0,
+                "io_write_bps": 0.0,
+            }
+        return {
+            "io_rchar_bps": round((raw.rchar - prev.io_rchar_bytes) / dt, 1),
+            "io_wchar_bps": round((raw.wchar - prev.io_wchar_bytes) / dt, 1),
+            "io_read_bps": round((raw.read_bytes - prev.io_read_bytes) / dt, 1),
+            "io_write_bps": round((raw.write_bytes - prev.io_write_bytes) / dt, 1),
+        }
+
+    def _build_row(self, raw: ProcessTreeSample, ts: float, elapsed: float) -> ResourceRowTable:
+        new_pids = raw.pids - self._prev_pids
+        gone_pids = self._prev_pids - raw.pids
+        self._prev_pids.update(raw.pids)
+
+        cpu_pct, sample_dt = self._cpu_pct_and_dt(raw, elapsed)
+        gpu = sample_gpu(raw.pids)
+        server_vram = gpu.server_vram_mib
+        profile = "cpu+gpu" if server_vram != "" and float(server_vram) > 0 else "cpu-only"
+
+        return {
+            "ts_epoch": round(ts, 3),
+            "elapsed_s": round(elapsed, 3),
+            "sample_dt_s": round(sample_dt, 3),
+            "root_pid": self.pid,
+            "process_count": len(raw.pids),
+            "new_pids": len(new_pids),
+            "gone_pids": len(gone_pids),
+            "rss_kb": raw.rss_kb,
+            "pss_kb": raw.pss_kb,
+            "uss_kb": raw.uss_kb,
+            "vsz_kb": raw.vsz_kb,
+            "cpu_user_s": round(raw.cpu_user_s, 3),
+            "cpu_system_s": round(raw.cpu_system_s, 3),
+            "cpu_total_s": round(raw.cpu_user_s + raw.cpu_system_s, 3),
+            "cpu_pct": round(cpu_pct, 2),
+            "thread_count": raw.thread_count,
+            "io_rchar_bytes": raw.rchar,
+            "io_wchar_bytes": raw.wchar,
+            "io_read_bytes": raw.read_bytes,
+            "io_write_bytes": raw.write_bytes,
+            **self._io_rates(raw, round(sample_dt, 3)),
+            "server_vram_mib": gpu.server_vram_mib,
+            "total_gpu_mem_mib": gpu.total_gpu_mem_mib,
+            "total_gpu_used_mib": gpu.total_gpu_used_mib,
+            "gpu_util_pct": gpu.gpu_util_pct,
+            "baseline_pss_kb": "",
+            "peak_pss_delta_kb": "",
+            "baseline_vram_mib": "",
+            "peak_vram_delta_mib": "",
+            "observed_hardware_profile": profile,
+            "audio_seconds": "",
+            "wall_seconds": "",
+            "transcription_throughput": "",
+            "time_to_first_delta_s": "",
+            "sampling_warning": "",
+        }
+
     def _sample_loop(self) -> None:
         while not self._stop_event.is_set():
             ts = time.time()
             elapsed = time.monotonic() - self._start_time
             raw = self._sample_fn(self.pid)
-
-            new_pids = raw.pids - self._prev_pids
-            gone_pids = self._prev_pids - raw.pids
-            self._prev_pids.update(raw.pids)
-
-            cpu_pct = 0.0
-            sample_dt = self.interval
-            if self._prev_sample is not None:
-                dt = elapsed - float(self._prev_sample.get("elapsed_s", elapsed))
-                if dt > 0:
-                    du = raw.cpu_user_s - self._prev_sample.get("cpu_user_s", 0.0)
-                    ds = raw.cpu_system_s - self._prev_sample.get("cpu_system_s", 0.0)
-                    cpu_pct = 100.0 * (du + ds) / dt
-                    sample_dt = dt
-                    if dt > self.interval * 2:
-                        self._sampling_warning = True
-
-            gpu = sample_gpu(raw.pids)
-            server_vram = gpu.server_vram_mib
-            profile = (
-                "cpu+gpu"
-                if server_vram not in ("", None) and float(server_vram) > 0
-                else "cpu-only"
+            self.samples.append(self._build_row(raw, ts, elapsed))
+            self._prev_sample = _PrevSample(
+                elapsed_s=elapsed,
+                cpu_user_s=raw.cpu_user_s,
+                cpu_system_s=raw.cpu_system_s,
+                io_rchar_bytes=raw.rchar,
+                io_wchar_bytes=raw.wchar,
+                io_read_bytes=raw.read_bytes,
+                io_write_bytes=raw.write_bytes,
             )
-
-            row: dict[str, Any] = {
-                "ts_epoch": round(ts, 3),
-                "elapsed_s": round(elapsed, 3),
-                "sample_dt_s": round(sample_dt, 3),
-                "root_pid": self.pid,
-                "process_count": len(raw.pids),
-                "new_pids": len(new_pids),
-                "gone_pids": len(gone_pids),
-                "rss_kb": raw.rss_kb,
-                "pss_kb": raw.pss_kb,
-                "uss_kb": raw.uss_kb,
-                "vsz_kb": raw.vsz_kb,
-                "cpu_user_s": round(raw.cpu_user_s, 3),
-                "cpu_system_s": round(raw.cpu_system_s, 3),
-                "cpu_total_s": round(raw.cpu_user_s + raw.cpu_system_s, 3),
-                "cpu_pct": round(cpu_pct, 2),
-                "thread_count": raw.thread_count,
-                "io_rchar_bytes": raw.rchar,
-                "io_wchar_bytes": raw.wchar,
-                "io_read_bytes": raw.read_bytes,
-                "io_write_bytes": raw.write_bytes,
-                "io_rchar_bps": 0.0,
-                "io_wchar_bps": 0.0,
-                "io_read_bps": 0.0,
-                "io_write_bps": 0.0,
-                **asdict(gpu),
-                "baseline_pss_kb": "",
-                "peak_pss_delta_kb": "",
-                "baseline_vram_mib": "",
-                "peak_vram_delta_mib": "",
-                "observed_hardware_profile": profile,
-                "audio_seconds": "",
-                "wall_seconds": "",
-                "transcription_throughput": "",
-                "time_to_first_delta_s": "",
-                "sampling_warning": "",
-            }
-
-            if self._prev_sample is not None:
-                dt = float(row["sample_dt_s"])
-                if dt > 0:
-                    row["io_rchar_bps"] = round(
-                        (raw.rchar - self._prev_sample.get("io_rchar_bytes", 0)) / dt, 1
-                    )
-                    row["io_wchar_bps"] = round(
-                        (raw.wchar - self._prev_sample.get("io_wchar_bytes", 0)) / dt, 1
-                    )
-                    row["io_read_bps"] = round(
-                        (raw.read_bytes - self._prev_sample.get("io_read_bytes", 0)) / dt, 1
-                    )
-                    row["io_write_bps"] = round(
-                        (raw.write_bytes - self._prev_sample.get("io_write_bytes", 0)) / dt, 1
-                    )
-
-            self._prev_sample = {
-                "elapsed_s": elapsed,
-                "cpu_user_s": raw.cpu_user_s,
-                "cpu_system_s": raw.cpu_system_s,
-                "io_rchar_bytes": raw.rchar,
-                "io_wchar_bytes": raw.wchar,
-                "io_read_bytes": raw.read_bytes,
-                "io_write_bytes": raw.write_bytes,
-            }
-            self.samples.append(row)
             self._stop_event.wait(self.interval)

@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import contextlib
+import http.client
+import json
 import socket
 import subprocess
 import time
+import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, TYPE_CHECKING
 
 from coro.core.logger import get_logger
+
+if TYPE_CHECKING:
+    from coro.bench.models.response import HealthResponse
 
 logger = get_logger(__name__)
 
@@ -20,13 +27,9 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _get_health_json(base_url: str) -> Any:
-    import urllib.request
-
+def _get_health_json(base_url: str) -> HealthResponse:
     url = f"{base_url}/health"
     with urllib.request.urlopen(url, timeout=5) as resp:
-        import json
-
         return json.loads(resp.read())
 
 
@@ -35,8 +38,8 @@ def poll_health(
     *,
     timeout: float = 600.0,
     interval: float = 1.0,
-    proc: subprocess.Popen | None = None,
-) -> Any:
+    proc: subprocess.Popen[bytes] | None = None,
+) -> HealthResponse:
     """Block until ``/health`` reports Capability Readiness and Warmup Readiness.
 
     When ``proc`` is given, a server that exits before becoming ready fails
@@ -44,12 +47,12 @@ def poll_health(
     """
     deadline = time.monotonic() + timeout
     while True:
-        try:
+        # Not listening yet, mid-startup, or answering with a non-JSON page:
+        # all mean "not ready", and the loop polls again.
+        with contextlib.suppress(OSError, ValueError, http.client.HTTPException):
             data = _get_health_json(base_url)
             if data.get("ready") and data.get("warmup_ready"):
                 return data
-        except Exception:  # noqa: BLE001
-            pass
         if proc is not None and proc.poll() is not None:
             raise RuntimeError(
                 f"Bench-managed server at {base_url} exited with code {proc.returncode} "
@@ -70,7 +73,7 @@ class BenchAttachedServer:
     def __enter__(self) -> BenchAttachedServer:
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         pass
 
 
@@ -96,7 +99,7 @@ class BenchManagedServer:
         self._port: int | None = None
         self.base_url: str = ""
         self.server_pid: int | None = None
-        self._proc: subprocess.Popen | None = None
+        self._proc: subprocess.Popen[bytes] | None = None
         self._log_file: IO[bytes] | None = None
 
     def _build_env(self) -> Mapping[str, str]:
@@ -145,7 +148,7 @@ class BenchManagedServer:
             raise
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         if self._proc is not None:
             self._proc.terminate()
             try:

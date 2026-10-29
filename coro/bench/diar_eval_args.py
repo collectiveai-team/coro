@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 from cyclopts import Parameter
 
 from coro.backends.diarization.nemo.streaming import LATENCY_TIER_PARAMS
-from coro.cli_support import fail, invoke, new_app
+from coro.cli_support import fail, invoke_for, new_app
 
 PROG = "coro-bench-diar"
 
@@ -117,7 +117,7 @@ def parse_diar_eval_args(
     """
     app = new_app(PROG, help=description)
     app.default(_command)
-    args: DiarEvalArgs = invoke(app, argv)
+    args = invoke_for(app, DiarEvalArgs, argv)
     if bool(args.meetings) == bool(args.clips_dir):
         fail(PROG, "pass exactly one of --meetings or --clips-dir")
     return args

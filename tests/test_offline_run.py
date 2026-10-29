@@ -216,8 +216,8 @@ def test_an_auto_lid_capable_default_still_loads_once_per_run_for_detection(
 
 
 # MARK: Parity With The Server
-def test_its_output_matches_what_the_endpoint_would_return(audio_file, tmp_path, no_network):
-    """Otherwise `coro run` is a fourth response shape nobody documented."""
+def _served_response(audio_file) -> object:
+    """What the transcription endpoint returns for ``audio_file`` with the fake ASR."""
     from starlette.testclient import TestClient
 
     from support.factories import make_app
@@ -234,6 +234,12 @@ def test_its_output_matches_what_the_endpoint_would_return(audio_file, tmp_path,
             files={"file": ("input.wav", handle, "audio/wav")},
             data={"response_format": DEFAULT_RESPONSE_FORMAT},
         )
+    return served.json()
+
+
+def test_its_output_matches_what_the_endpoint_would_return(audio_file, tmp_path, no_network):
+    """Otherwise `coro run` is a fourth response shape nobody documented."""
+    served = _served_response(audio_file)
 
     output = tmp_path / "out.json"
     with patch(
@@ -241,4 +247,4 @@ def test_its_output_matches_what_the_endpoint_would_return(audio_file, tmp_path,
     ):
         _run(str(audio_file), "-o", str(output), "--warmup", "disabled")
 
-    assert json.loads(output.read_text()) == served.json()
+    assert json.loads(output.read_text()) == served

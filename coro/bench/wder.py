@@ -28,11 +28,28 @@ reimplemented:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, TypedDict, cast
 
 from coro.bench.models.quality import WderStats
+
+if TYPE_CHECKING:
+    from decimal import Decimal
+
+    from meeteval.io.seglst import SegLST, SegLstSegment
+
+    from coro.bench.quality_meeteval import CPErrorRate
+
+
+class _TimedSegment(TypedDict):
+    start_time: Decimal
+    end_time: Decimal
+
+
+type _AlignedPair = tuple[SegLstSegment | None, SegLstSegment | None]
+"""One aligned reference/hypothesis word; ``None`` marks an insertion or deletion."""
 
 UNKNOWN_SPEAKER_LABEL = "-1"
 """Hypothesis speaker sentinel meaning "no diarization support for this word".
@@ -80,7 +97,7 @@ class _Counts:
         )
 
 
-def hyp_to_ref_speaker_map(cp_result: Any) -> SpeakerMap:
+def hyp_to_ref_speaker_map(cp_result: CPErrorRate) -> SpeakerMap:
     """Invert a meeteval cpWER ``assignment`` into hypothesis -> reference.
 
     ``CPErrorRate.assignment`` is a tuple of ``(ref_speaker, hyp_speaker)``
@@ -93,13 +110,13 @@ def hyp_to_ref_speaker_map(cp_result: Any) -> SpeakerMap:
     for ref_speaker, hyp_speaker in cp_result.assignment or ():
         if ref_speaker is None or hyp_speaker is None:
             continue
-        if str(hyp_speaker) == UNKNOWN_SPEAKER_LABEL:
+        if hyp_speaker == UNKNOWN_SPEAKER_LABEL:
             continue
-        pairs[str(hyp_speaker)] = str(ref_speaker)
+        pairs[hyp_speaker] = ref_speaker
     return SpeakerMap(pairs)
 
 
-def _flat_word_alignment(reference: Any, hypothesis: Any) -> list[tuple]:
+def _flat_word_alignment(reference: SegLST, hypothesis: SegLST) -> list[_AlignedPair]:
     """Align one session's reference and hypothesis words as two flat streams.
 
     WDER is defined over a single time-ordered word sequence per side, not over
@@ -110,7 +127,10 @@ def _flat_word_alignment(reference: Any, hypothesis: Any) -> list[tuple]:
     """
     from meeteval.wer.wer.time_constrained import align
 
-    segments = list(reference) + list(hypothesis)
+    # Segments loaded from an STM carry scalar Decimal times, never the
+    # per-word time lists SegLstSegment also allows.
+    merged = [*reference, *hypothesis]
+    segments = cast("list[_TimedSegment]", merged)  # botica: ignore[no-type-cast] -- see above
     if not segments:
         return []
 
@@ -120,7 +140,9 @@ def _flat_word_alignment(reference: Any, hypothesis: Any) -> list[tuple]:
     # Decimal) because meeteval subtracts the collar from them directly.
     span = max(s["end_time"] for s in segments) - min(s["start_time"] for s in segments)
 
-    return align(
+    # With style="seglst" align pairs whole segments; meeteval's annotation
+    # describes only its default "words" style.
+    pairs = align(
         reference,
         hypothesis,
         collar=span * 2 + 1,
@@ -130,15 +152,16 @@ def _flat_word_alignment(reference: Any, hypothesis: Any) -> list[tuple]:
         hypothesis_sort="segment",
         style="seglst",
     )
+    return cast("list[_AlignedPair]", pairs)  # botica: ignore[no-type-cast] -- see above
 
 
-def _tally_word(ref_word: dict, hyp_word: dict, speakers: SpeakerMap) -> _Counts:
+def _tally_word(ref_word: SegLstSegment, hyp_word: SegLstSegment, speakers: SpeakerMap) -> _Counts:
     """Classify one aligned reference/hypothesis word pair."""
     text_match = ref_word["words"] == hyp_word["words"]
     correct = 1 if text_match else 0
     substitutions = 0 if text_match else 1
 
-    hyp_speaker = str(hyp_word["speaker"])
+    hyp_speaker = hyp_word["speaker"]
     if hyp_speaker == UNKNOWN_SPEAKER_LABEL:
         return _Counts(
             correct=correct,
@@ -147,7 +170,7 @@ def _tally_word(ref_word: dict, hyp_word: dict, speakers: SpeakerMap) -> _Counts
             abstentions=1,
         )
 
-    wrong = 0 if speakers.matches(hyp_speaker, str(ref_word["speaker"])) else 1
+    wrong = 0 if speakers.matches(hyp_speaker, ref_word["speaker"]) else 1
     return _Counts(
         correct=correct,
         substitutions=substitutions,
@@ -157,7 +180,7 @@ def _tally_word(ref_word: dict, hyp_word: dict, speakers: SpeakerMap) -> _Counts
     )
 
 
-def _tally(alignment: list[tuple], speakers: SpeakerMap) -> _Counts:
+def _tally(alignment: list[_AlignedPair], speakers: SpeakerMap) -> _Counts:
     """Count correct/substituted words and their speaker errors."""
     total = _Counts()
     for ref_word, hyp_word in alignment:
@@ -195,7 +218,7 @@ def _stats_from_counts(counts: _Counts) -> WderStats:
 def compute_wder(
     ref_stm_path: Path,
     hyp_stm_path: Path,
-    cp_results: dict[str, Any],
+    cp_results: Mapping[str, CPErrorRate],
 ) -> WderStats:
     """Score WDER for one reference/hypothesis STM pair.
 

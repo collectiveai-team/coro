@@ -69,7 +69,7 @@ class _StubHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):  # noqa: A002
+    def log_message(self, format, *args):  # noqa: A002 -- BaseHTTPRequestHandler signature
         pass
 
 

@@ -124,7 +124,7 @@ class BasicTextNormalizer:
         s = self.clean(s).lower()
 
         if self.split_letters:
-            import regex
+            import regex  # pyrefly: ignore[untyped-import]  # regex ships no stubs
 
             s = " ".join(regex.findall(r"\X", s, regex.U))
 

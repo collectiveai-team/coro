@@ -7,13 +7,13 @@ import json
 import statistics
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
 
 from coro.bench.models.performance import (
     MetricStats,
     ParsedResourceRows,
     PerformanceSummary,
     PerItemAggregation,
+    PerRepCell,
     PerRepSummary,
     RunTotals,
 )
@@ -37,7 +37,8 @@ def _parse_resource_rows(csv_path: Path) -> ParsedResourceRows:
         "server_vram_mib": [],
         "gpu_util_pct": [],
     }
-    scalars: dict[str, Any] = {"observed_hardware_profile": ""}
+    scalars: dict[str, float | None] = {}
+    observed_hardware_profile = ""
     scalar_keys = (
         "wall_seconds",
         "transcription_throughput",
@@ -58,9 +59,13 @@ def _parse_resource_rows(csv_path: Path) -> ParsedResourceRows:
                 have_scalars = True
                 for key in scalar_keys:
                     scalars[key] = _to_float(row.get(key))
-                scalars["observed_hardware_profile"] = row.get("observed_hardware_profile", "")
+                observed_hardware_profile = row.get("observed_hardware_profile", "")
 
-    return ParsedResourceRows(series=series, scalars=scalars)
+    return ParsedResourceRows(
+        series=series,
+        scalars=scalars,
+        observed_hardware_profile=observed_hardware_profile,
+    )
 
 
 def _peak_with_baseline(
@@ -115,7 +120,7 @@ def compute_per_rep_summary(csv_path: Path) -> PerRepSummary:
     ):
         if scalars.get(key) is not None:
             setattr(result, key, scalars[key])
-    result.observed_hardware_profile = scalars["observed_hardware_profile"] or "cpu-only"
+    result.observed_hardware_profile = parsed.observed_hardware_profile or "cpu-only"
     return result
 
 
@@ -161,14 +166,14 @@ def write_performance_summary(
     out_dir: Path,
     per_item_reps: dict[str, list[PerRepSummary]],
 ) -> PerformanceSummary:
-    per_rep_rows: list[dict[str, Any]] = []
+    per_rep_rows: list[dict[str, PerRepCell]] = []
     per_item_agg: dict[str, PerItemAggregation] = {}
     total_wall = 0.0
     total_audio = 0.0
 
     for item_id, rep_summaries in per_item_reps.items():
         for i, rep_summary in enumerate(rep_summaries):
-            row: dict[str, Any] = {"item_id": item_id, "rep": i + 1}
+            row: dict[str, PerRepCell] = {"item_id": item_id, "rep": i + 1}
             row.update(asdict(rep_summary))
             per_rep_rows.append(row)
             ws = rep_summary.wall_seconds

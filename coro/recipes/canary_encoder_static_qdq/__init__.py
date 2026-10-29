@@ -25,8 +25,10 @@ import json
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import override
 
 import numpy as np
+import numpy.typing as npt
 from onnxruntime.quantization import (
     CalibrationDataReader,
     CalibrationMethod,
@@ -109,6 +111,10 @@ def _load_calibration_wavs(manifest_path: Path) -> list[str]:
     return wavs
 
 
+type _EncoderFeed = dict[str, npt.NDArray[np.generic]]
+"""One calibration input: the encoder's ``audio_signal`` and ``length`` tensors."""
+
+
 class CanaryEncoderCalibrationReader(CalibrationDataReader):
     """Feeds real mel-spectrogram features through the encoder's ONNX input contract.
 
@@ -129,7 +135,7 @@ class CanaryEncoderCalibrationReader(CalibrationDataReader):
         manager = Manager(providers=["CPUExecutionProvider"])
         preprocessor = manager._create_preprocessor("nemo128")
 
-        self._inputs: list[dict] = []
+        self._inputs: list[_EncoderFeed] = []
         for path in wav_paths:
             audio, sr = sf.read(path, dtype="float32")
             if sr != 16000:
@@ -143,16 +149,19 @@ class CanaryEncoderCalibrationReader(CalibrationDataReader):
         self._end = len(self._inputs)
         self._cursor = 0
 
+    @override
     def __len__(self) -> int:
         return len(self._inputs)
 
+    @override
     def set_range(self, start_index: int, end_index: int) -> None:
         """Restrict `get_next` to `[start_index, end_index)` (ORT chunking hook)."""
         self._start = start_index
         self._end = min(end_index, len(self._inputs))
         self._cursor = start_index
 
-    def get_next(self) -> dict | None:  # pyrefly: ignore[bad-override]
+    @override
+    def get_next(self) -> _EncoderFeed | None:  # pyrefly: ignore[bad-override]
         if self._cursor >= self._end:
             return None
         item = self._inputs[self._cursor]

@@ -13,16 +13,13 @@ Normalization is not neutral, so neither lane is reported alone. See ADR 0011.
 
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
-from coro.bench.normalizers import BasicTextNormalizer
 from coro.bench.models.quality import (
     CombinedMetrics,
     DerStats,
-    DiarizationSanity,
     NormalizedMetrics,
     PerItemEntry,
     QualitySummary,
@@ -32,184 +29,43 @@ from coro.bench.models.quality import (
     WderStats,
     WerStats,
 )
+from coro.bench.quality_meeteval import (
+    Meeteval,
+    combine_der_sessions,
+    combine_wer_sessions,
+    der_stats,
+    require_meeteval,
+    wer_stats,
+)
+from coro.bench.quality_stm import (
+    diarization_sanity,
+    is_diarization_only_stm,
+    normalize_transcript_text,
+    write_normalized_stm,
+)
 from coro.bench.wder import combine_wder, compute_wder
-from coro.cli_support import err_console
 from coro.core.logger import get_logger
+
+if TYPE_CHECKING:
+    from coro.bench.quality_meeteval import ErrorRate
+
+__all__ = [
+    "WER_METRIC_KEYS",
+    "combine_items",
+    "diarization_sanity",
+    "is_diarization_only_stm",
+    "normalize_transcript_text",
+    "score_item",
+]
 
 log = get_logger(__name__)
 
 
-def _require_meeteval():
-    try:
-        import meeteval
-
-        return meeteval
-    except ImportError:
-        err_console.out(
-            "Error: meeteval is required for quality scoring.\n"
-            "The bench tooling is a PEP 735 dependency group, not an installable "
-            "extra.\n"
-            "Install with: uv sync --group bench\n"
-            "Then run the bench with: uv run --group bench coro-bench ..."
-        )
-        sys.exit(1)
-
-
-def _wer_to_dict(result) -> WerStats:
-    """Convert a meeteval WER result object to :class:`WerStats`.
-
-    meeteval 0.4.x uses `error_rate` instead of `wer` as the attribute name.
-    """
-    return WerStats(
-        wer=result.error_rate,
-        errors=result.errors,
-        length=result.length,
-        insertions=result.insertions,
-        deletions=result.deletions,
-        substitutions=result.substitutions,
-    )
-
-
-def _der_to_dict(result) -> DerStats:
-    """Convert a meeteval DER result object to :class:`DerStats`.
-
-    meeteval 0.4.x DiaErrorRate uses `*_speaker_time` field names and
-    returns Decimal values; cast to float for JSON serialisability.
-    """
-    return DerStats(
-        der=float(result.error_rate),
-        false_alarm=float(result.falarm_speaker_time),
-        missed_detection=float(result.missed_speaker_time),
-        speaker_error=float(result.speaker_error_time),
-        total_speech=float(result.scored_speaker_time),
-    )
-
-
-def _combine_multifile(meeteval, results: dict) -> Any:
-    """Combine per-session meeteval results into a single aggregate."""
-    return meeteval.wer.combine_error_rates(*results.values())
-
-
-# Diacritic-preserving by construction: `remove_diacritics` is left at its
-# False default because stripping diacritics collapses distinct Spanish words
-# (esta/está, ano/año) and silently understates error. See ADR 0011.
-_BASIC_NORMALIZER = BasicTextNormalizer()
-
-
-def normalize_transcript_text(text: str) -> str:
-    """Apply the Normalized Metric Lane protocol to one transcript text field.
-
-    Uses the vendored Whisper Basic Text Normalizer: bracketed and parenthesised
-    content removed, lowercased, symbols and punctuation mapped to spaces,
-    whitespace collapsed, and diacritics preserved.
-
-    Args:
-        text: Transcript text as it appears in an STM line.
-
-    Returns:
-        The normalized transcript text.
-
-    """
-    return _BASIC_NORMALIZER(text)
-
-
-def _stm_lines(path: Path):
-    """Yield STM lines from a file, or from every ``.stm`` in a directory.
-
-    meeteval's multifile API accepts a directory of per-session STMs, so the
-    checks around it have to as well — passing one used to raise
-    ``IsADirectoryError`` from inside :func:`score_item`, which is why
-    ``coro-bench-diar``'s combined-across-sessions DER could never run.
-    """
-    paths = sorted(path.glob("*.stm")) if path.is_dir() else [path]
-    for stm_path in paths:
-        yield from stm_path.read_text().splitlines()
-
-
-def is_diarization_only_stm(path: Path) -> bool:
-    """Return True when every STM line's text is the diarization-only sentinel.
-
-    Such references (e.g. VoxConverse RTTM converted via rttm_to_stm) carry
-    speaker turns but no transcript, so only DER is meaningful. Accepts either
-    a single STM or a directory of them.
-    """
-    from coro.bench.stm import DIARIZATION_ONLY_TEXT
-
-    saw_line = False
-    for line in _stm_lines(path):
-        parts = line.strip().split(maxsplit=5)
-        if len(parts) < 6:
-            continue
-        saw_line = True
-        if parts[5].strip() != DIARIZATION_ONLY_TEXT:
-            return False
-    return saw_line
-
-
-def _count_stm_speakers(path: Path) -> int:
-    """Count distinct speaker labels (column 3) in an STM file or directory."""
-    speakers: set[str] = set()
-    for line in _stm_lines(path):
-        parts = line.strip().split(maxsplit=5)
-        if len(parts) >= 3:
-            speakers.add(parts[2])
-    return len(speakers)
-
-
-def diarization_sanity(ref_stm_path: Path, hyp_stm_path: Path) -> DiarizationSanity:
-    """Flag degenerate diarization: a single hyp speaker against multi-speaker ref.
-
-    A diarization-invariant metric like ORC-WER stays low even when every word
-    collapses onto one speaker, so this check surfaces the failure the WER
-    headline would otherwise hide.
-    """
-    ref_speakers = _count_stm_speakers(ref_stm_path)
-    hyp_speakers = _count_stm_speakers(hyp_stm_path)
-    degenerate = hyp_speakers <= 1 and ref_speakers > 1
-    return DiarizationSanity(
-        ref_speakers=ref_speakers,
-        hyp_speakers=hyp_speakers,
-        degenerate=degenerate,
-    )
-
-
-def _write_normalized_stm(src: Path, dst: Path) -> int:
-    """Write an STM file with only the transcript text field normalized.
-
-    Applied identically to the Reference STM and the Hypothesis STM so the
-    Normalized Metric Lane compares like with like. The source file is never
-    modified: normalization happens on a scratch copy at scoring time, so the
-    Raw Metric Lane stays recoverable from the artifacts.
-
-    Lines whose text normalizes to nothing (e.g. a segment that was only a
-    ``[non-speech]`` marker) carry no words to score and are dropped.
-
-    Args:
-        src: STM file to read.
-        dst: STM file to write.
-
-    Returns:
-        The number of scoreable lines written.
-
-    """
-    lines: list[str] = []
-    for line in src.read_text().splitlines():
-        parts = line.strip().split(maxsplit=5)
-        if len(parts) < 6:
-            continue
-        text = normalize_transcript_text(parts[5])
-        if not text:
-            continue
-        lines.append(" ".join([*parts[:5], text]))
-    dst.write_text("\n".join(lines) + ("\n" if lines else ""))
-    return len(lines)
-
-
 def _score_normalized_lane(
-    meeteval,
+    meeteval: Meeteval,
     ref_stm_path: Path,
     hyp_stm_path: Path,
-    raw: dict[str, Any],
+    raw: dict[str, ErrorRate],
 ) -> NormalizedMetrics | None:
     """Score the Normalized Metric Lane, recording raw results under ``raw``.
 
@@ -232,8 +88,8 @@ def _score_normalized_lane(
         tmp_dir = Path(tmp)
         normalized_ref = tmp_dir / ref_stm_path.name
         normalized_hyp = tmp_dir / hyp_stm_path.name
-        n_ref = _write_normalized_stm(ref_stm_path, normalized_ref)
-        n_hyp = _write_normalized_stm(hyp_stm_path, normalized_hyp)
+        n_ref = write_normalized_stm(ref_stm_path, normalized_ref)
+        n_hyp = write_normalized_stm(hyp_stm_path, normalized_hyp)
 
         if not n_ref or not n_hyp:
             log.warning(
@@ -247,20 +103,20 @@ def _score_normalized_lane(
         # Keep the per-session dict: its CPErrorRate.assignment is the optimal
         # speaker mapping WDER needs, and combining discards it.
         cpwer_per_session = meeteval.wer.cpwer(normalized_ref, normalized_hyp)
-        raw["normalized_cpwer"] = _combine_multifile(meeteval, cpwer_per_session)
-        raw["normalized_orcwer"] = _combine_multifile(
+        raw["normalized_cpwer"] = combine_wer_sessions(meeteval, cpwer_per_session)
+        raw["normalized_orcwer"] = combine_wer_sessions(
             meeteval, meeteval.wer.greedy_orcwer(normalized_ref, normalized_hyp)
         )
-        raw["normalized_dicpwer"] = _combine_multifile(
+        raw["normalized_dicpwer"] = combine_wer_sessions(
             meeteval, meeteval.wer.greedy_dicpwer(normalized_ref, normalized_hyp)
         )
         # Scored inside the temporary directory: compute_wder re-reads both STM
         # files from disk, so the normalized copies must still exist.
         wder = compute_wder(normalized_ref, normalized_hyp, cpwer_per_session)
         return NormalizedMetrics(
-            cpwer=_wer_to_dict(raw["normalized_cpwer"]),
-            orcwer=_wer_to_dict(raw["normalized_orcwer"]),
-            dicpwer=_wer_to_dict(raw["normalized_dicpwer"]),
+            cpwer=wer_stats(raw["normalized_cpwer"]),
+            orcwer=wer_stats(raw["normalized_orcwer"]),
+            dicpwer=wer_stats(raw["normalized_dicpwer"]),
             wder=wder,
         )
 
@@ -301,10 +157,10 @@ def score_item(
     diarizer timeline) for model-vs-model diarization comparisons, and pass
     ``der_collar=0.0`` there to keep this protocol.
     """
-    meeteval = _require_meeteval()
+    meeteval = require_meeteval()
 
     try:
-        raw: dict[str, Any] = {}
+        raw: dict[str, ErrorRate] = {}
         metrics = ScoreMetrics()
 
         # Diarization-only references (speaker turns, no transcript) can only be
@@ -316,20 +172,20 @@ def score_item(
             # Keep the per-session dict: its CPErrorRate.assignment is the
             # optimal speaker mapping WDER needs, and combining discards it.
             cpwer_per_session = meeteval.wer.cpwer(ref_stm_path, hyp_stm_path)
-            raw["cpwer"] = _combine_multifile(meeteval, cpwer_per_session)
-            metrics.cpwer = _wer_to_dict(raw["cpwer"])
+            raw["cpwer"] = combine_wer_sessions(meeteval, cpwer_per_session)
+            metrics.cpwer = wer_stats(raw["cpwer"])
 
             metrics.wder = compute_wder(ref_stm_path, hyp_stm_path, cpwer_per_session)
 
-            raw["orcwer"] = _combine_multifile(
+            raw["orcwer"] = combine_wer_sessions(
                 meeteval, meeteval.wer.greedy_orcwer(ref_stm_path, hyp_stm_path)
             )
-            metrics.orcwer = _wer_to_dict(raw["orcwer"])
+            metrics.orcwer = wer_stats(raw["orcwer"])
 
-            raw["dicpwer"] = _combine_multifile(
+            raw["dicpwer"] = combine_wer_sessions(
                 meeteval, meeteval.wer.greedy_dicpwer(ref_stm_path, hyp_stm_path)
             )
-            metrics.dicpwer = _wer_to_dict(raw["dicpwer"])
+            metrics.dicpwer = wer_stats(raw["dicpwer"])
 
             # Normalized Metric Lane: the same four metrics recomputed after
             # applying the Basic Text Normalizer to both sides identically.
@@ -341,14 +197,15 @@ def score_item(
             collar=der_collar,
             regions=der_regions,
         )
-        raw["der"] = _combine_multifile(meeteval, der_results)
-        metrics.der = _der_to_dict(raw["der"])
+        raw_der = combine_der_sessions(meeteval, der_results)
+        metrics.der = der_stats(raw_der)
 
         return ScoreResult(
             metrics=metrics,
             diarization_only=diarization_only,
             diarization=diarization_sanity(ref_stm_path, hyp_stm_path),
             raw=raw,
+            raw_der=raw_der,
         )
 
     except Exception as exc:
@@ -366,14 +223,22 @@ def score_item(
 WER_METRIC_KEYS = ("cpwer", "orcwer", "dicpwer")
 
 
-def _combine_raw_key(meeteval, succeeded: list[ScoreResult], raw_key: str) -> Any:
-    """Aggregate one ``raw`` key (WER or DER) across all succeeded items."""
+def _combine_raw_key(
+    meeteval: Meeteval, succeeded: list[ScoreResult], raw_key: str
+) -> WerStats | None:
+    """Aggregate one WER ``raw`` key across all succeeded items."""
     raw_objects = [r.raw[raw_key] for r in succeeded if raw_key in r.raw]
     if not raw_objects:
         return None
-    combined = meeteval.wer.combine_error_rates(*raw_objects)
-    converter = _der_to_dict if raw_key == "der" else _wer_to_dict
-    return converter(combined)
+    return wer_stats(meeteval.wer.combine_error_rates(*raw_objects))
+
+
+def _combine_raw_der(meeteval: Meeteval, succeeded: list[ScoreResult]) -> DerStats | None:
+    """Aggregate DER across all succeeded items."""
+    raw_objects = [r.raw_der for r in succeeded if r.raw_der is not None]
+    if not raw_objects:
+        return None
+    return der_stats(meeteval.wer.combine_error_rates(*raw_objects))
 
 
 def _collect_wder(succeeded: list[ScoreResult], *, normalized: bool) -> WderStats | None:
@@ -390,7 +255,7 @@ def _collect_wder(succeeded: list[ScoreResult], *, normalized: bool) -> WderStat
     return combine_wder(stats)
 
 
-def _combined_metrics(meeteval, succeeded: list[ScoreResult]) -> CombinedMetrics:
+def _combined_metrics(meeteval: Meeteval, succeeded: list[ScoreResult]) -> CombinedMetrics:
     """Build the workload-level combined metric block from succeeded items."""
     return CombinedMetrics(
         cpwer=_combine_raw_key(meeteval, succeeded, "cpwer"),
@@ -403,7 +268,7 @@ def _combined_metrics(meeteval, succeeded: list[ScoreResult]) -> CombinedMetrics
             dicpwer=_combine_raw_key(meeteval, succeeded, "normalized_dicpwer"),
             wder=_collect_wder(succeeded, normalized=True),
         ),
-        der=_combine_raw_key(meeteval, succeeded, "der"),
+        der=_combine_raw_der(meeteval, succeeded),
     )
 
 
@@ -450,7 +315,7 @@ def _per_item_entry(result: ScoreResult) -> PerItemEntry:
 
 def combine_items(item_results: list[ScoreResult]) -> QualitySummary:
     """Aggregate per-item score_item results into a workload-level summary."""
-    meeteval = _require_meeteval()
+    meeteval = require_meeteval()
 
     succeeded = [r for r in item_results if r.metrics is not None]
     failed = [r for r in item_results if r.metrics is None]

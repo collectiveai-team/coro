@@ -94,7 +94,7 @@ class _RecordingHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def log_message(self, format, *args):  # noqa: A002
+    def log_message(self, format, *args):  # noqa: A002 -- BaseHTTPRequestHandler signature
         pass
 
 

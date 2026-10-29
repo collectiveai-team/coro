@@ -35,32 +35,37 @@ def _fake_model(*, blank_plus_one: int = 1025, vocab_size: int = 1024):
     return model
 
 
-class TestMain:
-    def test_writes_prompt_kernel_weights_and_metadata(self, tmp_path):
-        checkpoint = tmp_path / "checkpoint.nemo"
-        checkpoint.write_bytes(b"")
-        out_dir = tmp_path / "out"
+def _run_recipe(tmp_path):
+    """Run the recipe on an empty checkpoint; return the output dir and the patched loader."""
+    checkpoint = tmp_path / "checkpoint.nemo"
+    checkpoint.write_bytes(b"")
+    out_dir = tmp_path / "out"
+    with patch(
+        "nemo.collections.asr.models.ASRModel.restore_from",
+        autospec=True,
+        return_value=_fake_model(),
+    ) as mock_restore:
+        main(["--checkpoint", str(checkpoint), "--out-dir", str(out_dir)])
+    return out_dir, mock_restore
 
-        with patch(
-            "nemo.collections.asr.models.ASRModel.restore_from",
-            autospec=True,
-            return_value=_fake_model(),
-        ) as mock_restore:
-            main(["--checkpoint", str(checkpoint), "--out-dir", str(out_dir)])
+
+class TestMain:
+    def test_restores_the_given_checkpoint(self, tmp_path):
+        _, mock_restore = _run_recipe(tmp_path)
 
         mock_restore.assert_called_once()
-        assert mock_restore.call_args.args[0] == str(checkpoint)
+        assert mock_restore.call_args.args[0] == str(tmp_path / "checkpoint.nemo")
 
-        cache_npz = out_dir / "prompt_kernel_cache.npz"
-        cache_json = out_dir / "prompt_kernel_cache.json"
-        assert cache_npz.exists()
-        assert cache_json.exists()
+    def test_writes_every_prompt_kernel_weight(self, tmp_path):
+        out_dir, _ = _run_recipe(tmp_path)
 
-        weights = np.load(cache_npz)
-        expected_keys = {name for name, _ in _fake_model().prompt_kernel.state_dict().items()}
-        assert set(weights.files) == expected_keys
+        weights = np.load(out_dir / "prompt_kernel_cache.npz")
+        assert set(weights.files) == set(_fake_model().prompt_kernel.state_dict())
 
-        meta = json.loads(cache_json.read_text())
+    def test_writes_the_tokenizer_metadata(self, tmp_path):
+        out_dir, _ = _run_recipe(tmp_path)
+
+        meta = json.loads((out_dir / "prompt_kernel_cache.json").read_text())
         assert meta == {
             "vocab_size": 1024,
             "blank_id": 1024,

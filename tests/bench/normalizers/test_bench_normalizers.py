@@ -148,7 +148,7 @@ class TestEnglishNormalizerIsNotUsed:
         assert offenders == [Path("coro/bench/normalizers/basic.py")]
 
     def test_quality_scoring_never_strips_diacritics(self):
-        from coro.bench.quality import _BASIC_NORMALIZER
+        from coro.bench.quality_stm import BASIC_NORMALIZER as _BASIC_NORMALIZER
 
         assert _BASIC_NORMALIZER.clean is remove_symbols
         assert _BASIC_NORMALIZER.split_letters is False
