@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
+
 from coro.bench import gpu
 from coro.bench.gpu import GpuDevice, _aggregate, sample_gpu
 from coro.bench.models.gpu import GpuSample
 
 MIB = 1024**2
+# GpuSample columns are rounded to 0.1, so half a step is the exact tolerance.
+_HALF_STEP = 0.05
 
 
 def _dev(total_mib, used_mib, util, procs):
@@ -26,34 +30,34 @@ class TestAggregate:
     def test_attributes_vram_to_server_tree_pids(self):
         dev = _dev(16000, 5000, 80.0, [(100, 1200), (200, 3000)])
         out = _aggregate([dev], pids={100})
-        assert out.server_vram_mib == 1200.0
-        assert out.total_gpu_used_mib == 5000.0
-        assert out.total_gpu_mem_mib == 16000.0
-        assert out.gpu_util_pct == 80.0
+        assert out.server_vram_mib == pytest.approx(1200.0, abs=_HALF_STEP)
+        assert out.total_gpu_used_mib == pytest.approx(5000.0, abs=_HALF_STEP)
+        assert out.total_gpu_mem_mib == pytest.approx(16000.0, abs=_HALF_STEP)
+        assert out.gpu_util_pct == pytest.approx(80.0, abs=_HALF_STEP)
 
     def test_sums_tree_pids_across_devices(self):
         d0 = _dev(16000, 4000, 50.0, [(100, 1000), (200, 500)])
         d1 = _dev(16000, 2000, 70.0, [(100, 800), (300, 2000)])
         out = _aggregate([d0, d1], pids={100, 200})
-        assert out.server_vram_mib == 2300.0  # 1000 + 500 + 800
-        assert out.total_gpu_used_mib == 6000.0
-        assert out.gpu_util_pct == 60.0
+        assert out.server_vram_mib == pytest.approx(2300.0, abs=_HALF_STEP)  # 1000 + 500 + 800
+        assert out.total_gpu_used_mib == pytest.approx(6000.0, abs=_HALF_STEP)
+        assert out.gpu_util_pct == pytest.approx(60.0, abs=_HALF_STEP)
 
     def test_cpu_only_when_tree_uses_no_gpu(self):
         # Driver / other tenant holds 366 MiB but no server PID is present.
         dev = _dev(16000, 366, 0.0, [(999, 366)])
         out = _aggregate([dev], pids={100, 200})
-        assert out.server_vram_mib == 0.0
+        assert out.server_vram_mib == pytest.approx(0.0, abs=_HALF_STEP)
 
     def test_ignores_unavailable_process_memory(self):
         dev = _dev(16000, 5000, 10.0, [(100, None), (100, 700)])
         out = _aggregate([dev], pids={100})
-        assert out.server_vram_mib == 700.0
+        assert out.server_vram_mib == pytest.approx(700.0, abs=_HALF_STEP)
 
     def test_without_pids_reports_whole_device(self):
         dev = _dev(16000, 5000, 10.0, [(100, 1200)])
         out = _aggregate([dev], pids=None)
-        assert out.server_vram_mib == 5000.0
+        assert out.server_vram_mib == pytest.approx(5000.0, abs=_HALF_STEP)
 
 
 class TestSampleGpu:
@@ -69,6 +73,6 @@ class TestSampleGpu:
         dev = _dev(16000, 5000, 25.0, [(7, 2048), (8, 1000)])
         monkeypatch.setattr(gpu, "_read_devices", lambda: [dev])
         out = sample_gpu({7})
-        assert out.server_vram_mib == 2048.0
-        assert out.total_gpu_used_mib == 5000.0
-        assert out.gpu_util_pct == 25.0
+        assert out.server_vram_mib == pytest.approx(2048.0, abs=_HALF_STEP)
+        assert out.total_gpu_used_mib == pytest.approx(5000.0, abs=_HALF_STEP)
+        assert out.gpu_util_pct == pytest.approx(25.0, abs=_HALF_STEP)

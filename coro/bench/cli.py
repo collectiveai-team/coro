@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -11,14 +10,15 @@ from coro.bench.ami import (
     materialize_reference_stms,
     resolve_workload_set,
 )
-from coro.bench.cli_args import _SAMPLING_SUBCOMMANDS, parse_args
+from coro.bench.cli_args import _SAMPLING_SUBCOMMANDS, BenchArgs, parse_args
 from coro.bench.cli_spanish import (
     prepare_spanish_workload,
     print_spanish_fetch_plan,
     run_calibration,
 )
 from coro.bench.errors import ServerPidUnresolvedError, ServerUnreachableError
-from coro.bench.process_lookup import DEFAULT_SERVER_MATCH
+from coro.bench.models.workload import WorkloadItem
+from coro.bench.process_lookup import DEFAULT_SERVER_MATCH, ProcessEntry
 from coro.bench.quarantine import CircularReferenceError
 from coro.bench.server_lifecycle import (
     BenchAttachedServer,
@@ -26,15 +26,21 @@ from coro.bench.server_lifecycle import (
     ServerHandle,
 )
 
-__all__ = ["build_server_handle", "main", "parse_args", "resolve_meetings"]
+__all__ = [
+    "build_server_handle",
+    "main",
+    "parse_args",
+    "require_server_pid",
+    "resolve_meetings",
+]
 
 
 def _build_items(
-    args: argparse.Namespace,
+    args: BenchArgs,
     meetings: list[str],
     *,
     with_references: bool,
-) -> list[dict]:
+) -> list[WorkloadItem]:
     """Assemble the Workload Set from AMI meetings, --audio, and --clips-dir.
 
     ``with_references`` attaches a Reference STM to each item; the performance
@@ -42,7 +48,7 @@ def _build_items(
     """
     from coro.bench.ami import get_audio_path
 
-    items: list[dict] = []
+    items: list[WorkloadItem] = []
     for meeting_id in meetings:
         audio_path = get_audio_path(args.ami_root, meeting_id)
         if not audio_path.exists():
@@ -80,14 +86,16 @@ def _build_items(
 
 def _render_report(out_dir: Path) -> None:
     """Print the run report to stdout and write ``REPORT.md`` beside the artifacts."""
-    from coro.bench.report import build_report, render_markdown, render_stdout
+    from coro.bench.report import build_report
+    from coro.bench.report_markdown import render_markdown
+    from coro.bench.report_stdout import render_stdout
 
     report = build_report(out_dir)
     render_stdout(report)
     (out_dir / "REPORT.md").write_text(render_markdown(report))
 
 
-def _require_server_pid(server: ServerHandle) -> int:
+def require_server_pid(server: ServerHandle) -> int:
     """Return the Server Process Tree root PID, refusing to sample an unrelated one."""
     if server.server_pid is None:
         raise ServerPidUnresolvedError(DEFAULT_SERVER_MATCH)
@@ -95,7 +103,7 @@ def _require_server_pid(server: ServerHandle) -> int:
 
 
 def _run_performance(
-    args: argparse.Namespace,
+    args: BenchArgs,
     meetings: list[str],
     server: ServerHandle,
 ) -> None:
@@ -110,7 +118,7 @@ def _run_performance(
         base_url=server.base_url,
         out_dir=out_dir,
         reps=args.reps,
-        server_pid=_require_server_pid(server),
+        server_pid=require_server_pid(server),
         sample_interval=args.sample_interval,
         cli_args=args.cli_args,
         stream=args.stream,
@@ -123,7 +131,7 @@ def _run_performance(
 
 
 def _run_quality(
-    args: argparse.Namespace,
+    args: BenchArgs,
     meetings: list[str],
     server: ServerHandle,
 ) -> None:
@@ -149,7 +157,7 @@ def _run_quality(
 
 
 def _run_all(
-    args: argparse.Namespace,
+    args: BenchArgs,
     meetings: list[str],
     server: ServerHandle,
 ) -> None:
@@ -164,7 +172,7 @@ def _run_all(
         base_url=server.base_url,
         out_dir=out_dir,
         reps=args.reps,
-        server_pid=_require_server_pid(server),
+        server_pid=require_server_pid(server),
         sample_interval=args.sample_interval,
         cli_args=args.cli_args,
         der_collar=args.der_collar,
@@ -178,19 +186,23 @@ def _run_all(
     _render_report(out_dir)
 
 
-def build_server_handle(args: argparse.Namespace) -> ServerHandle:
+def build_server_handle(
+    args: BenchArgs, *, processes: list[ProcessEntry] | None = None
+) -> ServerHandle:
     """Build the Bench-Attached or Bench-Managed Server handle for this run.
 
     Bench-attached runs that sample resources resolve the Server Process Tree
     root from ``--server-pid`` or ``--server-match``; a Bench-Managed Server
     spawns the server itself and therefore already knows its PID.
+    ``processes`` is the process table that ``--server-match`` searches; None
+    reads ``/proc``.
     """
     from coro.bench.process_lookup import resolve_server_pid
 
     if args.server_url is not None:
         pid = args.server_pid
         if pid is None and args.subcommand in _SAMPLING_SUBCOMMANDS:
-            pid = resolve_server_pid(args.server_match or DEFAULT_SERVER_MATCH)
+            pid = resolve_server_pid(args.server_match or DEFAULT_SERVER_MATCH, processes=processes)
         return BenchAttachedServer(args.server_url, pid=pid)
 
     return BenchManagedServer(
@@ -204,7 +216,7 @@ def build_server_handle(args: argparse.Namespace) -> ServerHandle:
     )
 
 
-def resolve_meetings(args: argparse.Namespace) -> list[str]:
+def resolve_meetings(args: BenchArgs) -> list[str]:
     """Resolve the AMI Workload Set and materialize its audio and Reference STMs.
 
     A custom workload (``--clips-dir`` / ``--audio``) suppresses the implicit
@@ -217,7 +229,7 @@ def resolve_meetings(args: argparse.Namespace) -> list[str]:
 
     meetings = resolve_workload_set(
         ami_meetings=args.ami_meetings,
-        ami_groups=args.ami_groups,
+        ami_groups=[str(group) for group in args.ami_groups],
         ami_preset=args.ami_preset,
     )
     if meetings:

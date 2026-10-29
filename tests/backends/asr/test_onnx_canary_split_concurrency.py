@@ -23,7 +23,6 @@ To run:
 from __future__ import annotations
 
 import asyncio
-import os
 import wave
 from dataclasses import asdict
 from pathlib import Path
@@ -41,18 +40,16 @@ _AUDIO = (
     / "mtedx-HLIJkmy3vy8.wav"
 )
 
-REAL_MODEL_TESTS = os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") == "1"
 _ARTIFACTS_PRESENT = (
     (_ARTIFACTS / "encoder-model.static_qdq_v4_pct_excl.onnx").is_file()
     and (_ARTIFACTS / "decoder_step.dynamic_v1_quint8.onnx").is_file()
     and _AUDIO.is_file()
 )
-skip_unless_real = pytest.mark.skipif(
-    not (REAL_MODEL_TESTS and _ARTIFACTS_PRESENT),
+skip_without_artifacts = pytest.mark.skipif(
+    not _ARTIFACTS_PRESENT,
     reason=(
-        "Skipping real-model concurrency check. Set CORO_RUN_REAL_MODEL_TESTS=1 "
-        "with the .tmp/onnx_export/canary_split artifacts and the mtedx wav "
-        "present to run it."
+        "Skipping real-model concurrency check: the .tmp/onnx_export/canary_split "
+        "artifacts and the mtedx wav must be present."
     ),
 )
 
@@ -85,7 +82,8 @@ def adapter():
     return built
 
 
-@skip_unless_real
+@pytest.mark.real_model
+@skip_without_artifacts
 async def test_concurrent_windows_match_sequential_results(adapter):
     """Two overlapping decodes on one shared instance each keep their own K/V."""
     windows = [_window_pcm(start) for start in _WINDOW_STARTS]

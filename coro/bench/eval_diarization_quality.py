@@ -33,25 +33,25 @@ install the optional extra (``uv sync --extra cpu --extra diar-pyannote``).
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import contextlib
 import gc
 import json
 import time
 import wave
+from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-
-import torch
+from typing import TYPE_CHECKING
 
 from coro.backends.diarization import factory as diarization_factory
 from coro.backends.diarization.nemo.postprocessing import preset_for_collar
 from coro.backends.diarization.nemo.streaming import (
-    LATENCY_TIER_PARAMS,
     applied_streaming_params,
     get_latency_tier_params,
 )
+from coro.bench.diar_eval_args import DiarEvalArgs, parse_diar_eval_args
 from coro.bench.diar_workload import (
     DiarItem,
     items_from_clips_dir,
@@ -61,7 +61,14 @@ from coro.bench.diar_workload import (
 from coro.bench.models.quality import DerStats
 from coro.bench.quality import score_item
 from coro.bench.stm import speaker_timeline_to_stm
-from coro.settings import ServerSettings
+from coro.cli_support import out_console
+from coro.core.logger import get_logger
+from coro.settings import get_settings
+
+if TYPE_CHECKING:
+    from coro.core.protocols import DiarizationAdapter
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -126,7 +133,7 @@ def combine_der(per_item: list[DerStats]) -> DerStats:
     return DerStats(der=errors / scored if scored else 0.0, **totals)
 
 
-def _tier_scope(adapter, tier: str | None):
+def _tier_scope(adapter: DiarizationAdapter, tier: str | None) -> AbstractContextManager[None]:
     """Apply a latency tier around each model call, or nothing when unset.
 
     Left unset, NeMo runs at whatever streaming configuration the checkpoint
@@ -145,7 +152,7 @@ def _tier_scope(adapter, tier: str | None):
 
 def _run_backend(
     name: str,
-    adapter,
+    adapter: DiarizationAdapter,
     items: list[DiarItem],
     out_dir: Path,
     collar: float,
@@ -190,12 +197,11 @@ def _run_backend(
         )
         primary = der_by_mode[region_modes[0]]
         modes_str = "  ".join(f"{m}={der_by_mode[m].der * 100:.1f}%" for m in region_modes)
-        print(
+        out_console.out(
             f"  [{name}] {item.item_id}: DER[{modes_str}]  "
             f"miss={primary.missed_detection:.0f}s fa={primary.false_alarm:.0f}s "
             f"spk_err={primary.speaker_error:.0f}s  hyp_spk={n_spk} segs={len(timeline)}  "
-            f"({duration / 60:.1f}min in {elapsed:.0f}s, rtf={rtf:.2f})",
-            flush=True,
+            f"({duration / 60:.1f}min in {elapsed:.0f}s, rtf={rtf:.2f})"
         )
 
     # Combined DER across all items, pooled from the per-item scores.
@@ -203,102 +209,33 @@ def _run_backend(
         result.combined[mode] = combine_der(
             [m.der_by_mode[mode] for m in result.per_meeting.values()]
         )
-    print(
+    out_console.out(
         f"  [{name}] COMBINED DER "
-        + "  ".join(f"{m}={result.combined[m].der * 100:.2f}%" for m in region_modes),
-        flush=True,
+        + "  ".join(f"{m}={result.combined[m].der * 100:.2f}%" for m in region_modes)
     )
     return result
 
 
-def _free(adapter) -> None:
+def _free(adapter: DiarizationAdapter) -> None:
     """Drop an adapter and reclaim GPU memory before loading the next model."""
+    import torch
+
     del adapter
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ami-root", default="../../amicorpus")
-    parser.add_argument(
-        "--meetings",
-        nargs="+",
-        help="Whole AMI meetings to score. Mutually exclusive with --clips-dir.",
-    )
-    parser.add_argument(
-        "--clips-dir",
-        default=None,
-        help=(
-            "Directory of pre-cut clips (<clip>.wav beside <clip>.ref.stm, as "
-            "make_ami_clip writes them). Mutually exclusive with --meetings."
-        ),
-    )
-    parser.add_argument(
-        "--ref-rttm-dir",
-        default=None,
-        help=(
-            "Score against external RTTMs instead of the built-in Reference STM. "
-            "Flat or split into train/dev/test. Needed to check a published AMI "
-            "figure: model cards score AMI against forced-alignment RTTMs, which "
-            "disagree with the manual-annotation reference by roughly 29 DER points."
-        ),
-    )
-    parser.add_argument(
-        "--latency-tier",
-        default=None,
-        choices=sorted(LATENCY_TIER_PARAMS),
-        help=(
-            "Streaming latency tier to apply around each nemo model call. Unset "
-            "runs the checkpoint's own configuration, which for the streaming "
-            "Sortformer revisions is not one of the published latency rows; "
-            "'very-high' is the 30.4 s row model cards report AMI at."
-        ),
-    )
-    parser.add_argument(
-        "--collar",
-        type=float,
-        default=0.0,
-        help=(
-            "DER collar in seconds. Defaults to 0, the convention published AMI "
-            "diarization results use; pass 0.25 for the telephony convention. "
-            "This also selects the collar-matched post-processing preset."
-        ),
-    )
-    parser.add_argument(
-        "--postprocessing",
-        default=None,
-        help=(
-            "Diarization Post-Processing Configuration for the nemo backend: a "
-            "vendored preset name, a path to a custom YAML, 'none' for NeMo's "
-            "unconfigured baseline, or 'auto' (the default) to select the "
-            "vendored preset tuned for --collar. See ADR 0010."
-        ),
-    )
-    parser.add_argument(
-        "--regions",
-        nargs="+",
-        default=["all", "nooverlap"],
-        choices=["all", "nooverlap", "single"],
-        help="One or more DER region modes to score (first is the primary).",
-    )
-    parser.add_argument("--out-dir", default="/tmp/diar-eval")  # noqa: S108
-    parser.add_argument("--nemo-model", default="nvidia/diar_streaming_sortformer_4spk-v2")
-    parser.add_argument("--pyannote-model", default="pyannote/speaker-diarization-community-1")
-    parser.add_argument("--backends", nargs="+", default=["nemo", "pyannote"])
-    args = parser.parse_args()
-    if bool(args.meetings) == bool(args.clips_dir):
-        parser.error("pass exactly one of --meetings or --clips-dir")
-    return args
+def _parse_args(argv: Sequence[str] | None = None) -> DiarEvalArgs:
+    return parse_diar_eval_args(argv, description=__doc__)
 
 
-def resolve_workload(args, out_dir: Path) -> list[DiarItem]:
+def resolve_workload(args: DiarEvalArgs, out_dir: Path) -> list[DiarItem]:
     """Build the item list and point it at the requested reference source."""
     if args.clips_dir:
         items = items_from_clips_dir(Path(args.clips_dir).resolve())
     else:
-        items = items_from_meetings(args.meetings, Path(args.ami_root).resolve())
+        items = items_from_meetings(args.meetings or [], Path(args.ami_root).resolve())
     if args.ref_rttm_dir:
         items = materialize_rttm_references(
             items, Path(args.ref_rttm_dir).resolve(), out_dir / "ref-rttm"
@@ -333,36 +270,37 @@ def _print_tables(
 ) -> None:
     width = max([10, *(len(i) for i in item_ids)])
     for mode in region_modes:
-        print("\n" + "=" * 70)
-        print(f"DIARIZATION QUALITY  (DER, collar={collar}s, regions={mode})")
-        print("=" * 70)
+        out_console.out("\n" + "=" * 70)
+        out_console.out(f"DIARIZATION QUALITY  (DER, collar={collar}s, regions={mode})")
+        out_console.out("=" * 70)
         header = f"{'item':<{width}}" + "".join(f"{b:>14}" for b in ran)
-        print(header)
-        print("-" * len(header))
+        out_console.out(header)
+        out_console.out("-" * len(header))
         for item_id in item_ids:
             row = f"{item_id:<{width}}"
             for b in ran:
                 der = results[b].per_meeting[item_id].der_by_mode[mode].der
                 row += f"{der * 100:>13.1f}%"
-            print(row)
-        print("-" * len(header))
+            out_console.out(row)
+        out_console.out("-" * len(header))
         comb_row = f"{'COMBINED':<{width}}"
         for b in ran:
             comb_row += f"{results[b].combined[mode].der * 100:>13.2f}%"
-        print(comb_row)
+        out_console.out(comb_row)
 
 
-def main() -> None:
-    args = _parse_args()
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the diarization-only DER comparison (``coro-bench-diar``)."""
+    args = _parse_args(argv)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    hf_token_secret = ServerSettings().hf_token
+    hf_token_secret = get_settings().hf_token
     hf_token = hf_token_secret.get_secret_value() if hf_token_secret else None
 
-    region_modes = list(args.regions)
+    region_modes = [str(mode) for mode in args.regions]
     postprocessing = resolve_postprocessing_selection(args.postprocessing, collar=args.collar)
     items = resolve_workload(args, out_dir)
-    print(
+    out_console.out(
         f"Items: {len(items)} ({', '.join(i.item_id for i in items)})\n"
         f"Reference: {args.ref_rttm_dir or 'built-in AMI Reference STM'}\n"
         f"Collar: {args.collar}  Regions: {region_modes}\n"
@@ -375,7 +313,7 @@ def main() -> None:
     errors: dict[str, str] = {}
 
     for name in args.backends:
-        print(f"\n=== {name} ({models[name]}) ===", flush=True)
+        out_console.out(f"\n=== {name} ({models[name]}) ===")
         try:
             adapter = diarization_factory.build_diarization_adapter(
                 name,
@@ -396,7 +334,7 @@ def main() -> None:
             _free(adapter)
         except Exception as exc:
             errors[name] = f"{type(exc).__name__}: {exc}"
-            print(f"  [{name}] FAILED: {errors[name]}", flush=True)
+            log.exception("backend failed", backend=name)
 
     payload = {
         "protocol": {
@@ -416,8 +354,8 @@ def main() -> None:
     item_ids = [i.item_id for i in items]
     _print_tables(item_ids, ran, results, collar=args.collar, region_modes=region_modes)
     for b, msg in errors.items():
-        print(f"\n[{b}] could not run: {msg}")
-    print(f"\nFull results: {out_dir / 'results.json'}")
+        out_console.out(f"\n[{b}] could not run: {msg}")
+    out_console.out(f"\nFull results: {out_dir / 'results.json'}")
 
 
 if __name__ == "__main__":

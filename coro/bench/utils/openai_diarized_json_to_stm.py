@@ -8,30 +8,46 @@ All conversion logic lives in the library module.
 
 from __future__ import annotations
 
-import argparse
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 from coro.bench.stm import hyp_segments_to_stm
+from coro.cli_support import invoke, new_app
+
+app = new_app("openai_diarized_json_to_stm", help="Convert OpenAI diarized_json to STM format.")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Convert OpenAI diarized_json to STM format.",
-    )
-    parser.add_argument("input_json", type=Path)
-    parser.add_argument("output_stm", type=Path)
-    parser.add_argument("--recording-id", required=True)
-    parser.add_argument("--channel", default="1")
-    args = parser.parse_args()
+@app.default
+def _convert(
+    input_json: Path,
+    output_stm: Path,
+    /,
+    *,
+    recording_id: str,
+    channel: str = "1",
+) -> None:
+    """Convert OpenAI diarized_json to STM format.
 
-    data = json.loads(args.input_json.read_text(encoding="utf-8"))
+    Args:
+        input_json: diarized_json response to read.
+        output_stm: STM file to write.
+        recording_id: Session id written into every STM line.
+        channel: STM channel column.
+
+    """
+    data = json.loads(input_json.read_text(encoding="utf-8"))
     segments = data if isinstance(data, list) else data.get("segments", [])
 
-    stm_text = hyp_segments_to_stm(segments, args.recording_id, channel=args.channel)
+    stm_text = hyp_segments_to_stm(segments, recording_id, channel=channel)
 
-    args.output_stm.parent.mkdir(parents=True, exist_ok=True)
-    args.output_stm.write_text(stm_text, encoding="utf-8")
+    output_stm.parent.mkdir(parents=True, exist_ok=True)
+    output_stm.write_text(stm_text, encoding="utf-8")
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the diarized_json converter command line."""
+    invoke(app, argv)
 
 
 if __name__ == "__main__":

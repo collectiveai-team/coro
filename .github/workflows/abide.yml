@@ -1,0 +1,95 @@
+name: abide
+
+# The judgment rules of botica on the diff of a pull request. abide judges the diff with the rubric
+# `.abide/rubric.json`, which `botica rules export --format abide` writes; botica keeps the verdicts
+# that the configuration and the `ignore-file` comments keep, and a finding of severity warning or
+# higher fails the job. The summary of the job has a table of the findings.
+#
+# TYPESAFE_AI_API_KEY is a secret of the repository and TYPESAFE_AI_BASE_URL a variable
+# (https://api.typesafe.ai/v1, or the address of a server with the same API). A pull request from a
+# fork gets no secret, and the job fails. A pull request of Dependabot gets no secret of Actions
+# either, and the job is skipped.
+
+on:
+  pull_request:
+
+concurrency:
+  group: abide-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  abide:
+    name: judgment rules
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TYPESAFE_AI_API_KEY: ${{ secrets.TYPESAFE_AI_API_KEY }}
+      TYPESAFE_AI_BASE_URL: ${{ vars.TYPESAFE_AI_BASE_URL }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.13.3"
+          enable-cache: false
+
+      - name: Read botica's version from uv.lock
+        run: >-
+          echo "BOTICA=$(uv export --frozen --no-hashes --no-header --no-annotate
+          --only-group botica | grep -m1 '^botica==')" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Check the rubric
+        run: uvx --from "$BOTICA" botica rules export --format abide --check
+
+      - name: Judge the diff
+        run: |
+          mkdir -p "$RUNNER_TEMP/abide"
+          if [ -z "$TYPESAFE_AI_API_KEY" ]; then
+            echo "::error::the secret TYPESAFE_AI_API_KEY is not set"
+            exit 2
+          fi
+          # Deleted files have nothing left to judge.
+          git diff --diff-filter=d "$BASE_SHA"...HEAD > "$RUNNER_TEMP/abide/pr.diff"
+          # The probability of a verdict changes from one run to the next, and abide can fail on a
+          # timeout: a run with a finding or a failure is judged once more, and the second decides.
+          for attempt in 1 2; do
+            status=0
+            npx --yes @coldtea/abide@0.0.11 check --json --diff "$RUNNER_TEMP/abide/pr.diff" \
+              > "$RUNNER_TEMP/abide/abide.json" || status=$?
+            # abide exits with 1 when a verdict is in the band act; botica decides.
+            if [ "$status" -le 1 ] && uvx --from "$BOTICA" botica lint --judged "$RUNNER_TEMP/abide/abide.json" \
+              --fail-on warning > /dev/null 2>&1; then
+              break
+            fi
+            echo "::notice::run $attempt of abide has a finding or failed (exit $status)"
+          done
+          if [ "$status" -gt 1 ]; then
+            exit "$status"
+          fi
+
+      - name: Table of the findings
+        run: |
+          {
+            echo "## Judgment rules"
+            echo
+            uvx --from "$BOTICA" botica lint --judged "$RUNNER_TEMP/abide/abide.json" --output-format markdown \
+              --exit-zero
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail on the findings
+        run: |
+          uvx --from "$BOTICA" botica lint --judged "$RUNNER_TEMP/abide/abide.json" --output-format github \
+            --fail-on warning

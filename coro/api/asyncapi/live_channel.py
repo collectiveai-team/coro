@@ -15,7 +15,7 @@ from the constants the handler compares against, the format bounds from
 
 from __future__ import annotations
 
-from typing import Any
+from pydantic import JsonValue
 
 from coro.api.asyncapi.contribution import ChannelContribution
 from coro.api.asyncapi.models import Channel, Message, Operation, Reference
@@ -56,7 +56,7 @@ _CHANNEL_DESCRIPTION = (
 
 # Raw PCM has no JSON Schema type of its own; `string` + a binary content
 # encoding is how JSON Schema spells an opaque byte payload.
-_AUDIO_FRAME_SCHEMA: dict[str, Any] = {
+_AUDIO_FRAME_SCHEMA: dict[str, JsonValue] = {
     "type": "string",
     "contentEncoding": "binary",
     "title": "PcmAudioFrame",
@@ -68,7 +68,7 @@ _AUDIO_FRAME_SCHEMA: dict[str, Any] = {
 
 # Control vocabulary read off the constants the handler dispatches on, so a new
 # control frame cannot be added to the handler without appearing here.
-_CONTROL_FRAME_SCHEMA: dict[str, Any] = {
+_CONTROL_FRAME_SCHEMA: dict[str, JsonValue] = {
     "type": "object",
     "title": "LiveControlFrame",
     "properties": {"type": {"type": "string", "enum": [KEEP_ALIVE, FINALIZE, CLOSE_STREAM]}},
@@ -81,7 +81,7 @@ _CONTROL_FRAME_SCHEMA: dict[str, Any] = {
 }
 
 
-def _messages() -> tuple[dict[str, Message], dict[str, dict[str, Any]]]:
+def _messages() -> tuple[dict[str, Message], dict[str, dict[str, JsonValue]]]:
     """Build every message on the live channel, plus the schemas they reference."""
     results_payload, results_defs = payload_schema(DeepgramLiveResults)
     metadata_payload, metadata_defs = payload_schema(DeepgramLiveMetadata)
@@ -145,7 +145,7 @@ def _messages() -> tuple[dict[str, Message], dict[str, dict[str, Any]]]:
 # The handshake, described where the WebSocket binding spec puts it: on the
 # channel. Operation-level `ws` bindings accept no fields at all, so the
 # parameters the handler reads off the query string can only be published here.
-_QUERY_SCHEMA: dict[str, Any] = {
+_QUERY_SCHEMA: dict[str, JsonValue] = {
     "type": "object",
     "title": "LiveQueryParameters",
     "properties": {
@@ -169,7 +169,7 @@ _QUERY_SCHEMA: dict[str, Any] = {
     },
 }
 
-_WS_CHANNEL_BINDING: dict[str, Any] = {
+_WS_CHANNEL_BINDING: dict[str, JsonValue] = {
     "ws": {"method": "GET", "query": _QUERY_SCHEMA, "bindingVersion": _WS_BINDING_VERSION}
 }
 

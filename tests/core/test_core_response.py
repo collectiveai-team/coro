@@ -38,7 +38,9 @@ def test_single_token_produces_segment():
     tokens = [TranscriptToken(start=0.0, end=1.0, text=" hello", probability=0.9)]
     result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=1.0)
     assert len(result.segments) == 1
-    assert len(result.word_segments) >= 1
+    assert result.word_segments == [
+        TranscriptWord(word="hello", start=0.0, end=1.0, score=0.9, speaker="1", overlap=False)
+    ]
     assert len(result.transcript) == 1
     assert len(result.raw_words) == 1
 
@@ -55,10 +57,10 @@ def test_adjacent_overlap_is_clamped():
         TranscriptToken(start=9.0, end=12.0, text=" second.", probability=1.0),
     ]
     result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=12.0)
-    segs = result.segments
-    assert len(segs) >= 2, f"Expected >=2 segments, got: {segs}"
-    for i in range(len(segs) - 1):
-        assert segs[i].end <= segs[i + 1].start, "Segments must not overlap"
+    assert [(s.start, s.end, s.text) for s in result.segments] == [
+        (0.0, 9.0, "first."),
+        (9.0, 12.0, "second."),
+    ]
 
 
 def test_speaker_attribution_from_timeline():
@@ -74,20 +76,14 @@ def test_diarization_convenience_field():
     """diarization field contains start/end/speaker for each segment."""
     tokens = [TranscriptToken(start=0.0, end=1.0, text=" hi", probability=1.0)]
     result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=1.0)
-    for entry in result.diarization:
-        assert isinstance(entry, DiarizationItem)
-        assert isinstance(entry.start, float) and isinstance(entry.end, float)
-        assert isinstance(entry.speaker, str)
+    assert result.diarization == [DiarizationItem(start=0.0, end=1.0, speaker="1")]
 
 
 def test_transcript_convenience_field():
     """transcript field contains start/end/text for each segment."""
     tokens = [TranscriptToken(start=0.0, end=1.0, text=" hi", probability=1.0)]
     result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=1.0)
-    for entry in result.transcript:
-        assert isinstance(entry, TranscriptItem)
-        assert isinstance(entry.start, float) and isinstance(entry.end, float)
-        assert isinstance(entry.text, str)
+    assert result.transcript == [TranscriptItem(start=0.0, end=1.0, text="hi")]
 
 
 def test_unknown_speaker_emitted_as_minus_one():
@@ -104,7 +100,7 @@ def test_raw_words_contains_probability():
     """raw_words entries carry the token's probability score."""
     tokens = [TranscriptToken(start=0.0, end=1.0, text=" word", probability=0.75)]
     result = build_transcription_response(tokens=tokens, speaker_timeline=[], duration=1.0)
-    assert result.raw_words[0].score == pytest.approx(0.75)
+    assert result.raw_words[0].score == pytest.approx(0.75, abs=1e-9)
 
 
 def test_segment_words_are_typed_and_speaker_attributed():

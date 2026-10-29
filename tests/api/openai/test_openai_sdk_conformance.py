@@ -79,18 +79,23 @@ async def _transcribe(fmt: str) -> Any:
 @pytest.mark.asyncio
 async def test_json_response_validates_against_openai_transcription():
     body = await _transcribe("json")
-    Transcription.model_validate(body)
+    parsed = Transcription.model_validate(body)
+    assert parsed.text == "hello"
 
 
 @pytest.mark.asyncio
 async def test_verbose_json_validates_against_openai_transcription_verbose():
     body = await _transcribe("verbose_json")
     parsed = TranscriptionVerbose.model_validate(body)
+    assert parsed.segments is not None
     # `seek` is required by the SDK segment type; assert it survived the boundary.
-    assert all(segment.seek is not None for segment in (parsed.segments or []))
+    assert [(s.seek, s.start, s.end, s.text) for s in parsed.segments] == [(0, 0.0, 1.0, "hello")]
 
 
 @pytest.mark.asyncio
 async def test_diarized_json_validates_against_openai_transcription_diarized():
     body = await _transcribe("diarized_json")
-    TranscriptionDiarized.model_validate(body)
+    parsed = TranscriptionDiarized.model_validate(body)
+    assert [(s.speaker, s.start, s.end, s.text) for s in parsed.segments] == [
+        ("agent", 0.0, 1.0, "hello")
+    ]

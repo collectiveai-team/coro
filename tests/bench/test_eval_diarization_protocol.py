@@ -9,7 +9,6 @@ collar, the reference or the latency tier the vendor used.
 from __future__ import annotations
 
 import contextlib
-import sys
 from dataclasses import fields
 
 import pytest
@@ -23,12 +22,7 @@ from coro.bench.eval_diarization_quality import _parse_args, _tier_scope
 
 
 def _args(*argv: str):
-    original = sys.argv
-    sys.argv = ["coro-bench-diar", *argv]
-    try:
-        return _parse_args()
-    finally:
-        sys.argv = original
+    return _parse_args(list(argv))
 
 
 def test_collar_defaults_to_zero():
@@ -42,7 +36,7 @@ def test_a_workload_source_is_required():
 
 
 def test_help_renders(capsys):
-    """argparse interpolates % in help strings; an unescaped one crashes --help."""
+    """The module docstring is the help text; rendering it must not crash --help."""
     with pytest.raises(SystemExit) as exc:
         _args("--help")
 

@@ -31,16 +31,16 @@ from __future__ import annotations
 
 import contextlib
 import json
-import logging
 import sqlite3
 import threading
 import time
 from dataclasses import asdict
 from pathlib import Path
 
+from coro.core.logger import get_logger
 from coro.core.models import TranscriptToken
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 DATABASE_FILENAME = "asr-windows.sqlite3"
 """Database file created inside the configured cache directory."""
@@ -80,7 +80,7 @@ class ASRCacheStore:
         """
         Path(directory).mkdir(parents=True, exist_ok=True)
         self._path = str(Path(directory) / DATABASE_FILENAME)
-        self._max_bytes = max(0, int(max_bytes))
+        self._max_bytes = max(0, max_bytes)
         self._ttl_seconds = max(0.0, float(ttl_seconds))
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(self._path, check_same_thread=False)
@@ -220,5 +220,5 @@ class ASRCacheStore:
     def __enter__(self) -> ASRCacheStore:
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()

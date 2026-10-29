@@ -77,6 +77,19 @@ def _drain(ws) -> list[dict]:
             return frames
 
 
+def _send_seconds(ws, seconds: int) -> None:
+    for _ in range(seconds):
+        ws.send_bytes(ONE_SECOND)
+
+
+def _close_stream(ws) -> None:
+    ws.send_text(json.dumps({"type": "CloseStream"}))
+
+
+def _next_frame(ws) -> dict:
+    return json.loads(ws.receive_text())
+
+
 def _stream(app, query: str = "", *, seconds: int = WINDOW_SECONDS) -> list[dict]:
     with TestClient(app).websocket_connect(f"/v1/listen{query}") as ws:
         for _ in range(seconds):
@@ -126,20 +139,18 @@ class TestLiveResults:
         # implementation cannot pass it: it has nothing to send until the
         # client signals end of stream.
         with TestClient(_app()).websocket_connect("/v1/listen") as ws:
-            for _ in range(WINDOW_SECONDS):
-                ws.send_bytes(ONE_SECOND)
-            frame = json.loads(ws.receive_text())
+            _send_seconds(ws, WINDOW_SECONDS)
+            frame = _next_frame(ws)
             assert frame["type"] == "Results"
-            ws.send_text(json.dumps({"type": "CloseStream"}))
+            _close_stream(ws)
             _drain(ws)
 
     def test_a_second_window_produces_a_second_results_frame(self):
         with TestClient(_app()).websocket_connect("/v1/listen") as ws:
-            for _ in range(WINDOW_SECONDS * 2):
-                ws.send_bytes(ONE_SECOND)
-            first = json.loads(ws.receive_text())
-            second = json.loads(ws.receive_text())
-            ws.send_text(json.dumps({"type": "CloseStream"}))
+            _send_seconds(ws, WINDOW_SECONDS * 2)
+            first = _next_frame(ws)
+            second = _next_frame(ws)
+            _close_stream(ws)
             _drain(ws)
         assert first["type"] == second["type"] == "Results"
 
@@ -241,7 +252,7 @@ class TestReadiness:
         app = make_app(pipeline=object(), settings=ServerSettings(_env_file=None))
         app.state.runtime.asr_adapter = None
         with TestClient(app).websocket_connect("/v1/listen") as ws:
-            frame = json.loads(ws.receive_text())
+            frame = _next_frame(ws)
         assert frame["type"] == "Error"
         assert "not ready" in frame["description"].lower()
 

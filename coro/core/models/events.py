@@ -7,7 +7,9 @@ covers only the events exposed to SSE clients.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
 
 from coro.core.models.transcript import TranscriptToken
 
@@ -39,6 +41,19 @@ class TranscriptDoneEvent:
     type: str = field(default="transcript.text.done", init=False)
 
 
+@runtime_checkable
+class RenderedDoneFrame(Protocol):
+    """Public SSE event: a done frame that renders its own SSE lines lazily.
+
+    The Streaming Pipeline emits one in place of a ``TranscriptDoneEvent`` so the
+    final transcript is read from its spill store instead of held in memory.
+    """
+
+    def iter_sse(self) -> Iterator[str]:
+        """Yield the frame's SSE lines one at a time."""
+        ...
+
+
 # MARK: Stream Event Union
 StreamEvent = TokenBatchEvent | TranscriptDeltaEvent | TranscriptDoneEvent
-PipelineStreamEvent = TranscriptDeltaEvent | TranscriptDoneEvent
+PipelineStreamEvent = TranscriptDeltaEvent | TranscriptDoneEvent | RenderedDoneFrame

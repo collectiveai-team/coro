@@ -1,0 +1,16 @@
+id = "coro/adr-numbering"
+code = "CORODOCS001"
+summary = "Each ADR under docs/adr has its own NNNN number, and a retired number does not return"
+status = "preview"
+files = ["docs/adr/**"]
+scope = "project"
+needs = "syntax"
+run-on = ["cli"]
+default-enabled = false
+default-severity = "error"
+
+[[implementations]]
+kind = "extension"
+runtime = "python"
+languages = ["*"]
+file = "adr-numbering.py"

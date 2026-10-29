@@ -19,7 +19,7 @@ name: dependabot-automerge
 # token is not exposed to untrusted input.
 
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] -- never checks out or runs PR code, see above
 
 permissions:
   contents: write

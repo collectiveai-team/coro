@@ -13,10 +13,13 @@ layer.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from coro.bench.errors import UndiarizedResponseError
 from coro.bench.wder import UNKNOWN_SPEAKER_LABEL as UNKNOWN_SPEAKER
+
+if TYPE_CHECKING:
+    from coro.bench.models.response import HypWord, TranscriptResponse
 
 # The label is taken from the scorer rather than redeclared: WDER is what gives
 # it meaning (an abstention, counted as an error but excluded from
@@ -26,7 +29,7 @@ from coro.bench.wder import UNKNOWN_SPEAKER_LABEL as UNKNOWN_SPEAKER
 # independent of that layer.
 
 
-def _speaker(word: dict[str, Any]) -> str:
+def _speaker(word: HypWord) -> str:
     """Map Deepgram's optional integer speaker onto a coro speaker label.
 
     Deepgram spells "no speaker" as a null or an omitted key, and coro's
@@ -40,10 +43,10 @@ def _speaker(word: dict[str, Any]) -> str:
 
 
 def deepgram_word_segments(
-    response: dict[str, Any],
+    response: TranscriptResponse,
     *,
     recording_id: str = "?",
-) -> list[dict[str, Any]]:
+) -> list[HypWord]:
     """Extract per-word entries from a Deepgram-shaped response.
 
     Reads the top hypothesis of the first channel — coro downmixes uploads to
@@ -72,4 +75,10 @@ def deepgram_word_segments(
         return []
     if all(word.get("speaker") is None for word in words):
         raise UndiarizedResponseError(recording_id, word_count=len(words))
-    return [{**word, "speaker": _speaker(word)} for word in words]
+    return [_with_speaker_label(word) for word in words]
+
+
+def _with_speaker_label(word: HypWord) -> HypWord:
+    labelled = word.copy()
+    labelled["speaker"] = _speaker(word)
+    return labelled

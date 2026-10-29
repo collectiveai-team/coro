@@ -78,10 +78,12 @@ class TestResolveServerPid:
     def test_error_message_offers_server_pid_as_the_escape_hatch(self):
         processes = _tree(BENCH_CLIENT)
 
-        with pytest.raises(ServerPidUnresolvedError) as exc_info:
+        with pytest.raises(
+            ServerPidUnresolvedError, match=r"Pass --server-pid <PID>\n"
+        ) as exc_info:
             resolve_server_pid("nope", processes=processes, self_pid=100)
 
-        assert "--server-pid" in str(exc_info.value)
+        assert (exc_info.value.match, exc_info.value.candidates) == ("nope", [])
 
     def test_survives_a_parent_pid_cycle(self):
         """Corrupt /proc snapshots must not hang the resolver."""

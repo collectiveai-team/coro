@@ -8,7 +8,10 @@ workload-level quality summary. Scoring logic that builds them lives in
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from coro.bench.quality_meeteval import DiaErrorRate, ErrorRate
 
 
 @dataclass
@@ -117,9 +120,11 @@ class ScoreResult:
     diarization_only: bool = False
     diarization: DiarizationSanity | None = None
     error: ScoreError | None = None
-    # Raw meeteval result objects, keyed by metric, retained for cross-item
-    # combination. Not JSON-serialisable and never written to artifacts.
-    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+    # Raw meeteval result objects, retained for cross-item combination: WER
+    # results keyed by metric, and the DER result. Not JSON-serialisable and
+    # never written to artifacts.
+    raw: dict[str, ErrorRate] = field(default_factory=dict, repr=False)
+    raw_der: DiaErrorRate | None = field(default=None, repr=False)
 
 
 @dataclass

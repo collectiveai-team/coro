@@ -28,12 +28,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from coro.pipelines.windowing import DEFAULT_OVERLAP_SECONDS, DEFAULT_WINDOW_SECONDS
+from coro.settings.host import host_environment
 
 if TYPE_CHECKING:
     from coro.settings import ServerSettings
@@ -220,7 +220,7 @@ def accelerator_identity(device: str) -> str:
     if device != "cuda":
         return "cpu"
     names = _nvidia_gpu_names() or ["unknown"]
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    visible = host_environment().cuda_visible_devices
     return f"cuda[{';'.join(names)}]visible={visible}"
 
 
@@ -244,7 +244,7 @@ class FingerprintComponents:
     window_seconds: float
     overlap_seconds: float
     honours_prompt: bool
-    provider_settings: tuple[tuple[str, Any], ...] = ()
+    provider_settings: tuple[tuple[str, str | float | None], ...] = ()
 
 
 def fingerprint_components(

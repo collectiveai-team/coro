@@ -2,129 +2,47 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from dataclasses import dataclass, fields
-import copy
-import logging
 import time
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
+from coro.backends.diarization.nemo.latency import (
+    LATENCY_TIER_PARAMS,
+    LatencyTierParams,
+    applied_streaming_params,
+    bind_latency_tier,
+    get_latency_tier_params,
+)
 from coro.backends.diarization.nemo.postprocessing import (
     DEFAULT_MAX_SPEAKERS,
     apply_gated_postprocessing,
 )
 from coro.backends.diarization.segments import convert_diarization_segments
+from coro.core.logger import get_logger
 from coro.core.models import SpeakerSegment
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from coro.backends.diarization.nemo.sortformer import (
+        MelPreprocessor,
+        PostProcessor,
+        StreamingSortformerModel,
+    )
 
+# The latency-tier names stay importable from here for existing callers.
+__all__ = [
+    "LATENCY_TIER_PARAMS",
+    "LatencyTierParams",
+    "NemoStreamingDiarizerFactory",
+    "StreamingDiarizer",
+    "applied_streaming_params",
+    "bind_latency_tier",
+    "get_latency_tier_params",
+]
 
-@dataclass(frozen=True)
-class LatencyTierParams:
-    """Immutable Sortformer streaming parameters for one latency tier."""
-
-    chunk_len: int
-    chunk_right_context: int
-    fifo_len: int
-    spkcache_update_period: int
-    spkcache_len: int
-
-
-LATENCY_TIER_PARAMS: dict[str, LatencyTierParams] = {
-    "very-high": LatencyTierParams(
-        chunk_len=340,
-        chunk_right_context=40,
-        fifo_len=40,
-        spkcache_update_period=300,
-        spkcache_len=188,
-    ),
-    "high": LatencyTierParams(
-        chunk_len=124,
-        chunk_right_context=1,
-        fifo_len=124,
-        spkcache_update_period=124,
-        spkcache_len=188,
-    ),
-    "low": LatencyTierParams(
-        chunk_len=6,
-        chunk_right_context=7,
-        fifo_len=188,
-        spkcache_update_period=144,
-        spkcache_len=188,
-    ),
-    "ultra-low": LatencyTierParams(
-        chunk_len=3,
-        chunk_right_context=1,
-        fifo_len=188,
-        spkcache_update_period=144,
-        spkcache_len=188,
-    ),
-}
-
-
-def get_latency_tier_params(tier: str) -> LatencyTierParams:
-    """Return the immutable streaming parameters for a latency tier."""
-    return LATENCY_TIER_PARAMS[tier]
-
-
-@contextmanager
-def applied_streaming_params(sortformer_modules, params: LatencyTierParams) -> Iterator[None]:
-    """Apply latency-tier streaming parameters for the duration of the block only.
-
-    ``sortformer_modules`` is owned by the Sortformer model, and that same
-    model object is shared with the batch Diarization Adapter — the batch
-    Diarization Flow reads ``chunk_len``, ``chunk_right_context``,
-    ``fifo_len``, ``spkcache_len`` and ``spkcache_update_period`` off it during
-    ``forward_streaming``/``streaming_update``. Assigning the streaming tier's
-    values permanently therefore silently retunes batch diarization, which
-    invalidates any batch-vs-streaming comparison in one process.
-
-    NeMo reads these attributes at call time, so they cannot simply be left
-    unset; they are applied around each model call and restored afterwards,
-    leaving the shared model exactly as it was found.
-
-    NOTE: single-threaded use only (the diarization bench). Overlapping scopes
-    on one model interleave their save/restore: one call runs with the other's
-    restored values and the model is left retuned. Concurrent request paths use
-    :func:`bind_latency_tier`, which never writes to the shared model.
-    """
-    previous = {f.name: getattr(sortformer_modules, f.name) for f in fields(params)}
-    try:
-        for name, value in ((f.name, getattr(params, f.name)) for f in fields(params)):
-            setattr(sortformer_modules, name, value)
-        yield
-    finally:
-        for name, value in previous.items():
-            setattr(sortformer_modules, name, value)
-
-
-def bind_latency_tier(model, params: LatencyTierParams):
-    """Return a view of ``model`` whose ``sortformer_modules`` carries ``params``.
-
-    NeMo's ``forward_streaming_step`` reads the tier parameters off
-    ``self.sortformer_modules`` at call time. Rather than writing them onto the
-    shared model around each call — which races between concurrent requests
-    (see ADR 0022) — the view gets its own shallow copy of that one submodule
-    with the tier applied once. Shallow copies share every parameter tensor and
-    every other submodule, so the view costs no model memory and the shared
-    model, batch Diarization Adapter included, is never written.
-    """
-    modules = copy.copy(model.sortformer_modules)
-    for field in fields(params):
-        setattr(modules, field.name, getattr(params, field.name))
-
-    view = copy.copy(model)
-    if isinstance(view, torch.nn.Module):
-        # nn.Module resolves submodules through ``_modules``; the shallow copy
-        # still shares that dict with the original, so give the view its own.
-        object.__setattr__(view, "_modules", {**model._modules, "sortformer_modules": modules})
-    else:
-        view.sortformer_modules = modules
-    return view
+logger = get_logger(__name__)
 
 
 class NemoStreamingDiarizerFactory:
@@ -136,12 +54,18 @@ class NemoStreamingDiarizerFactory:
 
     def __init__(
         self,
-        model,
+        model: StreamingSortformerModel,
         *,
         tier: str = "very-high",
         postprocessing_yaml: str | None = None,
         max_speakers: int = DEFAULT_MAX_SPEAKERS,
+        preprocessor: MelPreprocessor | None = None,
     ) -> None:
+        """Bind ``model`` to ``tier``.
+
+        ``preprocessor`` is shared by every diarizer of the factory; None gives
+        each diarizer NeMo's own mel preprocessor, built on first use.
+        """
         self._tier = tier
         self._tier_params = get_latency_tier_params(tier)
         # Every request of this factory shares one tier-bound view; building it
@@ -150,8 +74,24 @@ class NemoStreamingDiarizerFactory:
         self._model.sortformer_modules._check_streaming_parameters()
         self._postprocessing_yaml = postprocessing_yaml
         self._max_speakers = max_speakers
+        self._preprocessor = preprocessor
         self._subsampling_factor = getattr(model.sortformer_modules, "subsampling_factor", 8)
         self._n_spk = getattr(model.sortformer_modules, "n_spk", 4)
+
+    @property
+    def tier(self) -> str:
+        """The Diarization Latency tier every diarizer of this factory runs at."""
+        return self._tier
+
+    @property
+    def postprocessing_yaml(self) -> str | None:
+        """The resolved Diarization Post-Processing Configuration path, or None."""
+        return self._postprocessing_yaml
+
+    @property
+    def max_speakers(self) -> int:
+        """The Speaker-Count Post-Processing Gate ceiling."""
+        return self._max_speakers
 
     def __call__(self) -> StreamingDiarizer:
         return StreamingDiarizer(
@@ -160,6 +100,7 @@ class NemoStreamingDiarizerFactory:
             chunk_right_context=self._tier_params.chunk_right_context,
             subsampling_factor=self._subsampling_factor,
             n_spk=self._n_spk,
+            preprocessor=self._preprocessor,
             postprocessing_yaml=self._postprocessing_yaml,
             max_speakers=self._max_speakers,
         )
@@ -170,14 +111,14 @@ class StreamingDiarizer:
 
     def __init__(
         self,
-        model,
+        model: StreamingSortformerModel,
         *,
         chunk_len: int = 6,
         chunk_right_context: int = 1,
         subsampling_factor: int = 8,
         n_spk: int = 4,
-        preprocessor=None,
-        post_processor: Callable | None = None,
+        preprocessor: MelPreprocessor | None = None,
+        post_processor: PostProcessor | None = None,
         postprocessing_yaml: str | None = None,
         max_speakers: int = DEFAULT_MAX_SPEAKERS,
     ):
@@ -308,7 +249,7 @@ class StreamingDiarizer:
         )
         return segments
 
-    def _get_preprocessor(self):
+    def _get_preprocessor(self) -> MelPreprocessor:
         if self._preprocessor is not None:
             return self._preprocessor
         from nemo.collections.asr.modules import AudioToMelSpectrogramPreprocessor

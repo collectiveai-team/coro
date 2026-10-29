@@ -30,7 +30,7 @@ pytestmark = pytest.mark.skipif(
 
 def _pgrep_children(parent_pid: int) -> set[int]:
     """Reference implementation: the *direct* children of one PID, via ``pgrep -P``."""
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: BTTEST009 -- the reference is the real pgrep on the host
         ["pgrep", "-P", str(parent_pid)], capture_output=True, text=True, check=False
     )
     return {int(line) for line in result.stdout.strip().splitlines()}
@@ -51,13 +51,16 @@ def nested_tree():
     The trailing ``; true`` stops the shell from ``exec``-ing into ``sleep``,
     which would collapse the grandchild the discovery walk must find.
     """
-    proc = subprocess.Popen(["sh", "-c", "sh -c 'sleep 30; true' & sleep 30; true"])
+    proc = subprocess.Popen(  # noqa: BTTEST009 -- the walk under test reads a real tree from /proc
+        ["sh", "-c", "sh -c 'sleep 30; true' & sleep 30; true"]
+    )
     time.sleep(1.0)
     yield proc
     proc.kill()
     proc.wait()
 
 
+@pytest.mark.integration
 class TestProcessTreeDiscovery:
     def test_matches_recursive_pgrep_on_a_real_tree(self, nested_tree):
         if shutil.which("pgrep") is None:
@@ -90,30 +93,38 @@ class TestProcessTreeDiscovery:
         assert sample.rss_kb > 0
 
 
+@pytest.fixture()
+def weird_named_process(tmp_path):
+    """A live Python process whose executable name holds spaces and a ')'."""
+    weird = tmp_path / "we ird) x"
+    shutil.copy(sys.executable, weird)
+    proc = subprocess.Popen(  # noqa: BTTEST009 -- the parser under test reads a real /proc/<pid>/stat
+        [str(weird), "-c", "import time; time.sleep(30)"]
+    )
+    # Waiting on the kernel to publish a real PID in /proc; there is no
+    # clock to freeze here, so the sleep is the synchronisation.
+    time.sleep(1.0)  # falsegreen: ignore
+    yield proc
+    proc.kill()
+    proc.wait()
+
+
+@pytest.mark.integration
 class TestProcStatParsing:
-    def test_handles_a_comm_containing_spaces_and_parentheses(self, tmp_path):
+    def test_the_kernel_reports_the_comm_with_its_spaces(self, weird_named_process):
+        raw = Path(f"/proc/{weird_named_process.pid}/stat").read_text()
+        assert " " in raw[raw.index("(") : raw.rindex(")")]
+
+    def test_handles_a_comm_containing_spaces_and_parentheses(self, weird_named_process):
         """`/proc/<pid>/stat` splits wrongly unless sliced at the last ')'.
 
         A naive `.read().split()` shifts every field after `comm`, so a process
         named like this reported a garbage thread count.
         """
-        weird = tmp_path / "we ird) x"
-        shutil.copy(sys.executable, weird)
-        proc = subprocess.Popen([str(weird), "-c", "import time; time.sleep(30)"])
-        try:
-            # Waiting on the kernel to publish a real PID in /proc; there is no
-            # clock to freeze here, so the sleep is the synchronisation.
-            time.sleep(1.0)  # falsegreen: ignore
-            raw = Path(f"/proc/{proc.pid}/stat").read_text()
-            assert " " in raw[raw.index("(") : raw.rindex(")")]
-
-            stat = _read_proc_stat(proc.pid)
-            assert stat.num_threads == 1
-            assert stat.utime >= 0
-            assert stat.stime >= 0
-        finally:
-            proc.kill()
-            proc.wait()
+        stat = _read_proc_stat(weird_named_process.pid)
+        assert stat.num_threads == 1
+        assert stat.utime >= 0
+        assert stat.stime >= 0
 
     def test_reads_plausible_values_for_the_current_process(self):
         stat = _read_proc_stat(os.getpid())

@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       # ffmpeg is a real runtime dependency, not a test convenience: the shipped
       # image installs it (Dockerfile) and coro/pcm.py decodes every HTTP upload
@@ -46,6 +48,15 @@ jobs:
       # prek runs the same hooks (ruff-format, ruff, pyrefly, hygiene) as locally.
       - name: Lint, format & type check (prek)
         run: uvx prek run --all-files --show-diff-on-failure
+
+      # meeteval's DER downloads md-eval-22.pl into its own package on first use
+      # (meeteval/der/md_eval.py), and pytest runs with --disable-socket.
+      - name: Fetch md-eval-22.pl for meeteval
+        run: >-
+          curl -fsSL --retry 3
+          -o "$(uv run --no-sync python -c 'import meeteval.der, pathlib;
+          print(pathlib.Path(meeteval.der.__file__).parent / "md-eval-22.pl")')"
+          https://raw.githubusercontent.com/nryant/dscore/3207c6c65a9b48429dcb52e720edcabfeb3d3f35/scorelib/md-eval-22.pl
 
       - name: Run tests
         run: uv run --no-sync pytest
@@ -83,6 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Install uv
@@ -130,3 +142,46 @@ jobs:
           base: .tmp/base/openapi.json
           revision: .tmp/head/openapi.json
           fail-on: ERR
+
+  # MARK: botica
+  # The whole tree is clean, so every finding fails, warnings included. A dependabot bump of
+  # botica runs its new rules here before it merges ("all" in botica.toml selects them).
+  botica:
+    name: botica
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.12"
+          enable-cache: false
+
+      - name: Read botica's version from uv.lock
+        run: >-
+          echo "BOTICA=$(uv export --frozen --no-hashes --no-header --no-annotate
+          --only-group botica | grep -m1 '^botica==')" >> "$GITHUB_ENV"
+
+      # dependabot does not read the PEP 723 headers of the extension rules.
+      - name: The extension rules pin the locked botica
+        run: |
+          pins=$(grep -rhoE 'botica\[sdk\]==[^"]+' .botica/rules | sort -u)
+          if [ "$pins" != "${BOTICA/botica==/botica[sdk]==}" ]; then
+            echo "::error::.botica/rules pins $pins; uv.lock has $BOTICA"
+            exit 1
+          fi
+
+      - name: Lint the whole tree
+        run: uvx --from "$BOTICA" botica lint --output-format github --fail-on warning
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "## botica"
+            echo
+            uvx --from "$BOTICA" botica lint --output-format markdown --exit-zero
+          } >> "$GITHUB_STEP_SUMMARY"

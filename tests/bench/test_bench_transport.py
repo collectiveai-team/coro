@@ -11,6 +11,9 @@ from pathlib import Path
 import pytest
 
 from coro.bench.transport import transcribe_audio, transcribe_audio_sse
+from support.network import LOOPBACK
+
+pytestmark = LOOPBACK
 
 CANNED_RESPONSE = {
     "task": "transcribe",
@@ -56,7 +59,7 @@ class _StubHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002 -- BaseHTTPRequestHandler signature
         pass
 
 
@@ -70,6 +73,15 @@ def stub_server():
     yield f"http://127.0.0.1:{port}"
     server.shutdown()
     thread.join()
+
+
+@pytest.fixture()
+def silent_port():
+    """A loopback port that accepts the connection but never answers."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(0)
+        yield listener.getsockname()[1]
 
 
 class TestTranscribeAudio:
@@ -99,22 +111,16 @@ class TestTranscribeAudio:
         assert b'name="language"' in _StubHandler.captured_body
         assert b"es-US" in _StubHandler.captured_body
 
-    def test_timeout_raises_on_unreachable(self, tmp_path: Path):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
-        s.listen(0)
-
+    def test_timeout_raises_on_unreachable(self, silent_port: int, tmp_path: Path):
         audio = tmp_path / "test.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 100)
 
         with pytest.raises((TimeoutError, OSError)):
             transcribe_audio(
-                f"http://127.0.0.1:{port}",
+                f"http://127.0.0.1:{silent_port}",
                 audio,
                 timeout_seconds=0.5,
             )
-        s.close()
 
 
 SSE_SEGMENTS = [{"start": 0.0, "end": 1.5, "text": "hello world", "speaker": "A"}]
@@ -152,7 +158,7 @@ class _SSEStubHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002 -- BaseHTTPRequestHandler signature
         pass
 
 

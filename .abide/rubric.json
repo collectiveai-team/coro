@@ -1,0 +1,427 @@
+{
+  "version": 1,
+  "compiledAt": "2026-10-29T01:12:44Z",
+  "compiledBy": "botica 0.18.0",
+  "manual": true,
+  "sources": [
+    {
+      "path": "AGENTS.md"
+    }
+  ],
+  "rules": [
+    {
+      "id": "separate-orchestration",
+      "text": "A function either orders the steps of a task or carries out one of them. The orchestration (the order of the calls and the control flow) does not share a function with the rules of the domain and the I/O; it calls named units that hold them.",
+      "source": {
+        "path": "AGENTS.md",
+        "line": 142
+      },
+      "scope": [
+        "coro/**/*.js",
+        "coro/**/*.jsx",
+        "coro/**/*.mjs",
+        "coro/**/*.cjs",
+        "coro/**/*.py",
+        "coro/**/*.pyi",
+        "coro/**/*.ts",
+        "coro/**/*.tsx",
+        "coro/**/*.mts",
+        "coro/**/*.cts",
+        "scripts/**/*.js",
+        "scripts/**/*.jsx",
+        "scripts/**/*.mjs",
+        "scripts/**/*.cjs",
+        "scripts/**/*.py",
+        "scripts/**/*.pyi",
+        "scripts/**/*.ts",
+        "scripts/**/*.tsx",
+        "scripts/**/*.mts",
+        "scripts/**/*.cts"
+      ],
+      "when": "edit",
+      "check": {
+        "type": "model",
+        "question": {
+          "type": "boolean",
+          "instructions": "Read each function of the file. Is there a function that decides the order of the steps of a task (calls, control flow) and also computes a rule of the domain and does the I/O of those steps itself? A function that only orders calls, one that carries out one step, and a file with no function or with only classes that declare data do not break the rule. A log call is not I/O. An entry point that reads its arguments, calls the steps, prints a summary and returns an exit code, and the loop of a transport that reads a message, dispatches it and writes the reply, only order calls.",
+          "criteria": {
+            "true": "a function mixes the order of the steps with the logic and the I/O of those steps",
+            "false": "orchestration and the steps it calls live in separate functions, or the file declares data only"
+          }
+        }
+      }
+    },
+    {
+      "id": "architecture-vocabulary",
+      "text": "Layers and packages are named `entrypoints`, `api`, `database`, `impl` and `core`, an interface is a port and its implementation an adapter, and a concept that already has a name gets no synonym.",
+      "source": {
+        "path": "AGENTS.md",
+        "line": 143
+      },
+      "scope": [
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.mjs",
+        "**/*.cjs",
+        "**/*.py",
+        "**/*.pyi",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.mts",
+        "**/*.cts"
+      ],
+      "when": "edit",
+      "check": {
+        "type": "model",
+        "question": {
+          "type": "boolean",
+          "instructions": "Read the names of the modules, packages, classes and functions that the file defines or imports from the project. Answer true only when one of those units is named with a synonym of a term of the house vocabulary (layers entrypoints, api, database, impl, core; ports and adapters), such as manager, handler, helper, processor, common, shared, persistence or dal. These do not count: a word inside a string or in data, a local variable, a name imported from a library (`APILogHandler`, structlog `Processor`), a name of the domain, and folders inside a layer such as routers, schemas, requests, responses, tests or fakes.",
+          "criteria": {
+            "true": "a unit is named with a synonym of a term the vocabulary already has",
+            "false": "no unit is named with a synonym of the vocabulary"
+          }
+        }
+      }
+    },
+    {
+      "id": "short-lived-access-token",
+      "text": "An access token that the server issues expires. Its lifetime is a number of seconds that the settings read from `ACCESS_TOKEN_TTL_SECONDS`, after the prefix of the settings if they have one, with a short default, such as 900, when the variable is not set. Each project sets its own value. A session that lasts longer is kept by a refresh token that the server stores and replaces each time it is used. A judgment rule, a warning, for Python, TypeScript, JavaScript, Go and Rust.",
+      "source": {
+        "path": "AGENTS.md",
+        "line": 152
+      },
+      "scope": [
+        "**/*.go",
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.mjs",
+        "**/*.cjs",
+        "**/*.py",
+        "**/*.pyi",
+        "**/*.rs",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.mts",
+        "**/*.cts"
+      ],
+      "when": "edit",
+      "check": {
+        "type": "model",
+        "question": {
+          "type": "boolean",
+          "instructions": "Read the code that issues tokens in the file: the call that signs a token and the expiry it sets (`exp`, `expiresIn`, `setExpirationTime`, `ExpiresAt`). An access token is a token that authorizes requests on its own. Its lifetime should be a number of seconds that a setting reads from the variable `ACCESS_TOKEN_TTL_SECONDS` (after a prefix of the settings, such as `APP_`), with a short default such as 900; the value that a project sets is its own choice. Is an access token issued with no expiry, with an expiry that a setting can turn off (`None` or `0` meaning no expiry), or with a lifetime written in the code instead of read from the settings? A refresh token that the server stores and replaces at each use, and a token that the file only verifies, do not break the rule.",
+          "criteria": {
+            "true": "an access token is issued with no expiry, with an expiry that can be turned off, or with a lifetime written in the code",
+            "false": "each access token issued in the file expires after a lifetime read from the settings, or the file issues no access token"
+          }
+        }
+      }
+    },
+    {
+      "id": "test-in-memory-adapters",
+      "text": "Tests drive the logic through in-memory adapters of the ports of the project: working fakes that implement the same interface as the production adapter. A mock stands in only for a third-party boundary that cannot reasonably be faked. `botica refs show in-memory-adapters` prints an adapter with its port.",
+      "source": {
+        "path": "AGENTS.md",
+        "line": 156
+      },
+      "scope": [
+        "tests/**/*.py",
+        "tests/**/*.pyi"
+      ],
+      "when": "edit",
+      "check": {
+        "type": "model",
+        "question": {
+          "type": "boolean",
+          "instructions": "Read the tests of the file. Does a test replace a port of the project with a mock, or assert on the calls that a mock received, where a working in-memory adapter of the port would drive the logic? A mock of a third-party boundary that cannot reasonably be faked does not break the rule.",
+          "criteria": {
+            "true": "the tests mock a port of the project, or assert on the calls a mock received",
+            "false": "the tests use in-memory adapters of the ports and assert on outcomes"
+          }
+        }
+      }
+    },
+    {
+      "id": "test-through-interface",
+      "text": "Tests call the unit under test through the public interface that production code calls, and assert on observable behaviour. A test reads no private attribute, calls no underscore-prefixed member and asserts on no internal state of the unit.",
+      "source": {
+        "path": "AGENTS.md",
+        "line": 157
+      },
+      "scope": [
+        "tests/**/*.js",
+        "tests/**/*.jsx",
+        "tests/**/*.mjs",
+        "tests/**/*.cjs",
+        "tests/**/*.py",
+        "tests/**/*.pyi",
+        "tests/**/*.ts",
+        "tests/**/*.tsx",
+        "tests/**/*.mts",
+        "tests/**/*.cts"
+      ],
+      "when": "edit",
+      "check": {
+        "type": "model",
+        "question": {
+          "type": "boolean",
+          "instructions": "Read the tests of the file. Does a test read a private attribute of the unit under test, call one of its underscore-prefixed members, or assert on its internal state instead of on what its public interface returns or does? A name with an underscore that the test file defines itself, and loading the module under test from its path, do not break the rule.",
+          "criteria": {
+            "true": "a test reaches into private attributes, private methods or internal state of the unit under test",
+            "false": "the tests call the public interface and assert on observable behaviour"
+          }
+        }
+      }
+    },
+    {
+      "id": "plain-writing",
+      "text": "Prose says what a thing is and what it does, in plain sentences that a file, a command or an issue of the repository backs, with no inflated words, hedges, trailing judgments, bold emphasis or claims without a source.",
+      "source": {
+        "path": "AGENTS.md",
+        "line": 162
+      },
+      "scope": [
+        "AGENTS.md",
+        "CONTEXT.md",
+        "CONVENTIONS.md",
+        "README.md",
+        ".github/pull_request_template.md",
+        ".github/ISSUE_TEMPLATE/**",
+        "coro/recipes/calibration_corpus/README.md",
+        "coro/recipes/canary_decoder_dynamic_quantization/README.md",
+        "coro/recipes/canary_encoder_static_qdq/README.md",
+        "coro/recipes/canary_split_decoder/README.md",
+        "coro/recipes/parakeet_prompt_encoder_static_qdq/README.md",
+        "coro/recipes/parakeet_prompt_kernel_cache/README.md",
+        "docs/**",
+        "tasks/**"
+      ],
+      "when": "edit",
+      "check": {
+        "type": "model",
+        "question": {
+          "type": "boolean",
+          "instructions": "Read the prose of the file. Does it carry a sign of model writing: inflated significance, a trailing clause that judges, words that avoid is and has, definition by negation, a sentence that strings three items for rhythm, hedges and vague attribution, bold for emphasis, text addressed to the reader, or a claim with no source? Commands, code, lists of names and a bulleted list of cases are not prose, and the bold label at the start of each decision or option of an ADR is not bold for emphasis.",
+          "criteria": {
+            "true": "the prose carries one or more of the signs",
+            "false": "the prose is plain and carries none of the signs"
+          }
+        }
+      }
+    },
+    {
+      "id": "minimal-comments",
+      "text": "A comment says only what the code cannot say through its names and its structure: the reason for a choice that looks wrong, an invariant, a workaround with the link to its cause, or the docstring of a public interface.",
+      "source": {
+        "path": "AGENTS.md",
+        "line": 163
+      },
+      "scope": [
+        "botica.toml",
+        "prek.toml",
+        "pyproject.toml",
+        "redocly.yaml",
+        ".devcontainer/docker-compose.yml",
+        ".github/dependabot.yml",
+        ".github/zizmor.yml",
+        ".github/workflows/**",
+        "coro/__init__.py",
+        "coro/app.py",
+        "coro/audio.py",
+        "coro/audio_input.py",
+        "coro/audio_probe.py",
+        "coro/cli.py",
+        "coro/cli_support.py",
+        "coro/fsinfo.py",
+        "coro/offline.py",
+        "coro/pcm.py",
+        "coro/runtime.py",
+        "coro/api/**",
+        "coro/backends/**",
+        "coro/bench/__init__.py",
+        "coro/bench/ami.py",
+        "coro/bench/calibration.py",
+        "coro/bench/cli.py",
+        "coro/bench/cli_args.py",
+        "coro/bench/cli_flags.py",
+        "coro/bench/cli_spanish.py",
+        "coro/bench/clips.py",
+        "coro/bench/code_switch.py",
+        "coro/bench/code_switch_presets.py",
+        "coro/bench/diar_eval_args.py",
+        "coro/bench/diar_workload.py",
+        "coro/bench/errors.py",
+        "coro/bench/eval_diarization_quality.py",
+        "coro/bench/gpu.py",
+        "coro/bench/language_drift.py",
+        "coro/bench/language_drift_lexicon.py",
+        "coro/bench/orchestrate.py",
+        "coro/bench/performance.py",
+        "coro/bench/process_lookup.py",
+        "coro/bench/quality.py",
+        "coro/bench/quality_artifacts.py",
+        "coro/bench/quality_meeteval.py",
+        "coro/bench/quality_stm.py",
+        "coro/bench/quarantine.py",
+        "coro/bench/report.py",
+        "coro/bench/report_markdown.py",
+        "coro/bench/report_stdout.py",
+        "coro/bench/run.py",
+        "coro/bench/run_artifacts.py",
+        "coro/bench/sampling.py",
+        "coro/bench/schema.py",
+        "coro/bench/server_lifecycle.py",
+        "coro/bench/settings.py",
+        "coro/bench/spanish.py",
+        "coro/bench/stm.py",
+        "coro/bench/stm_ami.py",
+        "coro/bench/stm_deepgram.py",
+        "coro/bench/transport.py",
+        "coro/bench/viz.py",
+        "coro/bench/wder.py",
+        "coro/bench/data/__init__.py",
+        "coro/bench/models/**",
+        "coro/bench/normalizers/**",
+        "coro/bench/utils/**",
+        "coro/cache/**",
+        "coro/core/**",
+        "coro/pipelines/**",
+        "coro/recipes/__init__.py",
+        "coro/recipes/paths.py",
+        "coro/recipes/calibration_corpus/__init__.py",
+        "coro/recipes/calibration_corpus/__main__.py",
+        "coro/recipes/canary_decoder_dynamic_quantization/__init__.py",
+        "coro/recipes/canary_decoder_dynamic_quantization/__main__.py",
+        "coro/recipes/canary_encoder_static_qdq/__init__.py",
+        "coro/recipes/canary_encoder_static_qdq/__main__.py",
+        "coro/recipes/canary_split_decoder/__init__.py",
+        "coro/recipes/canary_split_decoder/__main__.py",
+        "coro/recipes/parakeet_prompt_encoder_static_qdq/__init__.py",
+        "coro/recipes/parakeet_prompt_encoder_static_qdq/__main__.py",
+        "coro/recipes/parakeet_prompt_kernel_cache/__init__.py",
+        "coro/recipes/parakeet_prompt_kernel_cache/__main__.py",
+        "coro/settings/**",
+        "scripts/**",
+        "tests/**"
+      ],
+      "when": "edit",
+      "check": {
+        "type": "model",
+        "question": {
+          "type": "boolean",
+          "instructions": "Read the comments of the file and the code next to them. Leave out first the comments that never break the rule: a comment whose text starts with `MARK:`, which botica and editors read as the start of a section; a header that describes the whole file; a doc comment or docstring of any item; the code of a standard cited alone; a directive that a tool reads (a suppression, `zizmor: ignore`, `noqa`); and an option of a template left commented out under a comment that says how to turn it on. Of the comments left, does one repeat what the next lines say, name a section of the file, keep code commented out or tell the history of a change? A comment that gives the reason for a choice that looks wrong, an invariant the types do not show or a workaround with the link to its cause does not break the rule, however many such comments the file has. Attributes such as `#[test]` are not comments. A file with no comment left does not break the rule.",
+          "criteria": {
+            "true": "a comment repeats the code, names a section, keeps old code or tells the history of a change",
+            "false": "every comment says something the code cannot, or the file has none"
+          }
+        }
+      }
+    },
+    {
+      "id": "ubiquitous-language",
+      "text": "Each concept of the domain has one term, the one that `GLOSSARY.md` defines, in the code and in the documentation. `GLOSSARY.md` lists each term with its definition and the words to avoid for it, and the code and the documentation use the term.",
+      "source": {
+        "path": "AGENTS.md",
+        "line": 164
+      },
+      "scope": [
+        "AGENTS.md",
+        "CONTEXT.md",
+        "CONVENTIONS.md",
+        "README.md",
+        ".github/pull_request_template.md",
+        ".github/ISSUE_TEMPLATE/**",
+        "coro/__init__.py",
+        "coro/app.py",
+        "coro/audio.py",
+        "coro/audio_input.py",
+        "coro/audio_probe.py",
+        "coro/cli.py",
+        "coro/cli_support.py",
+        "coro/fsinfo.py",
+        "coro/offline.py",
+        "coro/pcm.py",
+        "coro/runtime.py",
+        "coro/api/**",
+        "coro/backends/__init__.py",
+        "coro/backends/asr/**",
+        "coro/backends/diarization/__init__.py",
+        "coro/backends/diarization/factory.py",
+        "coro/backends/diarization/pyannote.py",
+        "coro/backends/diarization/segments.py",
+        "coro/backends/diarization/nemo/__init__.py",
+        "coro/backends/diarization/nemo/diarization.py",
+        "coro/backends/diarization/nemo/latency.py",
+        "coro/backends/diarization/nemo/postprocessing.py",
+        "coro/backends/diarization/nemo/sortformer.py",
+        "coro/backends/diarization/nemo/streaming.py",
+        "coro/bench/__init__.py",
+        "coro/bench/ami.py",
+        "coro/bench/calibration.py",
+        "coro/bench/cli.py",
+        "coro/bench/cli_args.py",
+        "coro/bench/cli_flags.py",
+        "coro/bench/cli_spanish.py",
+        "coro/bench/clips.py",
+        "coro/bench/code_switch.py",
+        "coro/bench/code_switch_presets.py",
+        "coro/bench/diar_eval_args.py",
+        "coro/bench/diar_workload.py",
+        "coro/bench/errors.py",
+        "coro/bench/eval_diarization_quality.py",
+        "coro/bench/gpu.py",
+        "coro/bench/language_drift.py",
+        "coro/bench/language_drift_lexicon.py",
+        "coro/bench/orchestrate.py",
+        "coro/bench/performance.py",
+        "coro/bench/process_lookup.py",
+        "coro/bench/quality.py",
+        "coro/bench/quality_artifacts.py",
+        "coro/bench/quality_meeteval.py",
+        "coro/bench/quality_stm.py",
+        "coro/bench/quarantine.py",
+        "coro/bench/report.py",
+        "coro/bench/report_markdown.py",
+        "coro/bench/report_stdout.py",
+        "coro/bench/run.py",
+        "coro/bench/run_artifacts.py",
+        "coro/bench/sampling.py",
+        "coro/bench/schema.py",
+        "coro/bench/server_lifecycle.py",
+        "coro/bench/settings.py",
+        "coro/bench/spanish.py",
+        "coro/bench/stm.py",
+        "coro/bench/stm_ami.py",
+        "coro/bench/stm_deepgram.py",
+        "coro/bench/transport.py",
+        "coro/bench/viz.py",
+        "coro/bench/wder.py",
+        "coro/bench/data/__init__.py",
+        "coro/bench/models/**",
+        "coro/bench/normalizers/**",
+        "coro/bench/utils/**",
+        "coro/cache/**",
+        "coro/core/**",
+        "coro/pipelines/**",
+        "coro/recipes/**",
+        "coro/settings/**",
+        "docs/**",
+        "scripts/**",
+        "tasks/**",
+        "tests/**"
+      ],
+      "when": "edit",
+      "check": {
+        "type": "model",
+        "question": {
+          "type": "boolean",
+          "instructions": "Read the names and the prose of the file. Does it give one concept of the domain two or more names, such as a parameter `client` of type `Customer` next to an `account` of the same type, or a name that the glossary of the project (GLOSSARY.md) says to avoid, when the glossary is in view? Terms of programming and names of a library are not terms of the domain. A document that shows a violation as an example, such as the `Don't` section of a rule, does not commit it.",
+          "criteria": {
+            "true": "a concept has two names, or a name the glossary says to avoid",
+            "false": "each concept has one term, the one of the glossary"
+          }
+        }
+      }
+    }
+  ]
+}

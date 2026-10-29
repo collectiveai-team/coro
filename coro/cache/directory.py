@@ -12,10 +12,9 @@ misconfiguration fails before the first request rather than on it.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 
 from coro.fsinfo import filesystem_type, is_ram_backed
+from coro.settings.host import host_environment
 
 _SET_HINT = (
     "Set CORO_ASR_CACHE_DIR (or --asr-cache-dir) to a directory on real disk, "
@@ -29,9 +28,7 @@ class CacheDirectoryError(ValueError):
 
 def default_cache_dir() -> str:
     """Return the default ASR window cache directory under the user cache root."""
-    xdg_cache = os.environ.get("XDG_CACHE_HOME")
-    cache_root = Path(xdg_cache) if xdg_cache else Path.home() / ".cache"
-    return str(cache_root / "coro" / "asr-window-cache")
+    return str(host_environment().cache_root / "coro" / "asr-window-cache")
 
 
 def resolve_cache_dir(configured: str | None) -> str:

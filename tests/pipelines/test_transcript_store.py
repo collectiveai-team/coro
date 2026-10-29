@@ -46,8 +46,11 @@ def test_store_round_trips_raw_words_in_order(tmp_path):
         store.append_raw_words([RawWord(word=" !", start=1.0, end=1.1, score=1.0)])
         words = list(store.iter_raw_words())
 
-    assert [w.word for w in words] == [" hola", " mundo", " !"]
-    assert words[0].score == 0.9
+    assert words == [
+        RawWord(word=" hola", start=0.0, end=0.5, score=0.9),
+        RawWord(word=" mundo", start=0.5, end=1.0, score=0.8),
+        RawWord(word=" !", start=1.0, end=1.1, score=1.0),
+    ]
     assert store.raw_word_count == 3
 
 

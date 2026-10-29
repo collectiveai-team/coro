@@ -12,9 +12,9 @@ Usage:
 
 from __future__ import annotations
 
-import argparse
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,7 +22,11 @@ import numpy as np
 import onnx
 import onnxruntime as ort
 
+from coro.cli_support import invoke, new_app, out_console
+from coro.core.logger import get_logger
 from coro.recipes.paths import RECIPE_ARTIFACTS_DIR
+
+log = get_logger(__name__)
 
 N_LAYERS = 8
 
@@ -58,11 +62,11 @@ class SplitPaths:
 def build(src: Path, out_dir: Path) -> SplitPaths:
     """Extract xattn_kv.onnx and decoder_step.onnx from the fused decoder graph."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"loading {src} ...")
+    log.info("loading", path=str(src))
     model = onnx.load(str(src))
-    print(f"  nodes={len(model.graph.node)}  initializers={len(model.graph.initializer)}")
+    log.info("loaded", nodes=len(model.graph.node), initializers=len(model.graph.initializer))
 
-    print("running shape inference...")
+    log.info("running shape inference")
     inferred = onnx.shape_inference.infer_shapes(model)
     inferred_path = out_dir / "decoder.inferred.onnx"
     onnx.save(inferred, str(inferred_path))
@@ -78,14 +82,16 @@ def build(src: Path, out_dir: Path) -> SplitPaths:
     dsts: dict[str, Path] = {}
     for name, (ins, outs) in specs.items():
         dst = out_dir / f"{name}.onnx"
-        print(
-            f"extracting {name}.onnx (in={ins if len(ins) < 5 else [*ins[:3], '...']}, "
-            f"out={outs if len(outs) < 5 else [*outs[:3], '...']}) ..."
+        log.info(
+            "extracting",
+            graph=f"{name}.onnx",
+            inputs=ins if len(ins) < 5 else [*ins[:3], "..."],
+            outputs=outs if len(outs) < 5 else [*outs[:3], "..."],
         )
         onnx.utils.extract_model(str(inferred_path), str(dst), ins, outs)
         g = onnx.load(str(dst), load_external_data=False).graph
         n_params = sum(int(np.prod(list(i.dims))) for i in g.initializer)
-        print(f"  {name:<14} nodes={len(g.node):>5}  params={n_params / 1e6:8.2f} M")
+        log.info("extracted", graph=name, nodes=len(g.node), params_m=round(n_params / 1e6, 2))
         dsts[name] = dst
 
     inferred_path.unlink(missing_ok=True)
@@ -136,19 +142,20 @@ def verify(
         str(split_paths.decoder_step), so, providers=["CPUExecutionProvider"]
     )
 
-    print("\nrunning real Canary encoder for real encoder_embeddings/encoder_mask...")
+    log.info("running real Canary encoder for real encoder_embeddings/encoder_mask")
     encoder_embeddings, encoder_mask = _real_encoder_embeddings(holdout_wav)
-    print(
-        f"  encoder_embeddings.shape={encoder_embeddings.shape}  "
-        f"encoder_mask.shape={encoder_mask.shape}"
+    log.info(
+        "encoder output",
+        encoder_embeddings_shape=encoder_embeddings.shape,
+        encoder_mask_shape=encoder_mask.shape,
     )
 
-    print("\nrunning xattn_kv.onnx once (per-window cost)...")
+    log.info("running xattn_kv.onnx once (per-window cost)")
     t0 = time.perf_counter()
     kv_outputs = xattn_kv.run(KV_TENSORS, {"encoder_embeddings": encoder_embeddings})
     xattn_kv_ms = (time.perf_counter() - t0) * 1e3
     kv_feed = dict(zip(KV_TENSORS, kv_outputs, strict=True))
-    print(f"  xattn_kv.onnx: {xattn_kv_ms:.2f} ms")
+    log.info("xattn_kv.onnx ran", ms=round(xattn_kv_ms, 2))
 
     batch_size = encoder_embeddings.shape[0]
     input_ids = np.array([[1, 2, 3]], dtype=np.int64)  # arbitrary prefix, grown each step
@@ -180,9 +187,13 @@ def verify(
         d_mems = float(np.max(np.abs(fused_mems - split_mems)))
         step_ok = d_logits == 0.0 and d_mems == 0.0
         ok = ok and step_ok
-        print(
-            f"  step {step}  decoder_mems.shape={decoder_mems.shape}  "
-            f"logits max|Δ|={d_logits:.3e}  decoder_hidden_states max|Δ|={d_mems:.3e}  ok={step_ok}"
+        log.info(
+            "verified step",
+            step=step,
+            decoder_mems_shape=decoder_mems.shape,
+            logits_max_abs_diff=d_logits,
+            decoder_hidden_states_max_abs_diff=d_mems,
+            ok=step_ok,
         )
 
         # advance exactly like the real _decoding loop: append next token, mems grows.
@@ -193,31 +204,38 @@ def verify(
     return ok
 
 
-def main(argv: list[str] | None = None) -> None:
-    sys.stdout.reconfigure(line_buffering=True)  # pyrefly: ignore[missing-attribute]
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--out-dir",
-        type=Path,
-        default=RECIPE_ARTIFACTS_DIR / "canary_split",
-        help="Directory to write xattn_kv.onnx/decoder_step.onnx into.",
-    )
-    parser.add_argument(
-        "--holdout-wav",
-        type=Path,
-        default=Path("coro/bench/data/jfk.wav"),
-        help="Real clip used to derive encoder_embeddings/encoder_mask for verification.",
-    )
-    parser.add_argument(
-        "--verify-steps", type=int, default=4, help="Sequential decode steps to verify."
-    )
-    args = parser.parse_args(argv)
+app = new_app("canary_split_decoder", help=__doc__.splitlines()[0])
 
+
+@app.default
+def _split(
+    *,
+    out_dir: Path = RECIPE_ARTIFACTS_DIR / "canary_split",
+    holdout_wav: Path = Path("coro/bench/data/jfk.wav"),
+    verify_steps: int = 4,
+) -> None:
+    """Split the fused decoder and verify the split against it.
+
+    Args:
+        out_dir: Directory to write xattn_kv.onnx/decoder_step.onnx into.
+        holdout_wav: Real clip used to derive encoder_embeddings/encoder_mask for verification.
+        verify_steps: Sequential decode steps to verify.
+
+    Raises:
+        SystemExit: Code 0 when the split matches the fused graph, 1 otherwise.
+
+    """
     fused_path = resolve_decoder_path()
-    print(f"splitting {fused_path.name} ->")
-    paths = build(fused_path, args.out_dir)
+    log.info("splitting", decoder=fused_path.name)
+    paths = build(fused_path, out_dir)
 
-    print("\nverifying composition against the fused graph (real encoder output, >=3 steps):")
-    ok = verify(fused_path, paths, args.holdout_wav, n_steps=args.verify_steps)
-    print(f"\nSPLIT VALID: {ok}")
+    log.info("verifying composition against the fused graph (real encoder output, >=3 steps)")
+    ok = verify(fused_path, paths, holdout_wav, n_steps=verify_steps)
+    out_console.out(f"\nSPLIT VALID: {ok}")
     raise SystemExit(0 if ok else 1)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the Canary decoder split recipe."""
+    sys.stdout.reconfigure(line_buffering=True)  # pyrefly: ignore[missing-attribute]
+    invoke(app, argv)

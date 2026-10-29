@@ -59,7 +59,7 @@ class BenchReport:
     git_sha: str
     total_wall_seconds: float
     stream: bool
-    server_config: dict
+    server_config: dict[str, str | bool]
     workload_set: list[str]
     quality_rows: list[QualityRow] = field(default_factory=list)
     quality_combined: QualityRow | None = None
@@ -67,5 +67,5 @@ class BenchReport:
     normalized_quality_combined: QualityRow | None = None
     quality_footnotes: list[str] = field(default_factory=list)
     performance_rows: list[PerformanceRow] = field(default_factory=list)
-    versions: dict = field(default_factory=dict)
+    versions: dict[str, str] = field(default_factory=dict)
     cli_args: list[str] = field(default_factory=list)

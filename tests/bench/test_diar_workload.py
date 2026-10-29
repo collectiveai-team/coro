@@ -73,18 +73,32 @@ def test_items_from_meetings_uses_the_ami_root_layout(tmp_path: Path):
     assert item.ref_stm_path == tmp_path / "stm" / "IS1009a.ref.stm"
 
 
-def test_materialize_rttm_references_windows_and_rebases_per_clip(tmp_path: Path):
-    """A clip must be scored only against the turns its audio contains."""
+def _clips_dir(tmp_path: Path, stem: str) -> Path:
     clips = tmp_path / "clips"
     clips.mkdir()
-    _clip(clips, "m1_300_600")
-    rttm_dir = tmp_path / "rttm"
-    rttm_dir.mkdir()
-    (rttm_dir / "m1.rttm").write_text(RTTM)
+    _clip(clips, stem)
+    return clips
+
+
+def _rttm_dir(directory: Path) -> Path:
+    """``directory`` holding the RTTM of meeting ``m1``."""
+    directory.mkdir(parents=True)
+    (directory / "m1.rttm").write_text(RTTM)
+    return directory
+
+
+def _ref_lines(item) -> list[str]:
+    return item.ref_stm_path.read_text().splitlines()
+
+
+def test_materialize_rttm_references_windows_and_rebases_per_clip(tmp_path: Path):
+    """A clip must be scored only against the turns its audio contains."""
+    clips = _clips_dir(tmp_path, "m1_300_600")
+    rttm_dir = _rttm_dir(tmp_path / "rttm")
 
     (item,) = materialize_rttm_references(items_from_clips_dir(clips), rttm_dir, tmp_path / "out")
 
-    lines = item.ref_stm_path.read_text().splitlines()
+    lines = _ref_lines(item)
     # The 10 s turn falls before the window and the 950 s turn after it.
     assert len(lines) == 1
     session, _, speaker, start, end, _ = lines[0].split(maxsplit=5)
@@ -95,12 +109,8 @@ def test_materialize_rttm_references_windows_and_rebases_per_clip(tmp_path: Path
 
 def test_materialize_rttm_references_finds_rttms_inside_split_subdirectories(tmp_path: Path):
     """Published RTTM sets ship partitioned into train/dev/test."""
-    clips = tmp_path / "clips"
-    clips.mkdir()
-    _clip(clips, "m1_300_600")
-    split = tmp_path / "rttm" / "test"
-    split.mkdir(parents=True)
-    (split / "m1.rttm").write_text(RTTM)
+    clips = _clips_dir(tmp_path, "m1_300_600")
+    _rttm_dir(tmp_path / "rttm" / "test")
 
     (item,) = materialize_rttm_references(
         items_from_clips_dir(clips), tmp_path / "rttm", tmp_path / "out"
@@ -110,15 +120,13 @@ def test_materialize_rttm_references_finds_rttms_inside_split_subdirectories(tmp
 
 
 def test_materialize_rttm_references_keeps_a_whole_meeting_unwindowed(tmp_path: Path):
-    rttm_dir = tmp_path / "rttm"
-    rttm_dir.mkdir()
-    (rttm_dir / "m1.rttm").write_text(RTTM)
+    rttm_dir = _rttm_dir(tmp_path / "rttm")
 
     (item,) = materialize_rttm_references(
         items_from_meetings(["m1"], tmp_path), rttm_dir, tmp_path / "out"
     )
 
-    assert len(item.ref_stm_path.read_text().splitlines()) == 3
+    assert len(_ref_lines(item)) == 3
 
 
 def test_materialize_rttm_references_names_the_meetings_it_cannot_find(tmp_path: Path):

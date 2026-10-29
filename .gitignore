@@ -54,3 +54,7 @@ __pycache__/
 .venv/
 .mypy_cache/
 .ruff_cache/
+.journals/
+.agents/skills/
+node_modules/
+target/

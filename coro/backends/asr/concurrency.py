@@ -28,12 +28,13 @@ thread, and the queue-depth cap still applies.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-logger = logging.getLogger(__name__)
+from coro.core.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Nominal backend threads consumed by one in-flight inference call. Matches
 # CTranslate2's default ``intra_threads`` (4); ONNX Runtime shares one intra-op
@@ -141,7 +142,7 @@ class AdmissionController:
         return self._queued
 
     @asynccontextmanager
-    async def admit(self) -> AsyncIterator[None]:
+    async def admit(self) -> AsyncGenerator[None]:
         """Hold one admission permit for the duration of the context.
 
         Yields:

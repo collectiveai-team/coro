@@ -120,7 +120,7 @@ def test_onnx_vad_settings_read_from_env(monkeypatch):
     settings = ServerSettings(_env_file=None)
 
     assert settings.asr_onnx_vad == "enabled"
-    assert settings.asr_onnx_vad_threshold == 0.4
+    assert settings.asr_onnx_vad_threshold == pytest.approx(0.4, abs=1e-9)
 
 
 def test_asr_fallback_language_defaults_to_english():
@@ -171,15 +171,16 @@ def test_pyannote_streaming_pipeline_is_rejected():
         )
 
 
-def test_pyannote_full_memory_pipeline_is_allowed():
-    settings = ServerSettings(
-        backend_diarization="pyannote",
-        pipeline="full-memory",
-        _env_file=None,
-    )
+def test_pyannote_full_memory_pipeline_is_allowed(monkeypatch):
+    monkeypatch.setenv("CORO_BACKEND_DIARIZATION", "pyannote")
+    monkeypatch.setenv("CORO_PIPELINE", "full-memory")
+    settings = ServerSettings(_env_file=None)
 
-    assert settings.backend_diarization == "pyannote"
-    assert settings.pipeline == "full-memory"
+    assert (settings.backend_diarization, settings.pipeline, settings.model_diarization) == (
+        "pyannote",
+        "full-memory",
+        "pyannote/speaker-diarization-community-1",
+    )
 
 
 @pytest.mark.parametrize("backend", ["nemo", "pyannote"])
@@ -202,15 +203,13 @@ def test_enabled_diarization_with_empty_model_from_env_is_rejected(monkeypatch):
         ServerSettings(_env_file=None)
 
 
-def test_disabled_diarization_with_empty_model_is_allowed():
+def test_disabled_diarization_with_empty_model_is_allowed(monkeypatch):
     """An ASR-Only Server is a valid configuration and stays valid."""
-    settings = ServerSettings(
-        backend_diarization="none",
-        model_diarization="",
-        _env_file=None,
-    )
+    monkeypatch.setenv("CORO_BACKEND_DIARIZATION", "none")
+    monkeypatch.setenv("CORO_MODEL_DIARIZATION", "")
+    settings = ServerSettings(_env_file=None)
 
-    assert settings.backend_diarization == "none"
+    assert (settings.backend_diarization, settings.model_diarization) == ("none", "")
 
 
 @pytest.mark.parametrize("env_name", ["CORO_HF_TOKEN", "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"])

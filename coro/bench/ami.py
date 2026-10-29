@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import zipfile
 from pathlib import Path
+from typing import Protocol
 
 from coro.bench.stm import ami_meeting_to_stm, slice_stm_window
-from coro.bench.utils.ami_audios_download import (
-    download_annotations,
-    download_meeting_audio,
-)
+from coro.bench.utils.ami_audios_download import AmiMirrorDownloads
+
+
+class AmiDownloads(Protocol):
+    """Port: fetches AMI meeting audio and the manual annotations archive."""
+
+    def download_meeting_audio(self, meeting_id: str, out_dir: Path) -> Path:
+        """Place the audio of ``meeting_id`` at its path under ``out_dir`` and return it."""
+        ...
+
+    def download_annotations(self, out_dir: Path) -> Path:
+        """Place the annotations zip archive in ``out_dir`` and return its path."""
+        ...
+
 
 AMI_GROUPS: dict[str, list[str]] = {
     "IB": ["IB4001", "IB4002", "IB4003", "IB4004", "IB4005"],
@@ -203,7 +214,13 @@ def ensure_audio_and_annotations(
     ami_root: Path,
     *,
     no_download: bool = False,
+    downloads: AmiDownloads | None = None,
 ) -> None:
+    """Make the audio and the extracted annotations of ``meetings`` present under ``ami_root``.
+
+    ``downloads`` fetches what is missing; it defaults to the AMI corpus mirror.
+    """
+    downloads = downloads or AmiMirrorDownloads()
     missing_audio: list[str] = []
     for meeting_id in meetings:
         audio_path = get_audio_path(ami_root, meeting_id)
@@ -218,10 +235,10 @@ def ensure_audio_and_annotations(
 
     if not no_download:
         for meeting_id in meetings:
-            download_meeting_audio(meeting_id, ami_root)
+            downloads.download_meeting_audio(meeting_id, ami_root)
 
         if not _annotations_extracted_marker(ami_root).exists():
-            zip_path = download_annotations(ami_root)
+            zip_path = downloads.download_annotations(ami_root)
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(ami_root)
             _annotations_extracted_marker(ami_root).touch()

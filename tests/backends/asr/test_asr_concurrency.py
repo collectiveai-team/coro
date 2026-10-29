@@ -11,15 +11,20 @@ Adapter's declared policy:
   retry hint, rather than queued indefinitely.
 
 No real ASR model is loaded; adapters are driven against stub backends whose
-"inference" is a sleep, so overlap is observable as wall time.
+"inference" is a sleep, so overlap is observable as wall time. The tests
+read the public ``in_flight``, ``max_concurrency`` and ``max_queue_depth`` of
+the admission controller, which are its public properties, and the
+``peak_concurrent`` count that each stub keeps of the calls it ran at once.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import threading
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -37,13 +42,8 @@ from coro.backends.asr.onnx_genai import OnnxGenaiASRAdapter
 
 # One stub "inference" takes this long. Long enough that serialisation is
 # unambiguous, short enough to keep the suite fast.
-_WORK_SECONDS = 0.15
-_PCM = np.zeros(1600, dtype=np.int16).tobytes()
-
-
-# ---------------------------------------------------------------------------
-# resolve_max_concurrency
-# ---------------------------------------------------------------------------
+WORK_SECONDS = 0.15
+PCM = np.zeros(1600, dtype=np.int16).tobytes()
 
 
 def test_explicit_concurrency_is_used_verbatim():
@@ -62,11 +62,6 @@ def test_auto_concurrency_tracks_core_count():
     assert resolve_max_concurrency(0) == max(2, cores // 4)
 
 
-# ---------------------------------------------------------------------------
-# AdmissionController
-# ---------------------------------------------------------------------------
-
-
 async def test_admission_allows_calls_up_to_the_permit_count():
     """Permits are held concurrently up to max_concurrency."""
     controller = AdmissionController(max_concurrency=3, max_queue_depth=0)
@@ -76,7 +71,7 @@ async def test_admission_allows_calls_up_to_the_permit_count():
         nonlocal peak
         async with controller.admit():
             peak = max(peak, controller.in_flight)
-            await asyncio.sleep(_WORK_SECONDS)
+            await asyncio.sleep(WORK_SECONDS)
 
     await asyncio.gather(*(_hold() for _ in range(3)))
     assert peak == 3
@@ -91,7 +86,7 @@ async def test_admission_bounds_in_flight_calls():
         nonlocal peak
         async with controller.admit():
             peak = max(peak, controller.in_flight)
-            await asyncio.sleep(_WORK_SECONDS)
+            await asyncio.sleep(WORK_SECONDS)
 
     await asyncio.gather(*(_hold() for _ in range(6)))
     assert peak == 3
@@ -106,7 +101,7 @@ async def test_admission_rejects_past_queue_depth_cap():
     async def _hold():
         async with controller.admit():
             started.set()
-            await asyncio.sleep(_WORK_SECONDS)
+            await asyncio.sleep(WORK_SECONDS)
 
     holder = asyncio.create_task(_hold())
     await started.wait()
@@ -145,12 +140,7 @@ def test_serialized_policy_forces_one_permit():
     assert controller.max_queue_depth == 4  # falsegreen: ignore
 
 
-# ---------------------------------------------------------------------------
-# Adapter stubs
-# ---------------------------------------------------------------------------
-
-
-class _SleepingOnnxAsrModel:
+class SleepingOnnxAsrModel:
     """Stub onnx-asr model whose recognize() blocks for a fixed duration."""
 
     def __init__(self) -> None:
@@ -162,16 +152,16 @@ class _SleepingOnnxAsrModel:
         with self._guard:
             self.concurrent += 1
             self.peak_concurrent = max(self.peak_concurrent, self.concurrent)
-        time.sleep(_WORK_SECONDS)
+        time.sleep(WORK_SECONDS)
         with self._guard:
             self.concurrent -= 1
-        from types import SimpleNamespace
-
         return SimpleNamespace(tokens=[" hi"], timestamps=[0.0], logprobs=None)
 
 
-class _SleepingWhisperModel:
+class SleepingWhisperModel:
     """Stub faster-whisper model whose transcribe() blocks for a fixed duration."""
+
+    supported_languages: tuple[str, ...] = ()
 
     def __init__(self) -> None:
         self.concurrent = 0
@@ -182,104 +172,142 @@ class _SleepingWhisperModel:
         with self._guard:
             self.concurrent += 1
             self.peak_concurrent = max(self.peak_concurrent, self.concurrent)
-        time.sleep(_WORK_SECONDS)
+        time.sleep(WORK_SECONDS)
         with self._guard:
             self.concurrent -= 1
         return iter([]), None
 
 
-async def _elapsed_for_two(adapter) -> float:
+async def elapsed_for_two(adapter) -> float:
     """Run two transcriptions simultaneously and return the wall time taken."""
     started = time.perf_counter()
-    await asyncio.gather(adapter.transcribe_pcm(_PCM), adapter.transcribe_pcm(_PCM))
+    await asyncio.gather(adapter.transcribe_pcm(PCM), adapter.transcribe_pcm(PCM))
     return time.perf_counter() - started
-
-
-# ---------------------------------------------------------------------------
-# Per-adapter concurrency policy
-# ---------------------------------------------------------------------------
 
 
 async def test_onnx_asr_adapter_runs_two_requests_concurrently():
     """Two simultaneous onnx-asr transcriptions overlap in time."""
-    model = _SleepingOnnxAsrModel()
+    model = SleepingOnnxAsrModel()
     adapter = OnnxAsrASRAdapter(
         model, admission=AdmissionController(max_concurrency=2, max_queue_depth=4)
     )
 
-    elapsed = await _elapsed_for_two(adapter)
+    elapsed = await elapsed_for_two(adapter)
 
     assert model.peak_concurrent == 2
-    assert elapsed < 2 * _WORK_SECONDS
+    assert elapsed < 2 * WORK_SECONDS
 
 
 async def test_faster_whisper_adapter_runs_two_requests_concurrently():
     """Two simultaneous faster-whisper transcriptions overlap in time."""
-    model = _SleepingWhisperModel()
+    model = SleepingWhisperModel()
     adapter = FasterWhisperASRAdapter(
         model, admission=AdmissionController(max_concurrency=2, max_queue_depth=4)
     )
 
-    elapsed = await _elapsed_for_two(adapter)
+    elapsed = await elapsed_for_two(adapter)
 
     assert model.peak_concurrent == 2
-    assert elapsed < 2 * _WORK_SECONDS
+    assert elapsed < 2 * WORK_SECONDS
 
 
 @pytest.mark.parametrize(
-    "adapter_factory",
+    ("model_factory", "adapter_factory"),
     [
-        lambda: OnnxAsrASRAdapter(_SleepingOnnxAsrModel()),
-        lambda: FasterWhisperASRAdapter(_SleepingWhisperModel()),
+        (SleepingOnnxAsrModel, OnnxAsrASRAdapter),
+        (SleepingWhisperModel, FasterWhisperASRAdapter),
     ],
     ids=["onnx-asr", "faster-whisper"],
 )
-def test_concurrent_adapters_hold_no_lock(adapter_factory):
-    """The concurrent adapters carry no serialising lock attribute."""
-    adapter = adapter_factory()
-    assert not hasattr(adapter, "_lock")
+async def test_concurrent_adapters_overlap_by_default(model_factory, adapter_factory):
+    """With no admission configured, the concurrent adapters serialise nothing."""
+    model = model_factory()
+    adapter = adapter_factory(model)
+
+    await elapsed_for_two(adapter)
+
     assert adapter.admission.max_concurrency >= 2
+    assert model.peak_concurrent == 2
 
 
-async def test_onnx_genai_adapter_serialises_by_policy():
-    """onnx-genai keeps a one-permit policy: model calls never overlap."""
+class GenaiSession:
+    """One streaming session of ``SleepingGenai``: processor, tokenizer and generator in one.
+
+    Its flush is the session's "inference": it sleeps, and counts the sessions
+    flushing at once on the module.
+    """
+
+    def __init__(self, genai: SleepingGenai, *_args: object) -> None:
+        self._genai = genai
+
+    def set_option(self, _name: str, _value: str) -> None:
+        return None
+
+    def set_runtime_option(self, _name: str, _value: str) -> None:
+        return None
+
+    def process(self, _chunk: np.ndarray) -> None:
+        return None
+
+    def flush(self) -> None:
+        with self._genai.guard:
+            self._genai.concurrent += 1
+            self._genai.peak_concurrent = max(self._genai.peak_concurrent, self._genai.concurrent)
+        time.sleep(WORK_SECONDS)
+        with self._genai.guard:
+            self._genai.concurrent -= 1
+
+    def create_stream(self) -> SimpleNamespace:
+        return SimpleNamespace(decode=str)
+
+
+class SleepingGenai:
+    """Stands in for the ``onnxruntime_genai`` module, whose sessions sleep instead of decoding."""
+
+    def __init__(self) -> None:
+        self.concurrent = 0
+        self.peak_concurrent = 0
+        self.guard = threading.Lock()
+
+    def StreamingProcessor(self, model: object) -> GenaiSession:
+        return GenaiSession(self, model)
+
+    def Tokenizer(self, model: object) -> GenaiSession:
+        return GenaiSession(self, model)
+
+    def Generator(self, model: object, params: object) -> GenaiSession:
+        return GenaiSession(self, model, params)
+
+    def GeneratorParams(self, _model: object) -> None:
+        return None
+
+
+async def test_onnx_genai_adapter_serialises_by_policy(monkeypatch):
+    """onnx-genai keeps a one-permit policy: two requests take twice as long."""
+    genai = SleepingGenai()
+    monkeypatch.setitem(sys.modules, "onnxruntime_genai", genai)
     adapter = OnnxGenaiASRAdapter(object(), chunk_samples=8960, sample_rate=16000)
-    assert adapter.admission.max_concurrency == 1
 
-    peak = 0
-    concurrent = 0
-    guard = threading.Lock()
+    elapsed = await elapsed_for_two(adapter)
 
-    def _fake_stream(_audio, _lang_id):
-        nonlocal peak, concurrent
-        with guard:
-            concurrent += 1
-            peak = max(peak, concurrent)
-        time.sleep(_WORK_SECONDS)
-        with guard:
-            concurrent -= 1
-        return []
-
-    adapter._stream = _fake_stream
-    await _elapsed_for_two(adapter)
-
-    assert peak == 1
+    assert genai.peak_concurrent == 1
+    assert elapsed >= 2 * WORK_SECONDS
 
 
 async def test_adapter_rejects_beyond_queue_depth_with_retry_hint():
     """An adapter past its queue-depth cap raises AsrCapacityError, not a 500."""
-    model = _SleepingOnnxAsrModel()
+    model = SleepingOnnxAsrModel()
     adapter = OnnxAsrASRAdapter(
         model, admission=AdmissionController(max_concurrency=1, max_queue_depth=0)
     )
 
-    busy = asyncio.create_task(adapter.transcribe_pcm(_PCM))
-    while adapter.admission.in_flight == 0:  # wait for the permit to be taken
+    busy = asyncio.create_task(adapter.transcribe_pcm(PCM))
+    while adapter.admission.in_flight == 0:  # wait for the permit to be taken  # noqa: ASYNC110
         # Polls a condition and yields to the event loop; no fixed delay.
         await asyncio.sleep(0)  # falsegreen: ignore
 
     with pytest.raises(AsrCapacityError) as excinfo:
-        await adapter.transcribe_pcm(_PCM)
+        await adapter.transcribe_pcm(PCM)
 
     assert excinfo.value.retry_after_seconds > 0
     assert "capacity" in excinfo.value.message

@@ -86,25 +86,25 @@ def test_word_end_is_next_word_start():
         timestamps=[1.0, 2.5],
     )
     tokens = convert_onnx_asr_result(result)
-    assert tokens[0].start == pytest.approx(1.0)
-    assert tokens[0].end == pytest.approx(2.5)
+    assert tokens[0].start == pytest.approx(1.0, abs=1e-9)
+    assert tokens[0].end == pytest.approx(2.5, abs=1e-9)
 
 
 def test_final_word_end_is_padded():
     """The final word, having no successor, is padded by LAST_WORD_PAD."""
     result = _result(tokens=[" solo"], timestamps=[3.0])
     tokens = convert_onnx_asr_result(result)
-    assert tokens[0].start == pytest.approx(3.0)
-    assert tokens[0].end == pytest.approx(3.0 + LAST_WORD_PAD)
+    assert tokens[0].start == pytest.approx(3.0, abs=1e-9)
+    assert tokens[0].end == pytest.approx(3.0 + LAST_WORD_PAD, abs=1e-9)
 
 
 def test_applies_offset_seconds():
     """Timestamps are shifted by offset_seconds."""
     result = _result(tokens=[" x", " y"], timestamps=[0.0, 1.0])
     tokens = convert_onnx_asr_result(result, offset_seconds=10.0)
-    assert tokens[0].start == pytest.approx(10.0)
-    assert tokens[0].end == pytest.approx(11.0)
-    assert tokens[1].start == pytest.approx(11.0)
+    assert tokens[0].start == pytest.approx(10.0, abs=1e-9)
+    assert tokens[0].end == pytest.approx(11.0, abs=1e-9)
+    assert tokens[1].start == pytest.approx(11.0, abs=1e-9)
 
 
 def test_probability_is_exp_mean_logprob():
@@ -115,7 +115,7 @@ def test_probability_is_exp_mean_logprob():
         logprobs=[math.log(0.5), math.log(0.5)],
     )
     tokens = convert_onnx_asr_result(result)
-    assert tokens[0].probability == pytest.approx(0.5)
+    assert tokens[0].probability == pytest.approx(0.5, abs=1e-9)
 
 
 def test_probability_none_without_logprobs():
@@ -145,18 +145,18 @@ def test_text_only_result_spreads_words_across_span():
     """Whisper-shaped result (text, no tokens) yields words spread over the span."""
     tokens = convert_onnx_asr_result(_text_result("and so my fellow"), span_end=4.0)
     assert [t.text for t in tokens] == [" and", " so", " my", " fellow"]
-    assert tokens[0].start == pytest.approx(0.0)
-    assert tokens[0].end == pytest.approx(1.0)
-    assert tokens[3].start == pytest.approx(3.0)
-    assert tokens[3].end == pytest.approx(4.0)
+    assert tokens[0].start == pytest.approx(0.0, abs=1e-9)
+    assert tokens[0].end == pytest.approx(1.0, abs=1e-9)
+    assert tokens[3].start == pytest.approx(3.0, abs=1e-9)
+    assert tokens[3].end == pytest.approx(4.0, abs=1e-9)
     assert "".join(t.text for t in tokens) == " and so my fellow"
 
 
 def test_text_only_result_without_span_uses_pad_steps():
     """Without a span, words step by LAST_WORD_PAD so timings stay monotonic."""
     tokens = convert_onnx_asr_result(_text_result("uno dos"))
-    assert tokens[0].start == pytest.approx(0.0)
-    assert tokens[1].start == pytest.approx(LAST_WORD_PAD)
+    assert tokens[0].start == pytest.approx(0.0, abs=1e-9)
+    assert tokens[1].start == pytest.approx(LAST_WORD_PAD, abs=1e-9)
 
 
 def test_text_only_empty_text_yields_no_tokens():
@@ -172,9 +172,9 @@ def test_segments_text_only_rebased_to_segment_span():
     ]
     tokens = convert_onnx_asr_segments(segments)
     assert [t.text for t in tokens] == [" hola", " mundo", " adios"]
-    assert tokens[0].start == pytest.approx(10.0)
-    assert tokens[1].start == pytest.approx(11.0)
-    assert tokens[2].start == pytest.approx(20.0)
+    assert tokens[0].start == pytest.approx(10.0, abs=1e-9)
+    assert tokens[1].start == pytest.approx(11.0, abs=1e-9)
+    assert tokens[2].start == pytest.approx(20.0, abs=1e-9)
 
 
 # ---------------------------------------------------------------------------
@@ -243,9 +243,9 @@ def test_convert_segments_rebases_token_times_by_segment_start():
 
     assert [t.text for t in tokens] == [" hello", " world", " foo", " bar"]
     # First segment starts at 0.0; second segment's tokens are offset by 10.0s.
-    assert tokens[0].start == pytest.approx(0.0)
-    assert tokens[2].start == pytest.approx(10.0)
-    assert tokens[3].start == pytest.approx(10.4)
+    assert tokens[0].start == pytest.approx(0.0, abs=1e-9)
+    assert tokens[2].start == pytest.approx(10.0, abs=1e-9)
+    assert tokens[3].start == pytest.approx(10.4, abs=1e-9)
 
 
 def test_convert_segments_empty_iterable_returns_empty():
@@ -272,5 +272,5 @@ async def test_adapter_vad_enabled_merges_segments_with_offsets():
     tokens = await adapter.transcribe_pcm(pcm)
 
     assert [t.text for t in tokens] == [" hello", " world"]
-    assert tokens[0].start == pytest.approx(0.0)
-    assert tokens[1].start == pytest.approx(5.0)
+    assert tokens[0].start == pytest.approx(0.0, abs=1e-9)
+    assert tokens[1].start == pytest.approx(5.0, abs=1e-9)

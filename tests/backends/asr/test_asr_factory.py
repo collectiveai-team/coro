@@ -3,51 +3,80 @@
 Verifies the factory routes each ASR Backend Provider to its builder with the
 right options from Server Startup Selection, rejects unknown providers, and
 warns at startup when a provider-specific setting is configured for a provider
-that ignores it. No real ASR model is loaded — provider builders are patched.
+that ignores it. No real ASR model is loaded: the tests give the factory
+in-memory provider builders.
 """
 
 from __future__ import annotations
 
 import logging
-from unittest.mock import patch
 
 import pytest
 
-from coro.backends.asr.factory import build_asr_adapter, warn_ignored_asr_settings
+from coro.backends.asr.factory import (
+    build_asr_adapter,
+    load_asr_adapter_builder,
+    warn_ignored_asr_settings,
+)
 from coro.settings import ServerSettings
+from support.fake_backend_builders import ConfiguredASR, load_configured_asr_builder
+
+
+def _build(settings: ServerSettings) -> ConfiguredASR:
+    adapter = build_asr_adapter(settings, load_builder=load_configured_asr_builder)
+    assert isinstance(adapter, ConfiguredASR)
+    return adapter
+
+
+@pytest.mark.parametrize(
+    ("provider", "module", "builder"),
+    [
+        ("faster-whisper", "coro.backends.asr.faster_whisper", "build_asr_adapter"),
+        ("onnx-asr", "coro.backends.asr.onnx_asr", "build_onnx_asr_adapter"),
+        (
+            "onnx-parakeet-prompt",
+            "coro.backends.asr.onnx_parakeet_prompt",
+            "build_onnx_parakeet_prompt_adapter",
+        ),
+        (
+            "onnx-canary-split",
+            "coro.backends.asr.onnx_canary_split",
+            "build_onnx_canary_split_adapter",
+        ),
+        ("onnx-genai", "coro.backends.asr.onnx_genai", "build_onnx_genai_adapter"),
+        ("nemo", "coro.backends.asr.nemo", "build_nemo_asr_adapter"),
+    ],
+)
+def test_each_provider_loads_its_own_builder(provider, module, builder):
+    """Every ASR Backend Provider resolves to the builder of its own module."""
+    loaded = load_asr_adapter_builder(provider)
+    assert (loaded.__module__, loaded.__name__) == (module, builder)
 
 
 def test_dispatches_to_faster_whisper():
     """The default faster-whisper provider routes to its builder."""
     settings = ServerSettings(backend_asr="faster-whisper", model_asr="m")
-    sentinel = object()
-    with patch(
-        "coro.backends.asr.faster_whisper.build_asr_adapter", return_value=sentinel
-    ) as mock_build:
-        adapter = build_asr_adapter(settings)
 
-    assert adapter is sentinel
-    mock_build.assert_called_once_with(
-        "m",
-        device=settings.asr_device,
-        compute_type=settings.asr_compute_type,
-        max_concurrency=settings.asr_max_concurrency,
-        max_queue_depth=settings.asr_max_queue_depth,
+    assert _build(settings) == ConfiguredASR(
+        provider="faster-whisper",
+        model="m",
+        options={
+            "device": settings.asr_device,
+            "compute_type": settings.asr_compute_type,
+            "max_concurrency": settings.asr_max_concurrency,
+            "max_queue_depth": settings.asr_max_queue_depth,
+        },
     )
 
 
 def test_dispatches_to_onnx_asr():
     """The onnx-asr provider routes to its builder with VAD options."""
     settings = ServerSettings(backend_asr="onnx-asr", model_asr="m", asr_onnx_vad="enabled")
-    sentinel = object()
-    with patch(
-        "coro.backends.asr.onnx_asr.build_onnx_asr_adapter", return_value=sentinel
-    ) as mock_build:
-        adapter = build_asr_adapter(settings)
 
-    assert adapter is sentinel
-    _, kwargs = mock_build.call_args
-    assert kwargs["vad_enabled"] is True
+    adapter = _build(settings)
+
+    assert adapter.provider == "onnx-asr"
+    assert adapter.options["vad_enabled"] is True
 
 
 def test_dispatches_to_onnx_parakeet_prompt():
@@ -55,19 +84,15 @@ def test_dispatches_to_onnx_parakeet_prompt():
     settings = ServerSettings(
         backend_asr="onnx-parakeet-prompt", model_asr="m", asr_quantization="static_qdq_v3"
     )
-    sentinel = object()
-    with patch(
-        "coro.backends.asr.onnx_parakeet_prompt.build_onnx_parakeet_prompt_adapter",
-        return_value=sentinel,
-    ) as mock_build:
-        adapter = build_asr_adapter(settings)
 
-    assert adapter is sentinel
-    mock_build.assert_called_once_with(
-        "m",
-        device=settings.asr_device,
-        quantization="static_qdq_v3",
-        max_queue_depth=settings.asr_max_queue_depth,
+    assert _build(settings) == ConfiguredASR(
+        provider="onnx-parakeet-prompt",
+        model="m",
+        options={
+            "device": settings.asr_device,
+            "quantization": "static_qdq_v3",
+            "max_queue_depth": settings.asr_max_queue_depth,
+        },
     )
 
 
@@ -87,23 +112,19 @@ def test_dispatches_to_onnx_canary_split(monkeypatch):
         asr_decoder_quantization="dynamic_v1_quint8",
         _env_file=None,
     )
-    sentinel = object()
-    with patch(
-        "coro.backends.asr.onnx_canary_split.build_onnx_canary_split_adapter",
-        return_value=sentinel,
-    ) as mock_build:
-        adapter = build_asr_adapter(settings)
 
-    assert adapter is sentinel
-    mock_build.assert_called_once_with(
-        "m",
-        device=settings.asr_device,
-        quantization="static_qdq_v3",
-        decoder_quantization="dynamic_v1_quint8",
-        max_concurrency=settings.asr_max_concurrency,
-        max_queue_depth=settings.asr_max_queue_depth,
-        hf_token=None,
-        fallback_language=settings.asr_fallback_language,
+    assert _build(settings) == ConfiguredASR(
+        provider="onnx-canary-split",
+        model="m",
+        options={
+            "device": settings.asr_device,
+            "quantization": "static_qdq_v3",
+            "decoder_quantization": "dynamic_v1_quint8",
+            "max_concurrency": settings.asr_max_concurrency,
+            "max_queue_depth": settings.asr_max_queue_depth,
+            "hf_token": None,
+            "fallback_language": settings.asr_fallback_language,
+        },
     )
 
 
@@ -115,45 +136,37 @@ def test_dispatches_to_onnx_canary_split_with_hf_token(monkeypatch):
         model_asr="m",
         _env_file=None,
     )
-    sentinel = object()
-    with patch(
-        "coro.backends.asr.onnx_canary_split.build_onnx_canary_split_adapter",
-        return_value=sentinel,
-    ) as mock_build:
-        adapter = build_asr_adapter(settings)
 
-    assert adapter is sentinel
-    forwarded = mock_build.call_args.kwargs["hf_token"]
-    assert forwarded is not None and forwarded == "secret-token"
+    forwarded = _build(settings).options["hf_token"]
+    assert forwarded == "secret-token"
 
 
 def test_dispatches_to_onnx_genai():
     """The onnx-genai provider routes to its builder."""
     settings = ServerSettings(backend_asr="onnx-genai", model_asr="m")
-    sentinel = object()
-    with patch(
-        "coro.backends.asr.onnx_genai.build_onnx_genai_adapter", return_value=sentinel
-    ) as mock_build:
-        adapter = build_asr_adapter(settings)
 
-    assert adapter is sentinel
-    mock_build.assert_called_once()
+    assert _build(settings) == ConfiguredASR(
+        provider="onnx-genai",
+        model="m",
+        options={
+            "device": settings.asr_device,
+            "quantization": settings.asr_quantization,
+            "max_queue_depth": settings.asr_max_queue_depth,
+        },
+    )
 
 
 def test_dispatches_to_nemo():
     """The nemo provider routes to its builder without provider-specific knobs."""
     settings = ServerSettings(backend_asr="nemo", model_asr="m")
-    sentinel = object()
-    with patch(
-        "coro.backends.asr.nemo.build_nemo_asr_adapter", return_value=sentinel
-    ) as mock_build:
-        adapter = build_asr_adapter(settings)
 
-    assert adapter is sentinel
-    mock_build.assert_called_once_with(
-        "m",
-        device=settings.asr_device,
-        max_queue_depth=settings.asr_max_queue_depth,
+    assert _build(settings) == ConfiguredASR(
+        provider="nemo",
+        model="m",
+        options={
+            "device": settings.asr_device,
+            "max_queue_depth": settings.asr_max_queue_depth,
+        },
     )
 
 
@@ -258,10 +271,7 @@ def test_slug_filled_quantization_is_not_warned_about_when_backend_asr_is_overri
 def test_build_emits_the_ignored_setting_warning(caplog):
     """The warning is emitted as part of building the adapter at startup."""
     settings = ServerSettings(backend_asr="onnx-asr", model_asr="m", asr_compute_type="int8")
-    with (
-        caplog.at_level(logging.WARNING, logger="coro.backends.asr.factory"),
-        patch("coro.backends.asr.onnx_asr.build_onnx_asr_adapter", return_value=object()),
-    ):
-        build_asr_adapter(settings)
+    with caplog.at_level(logging.WARNING, logger="coro.backends.asr.factory"):
+        _build(settings)
 
     assert "CORO_ASR_COMPUTE_TYPE" in caplog.text

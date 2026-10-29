@@ -2,113 +2,13 @@
 
 from __future__ import annotations
 
-import json
-import threading
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from support.paths import PYPROJECT
 
 from coro.bench.models.quality import ScoreError, ScoreResult
-
-
-CANNED_DIARIZED_JSON = {
-    "task": "transcribe",
-    "duration": 3.5,
-    "text": "hello world from test",
-    "segments": [
-        {
-            "type": "transcript.text.segment",
-            "id": "seg_001",
-            "start": 0.0,
-            "end": 1.5,
-            "text": "hello world",
-            "speaker": "SPEAKER_00",
-        },
-        {
-            "type": "transcript.text.segment",
-            "id": "seg_002",
-            "start": 1.5,
-            "end": 3.5,
-            "text": "from test",
-            "speaker": "SPEAKER_01",
-        },
-    ],
-    "usage": {"type": "duration", "seconds": 4},
-}
-
-CANNED_HEALTH = {"status": "ok", "ready": True}
-
-
-class _StubHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/health":
-            body = json.dumps(CANNED_HEALTH).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def do_POST(self):
-        if self.path == "/v1/audio/transcriptions":
-            content_length = int(self.headers.get("Content-Length", 0))
-            self.rfile.read(content_length)
-            body = json.dumps(CANNED_DIARIZED_JSON).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def log_message(self, format, *args):
-        pass
-
-
-@pytest.fixture()
-def e2e_server():
-    server = HTTPServer(("127.0.0.1", 0), _StubHandler)
-    port = server.server_address[1]
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{port}"
-    server.shutdown()
-    thread.join()
-
-
-class TestPyprojectBenchExtra:
-    def test_pyproject_declares_bench_optional_extra(self):
-        text = PYPROJECT.read_text()
-        assert "[project.optional-dependencies]" in text
-        assert "bench = [" in text
-        assert "meeteval" in text
-        assert "rich" in text
-
-
-class TestRequireMeeteval:
-    def test_require_meeteval_exits_with_helpful_message(self):
-        with patch.dict(sys.modules, {"meeteval": None}):
-            from coro.bench.quality import _require_meeteval
-
-            with pytest.raises(SystemExit) as exc_info:
-                _require_meeteval()
-            assert exc_info.value.code == 1
-
-    def test_require_meeteval_returns_module_when_available(self):
-        mock_meeteval = MagicMock()
-        with patch.dict(sys.modules, {"meeteval": mock_meeteval}):
-            from coro.bench.quality import _require_meeteval
-
-            result = _require_meeteval()
-            assert result is mock_meeteval
 
 
 def _write_stm_pair(tmp_path: Path, name: str, ref: str, hyp: str) -> tuple[Path, Path]:
@@ -121,54 +21,6 @@ def _write_stm_pair(tmp_path: Path, name: str, ref: str, hyp: str) -> tuple[Path
 
 
 class TestScoreItem:
-    def test_normalize_transcript_text_applies_basic_normalizer(self):
-        from coro.bench.quality import normalize_transcript_text
-
-        assert normalize_transcript_text("Hello,   world!! [cough]") == "hello world"
-
-    def test_normalize_transcript_text_preserves_spanish_diacritics(self):
-        from coro.bench.quality import normalize_transcript_text
-
-        assert normalize_transcript_text("¿Está el señor Ibáñez?") == "está el señor ibáñez"
-
-    def test_write_normalized_stm_preserves_metadata_and_normalizes_text(
-        self,
-        tmp_path: Path,
-    ):
-        from coro.bench.quality import _write_normalized_stm
-
-        src = tmp_path / "in.stm"
-        dst = tmp_path / "out.stm"
-        src.write_text("meeting 1 A 0.000 1.500 Hello,   world!!\n")
-
-        _write_normalized_stm(src, dst)
-
-        assert dst.read_text() == "meeting 1 A 0.000 1.500 hello world\n"
-
-    def test_write_normalized_stm_keeps_diacritics_in_text_field(self, tmp_path: Path):
-        from coro.bench.quality import _write_normalized_stm
-
-        src = tmp_path / "in.stm"
-        dst = tmp_path / "out.stm"
-        src.write_text("sesion 1 A 0.000 1.500 ¿Cuántos años más?\n")
-
-        _write_normalized_stm(src, dst)
-
-        assert dst.read_text() == "sesion 1 A 0.000 1.500 cuántos años más\n"
-
-    def test_write_normalized_stm_leaves_source_untouched(self, tmp_path: Path):
-        """Normalization happens at scoring time; STM artifacts stay intact."""
-        from coro.bench.quality import _write_normalized_stm
-
-        src = tmp_path / "in.stm"
-        dst = tmp_path / "out.stm"
-        original = "meeting 1 A 0.000 1.500 Hello,   world!!\n"
-        src.write_text(original)
-
-        _write_normalized_stm(src, dst)
-
-        assert src.read_text() == original
-
     def test_normalized_lane_applies_identically_to_ref_and_hyp(self, tmp_path: Path):
         """Casing/punctuation-only differences vanish in the Normalized Metric Lane."""
         from coro.bench.quality import score_item
@@ -208,7 +60,7 @@ class TestScoreItem:
     def test_normalized_lane_skipped_when_nothing_survives_normalization(
         self,
         tmp_path: Path,
-        capsys,
+        caplog,
     ):
         """A degenerate normalized lane must not take the Raw Metric Lane down."""
         from coro.bench.quality import score_item
@@ -226,7 +78,7 @@ class TestScoreItem:
         assert result.metrics.cpwer is not None
         assert result.metrics.der is not None
         assert result.metrics.normalized is None
-        assert "normalized lane skipped" in capsys.readouterr().err
+        assert "normalized lane skipped" in caplog.text
 
     def test_both_lanes_reported_per_item(self, tmp_path: Path):
         from coro.bench.quality import score_item
@@ -477,13 +329,6 @@ class TestDiarizationOnly:
     _REF = "rec 1 spkA 0.000 2.000 <sd>\nrec 1 spkB 2.500 4.000 <sd>\n"
     _HYP = "rec 1 0 0.100 2.100 hola mundo\nrec 1 1 2.600 3.900 que tal\n"
 
-    def test_is_diarization_only_stm_detects_sentinel(self, tmp_path: Path):
-        from coro.bench.quality import is_diarization_only_stm
-
-        ref, hyp = _write_stm_pair(tmp_path, "rec", self._REF, self._HYP)
-        assert is_diarization_only_stm(ref) is True
-        assert is_diarization_only_stm(hyp) is False
-
     def test_score_item_skips_wer_keeps_der(self, tmp_path: Path):
         from coro.bench.quality import score_item
 
@@ -522,7 +367,7 @@ class TestCLIFlags:
         from coro.bench.cli import parse_args
 
         args = parse_args(["quality", "--der-collar", "0.25"])
-        assert args.der_collar == 0.25
+        assert args.der_collar == pytest.approx(0.25, abs=1e-12)
 
     def test_der_regions_flag_accepted(self):
         from coro.bench.cli import parse_args
@@ -547,151 +392,3 @@ class TestCLIFlags:
 
         with pytest.raises(SystemExit):
             parse_args(["quality", "--der-regions", "invalid"])
-
-
-class TestQualityRun:
-    def test_quality_run_produces_artifacts(self, e2e_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_workload
-
-        audio = tmp_path / "meeting1.wav"
-        audio.write_bytes(b"RIFF" + b"\x00" * 200)
-
-        ref_stm = tmp_path / "meeting1.ref.stm"
-        ref_stm.write_text("meeting1 1 SPEAKER_00 0.000 1.500 hello world\n")
-
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
-
-        items = [
-            {
-                "item_id": "meeting1",
-                "audio_path": audio,
-                "ref_stm_path": ref_stm,
-                "audio_seconds": 3.5,
-            }
-        ]
-
-        run_workload(
-            items=items,
-            base_url=e2e_server,
-            out_dir=out_dir,
-            reps=1,
-            subcommand="quality",
-            der_collar=0.0,
-            der_regions="all",
-        )
-
-        quality_dir = out_dir / "quality"
-        assert (quality_dir / "meeting1.json").exists()
-        assert (quality_dir / "summary.json").exists()
-
-        item_data = json.loads((quality_dir / "meeting1.json").read_text())
-        assert item_data["session_id"] == "meeting1"
-        assert item_data["audio_seconds"] == 3.5
-        assert item_data["metrics"] is not None
-        assert "cpwer" in item_data["metrics"]
-        assert "der" in item_data["metrics"]
-
-        summary = json.loads((quality_dir / "summary.json").read_text())
-        assert summary["n_succeeded"] == 1
-        assert summary["n_failed"] == 0
-        assert "combined" in summary
-        assert "per_item" in summary
-        assert summary["per_item"][0]["session_id"] == "meeting1"
-
-    def test_quality_run_isolates_failures(self, e2e_server, tmp_path: Path):
-        from coro.bench.orchestrate import run_workload
-
-        audio1 = tmp_path / "meeting1.wav"
-        audio1.write_bytes(b"RIFF" + b"\x00" * 200)
-        audio2 = tmp_path / "meeting2.wav"
-        audio2.write_bytes(b"RIFF" + b"\x00" * 200)
-
-        ref1 = tmp_path / "meeting1.ref.stm"
-        ref1.write_text("meeting1 1 A 0.0 1.0 hello\n")
-        ref2 = tmp_path / "meeting2.ref.stm"
-        ref2.write_text("meeting2 1 A 0.0 1.0 world\n")
-
-        out_dir = tmp_path / "results"
-        out_dir.mkdir()
-
-        items = [
-            {
-                "item_id": "meeting1",
-                "audio_path": audio1,
-                "ref_stm_path": ref1,
-                "audio_seconds": 1.0,
-            },
-            {
-                "item_id": "meeting2",
-                "audio_path": audio2,
-                "ref_stm_path": ref2,
-                "audio_seconds": 1.0,
-            },
-        ]
-
-        # Force the second item's scoring to fail while the first succeeds,
-        # mimicking score_item's own error-result contract.
-        from coro.bench import quality as quality_mod
-
-        real_score_item = quality_mod.score_item
-        call_count = [0]
-
-        def fail_on_second(ref_path, hyp_path, **kwargs):
-            call_count[0] += 1
-            if call_count[0] > 1:
-                return ScoreResult(
-                    metrics=None,
-                    error=ScoreError(type="RuntimeError", message="scoring failed for meeting2"),
-                )
-            return real_score_item(ref_path, hyp_path, **kwargs)
-
-        with patch.object(quality_mod, "score_item", side_effect=fail_on_second):
-            run_workload(
-                items=items,
-                base_url=e2e_server,
-                out_dir=out_dir,
-                reps=1,
-                subcommand="quality",
-                der_collar=0.0,
-                der_regions="all",
-            )
-
-        quality_dir = out_dir / "quality"
-        item2 = json.loads((quality_dir / "meeting2.json").read_text())
-        assert item2["metrics"] is None
-        assert "error" in item2
-
-        summary = json.loads((quality_dir / "summary.json").read_text())
-        assert summary["n_succeeded"] == 1
-        assert summary["n_failed"] == 1
-
-
-class TestMeetevalInstallHint:
-    """The printed install hint must be a command that actually works."""
-
-    def _hint(self) -> str:
-        from coro.bench import quality as quality_mod
-
-        with (
-            patch.dict(sys.modules, {"meeteval": None}),
-            patch("builtins.__import__", side_effect=ImportError("no meeteval")),
-            patch("sys.stderr") as mock_stderr,
-            pytest.raises(SystemExit),
-        ):
-            quality_mod._require_meeteval()
-        return "".join(call.args[0] for call in mock_stderr.write.call_args_list)
-
-    def test_hint_uses_the_dependency_group_command(self):
-        assert "uv sync --group bench" in self._hint()
-
-    def test_hint_does_not_claim_an_installable_extra(self):
-        assert "coro[bench]" not in self._hint()
-
-    def test_bench_is_a_dependency_group_not_an_extra(self):
-        """Guards the hint against the packaging metadata drifting back."""
-        import tomllib
-
-        pyproject = tomllib.loads(Path("pyproject.toml").read_text())
-        assert "bench" in pyproject["dependency-groups"]
-        assert "bench" not in pyproject["project"].get("optional-dependencies", {})

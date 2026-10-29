@@ -2,15 +2,70 @@
 
 from __future__ import annotations
 
-import logging
+import contextlib
+import http.client
+import json
 import socket
 import subprocess
 import time
+import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, TYPE_CHECKING, Protocol
 
-logger = logging.getLogger(__name__)
+from coro.core.logger import get_logger
+
+if TYPE_CHECKING:
+    from coro.bench.models.response import HealthResponse
+
+logger = get_logger(__name__)
+
+
+class ServerProcess(Protocol):
+    """Port: a running server process, as ``subprocess.Popen`` exposes it."""
+
+    @property
+    def pid(self) -> int:
+        """The process id."""
+        ...
+
+    @property
+    def returncode(self) -> int | None:
+        """The exit code, or None while the process runs."""
+        ...
+
+    def poll(self) -> int | None:
+        """Return the exit code once the process has exited, else None."""
+        ...
+
+    def terminate(self) -> None:
+        """Ask the process to stop."""
+        ...
+
+    def kill(self) -> None:
+        """Force the process to stop."""
+        ...
+
+    def wait(self, timeout: float | None = None) -> int:
+        """Block until the process exits and return its exit code."""
+        ...
+
+
+class ServerLauncher(Protocol):
+    """Port: starts the server command line as a child process."""
+
+    def __call__(
+        self, argv: list[str], *, env: Mapping[str, str], stdout: int | IO[bytes], stderr: int
+    ) -> ServerProcess:
+        """Start ``argv`` with ``env``, sending its output to ``stdout`` and ``stderr``."""
+        ...
+
+
+def spawn_server_process(
+    argv: list[str], *, env: Mapping[str, str], stdout: int | IO[bytes], stderr: int
+) -> subprocess.Popen[bytes]:
+    """Adapter of the server launcher port: a real child process."""
+    return subprocess.Popen(argv, env=env, stdout=stdout, stderr=stderr)
 
 
 def find_free_port() -> int:
@@ -19,13 +74,9 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _get_health_json(base_url: str) -> Any:
-    import urllib.request
-
+def _get_health_json(base_url: str) -> HealthResponse:
     url = f"{base_url}/health"
     with urllib.request.urlopen(url, timeout=5) as resp:
-        import json
-
         return json.loads(resp.read())
 
 
@@ -34,8 +85,8 @@ def poll_health(
     *,
     timeout: float = 600.0,
     interval: float = 1.0,
-    proc: subprocess.Popen | None = None,
-) -> Any:
+    proc: ServerProcess | None = None,
+) -> HealthResponse:
     """Block until ``/health`` reports Capability Readiness and Warmup Readiness.
 
     When ``proc`` is given, a server that exits before becoming ready fails
@@ -43,22 +94,35 @@ def poll_health(
     """
     deadline = time.monotonic() + timeout
     while True:
-        try:
-            data = _get_health_json(base_url)
-            if data.get("ready") and data.get("warmup_ready"):
-                return data
-        except Exception:
-            pass
-        if proc is not None and proc.poll() is not None:
-            raise RuntimeError(
-                f"Bench-managed server at {base_url} exited with code {proc.returncode} "
-                "before becoming warmup-ready."
-            )
-        if time.monotonic() >= deadline:
-            raise TimeoutError(
-                f"Server at {base_url} did not become warmup-ready within {timeout}s"
-            )
+        health = _ready_health(base_url)
+        if health is not None:
+            return health
+        _raise_if_unreachable(base_url, proc=proc, deadline=deadline, timeout=timeout)
         time.sleep(interval)
+
+
+def _ready_health(base_url: str) -> HealthResponse | None:
+    """Return the ``/health`` body when the server is ready and warmed up, else None."""
+    # Not listening yet, mid-startup, or answering with a non-JSON page: all mean
+    # "not ready", and the caller polls again.
+    with contextlib.suppress(OSError, ValueError, http.client.HTTPException):
+        health = _get_health_json(base_url)
+        if health.get("ready") and health.get("warmup_ready"):
+            return health
+    return None
+
+
+def _raise_if_unreachable(
+    base_url: str, *, proc: ServerProcess | None, deadline: float, timeout: float
+) -> None:
+    """Raise when the managed server has exited or the deadline has passed."""
+    if proc is not None and proc.poll() is not None:
+        raise RuntimeError(
+            f"Bench-managed server at {base_url} exited with code {proc.returncode} "
+            "before becoming warmup-ready."
+        )
+    if time.monotonic() >= deadline:
+        raise TimeoutError(f"Server at {base_url} did not become warmup-ready within {timeout}s")
 
 
 class BenchAttachedServer:
@@ -69,7 +133,7 @@ class BenchAttachedServer:
     def __enter__(self) -> BenchAttachedServer:
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         pass
 
 
@@ -84,6 +148,7 @@ class BenchManagedServer:
         pipeline: str = "full-memory",
         port: int = 0,
         log_path: Path | None = None,
+        launcher: ServerLauncher = spawn_server_process,
     ) -> None:
         self._asr_backend = asr_backend
         self._asr_model = asr_model
@@ -92,16 +157,18 @@ class BenchManagedServer:
         self._pipeline = pipeline
         self._requested_port = port
         self._log_path = log_path
+        self._launcher = launcher
         self._port: int | None = None
         self.base_url: str = ""
         self.server_pid: int | None = None
-        self._proc: subprocess.Popen | None = None
+        self._proc: ServerProcess | None = None
         self._log_file: IO[bytes] | None = None
 
-    def _build_env(self) -> Mapping[str, str]:
+    def server_env(self) -> Mapping[str, str]:
+        """The environment the server process starts with: this one plus the server selection."""
         import os
 
-        env = dict(os.environ)
+        env = dict(os.environ)  # botica: ignore[settings-module] -- the child inherits it
         env["CORO_BACKEND_ASR"] = self._asr_backend
         env["CORO_MODEL_ASR"] = self._asr_model
         env["CORO_BACKEND_DIARIZATION"] = self._diar_backend
@@ -127,11 +194,11 @@ class BenchManagedServer:
     def __enter__(self) -> BenchManagedServer:
         self._port = self._requested_port if self._requested_port != 0 else find_free_port()
         self.base_url = f"http://127.0.0.1:{self._port}"
-        env = self._build_env()
+        env = self.server_env()
         output = self._open_output()
         logger.info("Starting bench-managed server on %s", self.base_url)
         try:
-            self._proc = subprocess.Popen(
+            self._proc = self._launcher(
                 ["coro", "serve", "--port", str(self._port)],
                 env=env,
                 stdout=output,
@@ -144,7 +211,7 @@ class BenchManagedServer:
             raise
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         if self._proc is not None:
             self._proc.terminate()
             try:

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import math
+import time
 from collections import deque
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
-import logging
-import math
-import time
-from typing import Any
-
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
+from coro.core.logger import get_logger
+from coro.core.protocols import ASRAdapter
 from coro.core.models import (
     StreamEvent,
     TokenBatchEvent,
@@ -18,7 +17,7 @@ from coro.core.models import (
     TranscriptToken,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BYTES_PER_SECOND = SAMPLE_RATE * BYTES_PER_SAMPLE
 PROMPT_TOKEN_LIMIT = 50
@@ -57,7 +56,7 @@ class LanguageState:
 
 
 async def _resolve_window_language(
-    asr: Any, pcm: bytes, *, language: str | None, state: LanguageState | None
+    asr: ASRAdapter, pcm: bytes, *, language: str | None, state: LanguageState | None
 ) -> str | None:
     """Return the language to decode one window with, running auto-LID if needed.
 
@@ -133,7 +132,7 @@ class _PromptCarry:
         self.text = "".join(token.text for token in self._tokens)[-PROMPT_CHAR_LIMIT:]
 
 
-def _reconcile(window_tokens: list[Any], plan: _WindowPlan) -> list[TranscriptToken]:
+def _reconcile(window_tokens: list[TranscriptToken], plan: _WindowPlan) -> list[TranscriptToken]:
     """Shift window-relative tokens onto the absolute timeline, once each.
 
     A token is kept only when its absolute start falls inside the window's
@@ -154,6 +153,20 @@ def _reconcile(window_tokens: list[Any], plan: _WindowPlan) -> list[TranscriptTo
             )
         )
     return accepted
+
+
+@dataclass
+class _ChunkRun:
+    """Per-call state of :meth:`ASRWindowing.stream_chunks`."""
+
+    asr: ASRAdapter
+    language: str | None
+    carry: _PromptCarry
+    language_state: LanguageState | None
+    windows: int = 0
+    accepted_tokens: int = 0
+    max_buffer: int = 0
+    started: float = field(default_factory=time.perf_counter)
 
 
 # MARK: ASR Windowing
@@ -217,7 +230,7 @@ class ASRWindowing:
         window: bytes,
         plan: _WindowPlan,
         *,
-        asr: Any,
+        asr: ASRAdapter,
         language: str | None,
         carry: _PromptCarry,
         language_state: LanguageState | None = None,
@@ -265,7 +278,7 @@ class ASRWindowing:
         self,
         pcm: bytes,
         *,
-        asr: Any,
+        asr: ASRAdapter,
         language: str | None = None,
         prompt: str | None = None,
     ) -> ASRWindowingResult:
@@ -283,7 +296,7 @@ class ASRWindowing:
         self,
         pcm: bytes,
         *,
-        asr: Any,
+        asr: ASRAdapter,
         language: str | None = None,
         prompt: str | None = None,
         language_state: LanguageState | None = None,
@@ -299,7 +312,7 @@ class ASRWindowing:
         self,
         chunks: AsyncIterator[bytes],
         *,
-        asr: Any,
+        asr: ASRAdapter,
         language: str | None = None,
         prompt: str | None = None,
         language_state: LanguageState | None = None,
@@ -325,61 +338,56 @@ class ASRWindowing:
         (the next chunk is already available) and one client frame on the live
         socket, which pushes frames through unchanged.
         """
+        run = _ChunkRun(
+            asr=asr,
+            language=language,
+            carry=_PromptCarry(text=prompt),
+            language_state=language_state,
+        )
         buffer = bytearray()
         consumed_bytes = 0
-        carry = _PromptCarry(text=prompt)
-        accepted_count = 0
-        max_buffer = 0
-        window_count = 0
-        started = time.perf_counter()
 
         async for chunk in chunks:
             if not chunk:
                 continue
             buffer.extend(chunk)
-            if len(buffer) > max_buffer:
-                max_buffer = len(buffer)
+            run.max_buffer = max(run.max_buffer, len(buffer))
 
             while len(buffer) > self.window_bytes:
-                window_count += 1
-                plan = self._plan(window_count, consumed_bytes, is_final=False)
                 window = bytes(buffer[: self.window_bytes])
-                async for event in self._run_window(
-                    window,
-                    plan,
-                    asr=asr,
-                    language=language,
-                    carry=carry,
-                    language_state=language_state,
-                ):
-                    if isinstance(event, TokenBatchEvent):
-                        accepted_count += len(event.tokens)
+                async for event in self._run_counted(window, consumed_bytes, run, is_final=False):
                     yield event
-
                 del buffer[: self.step_bytes]
                 consumed_bytes += self.step_bytes
 
         if buffer:
-            window_count += 1
-            plan = self._plan(window_count, consumed_bytes, is_final=True)
-            async for event in self._run_window(
-                bytes(buffer),
-                plan,
-                asr=asr,
-                language=language,
-                carry=carry,
-                language_state=language_state,
-            ):
-                if isinstance(event, TokenBatchEvent):
-                    accepted_count += len(event.tokens)
+            async for event in self._run_counted(bytes(buffer), consumed_bytes, run, is_final=True):
                 yield event
 
-        self._stream_chunks_buffer_highwater = max_buffer
+        self._stream_chunks_buffer_highwater = run.max_buffer
         logger.info(
             "asr_windowing complete elapsed=%.3fs windows=%d accepted_tokens=%d "
             "max_buffer_bytes=%d",
-            time.perf_counter() - started,
-            window_count,
-            accepted_count,
-            max_buffer,
+            time.perf_counter() - run.started,
+            run.windows,
+            run.accepted_tokens,
+            run.max_buffer,
         )
+
+    async def _run_counted(
+        self, window: bytes, offset_bytes: int, run: _ChunkRun, *, is_final: bool
+    ) -> AsyncIterator[StreamEvent]:
+        """Plan and transcribe the next window of a chunk stream, counting its tokens."""
+        run.windows += 1
+        plan = self._plan(run.windows, offset_bytes, is_final=is_final)
+        async for event in self._run_window(
+            window,
+            plan,
+            asr=run.asr,
+            language=run.language,
+            carry=run.carry,
+            language_state=run.language_state,
+        ):
+            if isinstance(event, TokenBatchEvent):
+                run.accepted_tokens += len(event.tokens)
+            yield event

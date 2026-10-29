@@ -8,7 +8,9 @@ performance metrics. The pure functions that build them live in
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+
+type PerRepCell = str | int | float | None
+"""A value of one ``per_rep`` row: an item id, a rep number or a metric."""
 
 
 @dataclass
@@ -16,7 +18,8 @@ class ParsedResourceRows:
     """Per-column value series and run-scalar fields parsed from a Resource CSV."""
 
     series: dict[str, list[float]] = field(default_factory=dict)
-    scalars: dict[str, Any] = field(default_factory=dict)
+    scalars: dict[str, float | None] = field(default_factory=dict)
+    observed_hardware_profile: str = ""
 
 
 @dataclass
@@ -76,6 +79,6 @@ class RunTotals:
 class PerformanceSummary:
     """Full performance summary written to ``performance/summary.json``."""
 
-    per_rep: list[dict[str, Any]] = field(default_factory=list)
+    per_rep: list[dict[str, PerRepCell]] = field(default_factory=list)
     per_item_aggregation: dict[str, PerItemAggregation] = field(default_factory=dict)
     run_totals: RunTotals | None = None

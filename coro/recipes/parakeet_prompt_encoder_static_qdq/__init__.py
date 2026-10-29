@@ -19,16 +19,22 @@ Usage:
 
 from __future__ import annotations
 
-import argparse
 import json
 import time
+from collections.abc import Sequence
 from pathlib import Path
+from typing import override
 
 import numpy as np
+import numpy.typing as npt
 from onnxruntime.quantization import CalibrationDataReader, QuantType, quantize_static
 from onnxruntime.quantization.shape_inference import quant_pre_process
 
+from coro.cli_support import invoke, new_app, out_console
+from coro.core.logger import get_logger
 from coro.recipes.paths import RECIPE_ARTIFACTS_DIR
+
+log = get_logger(__name__)
 
 # The current-best selector `onnx-parakeet-prompt`'s `quantization` expects
 # (`encoder-encoder.<this>.onnx`).
@@ -47,6 +53,10 @@ def _load_calibration_wavs(manifest_path: Path) -> list[str]:
     return [m["path"] for m in manifest]
 
 
+type _EncoderFeed = dict[str, npt.NDArray[np.generic]]
+"""One calibration input: the encoder's ``audio_signal`` and ``length`` tensors."""
+
+
 class ParakeetEncoderCalibrationReader(CalibrationDataReader):
     """Feeds real mel-spectrogram features through the encoder's ONNX input contract.
 
@@ -61,7 +71,7 @@ class ParakeetEncoderCalibrationReader(CalibrationDataReader):
         manager = Manager(providers=["CPUExecutionProvider"])
         preprocessor = manager._create_preprocessor("nemo80")
 
-        self._inputs: list[dict] = []
+        self._inputs: list[_EncoderFeed] = []
         for path in wav_paths:
             audio, sr = sf.read(path, dtype="float32")
             if sr != 16000:
@@ -73,47 +83,43 @@ class ParakeetEncoderCalibrationReader(CalibrationDataReader):
             self._inputs.append({"audio_signal": features, "length": features_lens})
         self._iter = iter(self._inputs)
 
-    def get_next(self) -> dict | None:  # pyrefly: ignore[bad-override]
+    @override
+    def get_next(self) -> _EncoderFeed | None:  # pyrefly: ignore[bad-override]
         return next(self._iter, None)
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--source",
-        type=Path,
-        required=True,
-        help="fp32 encoder-encoder.onnx to quantize (onnx_asr's own export, not produced "
-        "by any recipe in this package).",
-    )
-    parser.add_argument(
-        "--calibration-manifest",
-        type=Path,
-        default=RECIPE_ARTIFACTS_DIR / "calibration_corpus" / "calibration_manifest.json",
-        help="Manifest from coro.recipes.calibration_corpus.",
-    )
-    parser.add_argument(
-        "--out-dir",
-        type=Path,
-        default=RECIPE_ARTIFACTS_DIR / "parakeet_prompt",
-        help="Directory to write encoder-encoder.<selector>.onnx into.",
-    )
-    args = parser.parse_args(argv)
+app = new_app("parakeet_prompt_encoder_static_qdq", help=__doc__.splitlines()[0])
 
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    preprocessed = args.out_dir / "encoder-encoder.preprocessed.onnx"
-    static_out = args.out_dir / f"encoder-encoder.{ACCEPTED_SELECTOR}.onnx"
+
+@app.default
+def _quantize(
+    *,
+    source: Path,
+    calibration_manifest: Path = (
+        RECIPE_ARTIFACTS_DIR / "calibration_corpus" / "calibration_manifest.json"
+    ),
+    out_dir: Path = RECIPE_ARTIFACTS_DIR / "parakeet_prompt",
+) -> None:
+    """Quantize the Parakeet prompt encoder with static QDQ INT8.
+
+    Args:
+        source: fp32 encoder-encoder.onnx to quantize (onnx_asr's own export, not
+            produced by any recipe in this package).
+        calibration_manifest: Manifest from coro.recipes.calibration_corpus.
+        out_dir: Directory to write encoder-encoder.<selector>.onnx into.
+
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    preprocessed = out_dir / "encoder-encoder.preprocessed.onnx"
+    static_out = out_dir / f"encoder-encoder.{ACCEPTED_SELECTOR}.onnx"
 
     if preprocessed.exists():
-        print(
-            f"pre-processed encoder already cached at {preprocessed}, "
-            "reusing (fp32 source unchanged)"
-        )
+        log.info("pre-processed encoder already cached, reusing", path=str(preprocessed))
     else:
-        print("pre-processing (shape inference) encoder...")
+        log.info("pre-processing (shape inference) encoder")
         t0 = time.time()
         quant_pre_process(
-            str(args.source),
+            str(source),
             str(preprocessed),
             # >2GB external-data model: ORT's optimization step is unsupported.
             skip_optimization=True,
@@ -124,13 +130,13 @@ def main(argv: list[str] | None = None) -> None:
             skip_symbolic_shape=True,
             save_as_external_data=True,
         )
-        print(f"  done in {time.time() - t0:.1f}s")
+        log.info("pre-processed", seconds=round(time.time() - t0, 1))
 
-    wavs = _load_calibration_wavs(args.calibration_manifest)
-    print(f"building calibration reader ({len(wavs)} clips)...")
+    wavs = _load_calibration_wavs(calibration_manifest)
+    log.info("building calibration reader", clips=len(wavs))
     reader = ParakeetEncoderCalibrationReader(wavs)
 
-    print("running static QDQ quantization (non-VNNI CPU params)...")
+    log.info("running static QDQ quantization (non-VNNI CPU params)")
     t0 = time.time()
     quantize_static(
         model_input=str(preprocessed),
@@ -145,5 +151,10 @@ def main(argv: list[str] | None = None) -> None:
         op_types_to_quantize=["Conv", "MatMul", "Gemm"],
         use_external_data_format=True,
     )
-    print(f"  done in {time.time() - t0:.1f}s")
-    print(f"\noutput: {static_out}")
+    log.info("quantized", seconds=round(time.time() - t0, 1))
+    out_console.out(f"\noutput: {static_out}")
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the static QDQ encoder quantization recipe."""
+    invoke(app, argv)

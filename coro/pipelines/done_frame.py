@@ -59,17 +59,17 @@ _SPOOL_READ_BYTES = 4096
 _DONE_TEXT_SENTINEL = "\x00coro-done-frame-text\x00"
 
 
-def _done_frame_affixes() -> tuple[str, str]:
-    """Derive the SSE done-frame prefix and suffix from ``TranscriptDoneEvent``.
+def _done_frame_affixes(event_type: type = TranscriptDoneEvent) -> tuple[str, str]:
+    """Derive the SSE done-frame prefix and suffix from ``event_type``.
 
     Serialises a sentinel-valued event exactly as the SSE generator would, then
     splits on the sentinel.  The envelope therefore tracks the dataclass instead
     of being mirrored by hand.
     """
-    envelope = json.dumps(asdict(TranscriptDoneEvent(text=_DONE_TEXT_SENTINEL)))
+    envelope = json.dumps(asdict(event_type(text=_DONE_TEXT_SENTINEL)))
     escaped_sentinel = json.dumps(_DONE_TEXT_SENTINEL)[1:-1]
     prefix, separator, suffix = envelope.partition(escaped_sentinel)
-    if not separator:  # pragma: no cover - defensive
+    if not separator:
         raise RuntimeError("Could not locate the done-event text slot in its JSON envelope.")
     return f"data: {prefix}", f"{suffix}\n\n"
 
@@ -101,7 +101,7 @@ def _segment_projection(item_type: type) -> Callable[[ResponseSegment], Iterator
     field_names = tuple(f.name for f in fields(item_type))
     segment_fields = {f.name for f in fields(ResponseSegment)}
     missing = [name for name in field_names if name not in segment_fields]
-    if missing:  # pragma: no cover - import-time contract guard
+    if missing:
         raise RuntimeError(
             f"{item_type.__name__} fields {missing} have no ResponseSegment "
             "counterpart, so the streamed done frame cannot project them."
@@ -146,18 +146,20 @@ _SCALAR_FIELDS = {"detected_language"}
 # Field order comes from the response dataclass, never from string literals.
 _RESPONSE_FIELDS = tuple(f.name for f in fields(TranscriptionResult))
 
-_UNRENDERED = (
-    set(_RESPONSE_FIELDS)
-    - set(_SEGMENT_DERIVED_RENDERERS)
-    - set(_STORE_DERIVED_RENDERERS)
-    - _SCALAR_FIELDS
-)
-_UNKNOWN = (set(_SEGMENT_DERIVED_RENDERERS) | set(_STORE_DERIVED_RENDERERS)) - set(_RESPONSE_FIELDS)
-if _UNRENDERED or _UNKNOWN:  # pragma: no cover - import-time contract guard
-    raise RuntimeError(
-        "StreamingDoneFrame renderers are out of sync with TranscriptionResult: "
-        f"unrendered fields {sorted(_UNRENDERED)}, unknown renderers {sorted(_UNKNOWN)}."
-    )
+
+def _check_renderers_cover(response_fields: tuple[str, ...]) -> None:
+    """Fail unless each response field has a renderer and each renderer a field."""
+    rendered = set(_SEGMENT_DERIVED_RENDERERS) | set(_STORE_DERIVED_RENDERERS)
+    unrendered = set(response_fields) - rendered - _SCALAR_FIELDS
+    unknown = rendered - set(response_fields)
+    if unrendered or unknown:
+        raise RuntimeError(
+            "StreamingDoneFrame renderers are out of sync with TranscriptionResult: "
+            f"unrendered fields {sorted(unrendered)}, unknown renderers {sorted(unknown)}."
+        )
+
+
+_check_renderers_cover(_RESPONSE_FIELDS)
 
 
 # MARK: Fragment Spool

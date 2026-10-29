@@ -1,0 +1,19 @@
+id = "coro/flicker-rule-rejected"
+code = "COROARCH001"
+summary = "realign_speaker_flicker stays out of the default assembly path, and the evidence that rejected it stays in the tree"
+status = "preview"
+files = ["**/*.py", "**/*.md", "**/*.toml", "**/*.yml", "**/*.yaml", "**/*.sh", "**/*.cfg", "**/*.txt"]
+scope = "project"
+needs = "syntax"
+run-on = ["cli"]
+default-enabled = false
+default-severity = "error"
+
+[options]
+min-files = { type = "int", default = 100 }
+
+[[implementations]]
+kind = "extension"
+runtime = "python"
+languages = ["*"]
+file = "flicker-rule-rejected.py"

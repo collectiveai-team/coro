@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -91,15 +92,22 @@ def meeteval_viz_argv(
     ]
 
 
+def run_checked(argv: list[str]) -> None:
+    """Run ``argv`` and raise ``CalledProcessError`` when it exits non-zero."""
+    subprocess.run(argv, check=True)  # noqa: S603
+
+
 def visualize_quality_dir(
     out_dir: Path,
     *,
     alignments: list[str] | None = None,
     viz_subdir: str = "viz",
+    run_command: Callable[[list[str]], None] = run_checked,
 ) -> Path | None:
     """Render meeteval-viz HTML for every (ref, hyp) pair in a quality run.
 
     Returns the viz output directory, or None when no pairs are found.
+    ``run_command`` runs the meeteval-viz argument vector.
     """
     alignments = alignments or ["tcp"]
     pairs = discover_quality_pairs(out_dir)
@@ -108,8 +116,5 @@ def visualize_quality_dir(
         return None
     ref_stm, hyp_stm = combined
     viz_dir = out_dir / viz_subdir
-    subprocess.run(  # noqa: S603
-        meeteval_viz_argv(ref_stm, hyp_stm, viz_dir, alignments=alignments),
-        check=True,
-    )
+    run_command(meeteval_viz_argv(ref_stm, hyp_stm, viz_dir, alignments=alignments))
     return viz_dir

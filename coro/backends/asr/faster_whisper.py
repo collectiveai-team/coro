@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
@@ -14,9 +14,15 @@ from coro.backends.asr.concurrency import (
 )
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.language import canonical_language
+from coro.core.logger import get_logger
 from coro.core.models import TranscriptToken
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from collections.abc import Collection, Iterable
+
+    import numpy.typing as npt
+
+logger = get_logger(__name__)
 
 _NO_SPEECH_THRESHOLD = 0.9
 # Admission queue depth used when an adapter is built without explicit settings
@@ -24,8 +30,29 @@ _NO_SPEECH_THRESHOLD = 0.9
 _DEFAULT_QUEUE_DEPTH = 32
 
 
+class WhisperTranscriber(Protocol):
+    """The slice of a faster-whisper ``WhisperModel`` this backend calls."""
+
+    @property
+    def supported_languages(self) -> Collection[str]:
+        """Language codes the model accepts."""
+        ...
+
+    def transcribe(
+        self,
+        audio: npt.NDArray[np.float32],
+        /,
+        *,
+        language: str | None,
+        initial_prompt: str | None,
+        word_timestamps: bool,
+    ) -> tuple[Iterable[object], object]:
+        """Transcribe audio into ``(segments, info)``."""
+        ...
+
+
 def convert_asr_segments(
-    native_segments,
+    native_segments: Iterable[object],
     *,
     offset_seconds: float = 0.0,
 ) -> list[TranscriptToken]:
@@ -89,7 +116,9 @@ class FasterWhisperASRAdapter:
     following window's key unchanged.
     """
 
-    def __init__(self, model, *, admission: AdmissionController | None = None) -> None:
+    def __init__(
+        self, model: WhisperTranscriber, *, admission: AdmissionController | None = None
+    ) -> None:
         self._model = model
         self._admission = admission or build_admission_controller(
             max_concurrency=0, max_queue_depth=_DEFAULT_QUEUE_DEPTH
@@ -139,7 +168,7 @@ class FasterWhisperASRAdapter:
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
         language = self._resolve_language(language)
 
-        def _transcribe() -> list:
+        def _transcribe() -> list[object]:
             try:
                 segments, _info = self._model.transcribe(
                     audio,

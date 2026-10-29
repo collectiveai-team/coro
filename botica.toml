@@ -1,0 +1,17 @@
+# "all": a new release's rules run in the bump's CI before it merges.
+select = ["all"]
+preview = true
+
+[recipes]
+installed = ["full-python", "python-test-smells", "agent-opencode", "agent-claude-code", "repo-public"]
+
+[recipes.params]
+ruff-adapters = "coro/backends/**"
+
+[rules.file-size-guard]
+# Configuration with one section per tool.
+extend-ignores = ["pyproject.toml"]
+
+[rules.no-artifacts-in-package]
+# The server warmup reads it at run time.
+extend-ignores = ["coro/bench/data/jfk.wav"]

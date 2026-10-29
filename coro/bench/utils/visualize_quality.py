@@ -25,31 +25,49 @@ To visualise a single pair directly, call meeteval-viz on the discovered files
 
 from __future__ import annotations
 
-import argparse
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Annotated
+
+from cyclopts import Parameter
 
 from coro.bench.viz import visualize_quality_dir
+from coro.cli_support import invoke, new_app, out_console
+
+app = new_app("visualize_quality", help="Render ref/hyp alignment HTML from a quality run out-dir.")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Render ref/hyp alignment HTML from a quality run out-dir.",
-    )
-    parser.add_argument("out_dir", type=Path, help="Quality run output directory.")
-    parser.add_argument(
-        "--alignment",
-        nargs="+",
-        default=["tcp"],
-        help="meeteval alignment algorithm(s); multiple enable the synced "
-        "side-by-side comparison (e.g. tcp cp). Default: tcp.",
-    )
-    args = parser.parse_args()
+@app.default
+def _render(
+    out_dir: Path,
+    /,
+    *,
+    alignment: Annotated[
+        list[str] | None,
+        Parameter(
+            consume_multiple=True,
+            help="meeteval alignment algorithm(s); multiple enable the synced "
+            "side-by-side comparison (e.g. tcp cp). Default: tcp.",
+        ),
+    ] = None,
+) -> None:
+    """Render ref/hyp alignment HTML from a quality run out-dir.
 
-    viz_dir = visualize_quality_dir(args.out_dir, alignments=args.alignment)
+    Args:
+        out_dir: Quality run output directory.
+        alignment: meeteval alignment algorithm(s).
+
+    """
+    viz_dir = visualize_quality_dir(out_dir, alignments=alignment or ["tcp"])
     if viz_dir is None:
-        print(f"No (ref, hyp) STM pairs found under {args.out_dir}.")
+        out_console.out(f"No (ref, hyp) STM pairs found under {out_dir}.")
         return
-    print(f"wrote visualizations to {viz_dir} (open {viz_dir / 'index.html'})")
+    out_console.out(f"wrote visualizations to {viz_dir} (open {viz_dir / 'index.html'})")
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the alignment visualiser command line."""
+    invoke(app, argv)
 
 
 if __name__ == "__main__":

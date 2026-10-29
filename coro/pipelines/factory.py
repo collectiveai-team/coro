@@ -8,10 +8,15 @@ and how the offline command runs the same pipeline the server would.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from coro.core.protocols import ASRAdapter, DiarizationAdapter
+    from coro.core.protocols import (
+        ASRAdapter,
+        DiarizationAdapter,
+        StreamingDiarizerFactory,
+        TranscriptionPipeline,
+    )
     from coro.settings import ServerSettings
 
 
@@ -20,8 +25,8 @@ def build_pipeline(
     *,
     asr: ASRAdapter,
     diarization: DiarizationAdapter | None = None,
-    streaming_diarizer_factory: Any | None = None,
-) -> Any:
+    streaming_diarizer_factory: StreamingDiarizerFactory | None = None,
+) -> TranscriptionPipeline:
     """Build the pipeline named by the Configured Transcription Pipeline selector.
 
     Args:
@@ -32,11 +37,7 @@ def build_pipeline(
             Streaming Pipeline.
 
     Returns:
-        A ready transcription pipeline, typed as ``Any`` for the same reason
-        ``RuntimeState.pipeline`` is: ``StreamingPipeline.stream`` is an async
-        generator whose inferred yield type is wider than the protocol's, so
-        naming the protocol here would be a type error rather than a stronger
-        guarantee.
+        A ready transcription pipeline.
 
     """
     if settings.pipeline == "streaming":

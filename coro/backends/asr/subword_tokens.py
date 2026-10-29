@@ -14,6 +14,9 @@ A token starts a new word when it is prefixed by a space or the SentencePiece
 
 from __future__ import annotations
 
+import math
+from typing import TypedDict
+
 from coro.core.models import TranscriptToken
 
 # SentencePiece word-start marker used by NeMo models (Parakeet/Canary/GigaAM).
@@ -22,11 +25,19 @@ SP_SPACE = "\u2581"
 LAST_WORD_PAD = 0.2
 
 
+class SubwordGroup(TypedDict):
+    """One reconstructed word: its text, first-subword time and subword logprobs."""
+
+    text: str
+    start: float
+    logprobs: list[float]
+
+
 def group_subwords(
     tokens: list[str],
     timestamps: list[float],
     logprobs: list[float] | None,
-) -> list[dict]:
+) -> list[SubwordGroup]:
     """Group subword tokens into words on the word-start marker.
 
     A token starts a new word when it is prefixed by a space or the SentencePiece
@@ -44,7 +55,7 @@ def group_subwords(
         ``"".join(token.text ...)`` in the response builder reconstructs spaced text.
 
     """
-    groups: list[dict] = []
+    groups: list[SubwordGroup] = []
     n = len(tokens)
     for i in range(n):
         token = tokens[i]
@@ -61,6 +72,36 @@ def group_subwords(
         if lp is not None:
             groups[-1]["logprobs"].append(lp)
     return groups
+
+
+def words_from_subword_groups(
+    groups: list[SubwordGroup], *, offset_seconds: float = 0.0
+) -> list[TranscriptToken]:
+    """Turn word groups into word-level TranscriptTokens.
+
+    A word's ``start`` is its first subword's time and its ``end`` the next
+    word's start (the final word is padded by ``LAST_WORD_PAD``), both shifted
+    by ``offset_seconds``. ``probability`` is ``exp(mean(logprobs))``, or None
+    when the group carries no logprobs.
+    """
+    out: list[TranscriptToken] = []
+    for i, group in enumerate(groups):
+        start = group["start"] + offset_seconds
+        if i + 1 < len(groups):
+            end = groups[i + 1]["start"] + offset_seconds
+        else:
+            end = group["start"] + LAST_WORD_PAD + offset_seconds
+        word_logprobs = group["logprobs"]
+        probability = math.exp(sum(word_logprobs) / len(word_logprobs)) if word_logprobs else None
+        out.append(
+            TranscriptToken(
+                start=round(start, 3),
+                end=round(max(end, start), 3),
+                text=group["text"],
+                probability=probability,
+            )
+        )
+    return out
 
 
 def words_from_text(text: str, start: float, span_end: float | None) -> list[TranscriptToken]:

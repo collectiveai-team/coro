@@ -16,26 +16,54 @@ and synthesises each word's ``end`` from the next word's start time.
 from __future__ import annotations
 
 import asyncio
-import logging
-import math
+from typing import TYPE_CHECKING, Final, Literal, Protocol, cast
 
 import numpy as np
 
 from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
 from coro.backends.asr.onnx_session import build_asr_session_options
-from coro.backends.asr.subword_tokens import LAST_WORD_PAD, group_subwords, words_from_text
+from coro.backends.asr.subword_tokens import (
+    group_subwords,
+    words_from_subword_groups,
+    words_from_text,
+)
+from coro.core.logger import get_logger
 from coro.core.models import TranscriptToken
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
-_SAMPLE_RATE = 16000
+    import numpy.typing as npt
+
+logger = get_logger(__name__)
+
+_SAMPLE_RATE: Final = 16000
 # Admission queue depth used when an adapter is built without explicit settings
 # (direct construction in tests and tooling); the factory always passes one.
 _DEFAULT_QUEUE_DEPTH = 32
 
 
+class TimestampedRecognizer(Protocol):
+    """The slice of an onnx-asr ``.with_timestamps()`` adapter this backend calls.
+
+    ``recognize`` returns one ``TimestampedResult``, or an iterator of
+    per-speech-segment results when the adapter wraps a VAD.
+    """
+
+    def recognize(
+        self,
+        waveform: npt.NDArray[np.float32],
+        /,
+        *,
+        sample_rate: Literal[16000],
+        language: str | None = ...,
+    ) -> object:
+        """Recognize one waveform."""
+        ...
+
+
 def convert_onnx_asr_result(
-    result, *, offset_seconds: float = 0.0, span_end: float | None = None
+    result: object, *, offset_seconds: float = 0.0, span_end: float | None = None
 ) -> list[TranscriptToken]:
     """Convert an onnx-asr TimestampedResult into word-level TranscriptTokens.
 
@@ -60,39 +88,16 @@ def convert_onnx_asr_result(
     timestamps = getattr(result, "timestamps", None)
     logprobs = getattr(result, "logprobs", None)
 
-    if tokens and timestamps:
-        groups = group_subwords(tokens, timestamps, logprobs)
-        if groups:
-            out: list[TranscriptToken] = []
-            for i, group in enumerate(groups):
-                start = group["start"] + offset_seconds
-                if i + 1 < len(groups):
-                    end = groups[i + 1]["start"] + offset_seconds
-                else:
-                    end = group["start"] + LAST_WORD_PAD + offset_seconds
-                end = max(end, start)
-
-                word_logprobs = group["logprobs"]
-                probability = (
-                    math.exp(sum(word_logprobs) / len(word_logprobs)) if word_logprobs else None
-                )
-
-                out.append(
-                    TranscriptToken(
-                        start=round(start, 3),
-                        end=round(end, 3),
-                        text=group["text"],
-                        probability=probability,
-                    )
-                )
-            return out
+    groups = group_subwords(tokens, timestamps, logprobs) if tokens and timestamps else []
+    if groups:
+        return words_from_subword_groups(groups, offset_seconds=offset_seconds)
 
     # Text-only result (e.g. onnx-asr Whisper): no token timestamps.
     text = (getattr(result, "text", "") or "").strip()
     return words_from_text(text, offset_seconds, span_end)
 
 
-def convert_onnx_asr_segments(segments) -> list[TranscriptToken]:
+def convert_onnx_asr_segments(segments: Iterable[object]) -> list[TranscriptToken]:
     """Convert VAD-segmented onnx-asr results into absolute-timed TranscriptTokens.
 
     With VAD enabled, ``recognize`` yields one TimestampedSegmentResult per speech
@@ -136,7 +141,7 @@ class OnnxAsrASRAdapter:
 
     def __init__(
         self,
-        model,
+        model: TimestampedRecognizer,
         *,
         vad_enabled: bool = False,
         admission: AdmissionController | None = None,
@@ -172,24 +177,24 @@ class OnnxAsrASRAdapter:
         """
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
 
-        def _recognize():
-            kwargs: dict = {"sample_rate": _SAMPLE_RATE}
+        def _recognize() -> object:
             if language:
-                kwargs["language"] = language
-            return self._model.recognize(audio, **kwargs)
+                return self._model.recognize(audio, sample_rate=_SAMPLE_RATE, language=language)
+            return self._model.recognize(audio, sample_rate=_SAMPLE_RATE)
 
         async with self._admission.admit():
             result = await asyncio.to_thread(_recognize)
         if self._vad_enabled:
             # VAD adapter yields an iterator of per-speech-segment results.
-            return convert_onnx_asr_segments(result)
+            segments = cast("Iterable[object]", result)  # noqa: BTTOOL004 -- a VAD-wrapped onnx-asr adapter returns an iterator of segment results
+            return convert_onnx_asr_segments(segments)
         # Non-VAD: a single result spanning the whole clip; pass its duration so the
         # text-only (Whisper) fallback can spread word timings across it.
         duration = len(audio) / _SAMPLE_RATE
         return convert_onnx_asr_result(result, span_end=duration)
 
 
-def _providers_for_device(device: str):
+def _providers_for_device(device: str) -> list[str] | None:
     """Map an ASR device selector to onnxruntime execution providers.
 
     Args:
@@ -211,7 +216,7 @@ def build_onnx_asr_adapter(
     *,
     device: str = "auto",
     quantization: str | None = None,
-    providers=None,
+    providers: Sequence[str] | None = None,
     vad_enabled: bool = False,
     vad_threshold: float | None = None,
     max_concurrency: int = 0,
@@ -259,15 +264,17 @@ def build_onnx_asr_adapter(
         vad = onnx_asr.load_vad(
             "silero", sess_options=session_options, providers=resolved_providers
         )
-        vad_options: dict = {}
-        if vad_threshold is not None:
-            vad_options["threshold"] = vad_threshold
-        model = model.with_vad(vad, **vad_options).with_timestamps()
+        segmented = (
+            model.with_vad(vad)
+            if vad_threshold is None
+            else model.with_vad(vad, threshold=vad_threshold)
+        )
+        recognizer: TimestampedRecognizer = segmented.with_timestamps()
     else:
-        model = model.with_timestamps()
+        recognizer = model.with_timestamps()
     logger.info("onnx-asr model loaded.")
     return OnnxAsrASRAdapter(
-        model,
+        recognizer,
         vad_enabled=vad_enabled,
         admission=build_admission_controller(
             max_concurrency=max_concurrency, max_queue_depth=max_queue_depth

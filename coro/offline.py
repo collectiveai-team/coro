@@ -25,27 +25,31 @@ a fourth, undocumented response shape.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from coro.audio import AudioInput
+from coro.core.logger import get_logger
 
 if TYPE_CHECKING:
+    import httpx
+
+    from coro.core.protocols import ASRAdapter
+    from coro.core.transcript_source import TranscriptSource
     from coro.settings import ServerSettings
 
 DEFAULT_RESPONSE_FORMAT = "diarized_json"
 """Richest project-native shape: sentence segments carrying speaker labels."""
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _TRANSCRIPTION_PATH = "/v1/audio/transcriptions"
 _HEALTH_PATH = "/health"
 _ATTACHED_TIMEOUT_SECONDS = 3600.0
 
 
-def build_http_client() -> Any:
+def build_http_client() -> httpx.AsyncClient:
     """Return the HTTP client used for attached runs.
 
     A named seam rather than an inline import: the in-process path never calls
@@ -90,10 +94,10 @@ class OfflineRunReport:
         return " ".join(parts)
 
 
-def _report_from_settings(settings: ServerSettings, asr: Any) -> OfflineRunReport:
+def _report_from_settings(settings: ServerSettings, asr: ASRAdapter) -> OfflineRunReport:
     """Describe the local configuration, including cache counters when present."""
-    hits = getattr(asr, "hits", None)
-    misses = getattr(asr, "misses", None)
+    hits: int | None = getattr(asr, "hits", None)
+    misses: int | None = getattr(asr, "misses", None)
     return OfflineRunReport(
         mode="in-process",
         pipeline=settings.pipeline,
@@ -106,7 +110,7 @@ def _report_from_settings(settings: ServerSettings, asr: Any) -> OfflineRunRepor
     )
 
 
-def render_source(source: Any, *, response_format: str, language: str | None) -> str:
+def render_source(source: TranscriptSource, *, response_format: str, language: str | None) -> str:
     """Render a Transcript Source exactly as the transcription endpoint would.
 
     Args:
@@ -230,7 +234,7 @@ async def transcribe_attached(
         data["prompt"] = prompt
 
     async with build_http_client() as client:
-        with Path(path).open("rb") as handle:
+        with Path(path).open("rb") as handle:  # noqa: ASYNC230 -- httpx multipart reads a sync file
             response = await client.post(
                 f"{base}{_TRANSCRIPTION_PATH}", files={"file": (path, handle)}, data=data
             )

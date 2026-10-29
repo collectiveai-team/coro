@@ -11,14 +11,23 @@ Usage::
 
 ``--openapi-only`` exists for the breaking-change gate, which re-runs this
 against a base ref that predates the AsyncAPI document.
+
+The gate runs this copy of the script against the base ref's source, so it
+imports from coro only the modules that build the documents, which every ref
+has; the command line uses Cyclopts directly instead of ``coro.cli_support``.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+
+import cyclopts
+from rich.console import Console
+
+_out = Console(markup=False, emoji=False, highlight=False, soft_wrap=True)
 
 
 def export_openapi(output_dir: Path) -> Path:
@@ -39,24 +48,36 @@ def export_asyncapi(output_dir: Path) -> Path:
     return target
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Export the contracts into the requested directory."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("output_dir", type=Path, help="Directory to write the documents into.")
-    parser.add_argument(
-        "--openapi-only",
-        action="store_true",
-        help="Skip the AsyncAPI document (for refs that predate it).",
-    )
-    args = parser.parse_args(argv)
+app = cyclopts.App(
+    name="export_contracts",
+    help=__doc__,
+    version_flags=(),
+    help_format="plaintext",
+    default_parameter=cyclopts.Parameter(negative=()),
+)
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    written = [export_openapi(args.output_dir)]
-    if not args.openapi_only:
-        written.append(export_asyncapi(args.output_dir))
+
+@app.default
+def _export(output_dir: Path, /, *, openapi_only: bool = False) -> None:
+    """Export the contracts into the requested directory.
+
+    Args:
+        output_dir: Directory to write the documents into.
+        openapi_only: Skip the AsyncAPI document (for refs that predate it).
+
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    written = [export_openapi(output_dir)]
+    if not openapi_only:
+        written.append(export_asyncapi(output_dir))
 
     for path in written:
-        print(f"exported {path} ({path.stat().st_size} bytes)")
+        _out.out(f"exported {path} ({path.stat().st_size} bytes)")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Export the contracts into the requested directory."""
+    app(argv)
     return 0
 
 

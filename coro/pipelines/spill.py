@@ -18,11 +18,10 @@ persistent ASR window cache, which has the same requirement for the same reason.
 
 from __future__ import annotations
 
-import os
 import tempfile
-from pathlib import Path
 
 from coro.fsinfo import RAM_BACKED_FS_TYPES, filesystem_type, is_ram_backed
+from coro.settings.host import host_environment
 
 __all__ = [
     "RAM_BACKED_FS_TYPES",
@@ -49,8 +48,7 @@ def default_spill_dir_candidates() -> list[str]:
     The system temp dir is preferred because the OS already reclaims it; the
     user cache dir is the fallback for the common case where temp is tmpfs.
     """
-    xdg_cache = os.environ.get("XDG_CACHE_HOME")
-    cache_root = Path(xdg_cache) if xdg_cache else Path.home() / ".cache"
+    cache_root = host_environment().cache_root
     return [tempfile.gettempdir(), str(cache_root / "coro" / "transcript-spill")]
 
 

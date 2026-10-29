@@ -21,7 +21,6 @@ measured certainty on the wire.
 
 from __future__ import annotations
 
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -119,6 +118,15 @@ class DeepgramResults(BaseModel):
     utterances: list[DeepgramUtterance] | None = None
 
 
+class DeepgramModelInfo(BaseModel):
+    """One entry of ``metadata.model_info``, keyed by the model name."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    arch: str
+
+
 class DeepgramMetadata(BaseModel):
     """The ``metadata`` object of a Deepgram-shaped response."""
 
@@ -130,7 +138,7 @@ class DeepgramMetadata(BaseModel):
     duration: float
     channels: int
     models: list[str]
-    model_info: dict[str, Any]
+    model_info: dict[str, DeepgramModelInfo]
 
 
 class DeepgramResponse(BaseModel):

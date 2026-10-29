@@ -16,9 +16,9 @@ are stripped. Word reconstruction + end-time synthesis reuse the onnx-asr conver
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -26,9 +26,13 @@ from coro.backends.asr.concurrency import AdmissionController, build_admission_c
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.onnx_asr import convert_onnx_asr_result
 from coro.core.language import canonical_language
+from coro.core.logger import get_logger
 from coro.core.models import TranscriptToken
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    import onnxruntime_genai as og
+
+logger = get_logger(__name__)
 
 # Language code / locale -> lang_id, per the model card's prompt dictionary.
 # "auto" lets the model detect the language.
@@ -128,7 +132,7 @@ class OnnxGenaiASRAdapter:
 
     def __init__(
         self,
-        model,
+        model: og.Model,
         *,
         chunk_samples: int,
         sample_rate: int,
@@ -220,7 +224,7 @@ def _cuda_available() -> bool:
     return "CUDAExecutionProvider" in ort.get_available_providers()
 
 
-def _apply_device(config, device: str) -> None:
+def _apply_device(config: og.Config, device: str) -> None:
     """Select the execution provider on a GenAI config for the given device.
 
     onnxruntime-genai ships as separate CPU and CUDA builds; CPU is the implicit

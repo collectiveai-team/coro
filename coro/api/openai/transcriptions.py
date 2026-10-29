@@ -8,7 +8,6 @@ to the configured pipeline and rendering to the incremental renderers.
 from __future__ import annotations
 
 import re
-import logging
 import time
 from uuid import uuid4
 
@@ -33,12 +32,14 @@ from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.concurrency import AsrCapacityError
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.language import canonical_language
+from coro.core.logger import get_logger
+from coro.core.protocols import TranscriptionPipeline
+from coro.core.transcript_source import TranscriptSource
 from coro.pipelines.source import transcript_source
-
 
 # MARK: Router Configuration
 router = APIRouter(prefix="/v1")
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Permissive BCP-47 shape: 2-3 letter primary subtag plus optional subtags.
 # Guards against junk like Swagger's placeholder "string" reaching the backend.
@@ -86,14 +87,14 @@ def _rate_limit_error(limited: RateLimited) -> TranscriptionCapacityError:
 
 
 async def _transcribe_or_raise(
-    pipeline,
+    pipeline: TranscriptionPipeline,
     audio: AudioInput,
     *,
     language: str | None,
     prompt: str | None,
     request_id: str,
     started: float,
-):
+) -> TranscriptSource:
     """Call the pipeline and translate its typed failures into ``TranscriptionError``.
 
     Extracted from :func:`create_transcription` so each backend failure mode
@@ -179,7 +180,7 @@ async def create_transcription(
         alias="known_speaker_references[]",
         description="Accepted but ignored.",
     ),
-    pipeline=Depends(get_pipeline),
+    pipeline: TranscriptionPipeline = Depends(get_pipeline),
 ) -> Response:
     """Accept audio and return an OpenAI-shaped response.
 

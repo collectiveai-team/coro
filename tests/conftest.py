@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock
@@ -128,3 +129,29 @@ def undetectable_filesystem(monkeypatch, tmp_path):
     itself tmpfs, which the real resolvers rightly refuse.
     """
     monkeypatch.setattr(fsinfo, "_MOUNTINFO_PATH", tmp_path / "absent-mountinfo")
+
+
+NETWORK_MARKERS = ("integration", "e2e", "real_model")
+OWN_SOCKET_MARKERS = ("enable_socket", "disable_socket", "allow_hosts")
+REAL_MODEL_TESTS = os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") == "1"
+SKIP_REAL_MODEL = pytest.mark.skip(
+    reason="Set CORO_RUN_REAL_MODEL_TESTS=1 to run with real model checkpoints."
+)
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Skip the real_model tests unless asked, and give the network to the tests that need it.
+
+    pytest runs with ``--disable-socket`` (botica test-no-network); the tests
+    marked integration, e2e or real_model get the network, because real model
+    checkpoints come from the Hugging Face Hub. A test that already carries a
+    pytest-socket marker keeps it, so ``allow_hosts`` narrows an integration test
+    to the hosts it lists.
+    """
+    for item in items:
+        if item.get_closest_marker("real_model") and not REAL_MODEL_TESTS:
+            item.add_marker(SKIP_REAL_MODEL)
+        needs_network = any(item.get_closest_marker(name) for name in NETWORK_MARKERS)
+        has_own_marker = any(item.get_closest_marker(name) for name in OWN_SOCKET_MARKERS)
+        if needs_network and not has_own_marker:
+            item.add_marker(pytest.mark.enable_socket)

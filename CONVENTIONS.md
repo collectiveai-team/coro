@@ -38,7 +38,7 @@ version that every orq-lite role receives verbatim.
 
 ## Architectural boundaries
 
-- `coro/settings.py` is the single source of truth for runtime configuration;
+- `coro/settings/` is the single source of truth for runtime configuration;
   CLI flags and `CORO_*` env vars flow through `ServerSettings`. Validation
   happens at startup (Strict Startup Validation), not lazily.
 - `coro/backends/asr/factory.py` is the only place that maps a provider name to

@@ -1,0 +1,14 @@
+id = "coro/api-docs-scalar-hardened"
+code = "COROSEC001"
+summary = "A call to get_scalar_api_reference() pins its bundle, turns telemetry off and disables the hosted agent"
+status = "preview"
+scope = "file"
+needs = "syntax"
+run-on = ["cli", "save", "type"]
+default-enabled = false
+default-severity = "error"
+
+[[implementations]]
+kind = "ast-grep"
+languages = ["python"]
+file = "python.yml"

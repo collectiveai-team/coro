@@ -10,13 +10,17 @@ the same normalization at its edge.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from coro.core.models import SpeakerSegment
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
-def speaker_to_one_indexed(speaker) -> int:
+
+def speaker_to_one_indexed(speaker: object) -> int:
     """Convert a zero-indexed or string speaker label to a 1-indexed int."""
     if isinstance(speaker, int):
         return speaker + 1
@@ -28,7 +32,7 @@ def speaker_to_one_indexed(speaker) -> int:
     return 1
 
 
-def coerce_diarization_segment(seg):
+def coerce_diarization_segment(seg: object) -> tuple[float, float, object]:
     """Coerce a native diarization entry into a ``(start, end, speaker)`` tuple."""
     if isinstance(seg, str):
         parts = seg.replace(",", " ").split()
@@ -44,7 +48,7 @@ def coerce_diarization_segment(seg):
 
 
 def convert_diarization_segments(
-    native_segments,
+    native_segments: Iterable[object],
     *,
     duration: float,
 ) -> list[SpeakerSegment]:

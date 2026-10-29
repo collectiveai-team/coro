@@ -163,7 +163,7 @@ ENV LD_LIBRARY_PATH=/app/.venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/ap
 
 EXPOSE 8000
 
-# Defaults bind 0.0.0.0:8000 (coro/settings.py). Override behaviour with CORO_*
+# Defaults bind 0.0.0.0:8000 (coro/settings/server.py). Override behaviour with CORO_*
 # env vars, or by appending a full command after the image name — which replaces
 # CMD, so it must start with a subcommand:
 #   docker run img                        -> coro serve

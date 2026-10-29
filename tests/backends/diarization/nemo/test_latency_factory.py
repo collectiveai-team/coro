@@ -177,8 +177,17 @@ class TestRuntimeWiring:
         assert state.streaming_diarizer_factory is None
         assert state.diarization_latency is None
 
-    def test_health_reports_latency_when_set(self):
-        from coro.runtime import RuntimeState
+    @pytest.mark.asyncio
+    async def test_health_reports_latency_when_set(self):
+        from httpx import ASGITransport, AsyncClient
 
-        state = RuntimeState(diarization_latency="very-high")
-        assert state.diarization_latency == "very-high"
+        from coro.app import create_app
+        from coro.runtime import RuntimeState
+        from coro.settings import ServerSettings
+
+        app = create_app(ServerSettings())
+        app.state.runtime = RuntimeState(diarization_latency="very-high")
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get("/health")
+
+        assert response.json()["startup_selection"]["diarization_latency"] == "very-high"

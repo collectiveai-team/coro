@@ -1,41 +1,28 @@
-"""Benchmark report model, builder, and renderers (stdout + GFM markdown).
+"""Benchmark report builder: reads run artifacts into a ``BenchReport`` model.
 
-Quality figures are always rendered as two separately labelled tables, one per
-metric lane, so no figure is readable without knowing which protocol produced
-it. See ADR 0011.
+The renderers live in ``coro.bench.report_markdown`` (GFM markdown) and
+``coro.bench.report_stdout`` (terminal).
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
+from coro.bench.models.artifacts import (
+    DiarizationJson,
+    ManifestJson,
+    PerformanceSummaryJson,
+    PerItemJson,
+    QualitySummaryJson,
+)
 from coro.bench.models.report import BenchReport, PerformanceRow, QualityRow
-
-RAW_LANE_LABEL = "Raw Metric Lane"
-"""Heading suffix for the un-normalized quality table."""
-
-NORMALIZED_LANE_LABEL = "Normalized Metric Lane"
-"""Heading suffix for the normalized quality table."""
-
-RAW_LANE_CAPTION = (
-    "Reference STM and Hypothesis STM text scored verbatim — punctuation, "
-    "casing and diacritics all count. Catches regressions the normalizer hides; "
-    "not comparable to published WER. DER is lane-independent and reported here only."
-)
-
-NORMALIZED_LANE_CAPTION = (
-    "Scored after applying the Basic Text Normalizer identically to the Reference "
-    "STM and the Hypothesis STM: bracketed and parenthesised content removed, "
-    "lowercased, symbols and punctuation mapped to spaces, whitespace collapsed, "
-    "diacritics preserved. This is the lane comparable to published WER."
-)
 
 
 def build_report(out_dir: Path) -> BenchReport:
     """Read artifacts from out_dir and construct a BenchReport model."""
-    manifest = _read_json(out_dir / "manifest.json")
+    manifest = _read_json(out_dir / "manifest.json", ManifestJson())
 
     subcommand = manifest.get("subcommand", "all")
     timestamp = manifest.get("timestamp", "")
@@ -47,7 +34,7 @@ def build_report(out_dir: Path) -> BenchReport:
     startup = server_health.get("startup_selection", {})
     # /health reports provider/model under *_provider keys; accept the older
     # *_backend names too so the report records the run config either way.
-    server_config = {
+    server_config: dict[str, str | bool] = {
         "asr_backend": startup.get("asr_backend") or startup.get("asr_provider", ""),
         "asr_model": startup.get("asr_model", ""),
         "diar_backend": startup.get("diar_backend") or startup.get("diarization_provider", ""),
@@ -99,134 +86,159 @@ def _load_quality(
     if not summary_path.exists():
         return [], None, [], None, []
 
-    summary = _read_json(summary_path)
-    per_item = summary.get("per_item", [])
-    combined_data = summary.get("combined", {})
+    summary = _read_json(summary_path, QualitySummaryJson())
+    combined_data = summary.get("combined") or {}
 
     rows: list[QualityRow] = []
     normalized_rows: list[QualityRow] = []
     footnotes: list[str] = []
 
-    for item in per_item:
-        session_id = item.get("session_id", "")
-        duration = float(item.get("audio_seconds", 0.0))
-        error_str = item.get("error")
+    for item in summary.get("per_item", []):
+        footnotes.extend(_item_footnotes(item))
+        rows.append(_raw_row(item))
+        normalized = _normalized_row(item)
+        if normalized is not None:
+            normalized_rows.append(normalized)
 
-        diar = item.get("diarization") or {}
-        if diar.get("degenerate"):
-            footnotes.append(
-                f"WARNING for {session_id}: degenerate diarization "
-                f"({diar.get('hyp_speakers')} hyp speaker(s) vs "
-                f"{diar.get('ref_speakers')} ref) — speaker-blind WER (ORC-WER) "
-                f"will look good regardless; check DER/cpWER."
-            )
-
-        # Diarization-only items (e.g. VoxConverse) carry a valid DER but no WER;
-        # a missing cpwer is expected for them and must not be flagged as an error.
-        diarization_only = bool(item.get("diarization_only"))
-        if not diarization_only and (error_str or item.get("cpwer") is None):
-            err_msg = str(error_str) if error_str else "unknown error"
-            footnotes.append(f"ERROR for {session_id}: {err_msg}")
-            rows.append(
-                QualityRow(
-                    session_id=session_id,
-                    duration=duration,
-                    cpwer=None,
-                    orcwer=None,
-                    dicpwer=None,
-                    der=None,
-                    error=err_msg,
-                )
-            )
-        else:
-            rows.append(
-                QualityRow(
-                    session_id=session_id,
-                    duration=duration,
-                    cpwer=_wer_val(item.get("cpwer")),
-                    orcwer=_wer_val(item.get("orcwer")),
-                    dicpwer=_wer_val(item.get("dicpwer")),
-                    der=_wer_val(item.get("der")),
-                    wder=_wer_val(item.get("wder")),
-                    wder_claimed=_wer_val(item.get("wder_claimed")),
-                    abstention_rate=_wer_val(item.get("abstention_rate")),
-                )
-            )
-            if item.get("normalized_cpwer") is not None:
-                normalized_rows.append(
-                    QualityRow(
-                        session_id=session_id,
-                        duration=duration,
-                        cpwer=_wer_val(item.get("normalized_cpwer")),
-                        orcwer=_wer_val(item.get("normalized_orcwer")),
-                        dicpwer=_wer_val(item.get("normalized_dicpwer")),
-                        der=None,
-                        wder=_wer_val(item.get("normalized_wder")),
-                    )
-                )
-
-    combined: QualityRow | None = None
-    if combined_data:
-        combined = QualityRow(
-            session_id="COMBINED",
-            duration=sum(r.duration for r in rows),
-            cpwer=_nested_wer(combined_data, "cpwer"),
-            orcwer=_nested_wer(combined_data, "orcwer"),
-            dicpwer=_nested_wer(combined_data, "dicpwer"),
-            der=_nested_der(combined_data),
-            wder=_nested_field(combined_data, "wder", "wder"),
-            wder_claimed=_nested_field(combined_data, "wder", "wder_claimed"),
-            abstention_rate=_nested_field(combined_data, "wder", "abstention_rate"),
-        )
-
-    normalized_combined: QualityRow | None = None
-    normalized_combined_data = combined_data.get("normalized", {})
-    if normalized_combined_data:
-        normalized_combined = QualityRow(
-            session_id="COMBINED",
-            duration=sum(r.duration for r in normalized_rows),
-            cpwer=_nested_wer(normalized_combined_data, "cpwer"),
-            orcwer=_nested_wer(normalized_combined_data, "orcwer"),
-            dicpwer=_nested_wer(normalized_combined_data, "dicpwer"),
-            der=None,
-            wder=_nested_field(normalized_combined_data, "wder", "wder"),
-        )
-
+    combined = _combined_row(combined_data, rows) if combined_data else None
+    normalized_combined = _normalized_combined_row(
+        _block(combined_data, "normalized"), normalized_rows
+    )
     return rows, combined, normalized_rows, normalized_combined, footnotes
 
 
-def _wer_val(v: Any) -> float | None:
-    if v is None:
+def _is_error_item(item: PerItemJson) -> bool:
+    """Diarization-only items (e.g. VoxConverse) carry a valid DER but no WER.
+
+    A missing cpwer is expected for them and must not be flagged as an error.
+    """
+    if item.get("diarization_only"):
+        return False
+    return bool(item.get("error")) or item.get("cpwer") is None
+
+
+def _error_message(item: PerItemJson) -> str:
+    error = item.get("error")
+    return str(error) if error else "unknown error"
+
+
+def _item_footnotes(item: PerItemJson) -> list[str]:
+    session_id = item.get("session_id", "")
+    footnotes: list[str] = []
+    diar = item.get("diarization") or DiarizationJson()
+    if diar.get("degenerate"):
+        footnotes.append(
+            f"WARNING for {session_id}: degenerate diarization "
+            f"({diar.get('hyp_speakers')} hyp speaker(s) vs "
+            f"{diar.get('ref_speakers')} ref) — speaker-blind WER (ORC-WER) "
+            f"will look good regardless; check DER/cpWER."
+        )
+    if _is_error_item(item):
+        footnotes.append(f"ERROR for {session_id}: {_error_message(item)}")
+    return footnotes
+
+
+def _raw_row(item: PerItemJson) -> QualityRow:
+    session_id = item.get("session_id", "")
+    duration = float(item.get("audio_seconds", 0.0))
+    if _is_error_item(item):
+        return QualityRow(
+            session_id=session_id,
+            duration=duration,
+            cpwer=None,
+            orcwer=None,
+            dicpwer=None,
+            der=None,
+            error=_error_message(item),
+        )
+    return QualityRow(
+        session_id=session_id,
+        duration=duration,
+        cpwer=_wer_val(item.get("cpwer")),
+        orcwer=_wer_val(item.get("orcwer")),
+        dicpwer=_wer_val(item.get("dicpwer")),
+        der=_wer_val(item.get("der")),
+        wder=_wer_val(item.get("wder")),
+        wder_claimed=_wer_val(item.get("wder_claimed")),
+        abstention_rate=_wer_val(item.get("abstention_rate")),
+    )
+
+
+def _normalized_row(item: PerItemJson) -> QualityRow | None:
+    if _is_error_item(item) or item.get("normalized_cpwer") is None:
+        return None
+    return QualityRow(
+        session_id=item.get("session_id", ""),
+        duration=float(item.get("audio_seconds", 0.0)),
+        cpwer=_wer_val(item.get("normalized_cpwer")),
+        orcwer=_wer_val(item.get("normalized_orcwer")),
+        dicpwer=_wer_val(item.get("normalized_dicpwer")),
+        der=None,
+        wder=_wer_val(item.get("normalized_wder")),
+    )
+
+
+def _combined_row(combined_data: Mapping[str, object], rows: list[QualityRow]) -> QualityRow:
+    return QualityRow(
+        session_id="COMBINED",
+        duration=sum(r.duration for r in rows),
+        cpwer=_nested_wer(combined_data, "cpwer"),
+        orcwer=_nested_wer(combined_data, "orcwer"),
+        dicpwer=_nested_wer(combined_data, "dicpwer"),
+        der=_nested_der(combined_data),
+        wder=_nested_field(combined_data, "wder", "wder"),
+        wder_claimed=_nested_field(combined_data, "wder", "wder_claimed"),
+        abstention_rate=_nested_field(combined_data, "wder", "abstention_rate"),
+    )
+
+
+def _normalized_combined_row(
+    normalized_data: Mapping[str, object], normalized_rows: list[QualityRow]
+) -> QualityRow | None:
+    if not normalized_data:
+        return None
+    return QualityRow(
+        session_id="COMBINED",
+        duration=sum(r.duration for r in normalized_rows),
+        cpwer=_nested_wer(normalized_data, "cpwer"),
+        orcwer=_nested_wer(normalized_data, "orcwer"),
+        dicpwer=_nested_wer(normalized_data, "dicpwer"),
+        der=None,
+        wder=_nested_field(normalized_data, "wder", "wder"),
+    )
+
+
+def _block(data: Mapping[str, object], key: str) -> Mapping[str, object]:
+    """Return the nested metric block under ``key``, or an empty one."""
+    val = data.get(key)
+    return val if isinstance(val, dict) else {}
+
+
+def _wer_val(v: object) -> float | None:
+    if not isinstance(v, (int, float, str)):
         return None
     try:
         return float(v)
-    except (TypeError, ValueError):
+    except ValueError:
         return None
 
 
-def _nested_wer(data: dict, key: str) -> float | None:
+def _nested_wer(data: Mapping[str, object], key: str) -> float | None:
     val = data.get(key)
-    if val is None:
-        return None
     if isinstance(val, dict):
-        return _wer_val(val.get("wer"))
+        return _wer_val(_block(data, key).get("wer"))
     return _wer_val(val)
 
 
-def _nested_field(data: dict, block: str, key: str) -> float | None:
+def _nested_field(data: Mapping[str, object], block: str, key: str) -> float | None:
     """Read one float out of a nested metric block, tolerating absent blocks."""
-    val = data.get(block)
-    if not isinstance(val, dict):
-        return None
-    return _wer_val(val.get(key))
+    return _wer_val(_block(data, block).get(key))
 
 
-def _nested_der(data: dict) -> float | None:
+def _nested_der(data: Mapping[str, object]) -> float | None:
     val = data.get("der")
-    if val is None:
-        return None
     if isinstance(val, dict):
-        return _wer_val(val.get("der"))
+        return _wer_val(_block(data, "der").get("der"))
     return _wer_val(val)
 
 
@@ -235,13 +247,13 @@ def _load_performance(out_dir: Path, *, stream: bool) -> list[PerformanceRow]:
     if not summary_path.exists():
         return []
 
-    summary = _read_json(summary_path)
+    summary = _read_json(summary_path, PerformanceSummaryJson())
     per_rep = summary.get("per_rep", [])
     rows: list[PerformanceRow] = []
 
     for rep_data in per_rep:
         item_id = rep_data.get("item_id", "")
-        rep = int(rep_data.get("rep", 1))
+        rep = rep_data.get("rep", 1)
         duration = float(rep_data.get("audio_seconds", 0.0))
         wall_seconds = float(rep_data.get("wall_seconds", 0.0))
         throughput = float(rep_data.get("transcription_throughput", 0.0))
@@ -286,441 +298,9 @@ def _compute_total_wall(
     return 0.0
 
 
-def _read_json(path: Path) -> Any:
+def _read_json[T](path: Path, empty: T) -> T:
+    """Parse a JSON artifact, or return ``empty`` when it is unreadable or malformed."""
     try:
         return json.loads(path.read_text())
-    except Exception:
-        empty: dict[str, Any] = {}
+    except (OSError, ValueError):
         return empty
-
-
-def render_markdown(report: BenchReport) -> str:
-    """Return a GFM markdown string for the benchmark report."""
-    lines: list[str] = []
-
-    lines.append("# Benchmark Report")
-    lines.append("")
-    lines.append(f"**Timestamp**: {report.timestamp}")
-    lines.append(f"**Output**: {report.out_dir}")
-    lines.append(f"**Git SHA**: {report.git_sha}")
-    lines.append(f"**Total wall time**: {report.total_wall_seconds:.1f}s")
-
-    sc = report.server_config
-    lines.append(f"**ASR**: {sc.get('asr_backend', '')} / {sc.get('asr_model', '')}")
-    lines.append(f"**Diarization**: {sc.get('diar_backend', '')} / {sc.get('diar_model', '')}")
-    lines.append(f"**Pipeline**: {sc.get('pipeline', '')}")
-    lines.append(f"**Warmup**: {sc.get('warmup', False)}")
-
-    if report.subcommand == "all":
-        lines.append("")
-        lines.append("> Quality scored from rep1; performance averaged across all reps.")
-
-    if report.quality_rows or report.quality_combined:
-        lines.append("")
-        lines += _quality_table_md(report)
-
-    if _has_wder(report):
-        lines.append("")
-        lines += _wder_table_md(report)
-
-    if report.normalized_quality_rows or report.normalized_quality_combined:
-        lines.append("")
-        lines += _normalized_quality_table_md(report)
-
-    if report.performance_rows:
-        lines.append("")
-        lines += _performance_table_md(report)
-
-    lines.append("")
-    lines.append("## Run Configuration")
-    lines.append("")
-    lines.append("**CLI args**: `" + " ".join(report.cli_args) + "`")
-    lines.append("")
-    lines.append("**Versions**:")
-    for pkg, ver in report.versions.items():
-        lines.append(f"- {pkg}: {ver}")
-
-    lines.append("")
-    lines.append("## Artifacts")
-    lines.append("")
-    out_path = Path(report.out_dir)
-    for family in ("responses", "hyp", "ref", "performance", "quality"):
-        family_dir = out_path / family
-        if family_dir.exists():
-            lines.append(f"- `{family}/`")
-
-    return "\n".join(lines) + "\n"
-
-
-def _quality_table_md(report: BenchReport) -> list[str]:
-    lines: list[str] = []
-    lines.append(f"## Quality Results — {RAW_LANE_LABEL}")
-    lines.append("")
-    lines.append(RAW_LANE_CAPTION)
-    lines.append("")
-    lines.append("| session | duration | cpWER | ORC-WER | DI-cpWER | DER |")
-    lines.append("|---------|----------|-------|---------|----------|-----|")
-
-    for row in report.quality_rows:
-        if row.error is not None:
-            lines.append(
-                f"| {row.session_id} | {row.duration:.1f} | ERROR | ERROR | ERROR | ERROR |"
-            )
-        else:
-            lines.append(
-                f"| {row.session_id} | {row.duration:.1f} "
-                f"| {_fmt(row.cpwer)} "
-                f"| {_fmt(row.orcwer)} | {_fmt(row.dicpwer)} "
-                f"| {_fmt(row.der)} |"
-            )
-
-    if report.quality_combined is not None:
-        c = report.quality_combined
-        lines.append(
-            f"| **{c.session_id}** | {c.duration:.1f} "
-            f"| {_fmt(c.cpwer)} "
-            f"| {_fmt(c.orcwer)} | {_fmt(c.dicpwer)} "
-            f"| {_fmt(c.der)} |"
-        )
-
-    if report.quality_footnotes:
-        lines.append("")
-        for note in report.quality_footnotes:
-            lines.append(f"[^]: {note}")
-
-    return lines
-
-
-def _wder_rows(report: BenchReport) -> list[QualityRow]:
-    """Quality rows that carry a WDER value, combined row appended last."""
-    rows = [r for r in report.quality_rows if r.wder is not None]
-    combined = report.quality_combined
-    if combined is not None and combined.wder is not None:
-        rows.append(combined)
-    return rows
-
-
-def _has_wder(report: BenchReport) -> bool:
-    return bool(_wder_rows(report))
-
-
-def _wder_table_md(report: BenchReport) -> list[str]:
-    lines: list[str] = []
-    lines.append(f"## Speaker Attribution (WDER) — {RAW_LANE_LABEL}")
-    lines.append("")
-    lines.append(
-        "Word Diarization Error Rate — speaker errors over the words that exist "
-        "in both transcripts (correct + substituted). Insertions and deletions "
-        "are excluded, so this is blind to segmentation and undiluted by the ASR "
-        "error floor. `WDER-claimed` is precision where a real speaker was "
-        "committed to; `abstention` is the share of scored words left unknown. "
-        "`WDER = WDER-claimed x (1 - abstention) + abstention`. Normalization "
-        "changes which words are scored, so the Normalized Metric Lane's WDER is "
-        "reported in that lane's own table."
-    )
-    lines.append("")
-    lines.append("| session | WDER | WDER-claimed | abstention |")
-    lines.append("|---------|------|--------------|------------|")
-
-    for row in _wder_rows(report):
-        label = row.session_id
-        if row is report.quality_combined:
-            label = f"**{label}**"
-        lines.append(
-            f"| {label} | {_fmt(row.wder)} "
-            f"| {_fmt(row.wder_claimed)} | {_fmt(row.abstention_rate)} |"
-        )
-
-    return lines
-
-
-def _normalized_quality_table_md(report: BenchReport) -> list[str]:
-    lines: list[str] = []
-    lines.append(f"## Quality Results — {NORMALIZED_LANE_LABEL}")
-    lines.append("")
-    lines.append(NORMALIZED_LANE_CAPTION)
-    lines.append("")
-    lines.append("| session | duration | cpWER | ORC-WER | DI-cpWER | WDER |")
-    lines.append("|---------|----------|-------|---------|----------|------|")
-
-    for row in report.normalized_quality_rows:
-        lines.append(
-            f"| {row.session_id} | {row.duration:.1f} "
-            f"| {_fmt(row.cpwer)} | {_fmt(row.orcwer)} | {_fmt(row.dicpwer)} "
-            f"| {_fmt(row.wder)} |"
-        )
-
-    if report.normalized_quality_combined is not None:
-        c = report.normalized_quality_combined
-        lines.append(
-            f"| **{c.session_id}** | {c.duration:.1f} "
-            f"| {_fmt(c.cpwer)} | {_fmt(c.orcwer)} | {_fmt(c.dicpwer)} "
-            f"| {_fmt(c.wder)} |"
-        )
-
-    return lines
-
-
-def _performance_table_md(report: BenchReport) -> list[str]:
-    lines: list[str] = []
-    lines.append("## Performance Results")
-    lines.append("")
-
-    has_ttft = report.stream
-    if has_ttft:
-        hdr = (
-            "| session | rep | duration | wall (s) | throughput"
-            " | peak PSS | pred PSS | peak VRAM | pred VRAM | peak GPU | peak CPU | TTFT (s) | observed profile |"
-        )
-        sep = (
-            "|---------|-----|----------|----------"
-            "|------------|----------|----------|-----------|-----------|----------|----------|----------|-----------------|"
-        )
-    else:
-        hdr = (
-            "| session | rep | duration | wall (s) | throughput"
-            " | peak PSS | pred PSS | peak VRAM | pred VRAM | peak GPU | peak CPU | observed profile |"
-        )
-        sep = (
-            "|---------|-----|----------|----------"
-            "|------------|----------|----------|-----------|-----------|----------|----------|-----------------|"
-        )
-    lines.append(hdr)
-    lines.append(sep)
-
-    for row in report.performance_rows:
-        if has_ttft:
-            lines.append(
-                f"| {row.session_id} | {row.rep} | {row.duration:.1f} "
-                f"| {row.wall_seconds:.2f} | {row.throughput:.2f}x "
-                f"| {_fmt_kb_as_mb(row.peak_pss_kb)} | {_fmt_kb_as_mb(row.peak_pss_delta_kb)} "
-                f"| {_fmt_mib(row.peak_vram_mib)} | {_fmt_mib(row.peak_vram_delta_mib)} "
-                f"| {_fmt_pct(row.peak_gpu_util_pct)} | {_fmt_pct(row.peak_cpu_pct)} "
-                f"| {_fmt(row.ttft)} "
-                f"| {row.observed_profile} |"
-            )
-        else:
-            lines.append(
-                f"| {row.session_id} | {row.rep} | {row.duration:.1f} "
-                f"| {row.wall_seconds:.2f} | {row.throughput:.2f}x "
-                f"| {_fmt_kb_as_mb(row.peak_pss_kb)} | {_fmt_kb_as_mb(row.peak_pss_delta_kb)} "
-                f"| {_fmt_mib(row.peak_vram_mib)} | {_fmt_mib(row.peak_vram_delta_mib)} "
-                f"| {_fmt_pct(row.peak_gpu_util_pct)} | {_fmt_pct(row.peak_cpu_pct)} "
-                f"| {row.observed_profile} |"
-            )
-
-    return lines
-
-
-def _fmt(value: float | None, decimals: int = 4) -> str:
-    if value is None:
-        return "-"
-    return f"{value:.{decimals}f}"
-
-
-def _fmt_kb_as_mb(value: float | None) -> str:
-    if value is None:
-        return "-"
-    return f"{value / 1024.0:.0f} MB"
-
-
-def _fmt_mib(value: float | None) -> str:
-    if value is None:
-        return "-"
-    return f"{value:.0f} MiB"
-
-
-def _fmt_pct(value: float | None) -> str:
-    if value is None:
-        return "-"
-    return f"{value:.1f}%"
-
-
-def render_stdout(report: BenchReport) -> None:
-    """Render the report to stdout using rich if available, else plain text."""
-    try:
-        _render_stdout_rich(report)
-    except ImportError:
-        _render_stdout_plain(report)
-
-
-def _render_stdout_rich(report: BenchReport) -> None:
-    from rich.console import Console
-    from rich.panel import Panel
-
-    console = Console()
-    console.print(Panel(_rich_header(report), title="Benchmark Report"))
-    _rich_quality_table(console, report)
-    _rich_wder_table(console, report)
-    _rich_normalized_quality_table(console, report)
-    _rich_performance_table(console, report)
-
-
-def _rich_header(report: BenchReport) -> str:
-    sc = report.server_config
-    lines = [
-        f"Timestamp : {report.timestamp}",
-        f"Output    : {report.out_dir}",
-        f"Git SHA   : {report.git_sha}",
-        f"Wall time : {report.total_wall_seconds:.1f}s",
-        f"ASR       : {sc.get('asr_backend', '')} / {sc.get('asr_model', '')}",
-        f"Diarization: {sc.get('diar_backend', '')} / {sc.get('diar_model', '')}",
-        f"Pipeline  : {sc.get('pipeline', '')}",
-        f"Warmup    : {sc.get('warmup', False)}",
-    ]
-    if report.subcommand == "all":
-        lines.append("Note: Quality scored from rep1; performance averaged across all reps.")
-    return "\n".join(lines)
-
-
-def _rich_quality_table(console: object, report: BenchReport) -> None:
-    if not (report.quality_rows or report.quality_combined):
-        return
-    from rich.table import Table
-
-    qt = Table(
-        title=f"Quality Results — {RAW_LANE_LABEL}",
-        caption=RAW_LANE_CAPTION,
-        show_lines=True,
-    )
-    for col in ("session", "duration", "cpWER", "ORC-WER", "DI-cpWER", "DER"):
-        qt.add_column(col)
-    for row in report.quality_rows:
-        if row.error is not None:
-            qt.add_row(
-                row.session_id,
-                f"{row.duration:.1f}",
-                "ERROR",
-                "ERROR",
-                "ERROR",
-                "ERROR",
-            )
-        else:
-            qt.add_row(
-                row.session_id,
-                f"{row.duration:.1f}",
-                _fmt(row.cpwer),
-                _fmt(row.orcwer),
-                _fmt(row.dicpwer),
-                _fmt(row.der),
-            )
-    if report.quality_combined is not None:
-        c = report.quality_combined
-        qt.add_row(
-            f"[bold]{c.session_id}[/bold]",
-            f"{c.duration:.1f}",
-            _fmt(c.cpwer),
-            _fmt(c.orcwer),
-            _fmt(c.dicpwer),
-            _fmt(c.der),
-        )
-    console.print(qt)  # type: ignore[attr-defined]
-    for note in report.quality_footnotes:
-        console.print(f"  * {note}")  # type: ignore[attr-defined]
-
-
-def _rich_wder_table(console: object, report: BenchReport) -> None:
-    rows = _wder_rows(report)
-    if not rows:
-        return
-    from rich.table import Table
-
-    wt = Table(title=f"Speaker Attribution (WDER) — {RAW_LANE_LABEL}", show_lines=True)
-    for col in ("session", "WDER", "WDER-claimed", "abstention"):
-        wt.add_column(col)
-    for row in rows:
-        label = row.session_id
-        if row is report.quality_combined:
-            label = f"[bold]{label}[/bold]"
-        wt.add_row(
-            label,
-            _fmt(row.wder),
-            _fmt(row.wder_claimed),
-            _fmt(row.abstention_rate),
-        )
-    console.print(wt)  # type: ignore[attr-defined]
-
-
-def _rich_normalized_quality_table(console: object, report: BenchReport) -> None:
-    if not (report.normalized_quality_rows or report.normalized_quality_combined):
-        return
-    from rich.table import Table
-
-    qt = Table(
-        title=f"Quality Results — {NORMALIZED_LANE_LABEL}",
-        caption=NORMALIZED_LANE_CAPTION,
-        show_lines=True,
-    )
-    for col in ("session", "duration", "cpWER", "ORC-WER", "DI-cpWER", "WDER"):
-        qt.add_column(col)
-    for row in report.normalized_quality_rows:
-        qt.add_row(
-            row.session_id,
-            f"{row.duration:.1f}",
-            _fmt(row.cpwer),
-            _fmt(row.orcwer),
-            _fmt(row.dicpwer),
-            _fmt(row.wder),
-        )
-    if report.normalized_quality_combined is not None:
-        c = report.normalized_quality_combined
-        qt.add_row(
-            f"[bold]{c.session_id}[/bold]",
-            f"{c.duration:.1f}",
-            _fmt(c.cpwer),
-            _fmt(c.orcwer),
-            _fmt(c.dicpwer),
-            _fmt(c.wder),
-        )
-    console.print(qt)  # type: ignore[attr-defined]
-
-
-def _rich_performance_table(console: object, report: BenchReport) -> None:
-    if not report.performance_rows:
-        return
-    from rich.table import Table
-
-    has_ttft = report.stream
-    pt = Table(title="Performance Results", show_lines=True)
-    cols = [
-        "session",
-        "rep",
-        "duration",
-        "wall (s)",
-        "throughput",
-        "peak PSS",
-        "pred PSS",
-        "peak VRAM",
-        "pred VRAM",
-        "peak GPU",
-        "peak CPU",
-    ]
-    if has_ttft:
-        cols.append("TTFT (s)")
-    cols.append("observed profile")
-    for col in cols:
-        pt.add_column(col)
-    for row in report.performance_rows:
-        cells = [
-            row.session_id,
-            str(row.rep),
-            f"{row.duration:.1f}",
-            f"{row.wall_seconds:.2f}",
-            f"{row.throughput:.2f}x",
-            _fmt_kb_as_mb(row.peak_pss_kb),
-            _fmt_kb_as_mb(row.peak_pss_delta_kb),
-            _fmt_mib(row.peak_vram_mib),
-            _fmt_mib(row.peak_vram_delta_mib),
-            _fmt_pct(row.peak_gpu_util_pct),
-            _fmt_pct(row.peak_cpu_pct),
-        ]
-        if has_ttft:
-            cells.append(_fmt(row.ttft))
-        cells.append(row.observed_profile)
-        pt.add_row(*cells)
-    console.print(pt)  # type: ignore[attr-defined]
-
-
-def _render_stdout_plain(report: BenchReport) -> None:
-    print("# Benchmark Report")
-    print(render_markdown(report))

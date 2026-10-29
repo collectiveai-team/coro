@@ -52,8 +52,7 @@ _REQUIRED_FIELDS = {
 
 def test_resource_fieldnames_excludes_legacy_quality():
     """RESOURCE_FIELDNAMES no longer contains legacy quality columns."""
-    for field in _LEGACY_QUALITY_FIELDS:
-        assert field not in RESOURCE_FIELDNAMES, f"Legacy field {field!r} still present"
+    assert set(_LEGACY_QUALITY_FIELDS) & set(RESOURCE_FIELDNAMES) == set()
 
 
 def test_resource_fieldnames_contains_required_schema():

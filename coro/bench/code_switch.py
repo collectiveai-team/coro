@@ -35,11 +35,16 @@ already uses, not a parallel type.
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
-from typing import Any
 
+from coro.bench.code_switch_presets import (
+    CODE_SWITCH_CORPORA,
+    CODE_SWITCH_PRESETS,
+    resolve_code_switch_preset,
+)
 from coro.bench.models.code_switch import (
     CodeSwitchCorpus,
     CodeSwitchItem,
@@ -55,86 +60,57 @@ from coro.bench.utils.hf_parquet import iter_parquet_rows, resolve_shard_urls
 MANIFEST_NAME = "code-switch.json"
 LICENCES_NAME = "LICENCES.md"
 
-CODE_SWITCH_CORPORA: dict[str, CodeSwitchCorpus] = {
-    "fleurs_es": CodeSwitchCorpus(
-        key="fleurs_es",
-        name="FLEURS (es_419, test split)",
-        hf_dataset="google/fleurs",
-        hf_config="es_419",
-        hf_split="test",
-        licence="CC-BY-4.0",
-        licence_url="https://creativecommons.org/licenses/by/4.0/",
-        homepage="https://huggingface.co/datasets/google/fleurs",
-        language="es",
-        id_column="id",
-        text_column="raw_transcription",
-        notes="Read Spanish speech; the carrier-language source for the code-switch corpus.",
-    ),
-    "fleurs_en": CodeSwitchCorpus(
-        key="fleurs_en",
-        name="FLEURS (en_us, test split)",
-        hf_dataset="google/fleurs",
-        hf_config="en_us",
-        hf_split="test",
-        licence="CC-BY-4.0",
-        licence_url="https://creativecommons.org/licenses/by/4.0/",
-        homepage="https://huggingface.co/datasets/google/fleurs",
-        language="en",
-        id_column="id",
-        text_column="raw_transcription",
-        notes="Read English speech; the switch-language source for the code-switch corpus.",
-    ),
-}
-
-CODE_SWITCH_PRESETS: dict[str, CodeSwitchPreset] = {
-    "sparse-splice": CodeSwitchPreset(
-        key="sparse-splice",
-        pattern="sparse",
-        carrier_corpus="fleurs_es",
-        switch_corpus="fleurs_en",
-        carrier_clips_per_item=4,
-        switch_clips_per_item=1,
-        items=20,
-        gap_seconds=1.0,
-        description=(
-            "One short English clip inserted once, evenly amid four Spanish "
-            "carrier clips per item -- simulates an occasional embedded "
-            "foreign term/phrase, not a full language change."
-        ),
-    ),
-    "paragraph-level": CodeSwitchPreset(
-        key="paragraph-level",
-        pattern="paragraph",
-        carrier_corpus="fleurs_es",
-        switch_corpus="fleurs_en",
-        carrier_clips_per_item=2,
-        switch_clips_per_item=2,
-        items=20,
-        gap_seconds=1.0,
-        description=(
-            "Whole Spanish/English clips alternated one-for-one -- "
-            "simulates a full topic/speaker-language change."
-        ),
-    ),
-}
+__all__ = [
+    "CODE_SWITCH_CORPORA",
+    "CODE_SWITCH_PRESETS",
+    "LICENCES_NAME",
+    "MANIFEST_NAME",
+    "build_sequence",
+    "materialize_code_switch_corpus",
+    "render_licences",
+    "resolve_code_switch_preset",
+]
 
 
-def resolve_code_switch_preset(preset_key: str) -> CodeSwitchPreset:
-    """Return the named code-switch preset, or fail with the known preset names."""
-    try:
-        return CODE_SWITCH_PRESETS[preset_key]
-    except KeyError:
-        known = ", ".join(sorted(CODE_SWITCH_PRESETS))
-        raise ValueError(
-            f"Unknown code-switch preset {preset_key!r}; known presets: {known}"
-        ) from None
+def _paragraph_sequence[T](carrier: list[T], switch: list[T]) -> list[tuple[str, T]]:
+    sequence: list[tuple[str, T]] = []
+    for carrier_row, switch_row in zip(carrier, switch, strict=False):
+        sequence.append(("carrier", carrier_row))
+        sequence.append(("switch", switch_row))
+    sequence.extend(("carrier", row) for row in carrier[len(switch) :])
+    sequence.extend(("switch", row) for row in switch[len(carrier) :])
+    return sequence
 
 
-def build_sequence(
+def _sparse_sequence[T](carrier: list[T], switch: list[T]) -> list[tuple[str, T]]:
+    if not switch:
+        return [("carrier", row) for row in carrier]
+    if not carrier:
+        return [("switch", row) for row in switch]
+    # A monotonically increasing threshold (half a step ahead of the
+    # per-switch carrier ratio) spaces insertions evenly without ever
+    # mapping two switch rows to the same slot -- a plain
+    # round()-to-an-index scheme can collide when there are few carrier
+    # clips per switch clip, silently dropping a row.
+    ratio = len(carrier) / len(switch)
+    threshold = ratio / 2
+    switch_index = 0
+    sequence: list[tuple[str, T]] = []
+    for position, carrier_row in enumerate(carrier, start=1):
+        sequence.append(("carrier", carrier_row))
+        if switch_index < len(switch) and position >= threshold:
+            sequence.append(("switch", switch[switch_index]))
+            switch_index += 1
+            threshold += ratio
+    sequence.extend(("switch", row) for row in switch[switch_index:])
+    return sequence
+
+
+def build_sequence[T](
     pattern: str,
-    carrier: list[Any],
-    switch: list[Any],
-) -> list[tuple[str, Any]]:
+    carrier: list[T],
+    switch: list[T],
+) -> list[tuple[str, T]]:
     """Interleave carrier/switch clip rows into one splice order per ``pattern``.
 
     ``"paragraph"`` alternates every single clip, carrier first (``c0, s0,
@@ -144,63 +120,44 @@ def build_sequence(
     insertions read as scattered rather than clustered at one end.
     """
     if pattern == "paragraph":
-        sequence: list[tuple[str, Any]] = []
-        for carrier_row, switch_row in zip(carrier, switch, strict=False):
-            sequence.append(("carrier", carrier_row))
-            sequence.append(("switch", switch_row))
-        sequence.extend(("carrier", row) for row in carrier[len(switch) :])
-        sequence.extend(("switch", row) for row in switch[len(carrier) :])
-        return sequence
-
+        return _paragraph_sequence(carrier, switch)
     if pattern == "sparse":
-        if not switch:
-            return [("carrier", row) for row in carrier]
-        if not carrier:
-            return [("switch", row) for row in switch]
-        # A monotonically increasing threshold (half a step ahead of the
-        # per-switch carrier ratio) spaces insertions evenly without ever
-        # mapping two switch rows to the same slot -- a plain
-        # round()-to-an-index scheme can collide when there are few carrier
-        # clips per switch clip, silently dropping a row.
-        ratio = len(carrier) / len(switch)
-        threshold = ratio / 2
-        switch_index = 0
-        sequence: list[tuple[str, Any]] = []
-        for position, carrier_row in enumerate(carrier, start=1):
-            sequence.append(("carrier", carrier_row))
-            if switch_index < len(switch) and position >= threshold:
-                sequence.append(("switch", switch[switch_index]))
-                switch_index += 1
-                threshold += ratio
-        sequence.extend(("switch", row) for row in switch[switch_index:])
-        return sequence
-
+        return _sparse_sequence(carrier, switch)
     raise ValueError(f"Unknown code-switch pattern {pattern!r}; known patterns: sparse, paragraph")
 
 
-def _fetch_rows(corpus: CodeSwitchCorpus, count: int) -> list[dict[str, Any]]:
+@dataclass(frozen=True)
+class _SourceClip:
+    """One fetched source row: its corpus id, transcript and encoded audio."""
+
+    item_id: str
+    text: str
+    audio_bytes: bytes
+
+
+def _fetch_rows(corpus: CodeSwitchCorpus, count: int) -> list[_SourceClip]:
     """Fetch up to ``count`` non-empty (text, audio) rows from one FLEURS config."""
     if count <= 0:
         return []
     urls = resolve_shard_urls(corpus.hf_dataset, corpus.hf_config, corpus.hf_split)
     columns = [corpus.audio_column, corpus.id_column, corpus.text_column]
 
-    rows: list[dict[str, Any]] = []
+    rows: list[_SourceClip] = []
     for row in iter_parquet_rows(urls, limit=count, columns=columns):
         text = str(row.get(corpus.text_column) or "").strip()
-        audio = row.get(corpus.audio_column) or {}
+        audio = row.get(corpus.audio_column)
         audio_bytes = audio.get("bytes") if isinstance(audio, dict) else None
         if not text or not audio_bytes:
             continue
         rows.append(
-            {"item_id": str(row.get(corpus.id_column)), "text": text, "audio_bytes": audio_bytes}
+            _SourceClip(item_id=str(row.get(corpus.id_column)), text=text, audio_bytes=audio_bytes)
         )
     return rows
 
 
 def _materialize_item(
     item_id: str,
-    sequence: list[tuple[str, Any]],
+    sequence: list[tuple[str, _SourceClip]],
     preset: CodeSwitchPreset,
     out_dir: Path,
 ) -> CodeSwitchItem | None:
@@ -211,7 +168,7 @@ def _materialize_item(
     try:
         for slot, (_role, row) in enumerate(sequence):
             clip_path = parts_dir / f"{slot:02d}.wav"
-            transcode_bytes_to_wav(row["audio_bytes"], clip_path)
+            transcode_bytes_to_wav(row.audio_bytes, clip_path)
             clip_paths.append(clip_path)
 
         wav_path = out_dir / f"{item_id}.wav"
@@ -227,11 +184,11 @@ def _materialize_item(
         segments.append(
             CodeSwitchSegment(
                 source_corpus=corpus_key,
-                source_item_id=row["item_id"],
+                source_item_id=row.item_id,
                 language=CODE_SWITCH_CORPORA[corpus_key].language,
                 start_seconds=round(start, 3),
                 end_seconds=round(end, 3),
-                text=row["text"],
+                text=row.text,
             )
         )
 
@@ -298,7 +255,9 @@ def render_licences(manifest: CodeSwitchWorkloadManifest) -> str:
     return "\n".join(lines)
 
 
-def _manifest_is_current(manifest: dict[str, Any], preset: CodeSwitchPreset, items: int) -> bool:
+def _manifest_is_current(
+    manifest: Mapping[str, object], preset: CodeSwitchPreset, items: int
+) -> bool:
     return (
         manifest.get("preset") == preset.key
         and manifest.get("pattern") == preset.pattern

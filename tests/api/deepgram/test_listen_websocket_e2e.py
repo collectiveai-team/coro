@@ -14,9 +14,8 @@ are required by the vendor schema and coro emitted none of them.
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import json
+import wave
 
 import pytest
 import websockets
@@ -30,8 +29,9 @@ from coro.settings import ServerSettings
 from support.factories import make_app
 from support.live_server import LiveServer as _LiveServer
 from support.live_server import keep_injected_runtime
+from support.network import LOOPBACK
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, *LOOPBACK]
 
 CHUNK_SECONDS = 1.0
 CHUNK_BYTES = int(SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_SECONDS)
@@ -66,37 +66,18 @@ class _FakeDiarizer:
 
 
 def _real_pcm(seconds: int) -> list[bytes]:
-    """Decode the bundled recording to canonical PCM and slice it into frames.
+    """Read the bundled recording as canonical PCM and slice it into frames.
 
-    A missing ffmpeg is a hard failure, deliberately not a skip. ffmpeg is a
-    runtime dependency — the shipped image installs it and ``coro.pcm`` decodes
-    every HTTP upload through it — so an environment without it cannot run this
-    server at all. Skipping would let CI silently lose the only end-to-end
-    coverage of the WebSocket surface while still reporting green.
+    The clip is already 16 kHz mono 16-bit, so its WAV frames are the bytes the
+    socket expects and no decoder runs here.
     """
-    import subprocess
-
-    raw = subprocess.run(  # noqa: S603
-        [
-            "ffmpeg",
-            "-nostdin",
-            "-loglevel",
-            "quiet",
-            "-i",
-            str(WARMUP_AUDIO_PATH),
-            "-f",
-            "s16le",
-            "-acodec",
-            "pcm_s16le",
-            "-ac",
-            "1",
-            "-ar",
-            str(SAMPLE_RATE),
-            "-",
-        ],
-        capture_output=True,
-        check=True,
-    ).stdout
+    with wave.open(str(WARMUP_AUDIO_PATH)) as clip:
+        assert (clip.getframerate(), clip.getnchannels(), clip.getsampwidth()) == (
+            SAMPLE_RATE,
+            1,
+            BYTES_PER_SAMPLE,
+        )
+        raw = clip.readframes(clip.getnframes())
     frames = [raw[i : i + CHUNK_BYTES] for i in range(0, len(raw), CHUNK_BYTES)]
     # Loop the clip if it is shorter than the window we need to force a result.
     while len(frames) < seconds:
@@ -119,12 +100,20 @@ def _app(*, diarize: bool = False, **settings_overrides):
     return keep_injected_runtime(app, settings)
 
 
+async def _send_audio(ws, seconds: int) -> None:
+    for chunk in _real_pcm(seconds):
+        await ws.send(chunk)
+
+
+async def _close_stream(ws) -> None:
+    await ws.send(json.dumps({"type": "CloseStream"}))
+
+
 async def _stream(server: _LiveServer, query: str = "", *, seconds: int = 31) -> list[dict]:
     frames: list[dict] = []
     async with websockets.connect(server.ws_url + query) as ws:
-        for chunk in _real_pcm(seconds):
-            await ws.send(chunk)
-        await ws.send(json.dumps({"type": "CloseStream"}))
+        await _send_audio(ws, seconds)
+        await _close_stream(ws)
         async for raw in ws:
             frame = json.loads(raw)
             frames.append(frame)
@@ -151,10 +140,9 @@ class TestRealServerTransport:
 
     async def test_results_arrive_before_the_client_closes(self):
         async with _LiveServer(_app()) as server, websockets.connect(server.ws_url) as ws:
-            for chunk in _real_pcm(31):
-                await ws.send(chunk)
-            frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=30))
-            await ws.send(json.dumps({"type": "CloseStream"}))
+            await _send_audio(ws, 31)
+            frame = json.loads(await ws.recv())
+            await _close_stream(ws)
         assert frame["type"] == "Results"
 
 
@@ -215,7 +203,9 @@ class TestRealClientRejection:
             _LiveServer(_app()) as server,
             websockets.connect(server.ws_url + "?encoding=opus") as ws,
         ):
-            frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(ws.recv(), timeout=5)
+            frame = json.loads(await ws.recv())
+            with pytest.raises(websockets.ConnectionClosed) as closed:
+                await ws.recv()
         assert frame["type"] == "Error"
+        assert closed.value.rcvd is not None
+        assert closed.value.rcvd.code == 1008  # RFC 6455 Policy Violation

@@ -20,7 +20,6 @@ what Deepgram itself emits.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
 
 from coro.api.deepgram.schemas import (
     MONO_CHANNEL_COUNT,
@@ -28,6 +27,7 @@ from coro.api.deepgram.schemas import (
     DeepgramAlternative,
     DeepgramChannel,
     DeepgramMetadata,
+    DeepgramModelInfo,
     DeepgramResponse,
     DeepgramResults,
     DeepgramUtterance,
@@ -42,6 +42,7 @@ from coro.api.json_body import (
     text_slot,
 )
 from coro.api.utterances import group_words_into_utterances, mean_measured
+from coro.core.models import TranscriptWord
 from coro.core.transcript_source import (
     TranscriptSource,
     iter_text_fragments,
@@ -62,7 +63,7 @@ def _iter_utterances(source: TranscriptSource, *, diarize: bool) -> Iterator[str
     speaker changes and each is grouped on its own. The result is identical
     because a run is complete the moment a different speaker appears.
     """
-    run: list[Any] = []
+    run: list[TranscriptWord] = []
     for word in source.iter_words():
         if run and run[-1].speaker != word.speaker:
             yield from _render_run(run, diarize=diarize)
@@ -72,7 +73,7 @@ def _iter_utterances(source: TranscriptSource, *, diarize: bool) -> Iterator[str
         yield from _render_run(run, diarize=diarize)
 
 
-def _render_run(run: list[Any], *, diarize: bool) -> Iterator[str]:
+def _render_run(run: list[TranscriptWord], *, diarize: bool) -> Iterator[str]:
     """Render one same-speaker run through the shared grouping helper."""
     for utterance in group_words_into_utterances(run):
         yield dump_model(
@@ -110,7 +111,7 @@ def render_deepgram(
             duration=duration,
             channels=MONO_CHANNEL_COUNT,
             models=[asr_model],
-            model_info={asr_model: {"name": asr_model, "arch": asr_backend}},
+            model_info={asr_model: DeepgramModelInfo(name=asr_model, arch=asr_backend)},
         ),
         results=DeepgramResults(
             channels=[

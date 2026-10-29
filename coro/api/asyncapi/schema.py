@@ -9,14 +9,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import MISSING, fields, is_dataclass
-from typing import Any
 
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
 SCHEMA_REF_TEMPLATE = "#/components/schemas/{model}"
 
 
-def _constant_wire_fields(wire_type: type) -> Iterator[tuple[str, Any]]:
+def _constant_wire_fields(wire_type: type) -> Iterator[tuple[str, object]]:
     """Yield the dataclass fields the wire format always carries unchanged.
 
     ``init=False`` with a default means no caller can vary the value, so it is a
@@ -29,7 +28,7 @@ def _constant_wire_fields(wire_type: type) -> Iterator[tuple[str, Any]]:
             yield field.name, field.default
 
 
-def payload_schema(wire_type: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+def payload_schema(wire_type: type) -> tuple[dict[str, JsonValue], dict[str, dict[str, JsonValue]]]:
     """Derive one message payload schema plus any schemas it references.
 
     Returns the payload schema and the definitions it ``$ref``s, which the
@@ -38,7 +37,7 @@ def payload_schema(wire_type: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     redocly, so there is no fixed shape a dataclass could express.
     """
     schema = TypeAdapter(wire_type).json_schema(ref_template=SCHEMA_REF_TEMPLATE)
-    definitions = schema.pop("$defs", {})
+    definitions: dict[str, dict[str, JsonValue]] = schema.pop("$defs", {})
 
     if is_dataclass(wire_type):
         properties = schema.get("properties", {})

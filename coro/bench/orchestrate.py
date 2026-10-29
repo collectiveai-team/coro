@@ -3,27 +3,32 @@
 from __future__ import annotations
 
 import json
-import platform
-import shutil
-from collections.abc import Mapping
-from dataclasses import asdict
-from datetime import datetime, timezone
+import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
-from coro.bench.errors import ServerUnreachableError
 from coro.bench.models.performance import PerRepSummary
 from coro.bench.models.resource import ResourceBaseline
 from coro.bench.performance import (
     compute_per_rep_summary,
     write_performance_summary,
 )
-from coro.bench.sampling import Sampler, sample_resource_baseline
-from coro.bench.stm import hyp_response_to_stm
-from coro.bench.transport import (
-    _is_connection_refused,
-    select_transport,
+from coro.bench.quality_artifacts import run_quality_scoring, run_quality_scoring_with_skip
+from coro.bench.run_artifacts import (
+    audio_duration,
+    fetch_health,
+    infer_hw_profile,
+    write_hyp,
+    write_manifest,
+    write_ref,
 )
+from coro.bench.sampling import SampleFn, Sampler, sample_resource_baseline
+from coro.bench.transport import TranscribeFn, select_transport
+
+if TYPE_CHECKING:
+    from coro.bench.models.response import TranscriptResponse
+    from coro.bench.models.workload import WorkloadItem
 
 
 def _finalize_rep_summary(
@@ -51,9 +56,73 @@ def _finalize_rep_summary(
         rep_summary.time_to_first_delta_s = round(ttft, 6)
 
 
+@dataclass(frozen=True)
+class _SampledRun:
+    """What every measured rep shares: the transport, the server and the sampler setup."""
+
+    transcribe: TranscribeFn
+    base_url: str
+    server_pid: int
+    sample_fn: SampleFn | None
+    sample_interval: float
+    memory_baseline: ResourceBaseline
+    perf_dir: Path
+
+
+def _measure_rep(
+    run: _SampledRun,
+    *,
+    item_id: str,
+    audio_path: Path,
+    audio_seconds: float,
+    rep: int,
+) -> tuple[TranscriptResponse, PerRepSummary]:
+    """Transcribe one item once while sampling the server, and write its Resource CSV."""
+    sampler = Sampler(pid=run.server_pid, interval=run.sample_interval, sample_fn=run.sample_fn)
+    sampler.start()
+
+    req_start = time.monotonic()
+    result, ttft = run.transcribe(run.base_url, audio_path)
+    wall_seconds = time.monotonic() - req_start
+
+    sampler.stop()
+
+    throughput = audio_seconds / wall_seconds if wall_seconds > 0 and audio_seconds > 0 else None
+    hw_profile = infer_hw_profile(sampler.samples)
+
+    sampler.backfill(
+        wall_seconds=round(wall_seconds, 3),
+        audio_seconds=round(audio_seconds, 3),
+        transcription_throughput=round(throughput, 6) if throughput else "",
+        time_to_first_delta_s=round(ttft, 6) if ttft is not None else "",
+        observed_hardware_profile=hw_profile,
+        **asdict(run.memory_baseline),
+    )
+
+    csv_path = run.perf_dir / f"resource_{item_id}_rep{rep}.csv"
+    sampler.write_csv(csv_path)
+
+    rep_summary = compute_per_rep_summary(csv_path)
+    _finalize_rep_summary(
+        rep_summary,
+        wall_seconds=wall_seconds,
+        audio_seconds=audio_seconds,
+        throughput=throughput,
+        hw_profile=hw_profile,
+        memory_baseline=run.memory_baseline,
+        ttft=ttft,
+    )
+    return result, rep_summary
+
+
+def _make_dirs(out_dir: Path, *names: str) -> None:
+    for name in names:
+        (out_dir / name).mkdir(parents=True, exist_ok=True)
+
+
 def run_workload(
     *,
-    items: list[dict[str, Any]],
+    items: list[WorkloadItem],
     base_url: str,
     out_dir: Path,
     reps: int,
@@ -67,19 +136,17 @@ def run_workload(
     resp_dir = out_dir / "responses"
     hyp_dir = out_dir / "hyp"
     ref_dir = out_dir / "ref"
-    resp_dir.mkdir(parents=True, exist_ok=True)
-    hyp_dir.mkdir(parents=True, exist_ok=True)
-    ref_dir.mkdir(parents=True, exist_ok=True)
+    _make_dirs(out_dir, "responses", "hyp", "ref")
 
     transcribe = select_transport(deepgram=deepgram, language=language)
-    server_health = _fetch_health(base_url)
+    server_health = fetch_health(base_url)
 
     for item in items:
         item_id = item["item_id"]
         audio_path = item["audio_path"]
         ref_stm_path = item.get("ref_stm_path")
         if not item.get("audio_seconds"):
-            item["audio_seconds"] = round(_audio_duration(audio_path), 3)
+            item["audio_seconds"] = round(audio_duration(audio_path), 3)
 
         for rep in range(1, reps + 1):
             result, _ = transcribe(base_url, audio_path)
@@ -87,18 +154,18 @@ def run_workload(
             resp_path.write_text(json.dumps(result, indent=2))
 
             if rep == 1 and ref_stm_path is not None:
-                _write_hyp(hyp_dir, item_id, result)
-                _write_ref(ref_dir, item_id, ref_stm_path)
+                write_hyp(hyp_dir, item_id, result)
+                write_ref(ref_dir, item_id, ref_stm_path)
 
     if subcommand == "quality":
-        _run_quality_scoring(
+        run_quality_scoring(
             out_dir=out_dir,
             items=items,
             der_collar=der_collar,
             der_regions=der_regions,
         )
 
-    _write_manifest(
+    write_manifest(
         out_dir=out_dir,
         items=items,
         server_health=server_health,
@@ -112,12 +179,12 @@ def run_workload(
 
 def run_all_workload(
     *,
-    items: list[dict[str, Any]],
+    items: list[WorkloadItem],
     base_url: str,
     out_dir: Path,
     reps: int,
     server_pid: int,
-    sample_fn: Any | None = None,
+    sample_fn: SampleFn | None = None,
     sample_interval: float = 0.25,
     cli_args: list[str] | None = None,
     der_collar: float = 0.0,
@@ -127,25 +194,28 @@ def run_all_workload(
     deepgram: bool = False,
     language: str | None = None,
 ) -> None:
-    import time
-
     resp_dir = out_dir / "responses"
     perf_dir = out_dir / "performance"
     hyp_dir = out_dir / "hyp"
     ref_dir = out_dir / "ref"
-    resp_dir.mkdir(parents=True, exist_ok=True)
-    perf_dir.mkdir(parents=True, exist_ok=True)
-    hyp_dir.mkdir(parents=True, exist_ok=True)
-    ref_dir.mkdir(parents=True, exist_ok=True)
+    _make_dirs(out_dir, "responses", "performance", "hyp", "ref")
 
     transcribe = select_transport(stream=stream, deepgram=deepgram, language=language)
-    server_health = _fetch_health(base_url)
+    server_health = fetch_health(base_url)
 
     # Warm up over the same endpoint the run will measure, so the first
     # measured request is not the one paying that endpoint's setup cost.
     if warmup_audio is not None:
         transcribe(base_url, warmup_audio)
-    memory_baseline = sample_resource_baseline(server_pid, sample_fn=sample_fn)
+    run = _SampledRun(
+        transcribe=transcribe,
+        base_url=base_url,
+        server_pid=server_pid,
+        sample_fn=sample_fn,
+        sample_interval=sample_interval,
+        memory_baseline=sample_resource_baseline(server_pid, sample_fn=sample_fn),
+        perf_dir=perf_dir,
+    )
 
     per_item_reps: dict[str, list[PerRepSummary]] = {}
 
@@ -153,72 +223,36 @@ def run_all_workload(
         item_id = item["item_id"]
         audio_path = item["audio_path"]
         ref_stm_path = item.get("ref_stm_path")
-        audio_seconds = _audio_duration(audio_path)
+        audio_seconds = audio_duration(audio_path)
         item["audio_seconds"] = round(audio_seconds, 3)
         rep_summaries: list[PerRepSummary] = []
 
         for rep in range(1, reps + 1):
-            sampler = Sampler(
-                pid=server_pid,
-                interval=sample_interval,
-                sample_fn=sample_fn,
+            result, rep_summary = _measure_rep(
+                run, item_id=item_id, audio_path=audio_path, audio_seconds=audio_seconds, rep=rep
             )
-            sampler.start()
-
-            req_start = time.monotonic()
-            result, ttft = transcribe(base_url, audio_path)
-            wall_seconds = time.monotonic() - req_start
-
-            sampler.stop()
-
-            throughput = (
-                audio_seconds / wall_seconds if wall_seconds > 0 and audio_seconds > 0 else None
-            )
-            hw_profile = _infer_hw_profile(sampler.samples)
-
-            sampler.backfill(
-                wall_seconds=round(wall_seconds, 3),
-                audio_seconds=round(audio_seconds, 3),
-                transcription_throughput=round(throughput, 6) if throughput else "",
-                time_to_first_delta_s=round(ttft, 6) if ttft is not None else "",
-                observed_hardware_profile=hw_profile,
-                **asdict(memory_baseline),
-            )
-
-            csv_path = perf_dir / f"resource_{item_id}_rep{rep}.csv"
-            sampler.write_csv(csv_path)
 
             resp_path = resp_dir / f"{item_id}_rep{rep}.json"
             resp_path.write_text(json.dumps(result, indent=2))
 
             if rep == 1 and ref_stm_path is not None:
-                _write_hyp(hyp_dir, item_id, result)
-                _write_ref(ref_dir, item_id, ref_stm_path)
+                write_hyp(hyp_dir, item_id, result)
+                write_ref(ref_dir, item_id, ref_stm_path)
 
-            rep_summary = compute_per_rep_summary(csv_path)
-            _finalize_rep_summary(
-                rep_summary,
-                wall_seconds=wall_seconds,
-                audio_seconds=audio_seconds,
-                throughput=throughput,
-                hw_profile=hw_profile,
-                memory_baseline=memory_baseline,
-                ttft=ttft,
-            )
             rep_summaries.append(rep_summary)
 
         per_item_reps[item_id] = rep_summaries
 
     write_performance_summary(perf_dir, per_item_reps)
 
-    _run_quality_scoring_with_skip(
+    run_quality_scoring_with_skip(
         out_dir=out_dir,
         items=items,
         der_collar=der_collar,
         der_regions=der_regions,
     )
 
-    _write_manifest(
+    write_manifest(
         out_dir=out_dir,
         items=items,
         server_health=server_health,
@@ -232,240 +266,14 @@ def run_all_workload(
     )
 
 
-def _run_quality_scoring_with_skip(
-    *,
-    out_dir: Path,
-    items: list[dict[str, Any]],
-    der_collar: float,
-    der_regions: str,
-) -> None:
-    from coro.bench.models.quality import QualitySummary, ScoreResult
-    from coro.bench.quality import combine_items, score_item
-
-    quality_dir = out_dir / "quality"
-    quality_dir.mkdir(parents=True, exist_ok=True)
-
-    hyp_dir = out_dir / "hyp"
-    ref_dir = out_dir / "ref"
-
-    item_results: list[ScoreResult] = []
-    n_skipped = 0
-
-    for item in items:
-        item_id = item["item_id"]
-        ref_stm_path = item.get("ref_stm_path")
-
-        if ref_stm_path is None:
-            n_skipped += 1
-            continue
-
-        hyp_path = hyp_dir / f"{item_id}.hyp.stm"
-        ref_path = ref_dir / f"{item_id}.ref.stm"
-
-        scored = score_item(
-            ref_path,
-            hyp_path,
-            der_collar=der_collar,
-            der_regions=der_regions,
-        )
-
-        scored.session_id = item_id
-        scored.audio_seconds = item.get("audio_seconds", 0.0)
-
-        artifact: dict[str, Any] = {
-            "session_id": item_id,
-            "audio_seconds": item.get("audio_seconds", 0.0),
-            "metrics": asdict(scored.metrics) if scored.metrics is not None else None,
-        }
-        if scored.diarization is not None:
-            artifact["diarization"] = asdict(scored.diarization)
-        if scored.error is not None:
-            artifact["error"] = asdict(scored.error)
-
-        (quality_dir / f"{item_id}.json").write_text(json.dumps(artifact, indent=2))
-
-        item_results.append(scored)
-
-    summary = combine_items(item_results) if item_results else QualitySummary()
-    summary.n_skipped = n_skipped
-    (quality_dir / "summary.json").write_text(json.dumps(asdict(summary), indent=2))
-
-
-def _run_quality_scoring(
-    *,
-    out_dir: Path,
-    items: list[dict[str, Any]],
-    der_collar: float,
-    der_regions: str,
-) -> None:
-    from coro.bench.models.quality import ScoreResult
-    from coro.bench.quality import combine_items, score_item
-
-    quality_dir = out_dir / "quality"
-    quality_dir.mkdir(parents=True, exist_ok=True)
-
-    hyp_dir = out_dir / "hyp"
-    ref_dir = out_dir / "ref"
-
-    item_results: list[ScoreResult] = []
-
-    for item in items:
-        item_id = item["item_id"]
-        hyp_path = hyp_dir / f"{item_id}.hyp.stm"
-        ref_path = ref_dir / f"{item_id}.ref.stm"
-
-        scored = score_item(
-            ref_path,
-            hyp_path,
-            der_collar=der_collar,
-            der_regions=der_regions,
-        )
-
-        scored.session_id = item_id
-        scored.audio_seconds = item.get("audio_seconds", 0.0)
-
-        artifact: dict[str, Any] = {
-            "session_id": item_id,
-            "audio_seconds": item.get("audio_seconds", 0.0),
-            "metrics": asdict(scored.metrics) if scored.metrics is not None else None,
-        }
-        if scored.error is not None:
-            artifact["error"] = asdict(scored.error)
-
-        (quality_dir / f"{item_id}.json").write_text(json.dumps(artifact, indent=2))
-
-        item_results.append(scored)
-
-    summary = combine_items(item_results)
-    (quality_dir / "summary.json").write_text(json.dumps(asdict(summary), indent=2))
-
-
-def _fetch_health(base_url: str) -> Any:
-    """Fetch and parse /health JSON from the server.
-
-    Raises ServerUnreachableError if the TCP connection is refused, so the
-    bench fails fast with a clear actionable message instead of crashing
-    later inside transcribe_audio with a raw urllib stack trace.
-
-    Other failures (e.g. 404, JSON parse errors) are swallowed and return an
-    empty mapping to preserve the previous behavior of treating /health as
-    optional.
-    """
-    import urllib.request
-
-    try:
-        with urllib.request.urlopen(f"{base_url.rstrip('/')}/health", timeout=10) as resp:
-            return json.loads(resp.read())
-    except Exception as exc:
-        if _is_connection_refused(exc):
-            raise ServerUnreachableError(base_url, cause=exc) from exc
-        empty: dict[str, Any] = {}
-        return empty
-
-
-def _write_hyp(hyp_dir: Path, item_id: str, result: dict[str, Any]) -> None:
-    stm_text = hyp_response_to_stm(result, item_id)
-    if stm_text:
-        (hyp_dir / f"{item_id}.hyp.stm").write_text(stm_text)
-
-
-def _write_ref(ref_dir: Path, item_id: str, ref_stm_path: Path) -> None:
-    """Copy the Reference STM into the run's ``ref/`` directory, overwriting any stale copy."""
-    shutil.copy2(ref_stm_path, ref_dir / f"{item_id}.ref.stm")
-
-
-def _write_manifest(
-    *,
-    out_dir: Path,
-    items: list[dict[str, Any]],
-    server_health: dict[str, Any],
-    cli_args: list[str] | None,
-    reps: int,
-    subcommand: str,
-    stream: bool = False,
-    deepgram: bool = False,
-    language: str | None = None,
-    warmup: bool = False,
-) -> None:
-    git_sha = _git_sha()
-    manifest = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "hostname": platform.node(),
-        "git_sha": git_sha,
-        "cli_args": cli_args or [],
-        "subcommand": subcommand,
-        "reps": reps,
-        "warmup": warmup,
-        "stream": stream,
-        # Which wire surface produced the responses: the Deepgram endpoint
-        # carries per-word speakers, the OpenAI one only a segment summary.
-        "deepgram": deepgram,
-        # Experimental decoder condition. None deliberately means automatic
-        # language detection and must remain distinguishable from forced runs.
-        "language": language,
-        "workload_set": [
-            {
-                "item_id": it["item_id"],
-                "audio_path": str(it["audio_path"]),
-                "ref_stm_path": str(it.get("ref_stm_path")) if it.get("ref_stm_path") else None,
-            }
-            for it in items
-        ],
-        "server_health": server_health,
-        "versions": _collect_versions(),
-    }
-    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
-
-
-def _git_sha() -> str:
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        return result.stdout.strip()
-    except Exception:
-        return "unknown"
-
-
-def _collect_versions() -> Mapping[str, str]:
-    import importlib.metadata
-    import subprocess
-
-    versions: dict[str, str] = {}
-    for pkg in ("coro", "meeteval"):
-        try:
-            versions[pkg] = importlib.metadata.version(pkg)
-        except Exception:
-            pass
-
-    try:
-        result = subprocess.run(
-            ["ffmpeg", "-version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        first_line = result.stdout.splitlines()[0] if result.stdout else ""
-        versions["ffmpeg"] = first_line
-    except Exception:
-        pass
-
-    return versions
-
-
 def run_performance_workload(
     *,
-    items: list[dict[str, Any]],
+    items: list[WorkloadItem],
     base_url: str,
     out_dir: Path,
     reps: int,
     server_pid: int,
-    sample_fn: Any | None = None,
+    sample_fn: SampleFn | None = None,
     sample_interval: float = 0.25,
     cli_args: list[str] | None = None,
     stream: bool = False,
@@ -473,78 +281,45 @@ def run_performance_workload(
     language: str | None = None,
     warmup_audio: Path | None = None,
 ) -> None:
-    import time
-
     resp_dir = out_dir / "responses"
     perf_dir = out_dir / "performance"
-    resp_dir.mkdir(parents=True, exist_ok=True)
-    perf_dir.mkdir(parents=True, exist_ok=True)
+    _make_dirs(out_dir, "responses", "performance")
 
     transcribe = select_transport(stream=stream, deepgram=deepgram, language=language)
-    server_health = _fetch_health(base_url)
+    server_health = fetch_health(base_url)
     # Warm up over the same endpoint the run will measure.
     if warmup_audio is not None:
         transcribe(base_url, warmup_audio)
-    memory_baseline = sample_resource_baseline(server_pid, sample_fn=sample_fn)
+    run = _SampledRun(
+        transcribe=transcribe,
+        base_url=base_url,
+        server_pid=server_pid,
+        sample_fn=sample_fn,
+        sample_interval=sample_interval,
+        memory_baseline=sample_resource_baseline(server_pid, sample_fn=sample_fn),
+        perf_dir=perf_dir,
+    )
     per_item_reps: dict[str, list[PerRepSummary]] = {}
 
     for item in items:
         item_id = item["item_id"]
         audio_path = item["audio_path"]
-        audio_seconds = _audio_duration(audio_path)
+        audio_seconds = audio_duration(audio_path)
         rep_summaries: list[PerRepSummary] = []
 
         for rep in range(1, reps + 1):
-            sampler = Sampler(
-                pid=server_pid,
-                interval=sample_interval,
-                sample_fn=sample_fn,
+            result, rep_summary = _measure_rep(
+                run, item_id=item_id, audio_path=audio_path, audio_seconds=audio_seconds, rep=rep
             )
-            sampler.start()
-
-            req_start = time.monotonic()
-            result, ttft = transcribe(base_url, audio_path)
-            wall_seconds = time.monotonic() - req_start
-
-            sampler.stop()
-
-            throughput = (
-                audio_seconds / wall_seconds if wall_seconds > 0 and audio_seconds > 0 else None
-            )
-            hw_profile = _infer_hw_profile(sampler.samples)
-
-            sampler.backfill(
-                wall_seconds=round(wall_seconds, 3),
-                audio_seconds=round(audio_seconds, 3),
-                transcription_throughput=round(throughput, 6) if throughput else "",
-                time_to_first_delta_s=round(ttft, 6) if ttft is not None else "",
-                observed_hardware_profile=hw_profile,
-                **asdict(memory_baseline),
-            )
-
-            csv_path = perf_dir / f"resource_{item_id}_rep{rep}.csv"
-            sampler.write_csv(csv_path)
-
             resp_path = resp_dir / f"{item_id}_rep{rep}.json"
             resp_path.write_text(json.dumps(result, indent=2))
-
-            rep_summary = compute_per_rep_summary(csv_path)
-            _finalize_rep_summary(
-                rep_summary,
-                wall_seconds=wall_seconds,
-                audio_seconds=audio_seconds,
-                throughput=throughput,
-                hw_profile=hw_profile,
-                memory_baseline=memory_baseline,
-                ttft=ttft,
-            )
             rep_summaries.append(rep_summary)
 
         per_item_reps[item_id] = rep_summaries
 
     write_performance_summary(perf_dir, per_item_reps)
 
-    _write_manifest(
+    write_manifest(
         out_dir=out_dir,
         items=items,
         server_health=server_health,
@@ -556,40 +331,3 @@ def run_performance_workload(
         language=language,
         warmup=warmup_audio is not None,
     )
-
-
-def _audio_duration(audio_path: Path) -> float:
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                str(audio_path),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        return float(result.stdout.strip())
-    except Exception:
-        return 0.0
-
-
-def _infer_hw_profile(samples: list[dict[str, Any]]) -> str:
-    """Infer hardware profile from collected resource samples.
-
-    Returns ``"cpu+gpu"`` if any sample contains non-empty GPU metrics
-    (either VRAM usage or GPU utilisation), otherwise ``"cpu-only"``.
-    """
-    for row in samples:
-        vram = row.get("server_vram_mib", "")
-        util = row.get("gpu_util_pct", "")
-        if vram not in ("", None) or util not in ("", None):
-            return "cpu+gpu"
-    return "cpu-only"

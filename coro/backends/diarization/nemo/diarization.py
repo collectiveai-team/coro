@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-from typing import Any
+from typing import TYPE_CHECKING, Protocol, cast
 
 import numpy as np
 import torch
@@ -16,12 +15,23 @@ from coro.backends.diarization.nemo.postprocessing import (
     resolve_postprocessing_yaml,
 )
 from coro.backends.diarization.segments import convert_diarization_segments
+from coro.core.logger import get_logger
 from coro.core.models import SpeakerSegment
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from coro.backends.diarization.nemo.sortformer import (
+        SortformerDiarizationModel,
+        SortformerModel,
+    )
+
+logger = get_logger(__name__)
 
 
-class NemoDiarizationAdapter:
+class _EvalModeModule(Protocol):
+    def eval(self) -> object: ...
+
+
+class NemoDiarizationAdapter[M: SortformerModel]:
     """DiarizationAdapter that wraps a NeMo Sortformer model.
 
     Concurrency policy: **concurrent**. The adapter calls the model's
@@ -38,7 +48,7 @@ class NemoDiarizationAdapter:
 
     def __init__(
         self,
-        model,
+        model: M,
         *,
         postprocessing_yaml: str | None = None,
         max_speakers: int = DEFAULT_MAX_SPEAKERS,
@@ -48,7 +58,7 @@ class NemoDiarizationAdapter:
         self._max_speakers = max_speakers
 
     @property
-    def model(self):
+    def model(self) -> M:
         """The wrapped Sortformer model.
 
         Exposed so the diarization Backend Adapter Factory can build the
@@ -114,7 +124,7 @@ class NemoDiarizationAdapter:
         return int(getattr(encoder, "subsampling_factor", 8) or 8)
 
 
-def prepare_for_inference(model) -> None:
+def prepare_for_inference(model: _EvalModeModule) -> None:
     """Put a Sortformer model into the fixed state ``diarize()`` would set per call.
 
     NeMo's ``diarize()`` switches to eval mode and zeroes the preprocessor's
@@ -139,7 +149,7 @@ def build_nemo_diarization_adapter(
     device: str = "auto",
     postprocessing: str | None = None,
     max_speakers: int = DEFAULT_MAX_SPEAKERS,
-) -> NemoDiarizationAdapter:
+) -> NemoDiarizationAdapter[SortformerDiarizationModel]:
     """Construct and return a NemoDiarizationAdapter.
 
     Args:
@@ -162,14 +172,12 @@ def build_nemo_diarization_adapter(
         device,
     )
     map_location = torch.device(device) if device != "auto" else None
-    model: Any = SortformerEncLabelModel.from_pretrained(
-        model_diarization,
-        map_location=map_location,
-    )
+    loaded = SortformerEncLabelModel.from_pretrained(model_diarization, map_location=map_location)
+    model = cast("SortformerEncLabelModel", loaded)  # noqa: BTTOOL004 -- NeMo's loader is unannotated; its return_config branch infers `| str`, never taken here
     prepare_for_inference(model)
     logger.info("Diarization model loaded on device '%s'.", getattr(model, "device", "unknown"))
     return NemoDiarizationAdapter(
-        model,
+        cast("SortformerDiarizationModel", model),  # noqa: BTTOOL004 -- submodules resolve through nn.Module.__getattr__, so the static type names none of these members
         postprocessing_yaml=postprocessing_yaml,
         max_speakers=max_speakers,
     )

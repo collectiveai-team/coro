@@ -51,6 +51,99 @@ repo = "https://github.com/betterleaks/betterleaks"
 rev = "v1.5.0"
 hooks = [{ id = "betterleaks", priority = 0 }]
 
+# MARK: agents-conventional-commits
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "agents-conventional-commits"
+name = "agents-conventional-commits (commit-msg)"
+entry = "uv run --no-sync botica lint --select conventional-commits --commit-msg"
+language = "system"
+stages = ["commit-msg"]
+
+# MARK: no-ai-coauthorship
+[[repos.hooks]]
+id = "no-ai-coauthorship"
+name = "no-ai-coauthorship (commit-msg)"
+entry = "uv run --no-sync botica lint --select no-ai-coauthorship --commit-msg"
+language = "system"
+stages = ["commit-msg"]
+
+# MARK: jscpd
+# The threshold sits just above the repository's 2.96% at adoption.
+[[repos.hooks]]
+id = "jscpd"
+name = "jscpd (copy-paste duplication)"
+entry = "npx --yes jscpd@5.4.2 . --threshold 3 --ignore \"**/uv.lock,**/poetry.lock,**/Pipfile.lock,**/package-lock.json,**/pnpm-lock.yaml,**/yarn.lock,**/bun.lock,**/bun.lockb,**/Cargo.lock,**/go.sum,**/composer.lock,**/Gemfile.lock\""
+language = "system"
+pass_filenames = false
+priority = 2
+
+# MARK: botica
+# botica is a uv dependency (group `botica`), so dependabot moves its version in uv.lock.
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "botica"
+name = "botica"
+entry = "uv run --no-sync botica lint --scope file --force-exclude"
+language = "system"
+types = ["file"]
+verbose = true
+priority = 2
+
+[[repos.hooks]]
+id = "botica-project"
+name = "botica (rules of project scope)"
+entry = "uv run --no-sync botica lint --scope project"
+language = "system"
+pass_filenames = false
+always_run = true
+verbose = true
+priority = 2
+
+# Fix with `botica rules export --format agents-md --output AGENTS.md` and `--format abide`.
+[[repos.hooks]]
+id = "botica-agents-md"
+name = "botica (block of the judgment rules in AGENTS.md)"
+entry = "uv run --no-sync botica rules export --format agents-md --output AGENTS.md --check"
+language = "system"
+pass_filenames = false
+always_run = true
+priority = 2
+
+[[repos.hooks]]
+id = "botica-rubric"
+name = "botica (rubric of abide)"
+entry = "uv run --no-sync botica rules export --format abide --check"
+language = "system"
+pass_filenames = false
+always_run = true
+priority = 2
+
+# MARK: hadolint
+# DL3008: Debian and Ubuntu drop old package versions from their archives,
+# https://github.com/hadolint/hadolint/issues/884
+[[repos]]
+repo = "https://github.com/AleksaC/hadolint-py"
+rev = "v2.15.1"
+hooks = [{ id = "hadolint", args = ["--failure-threshold=warning", "--ignore=DL3008"], priority = 2 }]
+
+# MARK: docker-compose-config
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "docker-compose-config"
+name = "docker compose config"
+entry = "sh -c 'status=0; for file do docker compose --file \"$file\" config --quiet --no-interpolate --no-env-resolution || status=1; done; exit $status' --"
+language = "system"
+files = '(^|/)(docker-)?compose[^/]*\.ya?ml$'
+types = ["yaml"]
+priority = 2
+
 # MARK: validate-pyproject
 [[repos]]
 repo = "https://github.com/abravalheri/validate-pyproject"
@@ -91,13 +184,14 @@ types = ["python"]
 pass_filenames = false
 priority = 2
 
-# MARK: ast-grep
+# MARK: deptry
+# In the project's venv, not `uvx`: deptry maps import names through the installed packages.
 [[repos.hooks]]
-id = "ast-grep"
-name = "ast-grep"
-entry = "uvx --from ast-grep-cli ast-grep scan"
+id = "deptry"
+name = "deptry (unused/missing/misplaced dependencies)"
+entry = "uv run --no-sync --with deptry==0.25.1 deptry ."
 language = "system"
-types = ["python"]
+types_or = ["python", "toml"]
 pass_filenames = false
 priority = 2
 
@@ -111,46 +205,13 @@ priority = 2
 # therefore finds nothing in a clean CI checkout, making the gate silently
 # vacuous. Scanning tests/ explicitly keeps `prek run --all-files` honest.
 #
-# --baseline records the findings that predate adoption, so only NEW findings
-# fail. Config (severity tiers) lives in pyproject.toml [tool.falsegreen].
+# Config (severity tiers) lives in pyproject.toml [tool.falsegreen].
 [[repos.hooks]]
 id = "falsegreen"
 name = "falsegreen"
-entry = "uvx falsegreen==0.9.2 tests/ --baseline .falsegreen-baseline.json --summary"
+entry = "uvx falsegreen==0.9.2 tests/ --summary"
 language = "system"
 types = ["python"]
-pass_filenames = false
-priority = 2
-
-# MARK: adr-numbering
-# Repo-layout checks live here rather than in tests/, which is the package's own
-# suite: neither of the next two hooks imports coro or exercises any behaviour.
-# They read the tree, so they are lint, and putting them in pytest made the suite
-# fail for reasons that had nothing to do with the software.
-#
-# An ADR number is an identifier cited by number alone, so a duplicate makes every
-# citation ambiguous. This has happened six times; nothing checked for it.
-[[repos.hooks]]
-id = "adr-numbering"
-name = "adr numbering"
-entry = "uv run --no-sync python scripts/check_adr_numbering.py"
-language = "system"
-files = "^docs/adr/"
-pass_filenames = false
-priority = 2
-
-# MARK: flicker-rule-rejected
-# ADR 0014 dropped the sandwich rule after measuring it. This asserts both halves
-# of that: the entry point may not be referenced outside its own module, its tests
-# and that ADR, and the module recording the measurement must not be deleted. The
-# script names the symbol; this comment deliberately does not, so the allow list
-# stays as small as the invariant needs.
-[[repos.hooks]]
-id = "flicker-rule-rejected"
-name = "flicker rule stays rejected"
-entry = "uv run --no-sync python scripts/check_flicker_rule_rejected.py"
-language = "system"
-types_or = ["python", "markdown"]
 pass_filenames = false
 priority = 2
 

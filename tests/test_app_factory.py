@@ -1,208 +1,123 @@
-"""Cycle 1: app factory + /health endpoint shape.
+"""The app factory: /health shape, Server Warmup and diarization at startup.
 
-Tests that create_app() produces a FastAPI app whose /health endpoint returns
-the expected shape without loading any real ASR model.
+Startup goes through the ASR and Diarization Backend Adapter Factories, which
+serve in-memory adapters here, so no model is loaded and no network is used.
 """
 
+from __future__ import annotations
+
 import logging
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+from starlette.testclient import TestClient
 
 from coro.app import create_app
-from coro.runtime import RuntimeState
+from coro.backends.asr import factory as asr_factory
+from coro.backends.diarization import factory as diarization_factory
+from coro.core.models import SpeakerSegment
 from coro.settings import ServerSettings
+from support.adapters import FixedDiarization, RecordingASR
+
+CANARY = {
+    "backend_asr": "onnx-canary-split",
+    "model_asr": "collectiveai/canary-1b-v2-onnx-split-int8",
+    "asr_fallback_language": "es",
+}
+WHISPER = {"backend_asr": "faster-whisper", "model_asr": "tiny", "asr_fallback_language": "es"}
 
 
 @pytest.fixture
-def test_settings():
-    """Minimal settings object suitable for create_app in tests."""
-    return ServerSettings()
+def served_asr(monkeypatch) -> RecordingASR:
+    """Serve the ASR Backend Adapter Factory an in-memory adapter."""
+    adapter = RecordingASR()
+    monkeypatch.setattr(asr_factory, "build_asr_adapter", lambda settings: adapter)
+    return adapter
+
+
+def start(settings: ServerSettings):
+    """Start the app through its lifespan and return the /health body."""
+    with TestClient(create_app(settings)) as client:
+        return client.get("/health").json()
 
 
 @pytest.fixture
-def app(test_settings):
-    """Create a test app with a fake RuntimeState injected (no real model)."""
-    from fastapi import FastAPI
-
-    from coro.app import create_app
-
-    application: FastAPI = create_app(test_settings)
-    # Inject RuntimeState directly — bypasses lifespan and avoids real model init.
-    application.state.runtime = RuntimeState()
-    return application
-
-
-@pytest.mark.asyncio
-async def test_health_response_has_required_keys(app):
-    """GET /health returns status, ready, startup selection, and readiness keys."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+async def unstarted_health():
+    """/health of an app whose lifespan has not run, so no ASR Adapter is loaded."""
+    transport = ASGITransport(app=create_app(ServerSettings()))
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/health")
-
     assert response.status_code == 200
-    body = response.json()
-    assert "status" in body
-    assert "ready" in body
-    assert "startup_selection" in body
-    assert "capability_readiness" in body
+    return response.json()
 
 
 @pytest.mark.asyncio
-async def test_health_status_is_ok(app):
-    """GET /health returns status='ok'."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/health")
-
-    assert response.json()["status"] == "ok"
+async def test_health_response_has_required_keys(unstarted_health):
+    assert {"status", "ready", "startup_selection", "capability_readiness"} <= set(unstarted_health)
 
 
 @pytest.mark.asyncio
-async def test_health_not_ready_when_no_asr_adapter(app):
-    """GET /health returns ready=False when no ASR adapter is loaded."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/health")
-
-    assert response.json()["ready"] is False
+async def test_health_status_is_ok(unstarted_health):
+    assert unstarted_health["status"] == "ok"
 
 
 @pytest.mark.asyncio
-async def test_warmup_disabled_skips_warmup_and_reports_ready(caplog):
-    """CORO_WARMUP=disabled skips Server Warmup and reports ready."""
-    from unittest.mock import patch
+async def test_health_not_ready_when_no_asr_adapter(unstarted_health):
+    assert unstarted_health["ready"] is False
 
-    from starlette.testclient import TestClient
 
-    with patch("coro.backends.asr.faster_whisper.build_asr_adapter") as mock_build:
-        mock_build.return_value = object()
-        settings = ServerSettings(warmup="disabled")
-        application = create_app(settings)
+def test_warmup_disabled_reports_ready_without_transcribing(served_asr):
+    health = start(ServerSettings(_env_file=None, warmup="disabled"))
 
-        with caplog.at_level(logging.WARNING, logger="coro.app"), TestClient(application) as client:
-            response = client.get("/health")
+    assert (health["warmup_ready"], health["ready"]) == (True, True)
+    assert served_asr.window_sizes == []
 
-    body = response.json()
-    assert body["warmup_ready"] is True
-    assert body["ready"] is True
+
+def test_warmup_disabled_logs_that_warmup_was_skipped(served_asr, caplog):
+    with caplog.at_level(logging.WARNING, logger="coro.app"):
+        start(ServerSettings(_env_file=None, warmup="disabled"))
+
     assert any("warmup" in r.message.lower() for r in caplog.records)
 
 
-def test_warmup_passes_and_logs_the_fallback_language_for_canary(caplog):
-    """Server Warmup passes asr_fallback_language explicitly to onnx-canary-split and logs it."""
-    from unittest.mock import AsyncMock, patch
+def test_warmup_transcribes_canary_in_the_fallback_language(served_asr):
+    health = start(ServerSettings(_env_file=None, warmup="enabled", **CANARY))
 
-    from starlette.testclient import TestClient
+    assert health["warmup_ready"] is True
+    assert set(served_asr.languages) == {"es"}
 
-    with patch(
-        "coro.backends.asr.onnx_canary_split.build_onnx_canary_split_adapter", autospec=True
-    ) as mock_build:
-        mock_build.return_value = object()
-        settings = ServerSettings(
-            _env_file=None,
-            warmup="enabled",
-            backend_asr="onnx-canary-split",
-            model_asr="collectiveai/canary-1b-v2-onnx-split-int8",
-            asr_fallback_language="es",
-        )
-        application = create_app(settings)
 
-        with (
-            patch(
-                "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
-                new_callable=AsyncMock,
-                return_value=None,
-            ) as mock_transcribe,
-            caplog.at_level(logging.INFO, logger="coro.app"),
-            TestClient(application) as client,
-        ):
-            response = client.get("/health")
+def test_warmup_logs_the_fallback_language_for_canary(served_asr, caplog):
+    with caplog.at_level(logging.INFO, logger="coro.app"):
+        start(ServerSettings(_env_file=None, warmup="enabled", **CANARY))
 
-    assert response.json()["warmup_ready"] is True
-    mock_transcribe.assert_awaited_once()
-    assert mock_transcribe.call_args.kwargs["language"] == "es"
     assert any(
         "warmup" in r.message.lower() and "language=es" in r.message.lower() for r in caplog.records
     )
 
 
-def test_warmup_omits_the_language_hint_for_a_non_canary_backend():
-    """Other backends keep warming up with no language hint (unchanged behaviour)."""
-    from unittest.mock import AsyncMock, patch
+def test_warmup_omits_the_language_hint_for_a_non_canary_backend(served_asr):
+    start(ServerSettings(_env_file=None, warmup="enabled", **WHISPER))
 
-    from starlette.testclient import TestClient
-
-    with patch("coro.backends.asr.faster_whisper.build_asr_adapter") as mock_build:
-        mock_build.return_value = object()
-        settings = ServerSettings(
-            _env_file=None,
-            warmup="enabled",
-            backend_asr="faster-whisper",
-            model_asr="tiny",
-            asr_fallback_language="es",
-        )
-        application = create_app(settings)
-
-        with (
-            patch(
-                "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
-                new_callable=AsyncMock,
-                return_value=None,
-            ) as mock_transcribe,
-            TestClient(application),
-        ):
-            pass
-
-    mock_transcribe.assert_awaited_once()
-    assert mock_transcribe.call_args.kwargs["language"] is None
+    assert set(served_asr.languages) == {None}
 
 
-def test_enabled_diarization_builds_a_diarization_adapter():
-    """An enabled Backend Provider always builds an adapter — never silently ASR-only."""
-    from unittest.mock import AsyncMock, patch
+def test_enabled_diarization_builds_a_diarization_adapter(served_asr, monkeypatch):
+    """An enabled Backend Provider always builds an adapter, never silently ASR-only."""
+    diarization = FixedDiarization([SpeakerSegment(start=0.0, end=1.0, speaker=0)])
+    monkeypatch.setattr(
+        diarization_factory, "build_diarization_adapter", lambda *args, **kwargs: diarization
+    )
 
-    from starlette.testclient import TestClient
+    health = start(ServerSettings(_env_file=None, backend_diarization="nemo", **WHISPER))
 
-    diarization_adapter = object()
-    with (
-        patch("coro.backends.asr.faster_whisper.build_asr_adapter", return_value=object()),
-        patch(
-            "coro.backends.diarization.factory.build_diarization_adapter",
-            return_value=diarization_adapter,
-        ) as mock_diarization,
-        patch(
-            "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
-            new_callable=AsyncMock,
-        ),
-    ):
-        settings = ServerSettings(backend_diarization="nemo", _env_file=None)
-        application = create_app(settings)
-        with TestClient(application):
-            runtime = application.state.runtime
-
-    mock_diarization.assert_called_once()
-    assert runtime.diarization_adapter is diarization_adapter
+    assert health["capability_readiness"]["diarization"] is True
+    assert len(diarization.diarized_bytes) == 1
 
 
-def test_warmup_failure_fails_server_startup():
-    """Server Warmup failures fail server startup loudly."""
-    from unittest.mock import AsyncMock, patch
+def test_warmup_failure_fails_server_startup(monkeypatch):
+    failing = RecordingASR(error=RuntimeError("warmup failed"))
+    monkeypatch.setattr(asr_factory, "build_asr_adapter", lambda settings: failing)
 
-    from starlette.testclient import TestClient
-
-    with patch("coro.backends.asr.faster_whisper.build_asr_adapter") as mock_build:
-        mock_build.return_value = object()
-        settings = ServerSettings(warmup="enabled")
-        application = create_app(settings)
-
-        # C51 reads the empty body as "nothing can raise", but
-        # TestClient.__enter__ runs startup (and therefore warmup) inside the
-        # pytest.raises scope, so the assertion is real: drop the side_effect
-        # and this test fails with DID NOT RAISE.
-        with (  # falsegreen: ignore
-            patch(
-                "coro.pipelines.full_memory.FullMemoryPipeline.transcribe",
-                new_callable=AsyncMock,
-                side_effect=RuntimeError("warmup failed"),
-            ),
-            pytest.raises(RuntimeError, match="warmup failed"),
-            TestClient(application),
-        ):
-            pass
+    with pytest.raises(RuntimeError, match="warmup failed"):
+        start(ServerSettings(_env_file=None, warmup="enabled", **WHISPER))

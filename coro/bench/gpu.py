@@ -22,6 +22,7 @@ absence of GPU data uniformly.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Collection
 from dataclasses import dataclass, field
 
@@ -44,6 +45,52 @@ class GpuDevice:
     procs: list[tuple[int, int | None]] = field(default_factory=list)
 
 
+def _device_util(handle: object) -> float:
+    """Return the device utilisation percent, or 0.0 when NVML cannot report it."""
+    import pynvml
+
+    try:
+        return float(pynvml.nvmlDeviceGetUtilizationRates(handle).gpu)
+    except pynvml.NVMLError:
+        return 0.0
+
+
+def _device_procs(handle: object) -> list[tuple[int, int | None]]:
+    """Return ``(pid, used_bytes_or_None)`` for compute and graphics processes.
+
+    A query NVML cannot answer (e.g. graphics processes on a headless device)
+    contributes no processes instead of failing the whole sample.
+    """
+    import pynvml
+
+    procs: list[tuple[int, int | None]] = []
+    for query in (
+        pynvml.nvmlDeviceGetComputeRunningProcesses,
+        pynvml.nvmlDeviceGetGraphicsRunningProcesses,
+    ):
+        try:
+            running = query(handle)
+        except pynvml.NVMLError:
+            continue
+        for proc in running:
+            used = getattr(proc, "usedGpuMemory", None)
+            procs.append((int(proc.pid), used if isinstance(used, int) else None))
+    return procs
+
+
+def _read_device(index: int) -> GpuDevice:
+    import pynvml
+
+    handle = pynvml.nvmlDeviceGetHandleByIndex(index)
+    mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+    return GpuDevice(
+        mem_total=int(mem.total),
+        mem_used=int(mem.used),
+        util=_device_util(handle),
+        procs=_device_procs(handle),
+    )
+
+
 def _read_devices() -> list[GpuDevice] | None:
     """Read raw per-device memory, utilisation, and per-process VRAM from NVML.
 
@@ -52,52 +99,21 @@ def _read_devices() -> list[GpuDevice] | None:
     """
     try:
         import pynvml
-    except Exception:
+    except ImportError:
         return None
 
     try:
         pynvml.nvmlInit()
-    except Exception:
+    except pynvml.NVMLError:
         return None
 
     try:
-        devices: list[GpuDevice] = []
-        for i in range(pynvml.nvmlDeviceGetCount()):
-            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-            mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            try:
-                util = float(pynvml.nvmlDeviceGetUtilizationRates(handle).gpu)
-            except Exception:
-                util = 0.0
-
-            procs: list[tuple[int, int | None]] = []
-            for query in (
-                pynvml.nvmlDeviceGetComputeRunningProcesses,
-                pynvml.nvmlDeviceGetGraphicsRunningProcesses,
-            ):
-                try:
-                    for proc in query(handle):
-                        used = getattr(proc, "usedGpuMemory", None)
-                        procs.append((int(proc.pid), used if isinstance(used, int) else None))
-                except Exception:
-                    continue
-
-            devices.append(
-                GpuDevice(
-                    mem_total=int(mem.total),
-                    mem_used=int(mem.used),
-                    util=util,
-                    procs=procs,
-                )
-            )
-        return devices
-    except Exception:
+        return [_read_device(i) for i in range(pynvml.nvmlDeviceGetCount())]
+    except pynvml.NVMLError:
         return None
     finally:
-        try:
+        with contextlib.suppress(pynvml.NVMLError):
             pynvml.nvmlShutdown()
-        except Exception:
-            pass
 
 
 def _aggregate(devices: list[GpuDevice], pids: Collection[int] | None) -> GpuSample:

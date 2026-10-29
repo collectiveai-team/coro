@@ -10,11 +10,14 @@ handle the streaming factory needs).
 
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING
 
 from coro.backends.diarization.nemo.postprocessing import DEFAULT_MAX_SPEAKERS
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from coro.core.protocols import DiarizationAdapter, StreamingDiarizerFactory
 
 
@@ -27,6 +30,35 @@ def supports_streaming(provider: str) -> bool:
     return provider in _STREAMING_CAPABLE
 
 
+# Each Diarization Backend Provider's adapter builder, as (module, function),
+# imported only when its provider is selected.
+_PROVIDER_BUILDERS: dict[str, tuple[str, str]] = {
+    "nemo": ("coro.backends.diarization.nemo.diarization", "build_nemo_diarization_adapter"),
+    "pyannote": ("coro.backends.diarization.pyannote", "build_pyannote_diarization_adapter"),
+}
+
+
+def load_diarization_adapter_builder(provider: str) -> Callable[..., DiarizationAdapter]:
+    """Import and return the adapter builder of a Diarization Backend Provider.
+
+    Args:
+        provider: Diarization Backend Provider selector.
+
+    Returns:
+        The provider's builder, called with the Diarization Model Selection
+        and its provider-specific options.
+
+    Raises:
+        ValueError: If the provider is unknown.
+
+    """
+    if provider not in _PROVIDER_BUILDERS:
+        msg = f"Unknown diarization backend provider: {provider!r}"
+        raise ValueError(msg)
+    module, name = _PROVIDER_BUILDERS[provider]
+    return getattr(importlib.import_module(module), name)
+
+
 def build_diarization_adapter(
     provider: str,
     model_diarization: str,
@@ -35,6 +67,9 @@ def build_diarization_adapter(
     hf_token: str | None = None,
     postprocessing: str | None = None,
     postprocessing_max_speakers: int = DEFAULT_MAX_SPEAKERS,
+    load_builder: Callable[
+        [str], Callable[..., DiarizationAdapter]
+    ] = load_diarization_adapter_builder,
 ) -> DiarizationAdapter:
     """Build a Diarization Adapter for the configured provider.
 
@@ -48,6 +83,7 @@ def build_diarization_adapter(
             (see ADR 0010); NeMo-specific, ignored by ``pyannote``.
         postprocessing_max_speakers: Speaker-Count Post-Processing Gate
             ceiling; NeMo-specific, ignored by ``pyannote``.
+        load_builder: Returns the adapter builder of a provider.
 
     Returns:
         A ready-to-use Diarization Adapter.
@@ -56,10 +92,10 @@ def build_diarization_adapter(
         ValueError: If the provider is unknown.
 
     """
-    if provider == "nemo":
-        from coro.backends.diarization.nemo.diarization import build_nemo_diarization_adapter
+    build = load_builder(provider)
 
-        return build_nemo_diarization_adapter(
+    if provider == "nemo":
+        return build(
             model_diarization,
             device=device,
             postprocessing=postprocessing,
@@ -67,11 +103,7 @@ def build_diarization_adapter(
         )
 
     if provider == "pyannote":
-        from coro.backends.diarization.pyannote import build_pyannote_diarization_adapter
-
-        return build_pyannote_diarization_adapter(
-            model_diarization, device=device, hf_token=hf_token
-        )
+        return build(model_diarization, device=device, hf_token=hf_token)
 
     msg = f"Unknown diarization backend provider: {provider!r}"
     raise ValueError(msg)

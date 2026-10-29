@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import math
 
 from fastapi import WebSocket
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.websockets import WebSocketState
 
 from coro.api.deepgram.live_schemas import DeepgramLiveError
@@ -25,11 +25,12 @@ from coro.api.rate_limit import (
     rate_limits_of,
 )
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
+from coro.core.logger import get_logger
 from coro.pcm import PcmStreamConverter
 from coro.pipelines.live import LiveAudioSource
 from coro.pipelines.spill import SpillDirectoryError, resolve_spill_dir
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CLOSE_STREAM = "CloseStream"
 FINALIZE = "Finalize"
@@ -49,7 +50,7 @@ def socket_open(websocket: WebSocket) -> bool:
     )
 
 
-async def send_frame(websocket: WebSocket, model) -> None:
+async def send_frame(websocket: WebSocket, model: BaseModel) -> None:
     """Send a JSON frame, or nothing once either side has closed."""
     if socket_open(websocket):
         await websocket.send_text(model.model_dump_json(exclude_none=True))

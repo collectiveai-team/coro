@@ -19,6 +19,9 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 import pytest
+from support.network import LOOPBACK
+
+pytestmark = LOOPBACK
 
 OPENAI_PATH = "/v1/audio/transcriptions"
 LISTEN_PATH = "/v1/listen"
@@ -73,7 +76,7 @@ class _ArmHandler(BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002 -- BaseHTTPRequestHandler signature
         pass
 
 

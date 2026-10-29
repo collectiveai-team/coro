@@ -14,19 +14,19 @@ from flushing while the diarizer runs.
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE, AudioInput, stream_pcm_from_file
-from coro.core.protocols import ASRAdapter
+from coro.core.logger import get_logger
 from coro.core.models import (
+    PipelineStreamEvent,
     SpeakerSegment,
-    StreamEvent,
     TokenBatchEvent,
     TranscriptionResult,
 )
+from coro.core.protocols import ASRAdapter, StreamingDiarizer, StreamingDiarizerFactory
 from coro.pipelines.done_frame import StreamingDoneFrame
 from coro.pipelines.finalizer import (
     StreamingTranscriptFinalizer,
@@ -36,7 +36,7 @@ from coro.pipelines.spill_source import SpillTranscriptSource
 from coro.pipelines.transcript_store import TranscriptSpillStore
 from coro.pipelines.windowing import ASRWindowing, LanguageState
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _CHUNK_SECONDS = 1.0
 _CHUNK_LOG_INTERVAL = 10
@@ -66,7 +66,7 @@ class StreamingPipeline:
         *,
         asr: ASRAdapter,
         windowing: ASRWindowing | None = None,
-        streaming_diarizer_factory=None,
+        streaming_diarizer_factory: StreamingDiarizerFactory | None = None,
         spill_dir: str | None = None,
     ) -> None:
         self._asr = asr
@@ -139,7 +139,7 @@ class StreamingPipeline:
         *,
         language: str | None = None,
         prompt: str | None = None,
-    ):
+    ) -> AsyncIterator[PipelineStreamEvent]:
         """Yield transcript delta events, then a store-backed done frame."""
         store = TranscriptSpillStore(directory=self._spill_dir)
         outcome = _RunOutcome()
@@ -167,7 +167,7 @@ class StreamingPipeline:
         *,
         language: str | None,
         prompt: str | None,
-    ) -> AsyncIterator[StreamEvent]:
+    ) -> AsyncIterator[PipelineStreamEvent]:
         """Drive one request, yielding public events and filling ``outcome``.
 
         Shared by batch and SSE transcription so the two paths cannot drift:
@@ -218,7 +218,9 @@ class StreamingPipeline:
             )
             raise
 
-    async def _chunks(self, path: str, diarizer, outcome: _RunOutcome) -> AsyncIterator[bytes]:
+    async def _chunks(
+        self, path: str, diarizer: StreamingDiarizer | None, outcome: _RunOutcome
+    ) -> AsyncIterator[bytes]:
         """Yield PCM chunks, teeing each into the Streaming Diarization Feed."""
         total_bytes = 0
         async for chunk in stream_pcm_from_file(path, chunk_seconds=_CHUNK_SECONDS):
@@ -243,7 +245,9 @@ class StreamingPipeline:
                 )
             yield chunk
 
-    async def _finalize_diarizer(self, diarizer, outcome: _RunOutcome) -> list[SpeakerSegment]:
+    async def _finalize_diarizer(
+        self, diarizer: StreamingDiarizer | None, outcome: _RunOutcome
+    ) -> list[SpeakerSegment]:
         """Close out the Streaming Diarization Feed and return its timeline."""
         if diarizer is None:
             return []

@@ -14,16 +14,11 @@ NeMo upgrade.
 from __future__ import annotations
 
 import asyncio
-import os
 import wave
 
 import pytest
 
-REAL_MODEL_TESTS = os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") == "1"
-pytestmark = pytest.mark.skipif(
-    not REAL_MODEL_TESTS,
-    reason="Set CORO_RUN_REAL_MODEL_TESTS=1 to run with real model checkpoints.",
-)
+pytestmark = pytest.mark.real_model
 
 MODEL = "nvidia/diar_streaming_sortformer_4spk-v2"
 
@@ -61,25 +56,59 @@ def _diarize_reference(model, pcm: bytes, tmp_path):
     return lines, preds_list[0]
 
 
-def test_forward_matches_diarize(adapter, pcm, tmp_path):
-    """Same activity matrix and same segments (within NeMo's 2-decimal rounding)."""
-    from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
-    from coro.backends.diarization.segments import convert_diarization_segments
+@pytest.fixture(scope="module")
+def reference(adapter, pcm, tmp_path_factory):
+    """NeMo ``diarize()`` output on the same audio: (RTTM lines, activity matrix)."""
+    return _diarize_reference(adapter.model, pcm, tmp_path_factory.mktemp("reference"))
 
-    direct_preds = adapter._predict(pcm)
-    direct = asyncio.run(adapter.diarize_pcm(pcm))
-    ref_lines, ref_preds = _diarize_reference(adapter.model, pcm, tmp_path)
+
+class _ActivityRecorder:
+    """The real Sortformer, keeping each activity matrix its ``forward`` returns."""
+
+    def __init__(self, model):
+        self._model = model
+        self.activity = []
+
+    @property
+    def device(self):
+        return self._model.device
+
+    def forward(self, *, audio_signal, audio_signal_length):
+        preds = self._model.forward(
+            audio_signal=audio_signal, audio_signal_length=audio_signal_length
+        )
+        self.activity.append(preds.detach().cpu())
+        return preds
+
+
+def test_forward_activity_matrix_matches_diarize(adapter, pcm, reference):
+    """Same activity matrix as ``diarize()``, as the adapter's model call returns it."""
+    from coro.backends.diarization.nemo.diarization import NemoDiarizationAdapter
+
+    _, ref_preds = reference
+    recorder = _ActivityRecorder(adapter.model)
+    asyncio.run(NemoDiarizationAdapter(recorder).diarize_pcm(pcm))
+    (direct_preds,) = recorder.activity
 
     assert direct_preds.shape == ref_preds.shape
     assert (direct_preds - ref_preds.cpu()).abs().max().item() <= 1e-5
 
+
+def test_forward_segments_match_diarize(adapter, pcm, reference):
+    """Same segments as ``diarize()``, within NeMo's 2-decimal rounding."""
+    from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
+    from coro.backends.diarization.segments import convert_diarization_segments
+
+    ref_lines, _ = reference
+    direct = asyncio.run(adapter.diarize_pcm(pcm))
+
     duration = len(pcm) / (SAMPLE_RATE * BYTES_PER_SAMPLE)
-    reference = convert_diarization_segments(ref_lines, duration=duration)
-    assert [s.speaker for s in direct] == [s.speaker for s in reference]
+    expected = convert_diarization_segments(ref_lines, duration=duration)
+    assert [s.speaker for s in direct] == [s.speaker for s in expected]
     # max() over an empty pairing raises, so "no segments on either side" fails too.
     boundary_drift = max(
         abs(a - b)
-        for got, want in zip(direct, reference, strict=True)
+        for got, want in zip(direct, expected, strict=True)
         for a, b in ((got.start, want.start), (got.end, want.end))
     )
     assert boundary_drift <= 0.006  # NeMo rounds its RTTM lines to 2 decimals

@@ -46,7 +46,9 @@ def _fingerprint(**overrides) -> str:
 
 # MARK: Fingerprint Inputs
 def test_the_same_configuration_fingerprints_the_same():
-    assert _fingerprint() == _fingerprint()
+    # Pinned: a different digest for the same configuration orphans every cached
+    # window, so a change here must be deliberate (bump CACHE_FORMAT_VERSION).
+    assert _fingerprint() == "7734d711e8aee7103d5c68dddb505096"
 
 
 @pytest.mark.parametrize(
@@ -177,7 +179,8 @@ def _key(**overrides) -> str:
 
 
 def test_the_same_window_under_the_same_configuration_keys_the_same():
-    assert _key() == _key()
+    # Pinned for the same reason as the fingerprint above.
+    assert _key() == "bbede052a59ce646343f243ad5fc84f3e83d01ecff1ea0a5a04903265ee34508"
 
 
 def test_different_audio_keys_differently():

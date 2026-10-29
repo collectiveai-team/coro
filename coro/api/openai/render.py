@@ -34,6 +34,7 @@ from coro.api.openai.schemas import (
     VerboseJsonSegment,
     VerboseJsonWord,
 )
+from coro.core.models import RawWord, TranscriptWord
 from coro.core.transcript_source import (
     TranscriptSource,
     iter_text_fragments,
@@ -45,7 +46,7 @@ def _usage(duration: float) -> TranscriptionUsage:
     return TranscriptionUsage(type="duration", seconds=math.ceil(duration))
 
 
-def _timed_words(source: TranscriptSource) -> Iterator:
+def _timed_words(source: TranscriptSource) -> Iterator[TranscriptWord | RawWord]:
     """Yield the words a verbose response reports, with the raw-word fallback.
 
     The materialised projection read ``word_segments or raw_words``, falling back
@@ -178,8 +179,8 @@ def render_for_format(
             return render_verbose_json(source, language=reported_language)
         case ResponseFormat.DIARIZED_JSON:
             return render_diarized_json(source)
-
-    raise TranscriptionValidationError(
-        f"Unsupported response_format '{response_format}'.",
-        param="response_format",
-    )
+        case _:
+            raise TranscriptionValidationError(
+                f"Unsupported response_format '{response_format}'.",
+                param="response_format",
+            )

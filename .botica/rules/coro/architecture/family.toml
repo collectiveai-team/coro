@@ -1,0 +1,3 @@
+code = "ARCH"
+description = "Which code may call what: decisions that keep a measured and rejected path out of the default one."
+extends = "architecture"

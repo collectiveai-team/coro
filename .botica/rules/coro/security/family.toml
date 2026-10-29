@@ -1,0 +1,3 @@
+code = "SEC"
+description = "What the served pages of the API may contact: the defaults of third-party UIs that call out."
+extends = "security"

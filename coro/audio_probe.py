@@ -10,9 +10,10 @@ file without decoding it.
 from __future__ import annotations
 
 import asyncio
-import logging
 
-logger = logging.getLogger(__name__)
+from coro.core.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 async def _ffprobe(path: str, *args: str) -> str | None:

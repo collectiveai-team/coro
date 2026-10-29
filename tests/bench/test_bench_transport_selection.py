@@ -19,6 +19,9 @@ from typing import Any, ClassVar
 import pytest
 
 from coro.bench.transport import select_transport
+from support.network import LOOPBACK
+
+pytestmark = LOOPBACK
 
 OPENAI_PATH = "/v1/audio/transcriptions"
 LISTEN_PATH = "/v1/listen"
@@ -91,7 +94,7 @@ class _RecordingHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002 -- BaseHTTPRequestHandler signature
         pass
 
 

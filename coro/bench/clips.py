@@ -9,14 +9,14 @@ self-generated output are rejected here rather than silently scored.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
+from coro.bench.models.workload import WorkloadItem
 from coro.bench.quarantine import assert_scorable_reference
 
 _AUDIO_SUFFIXES = (".wav", ".mp3", ".flac", ".m4a", ".ogg")
 
 
-def resolve_clip_items(clips_dir: Path) -> list[dict[str, Any]]:
+def resolve_clip_items(clips_dir: Path) -> list[WorkloadItem]:
     """Return workload items for every audio file in ``clips_dir``.
 
     Each item pairs ``<stem>.<audio-ext>`` with ``<stem>.ref.stm`` (None when the
@@ -28,7 +28,7 @@ def resolve_clip_items(clips_dir: Path) -> list[dict[str, Any]]:
 
     """
     assert_scorable_reference(clips_dir)
-    items: list[dict[str, Any]] = []
+    items: list[WorkloadItem] = []
     seen: set[str] = set()
     for audio in sorted(clips_dir.iterdir() if clips_dir.is_dir() else []):
         if audio.suffix.lower() not in _AUDIO_SUFFIXES or audio.stem in seen:

@@ -11,7 +11,6 @@ deterministically by forcing that interleaving with thread events.
 
 from __future__ import annotations
 
-import os
 import threading
 
 import pytest
@@ -84,8 +83,8 @@ def _one_chunk_of_pcm() -> bytes:
     return b"\x00\x00" * int(frames * 8 * 0.01 * SAMPLE_RATE)
 
 
-def test_overlapping_streaming_requests_neither_misread_nor_retune_the_model():
-    """A returns while B is mid-call: B must still see its tier; the model stays as loaded."""
+def _run_overlapping_requests() -> _FakeSortformerModel:
+    """Force request A to return while B is mid-call, and hand back the shared model."""
     b_inside = threading.Event()
     a_returned = threading.Event()
 
@@ -97,12 +96,11 @@ def test_overlapping_streaming_requests_neither_misread_nor_retune_the_model():
             assert a_returned.wait(timeout=5), "request A never returned"
 
     model = _FakeSortformerModel(_hook)
-    factory = NemoStreamingDiarizerFactory(model, tier=TIER)
+    factory = NemoStreamingDiarizerFactory(model, tier=TIER, preprocessor=_preprocessor)
     pcm = _one_chunk_of_pcm()
 
     def _request():
         diarizer = factory()
-        diarizer._preprocessor = _preprocessor
         diarizer.ingest_pcm_chunk(pcm)
         if threading.current_thread().name == "A":
             a_returned.set()
@@ -111,21 +109,37 @@ def test_overlapping_streaming_requests_neither_misread_nor_retune_the_model():
     for thread in threads:
         thread.start()
     # The event waits above bound every thread, so a plain join cannot hang; a
-    # missed rendezvous leaves that request out of ``seen`` and fails below.
+    # missed rendezvous leaves that request out of ``seen`` and fails the test.
     for thread in threads:
         thread.join()
+    return model
+
+
+def test_overlapping_streaming_requests_each_read_their_tier():
+    """A returns while B is mid-call: B must still see its tier."""
+    model = _run_overlapping_requests()
 
     tier = _snapshot(get_latency_tier_params(TIER))
     assert dict(model.seen) == {"A": tier, "B": tier}
+
+
+def test_overlapping_streaming_requests_leave_the_model_as_loaded():
+    """A returns while B is mid-call: the shared model keeps its checkpoint values."""
+    model = _run_overlapping_requests()
+
     assert _snapshot(model.sortformer_modules) == CHECKPOINT_CONFIG
 
 
-@pytest.mark.skipif(
-    os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") != "1",
-    reason="Set CORO_RUN_REAL_MODEL_TESTS=1 to run with real model checkpoints.",
-)
-def test_real_model_concurrent_streams_match_sequential_and_leave_the_model_alone():
-    """The same scenario on the real Sortformer, with the interleaving left to chance."""
+REAL_MODEL = pytest.mark.real_model
+
+
+@pytest.fixture(scope="module")
+def real_model_streams():
+    """The same scenario on the real Sortformer, with the interleaving left to chance.
+
+    Returns the model parameters before streaming, the model, one sequential
+    stream and two concurrent ones.
+    """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
@@ -150,7 +164,19 @@ def test_real_model_concurrent_streams_match_sequential_and_leave_the_model_alon
     sequential = _stream()
     with ThreadPoolExecutor(max_workers=2) as pool:
         concurrent = list(pool.map(_stream, range(2)))
+    return before, model, sequential, concurrent
+
+
+@REAL_MODEL
+def test_real_model_concurrent_streams_match_sequential(real_model_streams):
+    _, _, sequential, concurrent = real_model_streams
 
     assert {s.speaker for s in sequential} == {1}
     assert concurrent == [sequential, sequential]
+
+
+@REAL_MODEL
+def test_real_model_concurrent_streams_leave_the_model_alone(real_model_streams):
+    before, model, _, _ = real_model_streams
+
     assert _snapshot(model.sortformer_modules) == before

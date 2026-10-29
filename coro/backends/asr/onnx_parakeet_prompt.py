@@ -67,24 +67,31 @@ License:
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
 from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
-from coro.backends.asr.nemo import resolve_target_language
+from coro.backends.asr.nemo_checkpoint import resolve_target_language
 from coro.backends.asr.onnx_asr import convert_onnx_asr_result
+from coro.backends.asr.onnx_parakeet_prompt_kernel import (
+    load_prompt_kernel,
+    prompt_conditioned_asr_class,
+)
 from coro.backends.asr.onnx_session import build_asr_session_options
-from coro.core.models import TranscriptToken
+from coro.core.logger import get_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
+    from contextlib import AbstractContextManager
 
-logger = logging.getLogger(__name__)
+    import numpy.typing as npt
+
+    from coro.core.models import TranscriptToken
+
+logger = get_logger(__name__)
 
 _SAMPLE_RATE = 16000
 # Admission queue depth used when an adapter is built without explicit settings
@@ -96,13 +103,24 @@ _DEFAULT_QUEUE_DEPTH = 32
 _ENCODER_BASENAME = "encoder-encoder"
 _DECODER_JOINT_FILENAME = "decoder_joint-encoder.onnx"
 _VOCAB_FILENAME = "vocab.txt"
-_PROMPT_KERNEL_WEIGHTS_FILENAME = "prompt_kernel_cache.npz"
-_PROMPT_KERNEL_METADATA_FILENAME = "prompt_kernel_cache.json"
 
-# prompt_kernel.state_dict() key names for a two-layer nn.Sequential
-# (Linear -> ReLU -> Linear, NeMo's own indexing), verified against the real
-# checkpoint (see findings.md).
-_PROMPT_KERNEL_KEYS = ("0.weight", "0.bias", "2.weight", "2.bias")
+
+class PromptConditionedAsr(Protocol):
+    """The prompt-conditioned ``NemoConformerRnnt`` surface the adapter calls."""
+
+    def forced_prompt(self, prompt_id: int) -> AbstractContextManager[None]:
+        """Force ``prompt_id`` for one ``recognize_batch`` call."""
+        ...
+
+    def recognize_batch(
+        self,
+        waveforms: npt.NDArray[np.float32],
+        waveforms_len: npt.NDArray[np.int64],
+        /,
+        **kwargs: object,
+    ) -> Iterator[object]:
+        """Recognize a waveform batch, one result per waveform."""
+        ...
 
 
 def _encoder_filename(quantization: str | None) -> str:
@@ -112,123 +130,12 @@ def _encoder_filename(quantization: str | None) -> str:
     return f"{_ENCODER_BASENAME}.onnx"
 
 
-def _apply_prompt_kernel(
-    encoder_out: np.ndarray, prompt_id: int, weights: dict[str, np.ndarray]
-) -> np.ndarray:
-    """Force a target language by running the checkpoint's prompt_kernel MLP.
-
-    Concatenates a per-timestep one-hot language vector onto the encoder's
-    hidden state, then applies ``Linear -> ReLU -> Linear`` (the checkpoint's
-    ``model.prompt_kernel``, replicated in NumPy from its ``state_dict()``
-    rather than exported as a second ONNX graph -- see the module docstring).
-    findings.md verified this substantially changes the encoder representation
-    (mean abs diff ~0.05 vs. the signal's own ~0.18 magnitude) and is
-    deterministic (same language twice -> zero diff).
-
-    Args:
-        encoder_out: Encoder output, shape ``(batch, time, hidden)``.
-        prompt_id: One-hot index into the checkpoint's prompt dictionary.
-        weights: ``prompt_kernel.npz`` arrays (``0.weight``, ``0.bias``,
-            ``2.weight``, ``2.bias``; PyTorch ``nn.Linear`` layout, i.e.
-            ``(out_features, in_features)``).
-
-    Returns:
-        The prompt-conditioned hidden state, same shape as ``encoder_out``.
-
-    """
-    _batch, time_steps, hidden = encoder_out.shape
-    w0, b0 = weights["0.weight"], weights["0.bias"]
-    w2, b2 = weights["2.weight"], weights["2.bias"]
-    num_prompts = w0.shape[1] - hidden
-
-    one_hot = np.zeros((*encoder_out.shape[:2], num_prompts), dtype=np.float32)
-    one_hot[:, :, prompt_id] = 1.0
-    del time_steps  # only needed for the one_hot shape above
-    hidden_state = np.concatenate([encoder_out, one_hot], axis=-1)
-    hidden_state = np.maximum(hidden_state @ w0.T + b0, 0.0)
-    hidden_state = hidden_state @ w2.T + b2
-    return hidden_state.astype(np.float32)
-
-
-class _ForcedPrompt:
-    """Sets/clears a prompt-conditioned ASR instance's ``_prompt_id`` around one call.
-
-    ``_prompt_id`` is call-scoped mutable instance state rather than a
-    ``_encode`` argument: ``onnx_asr``'s ``recognize_batch`` calls ``_encode``
-    before any kwargs reach ``_decoding``, so there is no fixed-signature way
-    to thread it through. This is exactly why
-    :class:`OnnxParakeetPromptASRAdapter` declares a serialised Adapter
-    Concurrency Policy -- two overlapping calls would race on this attribute.
-    """
-
-    def __init__(self, asr: Any, prompt_id: int) -> None:
-        self._asr = asr
-        self._prompt_id = prompt_id
-
-    def __enter__(self) -> None:
-        self._asr._prompt_id = self._prompt_id
-
-    def __exit__(self, *exc_info: object) -> None:
-        self._asr._prompt_id = None
-
-
-def _prompt_conditioned_asr_class() -> type:
-    """Build the ``NemoConformerRnnt`` subclass that forces a prompt language.
-
-    Defined inside a function (rather than at module scope) so importing this
-    module does not require ``onnx_asr``/``onnxruntime`` to be installed
-    unless the backend is actually selected -- every ``coro.backends.asr``
-    module defers its runtime import the same way (see ``factory.py``'s
-    module docstring).
-    """
-    from onnx_asr.models.nemo import NemoConformerRnnt
-
-    class _NemoConformerRnntWithPrompt(NemoConformerRnnt):
-        """``NemoConformerRnnt`` whose encoder output is prompt-conditioned.
-
-        Only ``_encode`` is overridden -- the inherited RNNT greedy-decode
-        loop, preprocessing and vocabulary handling are unmodified (see the
-        module docstring).
-        """
-
-        def __init__(
-            self,
-            model_files: dict[str, Path],
-            preprocessor_factory: Any,
-            onnx_options: Any,
-            *,
-            prompt_kernel_weights: dict[str, np.ndarray],
-        ) -> None:
-            super().__init__(model_files, preprocessor_factory, onnx_options)
-            self._prompt_weights = prompt_kernel_weights
-            self._prompt_id: int | None = None
-
-        def forced_prompt(self, prompt_id: int) -> _ForcedPrompt:
-            """Context manager forcing ``prompt_id`` for one ``recognize_batch`` call."""
-            return _ForcedPrompt(self, prompt_id)
-
-        def _encode(self, features, features_lens):
-            encoder_out, encoder_out_lens = super()._encode(features, features_lens)
-            if self._prompt_id is None:
-                msg = (
-                    "_NemoConformerRnntWithPrompt._encode called with no forced "
-                    "language in scope; call within `asr.forced_prompt(prompt_id)`."
-                )
-                raise RuntimeError(msg)
-            return (
-                _apply_prompt_kernel(encoder_out, self._prompt_id, self._prompt_weights),
-                encoder_out_lens,
-            )
-
-    return _NemoConformerRnntWithPrompt
-
-
 class OnnxParakeetPromptASRAdapter:
     """ASRAdapter wrapping the quantized ONNX Parakeet-Prompt pipeline.
 
     Adapter Concurrency Policy: **serialised**. Forcing a language means
     setting the underlying ASR instance's ``_prompt_id`` for the duration of
-    one ``recognize_batch`` call (see :class:`_ForcedPrompt`) -- mutable
+    one ``recognize_batch`` call (see :class:`.ForcedPrompt`) -- mutable
     instance state that two overlapping calls would race on, even though the
     underlying ONNX Runtime sessions are themselves documented thread-safe.
     Serialising is expressed as a one-permit :class:`AdmissionController`, the
@@ -246,7 +153,7 @@ class OnnxParakeetPromptASRAdapter:
 
     def __init__(
         self,
-        asr: Any,
+        asr: PromptConditionedAsr,
         *,
         prompt_dictionary: dict[str, int],
         admission: AdmissionController | None = None,
@@ -292,7 +199,7 @@ class OnnxParakeetPromptASRAdapter:
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
         duration = len(audio) / _SAMPLE_RATE
 
-        def _recognize():
+        def _recognize() -> object:
             waveforms = audio[None, :]
             waveforms_len = np.array([len(audio)], dtype=np.int64)
             with self._asr.forced_prompt(prompt_id):
@@ -318,25 +225,6 @@ def _providers_for_device(device: str) -> Sequence[str] | None:
     if device == "cuda":
         return ["CUDAExecutionProvider", "CPUExecutionProvider"]
     return None
-
-
-def _load_prompt_kernel(directory: Path) -> tuple[dict[str, np.ndarray], dict[str, int]]:
-    """Load the prompt_kernel MLP weights and the checkpoint's prompt dictionary."""
-    weights_path = directory / _PROMPT_KERNEL_WEIGHTS_FILENAME
-    metadata_path = directory / _PROMPT_KERNEL_METADATA_FILENAME
-    if not weights_path.is_file():
-        msg = f"Missing required onnx-parakeet-prompt artifact: {weights_path}"
-        raise FileNotFoundError(msg)
-    if not metadata_path.is_file():
-        msg = f"Missing required onnx-parakeet-prompt artifact: {metadata_path}"
-        raise FileNotFoundError(msg)
-
-    with np.load(weights_path) as npz:
-        weights = {key: np.asarray(npz[key], dtype=np.float32) for key in _PROMPT_KERNEL_KEYS}
-    with metadata_path.open("rt", encoding="utf-8") as f:
-        metadata = json.load(f)
-    prompt_dictionary = {str(k): int(v) for k, v in metadata["prompt_dictionary"].items()}
-    return weights, prompt_dictionary
 
 
 def build_onnx_parakeet_prompt_adapter(
@@ -381,7 +269,7 @@ def build_onnx_parakeet_prompt_adapter(
             msg = f"Missing required onnx-parakeet-prompt artifact: {path}"
             raise FileNotFoundError(msg)
 
-    prompt_weights, prompt_dictionary = _load_prompt_kernel(directory)
+    prompt_weights, prompt_dictionary = load_prompt_kernel(directory)
 
     resolved_providers = providers if providers is not None else _providers_for_device(device)
     session_options = build_asr_session_options()
@@ -392,7 +280,7 @@ def build_onnx_parakeet_prompt_adapter(
         resolved_providers,
     )
     manager = Manager(sess_options=session_options, providers=resolved_providers)
-    asr_cls = _prompt_conditioned_asr_class()
+    asr_cls = prompt_conditioned_asr_class()
     asr = asr_cls(
         {"encoder": encoder_path, "decoder_joint": decoder_joint_path, "vocab": vocab_path},
         manager._create_preprocessor,

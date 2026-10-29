@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from collections.abc import Mapping
 
 from coro.bench.models.spanish import (
     CalibrationOutcome,
@@ -105,10 +105,10 @@ def find_target(model_id: str | None, corpus: str) -> CalibrationTarget | None:
     return None
 
 
-def _metric_stats(metrics: dict[str, Any] | None) -> tuple[int, int] | None:
+def _metric_stats(metrics: Mapping[str, object] | None) -> tuple[int, int] | None:
     """Return ``(errors, length)`` for the calibration metric of one item."""
-    normalized = (metrics or {}).get("normalized") or {}
-    stats = normalized.get("orcwer")
+    normalized = (metrics or {}).get("normalized")
+    stats = normalized.get("orcwer") if isinstance(normalized, dict) else None
     if not isinstance(stats, dict):
         return None
     errors = stats.get("errors")

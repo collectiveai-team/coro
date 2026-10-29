@@ -1,0 +1,23 @@
+name: dependency-review
+
+# CES-113. Summary only. `continue-on-error` because the action fails where the dependency graph of
+# the repository is off (Settings > Security > Dependency graph).
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@v5.0.0
+        continue-on-error: true
+        with:
+          comment-summary-in-pr: always

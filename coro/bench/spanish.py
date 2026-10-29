@@ -16,7 +16,7 @@ import json
 import re
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from collections.abc import Mapping
 
 from coro.bench.models.spanish import (
     CorpusFetchPlan,
@@ -128,9 +128,9 @@ def corpus_of_item(item_id: str) -> str:
     return item_id.split("-", 1)[0]
 
 
-def _safe_id(raw: Any) -> str:
+def _safe_id(raw: object) -> str:
     """Return a filesystem- and STM-safe token derived from a corpus row id."""
-    text = Path(str(raw)).stem if isinstance(raw, str) and "." in str(raw) else str(raw)
+    text = Path(raw).stem if isinstance(raw, str) and "." in raw else str(raw)
     return _UNSAFE_ID.sub("_", text).strip("_") or "item"
 
 
@@ -192,7 +192,7 @@ def _materialize_corpus(
 
     for row in iter_parquet_rows(urls, limit=count, columns=columns):
         text = str(row.get(corpus.text_column) or "").strip()
-        audio = row.get(corpus.audio_column) or {}
+        audio = row.get(corpus.audio_column)
         audio_bytes = audio.get("bytes") if isinstance(audio, dict) else None
         if not text or not audio_bytes:
             continue
@@ -280,10 +280,13 @@ def render_licences(manifest: SpanishWorkloadManifest) -> str:
     return "\n".join(lines)
 
 
-def _manifest_is_current(manifest: dict[str, Any], preset: SpanishPreset, count: int) -> bool:
+def _manifest_is_current(manifest: Mapping[str, object], preset: SpanishPreset, count: int) -> bool:
     if manifest.get("preset") != preset.key or manifest.get("items_per_corpus") != count:
         return False
-    present = {block["key"] for block in manifest.get("corpora", [])}
+    corpora = manifest.get("corpora", [])
+    if not isinstance(corpora, list):
+        return False
+    present = {block["key"] for block in corpora}
     return present == set(preset.corpora)
 
 
