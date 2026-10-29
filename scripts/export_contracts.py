@@ -25,6 +25,9 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import cyclopts
+from rich.console import Console
+
+_out = Console(markup=False, emoji=False, highlight=False, soft_wrap=True)
 
 
 def export_openapi(output_dir: Path) -> Path:
@@ -69,12 +72,12 @@ def _export(output_dir: Path, /, *, openapi_only: bool = False) -> None:
         written.append(export_asyncapi(output_dir))
 
     for path in written:
-        sys.stdout.write(f"exported {path} ({path.stat().st_size} bytes)\n")
+        _out.out(f"exported {path} ({path.stat().st_size} bytes)")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Export the contracts into the requested directory."""
-    app(list(argv) if argv is not None else sys.argv[1:], exit_on_error=True)
+    app(argv)
     return 0
 
 
