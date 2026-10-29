@@ -26,19 +26,11 @@ To run:
 from __future__ import annotations
 
 import asyncio
-import os
 from dataclasses import asdict
 
 import pytest
 
-REAL_MODEL_TESTS = os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") == "1"
-skip_unless_real = pytest.mark.skipif(
-    not REAL_MODEL_TESTS,
-    reason=(
-        "Skipping real-model determinism check. "
-        "Set CORO_RUN_REAL_MODEL_TESTS=1 to run with real model checkpoints."
-    ),
-)
+skip_unless_real = pytest.mark.real_model
 
 WINDOW_COUNT = 3
 PROMPT = "El presidente habla."

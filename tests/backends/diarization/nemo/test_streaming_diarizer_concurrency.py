@@ -11,7 +11,6 @@ deterministically by forcing that interleaving with thread events.
 
 from __future__ import annotations
 
-import os
 import threading
 
 import pytest
@@ -131,10 +130,7 @@ def test_overlapping_streaming_requests_leave_the_model_as_loaded():
     assert _snapshot(model.sortformer_modules) == CHECKPOINT_CONFIG
 
 
-REAL_MODEL = pytest.mark.skipif(
-    os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") != "1",
-    reason="Set CORO_RUN_REAL_MODEL_TESTS=1 to run with real model checkpoints.",
-)
+REAL_MODEL = pytest.mark.real_model
 
 
 @pytest.fixture(scope="module")

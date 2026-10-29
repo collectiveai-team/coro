@@ -19,7 +19,6 @@ cannot (feature-shape mismatches, NeMo API drift, post-processing errors).
 
 from __future__ import annotations
 
-import os
 import struct
 from dataclasses import asdict
 from typing import cast
@@ -30,14 +29,7 @@ import pytest
 from coro.backends.diarization.nemo.sortformer import StreamingSortformerModel
 from coro.core.models import TranscriptToken
 
-REAL_MODEL_TESTS = os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") == "1"
-skip_unless_real = pytest.mark.skipif(
-    not REAL_MODEL_TESTS,
-    reason=(
-        "Skipping real-model test. "
-        "Set CORO_RUN_REAL_MODEL_TESTS=1 to run with real model checkpoints."
-    ),
-)
+skip_unless_real = pytest.mark.real_model
 
 
 # ---------------------------------------------------------------------------

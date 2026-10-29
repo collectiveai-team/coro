@@ -368,6 +368,7 @@ markers = [
   "unit: fast isolated tests, no external deps",
   "integration: tests requiring external services or multi-component interaction",
   "e2e: end-to-end smoke tests",
+  "real_model: loads real model checkpoints; runs only with CORO_RUN_REAL_MODEL_TESTS=1, with the network",
 ]
 
 

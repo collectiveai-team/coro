@@ -14,16 +14,11 @@ NeMo upgrade.
 from __future__ import annotations
 
 import asyncio
-import os
 import wave
 
 import pytest
 
-REAL_MODEL_TESTS = os.environ.get("CORO_RUN_REAL_MODEL_TESTS", "0") == "1"
-pytestmark = pytest.mark.skipif(
-    not REAL_MODEL_TESTS,
-    reason="Set CORO_RUN_REAL_MODEL_TESTS=1 to run with real model checkpoints.",
-)
+pytestmark = pytest.mark.real_model
 
 MODEL = "nvidia/diar_streaming_sortformer_4spk-v2"
 
