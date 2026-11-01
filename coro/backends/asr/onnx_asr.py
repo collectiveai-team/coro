@@ -236,7 +236,7 @@ def build_onnx_asr_adapter(
         vad_threshold: Optional Silero VAD speech-probability threshold; only applied
             when ``vad_enabled`` is True. ``None`` keeps onnx-asr's default.
         max_concurrency: Adapter Concurrency Policy permit count; 0 auto-sizes
-            from the host core count.
+            from the usable core count.
         max_queue_depth: Calls allowed to wait for a permit before rejection.
 
     Returns:

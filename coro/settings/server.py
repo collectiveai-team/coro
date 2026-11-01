@@ -209,8 +209,9 @@ class ServerSettings(BaseSettings):
         default=0,
         ge=0,
         description="Maximum ASR inference calls allowed to run at once. 0 (default) "
-        "auto-sizes from the host core count so total backend thread demand stays "
-        "near it. Ignored by the onnx-genai backend, whose Adapter Concurrency "
+        "auto-sizes from the cores the process may use (its CPU affinity, capped by "
+        "a cgroup CPU quota such as a container CPU limit) so total backend thread "
+        "demand stays near them. Ignored by the onnx-genai backend, whose Adapter Concurrency "
         "Policy fixes the permit count at 1.",
     )
     asr_max_queue_depth: int = Field(

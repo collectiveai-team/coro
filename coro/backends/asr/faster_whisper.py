@@ -208,7 +208,7 @@ def build_asr_adapter(
         compute_type: Faster Whisper compute type selector, e.g. ``"default"``,
             ``"float16"``, or ``"int8"``.
         max_concurrency: Adapter Concurrency Policy permit count; 0 auto-sizes
-            from the host core count. Also becomes CTranslate2's ``num_workers``
+            from the usable core count. Also becomes CTranslate2's ``num_workers``
             so admitted calls genuinely run in parallel. Model weights are shared
             across workers; only per-worker compute buffers are duplicated.
         max_queue_depth: Calls allowed to wait for a permit before rejection.

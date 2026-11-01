@@ -20,7 +20,6 @@ the admission controller, which are its public properties, and the
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 import threading
 import time
@@ -33,9 +32,11 @@ from coro.backends.asr.concurrency import (
     DEFAULT_RETRY_AFTER_SECONDS,
     AdmissionController,
     AsrCapacityError,
+    auto_max_concurrency,
     build_admission_controller,
     resolve_max_concurrency,
 )
+from coro.backends.asr.cpu_budget import usable_cpu_count
 from coro.backends.asr.faster_whisper import FasterWhisperASRAdapter
 from coro.backends.asr.onnx_asr import OnnxAsrASRAdapter
 from coro.backends.asr.onnx_genai import OnnxGenaiASRAdapter
@@ -56,10 +57,18 @@ def test_auto_concurrency_never_serialises():
     assert resolve_max_concurrency(0) >= 2
 
 
-def test_auto_concurrency_tracks_core_count():
-    """Auto-sizing scales with the host core count, bounding total thread demand."""
-    cores = os.cpu_count() or 1
-    assert resolve_max_concurrency(0) == max(2, cores // 4)
+def test_auto_concurrency_tracks_usable_core_count():
+    """Auto-sizing scales with the cores the process may use, bounding thread demand."""
+    assert resolve_max_concurrency(0) == auto_max_concurrency(usable_cpu_count())
+
+
+@pytest.mark.parametrize(
+    ("cores", "permits"),
+    [(1, 2), (4, 2), (8, 2), (12, 3), (16, 4), (64, 16)],
+)
+def test_auto_concurrency_divides_cores_by_per_call_threads(cores, permits):
+    """One permit per four usable cores, never fewer than two."""
+    assert auto_max_concurrency(cores) == permits
 
 
 async def test_admission_allows_calls_up_to_the_permit_count():
