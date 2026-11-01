@@ -707,7 +707,7 @@ flag (CLI flags take precedence). Source of truth: `coro/settings/server.py`.
 | `CORO_ASR_FALLBACK_LANGUAGE` | `--asr-fallback-language` | `en` | Language used when a request gives none and detection (where available) never yields one. |
 | `CORO_ASR_ONNX_VAD` | `--asr-onnx-vad` | `disabled` | Silero VAD segmentation for `onnx-asr` (`enabled` \| `disabled`). |
 | `CORO_ASR_ONNX_VAD_THRESHOLD` | `--asr-onnx-vad-threshold` | _(unset)_ | Silero VAD speech-probability threshold; only when VAD enabled. |
-| `CORO_ASR_MAX_CONCURRENCY` | `--asr-max-concurrency` | `0` _(auto)_ | Max ASR inference calls running at once; `0` auto-sizes from the host core count. Ignored by `onnx-genai`, which always serialises. |
+| `CORO_ASR_MAX_CONCURRENCY` | `--asr-max-concurrency` | `0` _(auto)_ | Max ASR inference calls running at once; `0` auto-sizes from the cores the process may use: its CPU affinity, capped by a container CPU limit. Ignored by `onnx-genai`, which always serialises. |
 | `CORO_ASR_MAX_QUEUE_DEPTH` | `--asr-max-queue-depth` | `32` | Max ASR calls allowed to queue for a slot; beyond this the request gets HTTP 429 + `Retry-After` instead of waiting indefinitely. |
 | `CORO_RATE_LIMIT_REQUESTS_PER_MINUTE` | `--rate-limit-requests-per-minute` | `60` | Transcription requests one client IP may start per minute (REST, SSE, WebSocket connects); beyond it HTTP 429 + `Retry-After`. `0` disables. See [Client rate limits](#client-rate-limits). |
 | `CORO_RATE_LIMIT_AUDIO_MINUTES_PER_HOUR` | `--rate-limit-audio-minutes-per-hour` | `0` _(off)_ | Minutes of audio one client IP may submit per hour, measured with `ffprobe` before processing; WebSocket streams are charged as audio arrives. Requires `ffprobe` when enabled. |

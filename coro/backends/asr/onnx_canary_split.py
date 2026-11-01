@@ -246,7 +246,7 @@ def build_onnx_canary_split_adapter(
             this graph); ``None`` (or ``"fp32"``) loads the fp32 decoder step.
         providers: Explicit onnxruntime providers; overrides ``device`` when supplied.
         max_concurrency: Adapter Concurrency Policy permit count; 0 auto-sizes
-            from the host core count.
+            from the usable core count.
         max_queue_depth: Calls allowed to wait for a permit before rejection.
         hf_token: Hugging Face token (``ServerSettings.hf_token``, read from
             ``CORO_HF_TOKEN``/``HF_TOKEN``); forwarded to ``snapshot_download``

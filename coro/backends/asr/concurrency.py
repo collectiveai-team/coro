@@ -28,10 +28,10 @@ thread, and the queue-depth cap still applies.
 from __future__ import annotations
 
 import asyncio
-import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from coro.backends.asr.cpu_budget import usable_cpu_count
 from coro.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -78,7 +78,8 @@ def resolve_max_concurrency(configured: int) -> int:
 
     Args:
         configured: The ``asr_max_concurrency`` Server Startup Selection value.
-            Zero (the default) means auto-size from the host core count.
+            Zero (the default) means auto-size from the cores this process may
+            use (see :func:`coro.backends.asr.cpu_budget.usable_cpu_count`).
 
     Returns:
         Number of inference calls allowed to run at once (always >= 1).
@@ -86,7 +87,20 @@ def resolve_max_concurrency(configured: int) -> int:
     """
     if configured > 0:
         return configured
-    cores = os.cpu_count() or 1
+    return auto_max_concurrency(usable_cpu_count())
+
+
+def auto_max_concurrency(cores: int) -> int:
+    """Return the auto-sized permit count for ``cores`` usable cores.
+
+    Args:
+        cores: Cores this process may use.
+
+    Returns:
+        Permit count keeping ``permits x per-call threads`` near ``cores``, and
+        never below the auto-sizing floor.
+
+    """
     return max(_MIN_AUTO_CONCURRENCY, cores // _THREADS_PER_INFERENCE)
 
 
