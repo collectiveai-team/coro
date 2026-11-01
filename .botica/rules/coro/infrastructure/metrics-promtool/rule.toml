@@ -1,0 +1,15 @@
+id = "coro/metrics-promtool"
+code = "COROINFRA001"
+summary = "prek.toml lints one scrape of GET /metrics with promtool check metrics"
+status = "preview"
+default-enabled = false
+default-severity = "error"
+
+[[implementations]]
+kind = "external"
+languages = ["*"]
+applies-when = ["coro/api/metrics.py"]
+tool = "promtool"
+docs = "https://prometheus.io/docs/prometheus/latest/command-line/promtool/"
+codes = []
+config = "config/prek.toml"

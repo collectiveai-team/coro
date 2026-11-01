@@ -124,6 +124,8 @@ async def test_admission_rejects_past_queue_depth_cap():
 
     assert excinfo.value.retry_after_seconds == DEFAULT_RETRY_AFTER_SECONDS
     await asyncio.gather(holder, waiter)
+    assert controller.admitted_total == 2
+    assert controller.rejected_total == 1
 
 
 async def test_admission_releases_permit_on_failure():

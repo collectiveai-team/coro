@@ -134,6 +134,8 @@ class AdmissionController:
         self._semaphore = asyncio.Semaphore(self._max_concurrency)
         self._in_flight = 0
         self._queued = 0
+        self._admitted_total = 0
+        self._rejected_total = 0
 
     @property
     def max_concurrency(self) -> int:
@@ -155,6 +157,16 @@ class AdmissionController:
         """Calls currently waiting for a permit."""
         return self._queued
 
+    @property
+    def admitted_total(self) -> int:
+        """Calls granted a permit since the controller was built."""
+        return self._admitted_total
+
+    @property
+    def rejected_total(self) -> int:
+        """Calls rejected with :class:`AsrCapacityError` since the controller was built."""
+        return self._rejected_total
+
     @asynccontextmanager
     async def admit(self) -> AsyncGenerator[None]:
         """Hold one admission permit for the duration of the context.
@@ -167,6 +179,7 @@ class AdmissionController:
 
         """
         if self._in_flight >= self._max_concurrency and self._queued >= self._max_queue_depth:
+            self._rejected_total += 1
             logger.warning(
                 "ASR admission rejected: in_flight=%d/%d queued=%d/%d",
                 self._in_flight,
@@ -188,6 +201,7 @@ class AdmissionController:
             self._queued -= 1
 
         self._in_flight += 1
+        self._admitted_total += 1
         try:
             yield
         finally:

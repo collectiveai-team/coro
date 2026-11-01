@@ -84,6 +84,7 @@ dependencies = [
     "huggingface-hub>=0.24",
     "soundfile>=0.12",
     "typing-extensions>=4.13",
+    "prometheus-client>=0.26",
 ]
 
 # Shown in the PyPI sidebar. The `Homepage`/`Source`/`Issues` keys map to the
@@ -195,6 +196,8 @@ contracts = [
     # is built, so exporting the contract now needs the resample stack. Both are
     # small wheels; the ~2 GB the group exists to avoid is torch/CUDA.
     "numpy",
+    # The /metrics route (coro/api/metrics.py) is registered when the app is built.
+    "prometheus-client",
     "pydantic-settings",
     "python-multipart",
     "scalar-fastapi",

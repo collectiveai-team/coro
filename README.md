@@ -324,6 +324,7 @@ ASR-only server, or swap `nemo` → `pyannote` (`--pipeline full-memory`, needs
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET`  | `/health` | Readiness / capability status. |
+| `GET`  | `/metrics` | Prometheus metrics: readiness, ASR admission (permits, in flight, queued, rejected) and process metrics; OpenMetrics on request. See ADR 0025. |
 | `POST` | `/v1/audio/transcriptions` | OpenAI-compatible transcription (multipart). |
 | `POST` | `/v1/listen` | Deepgram-compatible transcription (raw body); per-word speakers. |
 | `WS`   | `/v1/listen` | Deepgram-compatible live transcription; `Results` frames as windows complete. |
