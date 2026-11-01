@@ -1,0 +1,97 @@
+# Prometheus Metrics Endpoint for Readiness and ASR Admission
+
+## Status
+
+Accepted.
+
+## Context
+
+Several coro replicas behind one Service need an autoscaler that adds a
+replica when work waits, not only when CPU is busy. CPU is a late signal for
+coro: an ASR permit runs a backend thread pool, so a replica with all permits
+taken and a queue of waiting inference calls can show the same CPU as one that
+is merely busy. The only place that knows how much work waits is the admission
+controller of the ASR Adapter (`coro/backends/asr/concurrency.py`), and nothing
+published its state. `/health` answers readiness for probes, and changing its
+JSON body would change a contract that the bench and probes read.
+
+## Decision
+
+`GET /metrics` (`coro/api/metrics.py`) publishes, with `prometheus-client`:
+
+| Metric | Type | Value |
+|---|---|---|
+| `coro_build_info{version,pipeline,asr_provider,asr_model,diarization_provider}` | gauge (info) | always 1 |
+| `coro_ready` | gauge | 1 once Capability Readiness and Warmup Readiness both hold |
+| `coro_asr_inference_permits` | gauge | `max_concurrency` of the admission controller |
+| `coro_asr_inference_queue_capacity` | gauge | `max_queue_depth` |
+| `coro_asr_inferences_in_flight` | gauge | calls holding a permit |
+| `coro_asr_inferences_queued` | gauge | calls waiting for a permit |
+| `coro_asr_inferences_admitted_total` | counter | calls granted a permit |
+| `coro_asr_inferences_rejected_total` | counter | calls rejected with `AsrCapacityError` |
+| `process_*`, `python_*` | | the library's process, platform and GC collectors |
+
+- Each app owns a `CollectorRegistry`; the library's global registry is not
+  used, so several apps in one process (the tests) never register a collector
+  twice.
+- The coro values are read from the runtime at scrape time by a custom
+  collector. The admission controller keeps two plain integers,
+  `admitted_total` and `rejected_total`; nothing on the inference path touches
+  a metric object.
+- The format follows the scraper's `Accept` header (`choose_encoder`): the
+  Prometheus text format 0.0.4 by default, OpenMetrics when asked.
+- The admission controller is read beneath the ASR window cache
+  (`unwrap_asr_adapter`), so the ASR metrics count model calls. A cache hit
+  takes no permit and does not appear.
+- A permit is taken per model call, not per request: one per ASR window, and
+  on `onnx-canary-split` one more for language detection. One long upload
+  produces many admitted calls; the 11 s JFK sample produced two.
+- The ASR metrics are left out while no ASR Adapter with an admission
+  controller is loaded.
+- The route is `include_in_schema=False`. It is an operational endpoint for
+  scrapers, not part of the Supported Endpoint Set (ADR 0001) or the Contract
+  Surface (ADR 0013), and its body is not JSON.
+- It is not rate limited and needs no client identity, like `/health`.
+- The `promtool-check-metrics` prek hook exports one scrape
+  (`scripts/export_metrics.py`) and runs `promtool check metrics` on it from
+  the pinned Prometheus image. CI runs it through `prek run --all-files`.
+
+## Consequences
+
+- An autoscaler (KEDA, or an HPA on a Prometheus adapter) can scale on
+  `coro_asr_inferences_queued` or on
+  `(in_flight + queued) / permits`, summed over replicas by the scraper.
+- Values are per process. Each replica is scraped on its own, as with the
+  rate-limit counters of ADR 0024.
+- The counters restart at 0 when the process restarts; Prometheus `rate()`
+  handles the reset.
+- New metrics, histograms included (request latency, real-time factor), are
+  library objects rather than hand-written exposition.
+- `prometheus-client` is a runtime dependency and also in the `contracts`
+  group, because the app registers the route when it is built.
+- The promtool hook needs Docker where prek runs, as `docker-check` and
+  `docker-compose-config` already do.
+- Like the rest of the server, the endpoint has no authentication. The values
+  expose load and the selected model, which `/health` already exposes.
+
+## Alternatives Considered
+
+- **Add the admission counts to `/health`.** Rejected: probes and the
+  benchmark read that body, and Prometheus cannot scrape JSON without an
+  exporter.
+- **Write the text exposition by hand.** Rejected: it was the first version.
+  It saved a 64 KB pure-Python dependency, but every new metric meant
+  hand-written escaping, suffixes and types, histograms would have to be built
+  bucket by bucket, and it offered neither OpenMetrics nor process metrics.
+- **The library's global registry and module-level metric objects.**
+  Rejected: building a second app in the same process fails with a duplicate
+  registration, and module-level state is what `coro/runtime.py` exists to
+  avoid.
+- **A botica extension rule for promtool.** Rejected: botica rules check the
+  tracked files of the repository and report findings on them. The exposition
+  is generated by the running app, which needs the project environment, and
+  promtool is an external binary; a prek hook over an exported artifact is the
+  same shape as the API contract lint.
+- **Count HTTP requests in flight with a middleware.** Deferred: the ASR queue
+  is the signal that says work waits; request counts can be added later
+  without changing these metrics.
