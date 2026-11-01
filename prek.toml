@@ -234,6 +234,7 @@ priority = 2
 # exports the API contracts. promtool reads only stdin and ships only in the
 # Prometheus image, pinned here by version and digest. Runs when a file that
 # shapes the exposition changes, and always under `prek run --all-files` in CI.
+# The botica rule coro/metrics-promtool (COROINFRA001) requires this hook.
 [[repos.hooks]]
 id = "promtool-check-metrics"
 name = "promtool check metrics"

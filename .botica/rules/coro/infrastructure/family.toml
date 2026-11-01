@@ -1,0 +1,3 @@
+code = "INFRA"
+description = "The gates that check what the running server publishes, before it ships."
+extends = "infrastructure"
