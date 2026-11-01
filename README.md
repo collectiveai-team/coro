@@ -191,6 +191,50 @@ docker build -t coro:gpu \
   --build-arg EXTRA=cuda .
 ```
 
+## Run several replicas (Kubernetes and others)
+
+A coro process loads its models once and serves requests synchronously: the
+response, SSE stream or WebSocket stays on the connection that sent the audio.
+To serve more load, run more replicas behind a load balancer.
+[coro-k8s](https://github.com/collectiveai-team/coro-k8s) has a Helm chart that
+does what this section describes, and a Prefect flow for offline batches with
+callbacks. What each replica needs:
+
+- One server process per container. Do not add uvicorn workers: each worker
+  loads the models again. On GPU, one replica per GPU.
+- A CPU limit. With `CORO_ASR_MAX_CONCURRENCY=0` (the default) the permit count
+  is sized from the cores the process may use, its CPU affinity capped by the
+  container CPU limit, so a pod with `limits.cpu: 4` on a 64-core node sizes
+  for 4 cores, not 64. Set the value explicitly to override it.
+- A startup probe on `GET /health`. The port opens only after the models are
+  loaded and Server Warmup has run (ADR 0003), which can take minutes on a cold
+  model cache, so give the probe a long `failureThreshold`. `ready` in the body
+  is `true` once the port is open.
+- A model cache that outlives the pod. Mount a volume at
+  `/root/.cache/huggingface` (or set `HF_HOME`), shared or pre-filled, so a new
+  replica does not download the weights again.
+- Disk for the spill directory. The `streaming` pipeline and the live socket
+  write to `CORO_TRANSCRIPT_SPILL_DIR`; use a disk-backed volume (an
+  `emptyDir` without `medium: Memory`) with a size limit.
+- Rate limits at the edge. The per-client limits are counted per process
+  (ADR 0024), so with N replicas a client gets N budgets. Enforce a global
+  limit in the ingress or gateway, and set `FORWARDED_ALLOW_IPS` to the proxy
+  address so coro sees the real client IP.
+- Timeouts for long requests. A long upload holds its connection for the whole
+  transcription: raise the proxy read timeout and body size limit, and enable
+  WebSocket upgrades if the live socket is used. A batch client inside the
+  cluster can call the Service directly and skip the ingress.
+- A grace period on shutdown. On `SIGTERM` uvicorn stops accepting connections
+  and waits for the requests in flight; set `terminationGracePeriodSeconds`
+  above the longest transcription you expect, or scale-downs cut them.
+- Autoscaling on queued work. `GET /metrics` publishes the ASR admission state
+  in the Prometheus format (ADR 0025). Scaling on `coro_asr_inferences_queued`,
+  or on `(coro_asr_inferences_in_flight + coro_asr_inferences_queued) /
+  coro_asr_inference_permits`, adds replicas when work waits rather than only
+  when CPU is busy. Requests rejected at capacity get `Retry-After`; a client
+  that retries on a new connection can land on another replica.
+- An authenticating proxy. coro has no authentication of its own.
+
 ## Command-line interface
 
 `coro` takes a subcommand. There is no bare invocation — see
