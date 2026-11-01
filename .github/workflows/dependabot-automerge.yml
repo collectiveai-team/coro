@@ -34,17 +34,32 @@ jobs:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
+      # alert-lookup needs a token that reads the Dependabot alerts, which the
+      # default GITHUB_TOKEN cannot. The token comes from a GitHub App with the
+      # repository permissions "Dependabot alerts: read" and "Pull requests:
+      # read", installed on this repository: its app ID in the variable
+      # DEPENDABOT_APP_ID and its private key in the secret
+      # DEPENDABOT_APP_PRIVATE_KEY, both at the level of the organization or of
+      # the repository. A personal access token in the secret
+      # DEPENDABOT_METADATA_TOKEN works as well. With neither, the job does not
+      # look up alerts, and patch updates still merge. The input is `app-id`, not
+      # `client-id`: actionlint 1.7.12 does not know `client-id`.
+      - name: Create a token of the GitHub App
+        id: app-token
+        if: vars.DEPENDABOT_APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DEPENDABOT_APP_ID }}
+          private-key: ${{ secrets.DEPENDABOT_APP_PRIVATE_KEY }}
+          permission-pull-requests: read
+          permission-vulnerability-alerts: read
+
       - name: Fetch Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@v3
         with:
-          # alert-lookup needs a PAT/App token with "Dependabot alerts: read"
-          # (the default GITHUB_TOKEN can't query alerts). Until
-          # DEPENDABOT_METADATA_TOKEN is added as a repo secret this silently
-          # degrades to "no security-alert fast lane" instead of failing the
-          # job, so patch auto-merge keeps working either way.
-          github-token: ${{ secrets.DEPENDABOT_METADATA_TOKEN || github.token }}
-          alert-lookup: ${{ secrets.DEPENDABOT_METADATA_TOKEN != '' }}
+          github-token: ${{ steps.app-token.outputs.token || secrets.DEPENDABOT_METADATA_TOKEN || github.token }}
+          alert-lookup: ${{ steps.app-token.outputs.token != '' || secrets.DEPENDABOT_METADATA_TOKEN != '' }}
 
       # Patch-only (plus open security alerts). collectiveai-web's equivalent
       # also fast-lanes "minor, non-production dependency" -- deliberately
