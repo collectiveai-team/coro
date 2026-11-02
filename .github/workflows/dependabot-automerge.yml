@@ -1,66 +1,73 @@
 name: dependabot-automerge
 
-# Labels a Dependabot PR "automerge" when it's a low-risk update, then hands it
-# to GitHub's native auto-merge to actually land it once required checks pass.
+# Labels a Dependabot PR "automerge" when it is a patch update or fixes an open
+# security alert, then hands it to GitHub's native auto-merge, which lands it
+# once the required checks pass.
 #
-# Unlike collectiveai-web's equivalent, this repo is public, so branch
-# protection with required status checks (contexts: "lint, type-check & test",
-# "openapi breaking-change gate" — see .github/workflows/ci.yml) and the
-# `allow_auto_merge` repo setting are both available on the free plan. That
-# means `gh pr merge --auto` alone does the waiting: no second workflow
-# polling `gh pr checks` on every `workflow_run` completion is needed here.
+# Setup, once, in the repository: turn on "Allow auto-merge" and add a branch
+# protection rule (or ruleset) on main that names the required status checks.
+# The osv-scanner check of a pull request is `osv-scanner (new in this PR)`:
+# GitHub counts the skipped `osv-scanner` job as passing. The workflow creates
+# the label `automerge` when the repository lacks it.
+# With no required check, `gh pr merge --auto` merges at once instead of
+# waiting (cli/cli#8514). A private repository on the GitHub Free plan cannot
+# have branch protection: use ci-automerge-private there.
+#
+# Patch updates and open security alerts only. The `dependency-type` output of
+# fetch-metadata is derived from dependency-group membership, so a package that
+# a group re-lists is reported as `direct:development` even when it is also a
+# production dependency, and it cannot gate minor updates.
 #
 # `pull_request_target` (not `pull_request`) is required: fetch-metadata and
-# `gh pr merge` need a write-scoped token, and Dependabot-triggered
-# `pull_request` runs get a read-only token with no secrets (see
-# https://github.com/dependabot/fetch-metadata#usage-instructions). This
-# workflow never checks out the PR's code or runs anything from it — only
-# fetch-metadata (reads the event payload) and `gh` calls — so the elevated
-# token is not exposed to untrusted input.
+# `gh pr merge` need a write-scoped token, and a Dependabot `pull_request` run
+# gets a read-only token with no secrets. This workflow never checks out the
+# code of the PR or runs anything from it; it reads the event payload and calls
+# `gh`, so the elevated token is not exposed to untrusted input.
 
 on:
-  pull_request_target: # zizmor: ignore[dangerous-triggers] -- never checks out or runs PR code, see above
-
-permissions:
-  contents: write
-  pull-requests: write
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
 
 concurrency:
   group: dependabot-automerge-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   automerge:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
+      # alert-lookup needs a token that reads the Dependabot alerts, which the
+      # default GITHUB_TOKEN cannot. The token comes from a GitHub App with the
+      # repository permissions "Dependabot alerts: read" and "Pull requests:
+      # read", installed on this repository: its app ID in the variable
+      # DEPENDABOT_APP_ID and its private key in the secret
+      # DEPENDABOT_APP_PRIVATE_KEY, both at the level of the organization or of
+      # the repository. A personal access token in the secret
+      # DEPENDABOT_METADATA_TOKEN works as well. With neither, the job does not
+      # look up alerts, and patch updates still merge. The input is `app-id`, not
+      # `client-id`: actionlint 1.7.12 does not know `client-id`.
+      - name: Create a token of the GitHub App
+        id: app-token
+        if: vars.DEPENDABOT_APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DEPENDABOT_APP_ID }}
+          private-key: ${{ secrets.DEPENDABOT_APP_PRIVATE_KEY }}
+          permission-pull-requests: read
+          permission-vulnerability-alerts: read
+
       - name: Fetch Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@v3
         with:
-          # alert-lookup needs a PAT/App token with "Dependabot alerts: read"
-          # (the default GITHUB_TOKEN can't query alerts). Until
-          # DEPENDABOT_METADATA_TOKEN is added as a repo secret this silently
-          # degrades to "no security-alert fast lane" instead of failing the
-          # job, so patch auto-merge keeps working either way.
-          github-token: ${{ secrets.DEPENDABOT_METADATA_TOKEN || github.token }}
-          alert-lookup: ${{ secrets.DEPENDABOT_METADATA_TOKEN != '' }}
+          github-token: ${{ steps.app-token.outputs.token || secrets.DEPENDABOT_METADATA_TOKEN || github.token }}
+          alert-lookup: ${{ steps.app-token.outputs.token != '' || secrets.DEPENDABOT_METADATA_TOKEN != '' }}
 
-      # Patch-only (plus open security alerts). collectiveai-web's equivalent
-      # also fast-lanes "minor, non-production dependency" -- deliberately
-      # NOT copied here: this repo's [dependency-groups].contracts
-      # (pyproject.toml) re-lists several packages that are simultaneously
-      # hard [project] production dependencies (fastapi, numpy,
-      # pydantic-settings, python-multipart, scalar-fastapi, soxr), purely so
-      # the contract-export CI job can install a minimal env. Dependabot's uv
-      # `dependency-type` output is derived from dependency-group membership,
-      # so every one of those packages is reported as `direct:development`
-      # regardless of also being production deps -- confirmed by three PRs
-      # (fastapi, pydantic-settings, soxr) all getting `direct:development`.
-      # Trusting that signal for the minor fast-lane briefly auto-armed merge
-      # on a fastapi bump that breaks the /v1/listen WebSocket route. Revisit
-      # only if dependency-type becomes reliable here (e.g. Dependabot fixes
-      # PEP 735 group handling, or `contracts` stops re-listing prod deps).
       - name: Decide whether this update is "easy"
         id: gate
         env:
@@ -76,27 +83,26 @@ jobs:
           fi
           echo "reason=$reason" >> "$GITHUB_OUTPUT"
 
-      # Every `gh` call below names --repo explicitly rather than relying on
-      # a local git remote for context: this job has no checkout step, and
-      # omitting --repo here is exactly the bug that made collectiveai-web's
-      # equivalent merge step fail 100% of the time
-      # ("fatal: not a git repository").
+      # Every `gh` call names --repo: this job has no checkout, so there is no
+      # git remote for `gh` to read the repository from.
       - name: Label / unlabel and enable auto-merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           REASON: ${{ steps.gate.outputs.reason }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
         run: |
           if [ -n "$REASON" ]; then
             echo "Marking as auto-mergeable: $REASON"
+            # `gh pr edit --add-label` fails when the label does not exist.
+            gh label create automerge --repo "$REPO" --description "Dependabot update that merges on its own" || true
             gh pr edit "$PR_URL" --repo "$REPO" --add-label automerge
             # --auto queues the merge; GitHub completes it once the required
-            # status checks (branch protection on main) go green. Safe to
-            # call again on every push to the PR (e.g. Dependabot rebases) --
-            # it just re-affirms the same auto-merge request.
+            # status checks go green. Calling it again on every push to the PR
+            # (a Dependabot rebase) re-affirms the same request.
             gh pr merge "$PR_URL" --repo "$REPO" --auto --squash --delete-branch
           else
-            echo "Not eligible for automerge: $UPDATE_TYPE / $DEPENDENCY_TYPE"
+            echo "Not eligible for automerge: $UPDATE_TYPE"
             gh pr edit "$PR_URL" --repo "$REPO" --remove-label automerge || true
           fi
