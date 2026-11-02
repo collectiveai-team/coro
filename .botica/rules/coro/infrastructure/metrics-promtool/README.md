@@ -38,7 +38,9 @@ checks that a hook with the id `promtool-check-metrics` is there.
 ## Do
 
 ```python
-GaugeMetricFamily("coro_asr_inferences_queued", "ASR inference calls waiting for a permit.", value=3)
+GaugeMetricFamily(
+    "coro_asr_inferences_queued", "ASR inference calls waiting for a permit.", value=3
+)
 CounterMetricFamily("coro_asr_inferences_rejected", "ASR inference calls rejected.", value=1)
 ```
 
