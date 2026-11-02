@@ -155,7 +155,7 @@ hooks = [
 # MARK: ruff-format
 [[repos]]
 repo = "https://github.com/astral-sh/ruff-pre-commit"
-rev = "v0.15.4"
+rev = "v0.17.0"
 
 [[repos.hooks]]
 id = "ruff-format"
