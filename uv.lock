@@ -1968,16 +1968,17 @@ wheels = [
 
 [[package]]
 name = "onnxruntime-genai-cuda"
-version = "0.17.1"
+version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "onnxruntime-gpu" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/14/38/323e89f6b6e5109f6443ecfa5171f585fb75f55143feee224afc18b5cf0a/onnxruntime_genai_cuda-0.17.1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:4ab2f602bcf1f8761d05e28a6d825bc515a3289316b4134654e4d80268f87940", size = 17704110, upload-time = "2026-09-29T05:16:49.07Z" },
-    { url = "https://files.pythonhosted.org/packages/d7/cb/24054f77b06e093cb91cff177b11e3584201f3fdf593ffc3413beaa69586/onnxruntime_genai_cuda-0.17.1-cp312-cp312-win_amd64.whl", hash = "sha256:e7049b50d256e07628d23b7c9f7de120c454594489805a4d06da6ab5965a05ba", size = 8522740, upload-time = "2026-09-29T05:16:51.569Z" },
-    { url = "https://files.pythonhosted.org/packages/d4/36/91ba3a8fc55b55b39376e6a776222ca96d0450d913a13a963c81d123e67d/onnxruntime_genai_cuda-0.17.1-cp312-cp312-win_arm64.whl", hash = "sha256:5ba61eab3b50a11a57d7efaaf8e77261a1afaa80fb21edcc81f99da9f39ae090", size = 6106954, upload-time = "2026-09-29T05:16:54.09Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/ec/ba2029d5c5ef71f01a29629c4fc0f35cbfa7a31f42720279ce2b61c84dc6/onnxruntime_genai_cuda-0.18.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:739f316a48045fbf572b04c77754e7b0a526343bdff32c0f2ee0b3b397688b60", size = 16676433, upload-time = "2026-10-14T04:25:02.023Z" },
+    { url = "https://files.pythonhosted.org/packages/58/bb/431542d1378847a05a7ba1a6d2d56be9f4d3e3e5f31b6e830f16cda73dc6/onnxruntime_genai_cuda-0.18.0-cp312-cp312-manylinux_2_34_aarch64.whl", hash = "sha256:1205e175cf58bd50b921d211cb4118c5ff5f8402b97ee4feafc118bfb6c9a8ea", size = 16836603, upload-time = "2026-10-14T04:25:04.256Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/7f/40dad15877446000c8e4828f9795f7f40232c37f4642e813df16d45f264a/onnxruntime_genai_cuda-0.18.0-cp312-cp312-win_amd64.whl", hash = "sha256:138a0a2538f035514206866c5cfc1821e225874c7478ece276e659fb97b798a0", size = 8641177, upload-time = "2026-10-14T04:25:06.582Z" },
+    { url = "https://files.pythonhosted.org/packages/14/14/35259828c321ab91d878de7a596be6d0426b354138fca80268169b52e108/onnxruntime_genai_cuda-0.18.0-cp312-cp312-win_arm64.whl", hash = "sha256:24fb3f3458768d23f064610bc550a7a811f03d0876a2692953f42f5514b98845", size = 6202366, upload-time = "2026-10-14T04:25:08.589Z" },
 ]
 
 [[package]]
