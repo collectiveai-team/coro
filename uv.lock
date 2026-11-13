@@ -357,8 +357,8 @@ cpu = [
     { name = "onnxruntime-genai" },
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 cuda = [
     { name = "nvidia-cublas-cu12" },
@@ -367,7 +367,7 @@ cuda = [
     { name = "onnxruntime-genai-cuda" },
     { name = "onnxruntime-gpu" },
     { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" } },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "torchaudio", version = "2.11.1", source = { registry = "https://pypi.org/simple" } },
 ]
 diar-pyannote = [
     { name = "pyannote-audio" },
@@ -2340,9 +2340,9 @@ dependencies = [
     { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "torch-audiomentations" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
-    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.1", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torchaudio", version = "2.11.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "torchcodec" },
     { name = "torchmetrics" },
 ]
@@ -3315,9 +3315,9 @@ dependencies = [
     { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "torch-pitch-shift" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
-    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.1", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torchaudio", version = "2.11.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/31/8d/2f8fd7e34c75f5ee8de4310c3bd3f22270acd44d1f809e2fe7c12fbf35f8/torch_audiomentations-0.12.0.tar.gz", hash = "sha256:b02d4c5eb86376986a53eb405cca5e34f370ea9284411237508e720c529f7888", size = 52094, upload-time = "2025-01-15T09:07:01.071Z" }
 wheels = [
@@ -3334,9 +3334,9 @@ dependencies = [
     { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
     { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
     { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
-    { name = "torchaudio", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
-    { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+    { name = "torchaudio", version = "2.11.1", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+    { name = "torchaudio", version = "2.11.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/79/a6/722a832bca75d5079f6731e005b3d0c2eec7c6c6863d030620952d143d57/torch_pitch_shift-1.2.5.tar.gz", hash = "sha256:6e1c7531f08d0f407a4c55e5ff8385a41355c5c5d27ab7fa08632e51defbd0ed", size = 4725, upload-time = "2024-09-25T19:10:12.922Z" }
 wheels = [
@@ -3345,18 +3345,21 @@ wheels = [
 
 [[package]]
 name = "torchaudio"
-version = "2.11.0"
+version = "2.11.1"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
     "platform_machine != 's390x' and sys_platform == 'darwin'",
 ]
+dependencies = [
+    { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 's390x' and sys_platform == 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+]
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.11.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:a1cf1acc883bee9cb906a933572fed6a8a933f86ef34e9ea7d803f72317e8c1b", upload-time = "2026-03-23T15:50:10Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.11.1-py3-none-macosx_14_0_arm64.whl", hash = "sha256:917667ab3e357d286b0e2405a33dc538e4344d554b72e1b2b03382a4352ca857", upload-time = "2026-10-28T14:19:39Z" },
 ]
 
 [[package]]
 name = "torchaudio"
-version = "2.11.0"
+version = "2.11.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "platform_machine != 's390x' and sys_platform == 'win32'",
@@ -3366,16 +3369,19 @@ resolution-markers = [
     "platform_machine != 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "platform_machine == 's390x' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
+dependencies = [
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-8-coro-asr-cpu' or extra == 'extra-8-coro-asr-cuda'" },
+]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/b1/77658817acacd01a72b714440c62f419efc4d90170e704e8e7a2c0918988/torchaudio-2.11.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:a1cf1acc883bee9cb906a933572fed6a8a933f86ef34e9ea7d803f72317e8c1b", size = 684226, upload-time = "2026-03-23T18:13:40.023Z" },
-    { url = "https://files.pythonhosted.org/packages/78/28/c7adc053039f286c2aca0038b766cbe3294e66fec6b29a820e95128f9ede/torchaudio-2.11.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:bc653defca1c16154398517a1adc98d0fb7f1dd08e58ced217558d213c2c6e29", size = 1626670, upload-time = "2026-03-23T18:13:42.162Z" },
-    { url = "https://files.pythonhosted.org/packages/88/d8/d6d0f896e064aa67377484efef4911cdcc07bce2929474e1417cc0af18c2/torchaudio-2.11.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:6503c0bdb29daf2e6281bb70ea2dfe2c3553b782b619eb5d73bdadd8a3f7cecf", size = 1771992, upload-time = "2026-03-23T18:13:33.188Z" },
-    { url = "https://files.pythonhosted.org/packages/23/a8/941277ecc39f7a0a169d554302a1f1afd87c1d94a8aec828891916cea59a/torchaudio-2.11.0-cp312-cp312-win_amd64.whl", hash = "sha256:478110f981e5d40a8d82221732c57a56c85a1d5895fb8fe646e86ee15eded3bd", size = 328663, upload-time = "2026-03-23T18:13:19.218Z" },
+    { url = "https://files.pythonhosted.org/packages/95/2a/c2b0f44906f8a4e8d90facdf68bc76bb14e72a0cbb9cc0457ca1c2fcd101/torchaudio-2.11.1-py3-none-macosx_14_0_arm64.whl", hash = "sha256:917667ab3e357d286b0e2405a33dc538e4344d554b72e1b2b03382a4352ca857", size = 699189, upload-time = "2026-10-28T15:21:42.129Z" },
+    { url = "https://files.pythonhosted.org/packages/90/c7/e352c0a0f34653f3f6a581b580352ab1c83e5d04019826ade4dfc26cf664/torchaudio-2.11.1-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:ad1175202b5cdb7585a38c1330845430e128c4ed8ceb770639318aa40fc1994b", size = 1678033, upload-time = "2026-10-28T15:21:43.28Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/ad/b0bf9bfa9db80acf0ce660e01a67b3b735343ab51ce1410b18d2aaed254c/torchaudio-2.11.1-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:0173b5b51e1368aa88de3cbe4e98508b5e9df4d8d59356c4e1fbc830c96191ef", size = 1816417, upload-time = "2026-10-28T15:21:45.007Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/9e/549c9bb2d139fe78c90c9381f9ffbfc87232336df4537a65ea31d51fcdee/torchaudio-2.11.1-py3-none-win_amd64.whl", hash = "sha256:46ea71634d181f797370f046075ea982043c228b38d674fd7d9fc1c855a37b6a", size = 334360, upload-time = "2026-10-28T15:21:40.715Z" },
 ]
 
 [[package]]
 name = "torchaudio"
-version = "2.11.0+cpu"
+version = "2.11.1+cpu"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
     "platform_machine != 's390x' and sys_platform == 'win32'",
@@ -3386,10 +3392,13 @@ resolution-markers = [
     "platform_machine == 's390x' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "platform_machine == 's390x' and sys_platform == 'darwin'",
 ]
+dependencies = [
+    { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 's390x' and extra == 'extra-8-coro-asr-cpu') or (sys_platform != 'darwin' and extra == 'extra-8-coro-asr-cpu') or (extra == 'extra-8-coro-asr-cpu' and extra == 'extra-8-coro-asr-cuda')" },
+]
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.11.0%2Bcpu-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:b9dd2c6ac144001dc6dac38b564c1de73ac26ef0c195d5037c4a94990b0e2b5a", upload-time = "2026-03-23T15:50:10Z" },
-    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.11.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:2354248848d06a9ae1e7a12165f800f0dda7df60ecac9fca892322b722b922c0", upload-time = "2026-03-23T15:50:10Z" },
-    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.11.0%2Bcpu-cp312-cp312-win_amd64.whl", hash = "sha256:95d517bd1a0a28dacd1c37550ced95cab64f3a7a4ef9b8219b41049388a71163", upload-time = "2026-03-23T15:50:10Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.11.1%2Bcpu-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:684d418d5aa2c98a8dff9a4e8911825da1109cda9b9e757eaf58ff9428c4577b", upload-time = "2026-10-28T14:19:39Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.11.1%2Bcpu-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:fc050a1aeb556f8a7f5ee01531e6ae9f130aed81452da6d9052d3429e3a68d9e", upload-time = "2026-10-28T14:19:39Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.11.1%2Bcpu-py3-none-win_amd64.whl", hash = "sha256:225163573057c05095824dcb7955b4bf605cae688add842951cba20d54cc4470", upload-time = "2026-10-28T14:19:39Z" },
 ]
 
 [[package]]
