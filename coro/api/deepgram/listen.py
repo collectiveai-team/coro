@@ -139,6 +139,11 @@ async def listen(
         default="", description="Accepted but ignored; server uses configured backend."
     ),
     language: str | None = Query(default=None, description="Optional BCP-47 language hint."),
+    language_hint: list[str] | None = Query(
+        default=None,
+        description="Accepted but ignored. Language preferences are not supported; use `language` "
+        "to select a language.",
+    ),
     diarize: bool = Query(default=False, description="Return per-word speaker labels."),
     utterances: bool = Query(default=False, description="Return the speaker-turn view."),
     punctuate: bool = Query(default=False, description=_IGNORED_DOC),

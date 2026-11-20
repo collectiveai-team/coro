@@ -166,6 +166,14 @@ _QUERY_SCHEMA: dict[str, JsonValue] = {
             "description": "Attach per-word speakers to the final Results frame.",
         },
         "language": {"type": "string", "description": "Passed through to the ASR backend."},
+        "language_hint": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Accepted but ignored, including repeated query values. Language preferences "
+                "are not supported; use `language` to select a language."
+            ),
+        },
     },
 }
 
