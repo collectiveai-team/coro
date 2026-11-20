@@ -58,22 +58,22 @@ def test_websocket_hints_do_not_select_or_override_language(hint, language, expe
     with TestClient(app).websocket_connect(f"/v1/listen?{hint}{language}") as ws:
         ws.send_bytes(b"\x00\x00" * SAMPLE_RATE)
         ws.send_json({"type": "CloseStream"})
-        frames = []
-        while True:
-            frame = json.loads(ws.receive_text())
-            frames.append(frame)
-            if frame["type"] == "Metadata":
-                break
-    assert frames[0]["type"] == "Results"
-    assert frames[0]["channel"]["alternatives"][0]["transcript"] == "hola"
+        result = ws.receive_json()
+        metadata = ws.receive_json()
+    assert result["type"] == "Results"
+    assert result["channel"]["alternatives"][0]["transcript"] == "hola"
+    assert metadata["type"] == "Metadata"
     assert asr.languages == [expected]
 
 
-def test_contracts_describe_language_preferences_as_ignored():
+def test_openapi_describes_language_preferences_as_ignored():
     client = TestClient(make_app(FakePipeline(), settings=ServerSettings(_env_file=None)))
     parameters = client.get("/openapi.json").json()["paths"]["/v1/listen"]["post"]["parameters"]
     hint = next(parameter for parameter in parameters if parameter["name"] == "language_hint")
     assert "Accepted but ignored" in hint["description"]
+
+
+def test_asyncapi_describes_language_preferences_as_ignored():
     document = json.loads(build_asyncapi_document().to_json())
     query = document["channels"]["deepgramLiveStream"]["bindings"]["ws"]["query"]
     assert query["properties"]["language_hint"]["type"] == "array"
