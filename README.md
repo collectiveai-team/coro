@@ -1141,14 +1141,18 @@ Behaviour worth knowing:
 
 ### What is and isn't supported
 
-This is a **documented subset**, not a full clone. Of Deepgram's 37
-pre-recorded parameters — 3 honoured, 16 refused, 18 ignored:
+This is a **documented subset**, not a full clone. Of Deepgram's 38
+pre-recorded parameters, 3 are honoured, 3 refused, and 32 ignored:
 
 | | parameters |
 |---|---|
 | **honoured** (3) | `diarize`, `utterances`, `language` |
 | **refused** with a `400` (3) | `redact`, `callback`, `callback_method` |
-| **accepted and ignored** (31) | everything else — `summarize`, `sentiment`, `topics`, `intents`, `detect_entities`, `paragraphs`, `search`, `multichannel`, `punctuate`, `smart_format`, `model`, … |
+| **accepted and ignored** (32) | everything else — `summarize`, `sentiment`, `topics`, `intents`, `detect_entities`, `paragraphs`, `search`, `multichannel`, `punctuate`, `smart_format`, `language_hint`, `model`, … |
+
+`language_hint` is accepted and ignored on REST and WebSocket, even when
+repeated (`?language_hint=es&language_hint=en`). It does not bias language
+detection. Use `language=es` to select a language; hints never override it.
 
 Unhonoured parameters are **ignored**, each documented in the OpenAPI schema
 with what its absence means, so a standard parameter bundle still works and a

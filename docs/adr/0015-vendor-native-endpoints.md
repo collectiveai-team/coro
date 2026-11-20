@@ -164,13 +164,14 @@ transport:
 | `POST /v1/listen`, `application/json` `{"url": ...}` ingest | REST | **refused** with an explicit 400 |
 | `wss://…/v1/listen` | WebSocket | **implemented** (`linear16`; other encodings refused) |
 | `listen/v2` | WebSocket **only** | **not implemented** |
-| 37 pre-recorded parameters | REST | 3 honoured, 3 refused, 31 accepted and ignored |
+| 38 pre-recorded parameters | REST | 3 honoured, 3 refused, 32 accepted and ignored |
 
 `listen/v2` is not a newer pre-recorded API. It exposes only `connect` —
 *"real-time conversational speech recognition with contextual turn detection"*
 — with 13 parameters that are all streaming concerns (`eot_threshold`,
 `eot_timeout_ms`, `eager_eot_threshold`, `encoding`, `sample_rate`,
-`language_hint`). There is no `v2` REST surface at all: the SDK has
+`language_hint`). `language_hint` also exists on v1 in `deepgram-sdk` 7.17.0.
+There is no `v2` REST surface at all: the SDK has
 `listen/v1/media/` and no `listen/v2/media/`. So v2 is not a separate gap; it
 is part of the streaming gap below, and nothing about it applies to a
 pre-recorded endpoint.
@@ -179,12 +180,17 @@ pre-recorded endpoint.
 
 **Refused (3)** — rule 5: `redact`, `callback`, `callback_method`.
 
-**Accepted and ignored (31):** everything else, each documented in the OpenAPI
+**Accepted and ignored (32):** everything else, each documented in the OpenAPI
 schema with what its absence means — the analysis features (`summarize`,
 `sentiment`, `topics`, `intents`, `detect_entities`, `paragraphs`, `search`,
 `measurements`, `replace`), the formatting knobs (`punctuate`, `smart_format`,
 `numerals`, `profanity_filter`, `filler_words`, `dictation`), `multichannel`,
-`detect_language`, `model`, `version`, and any parameter Deepgram adds later.
+`detect_language`, `language_hint`, `model`, `version`, and any parameter Deepgram adds later.
+
+`language_hint` is accepted on REST and WebSocket, including repeated values,
+but does not bias detection or select a language. No current ASR Adapter
+exposes non-binding language preferences. `language` is the separate parameter
+that is passed to the backend; a `language_hint` never overrides it.
 
 On the REST endpoint `encoding` is among the ignored: it describes headerless
 PCM, and `coro` decodes with ffmpeg, which sniffs the container, so a

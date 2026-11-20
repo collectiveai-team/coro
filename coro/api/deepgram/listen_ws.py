@@ -202,8 +202,8 @@ async def listen_ws(websocket: WebSocket) -> None:
 
     Query parameters mirror Deepgram's: ``encoding`` and ``sample_rate``
     declare the inbound audio, ``diarize`` requests per-word speakers, and
-    ``language`` is an optional hint. Unhonoured parameters are ignored, as on
-    the REST endpoint.
+    ``language`` is an optional hint. ``language_hint`` preferences are accepted
+    but ignored, as on the REST endpoint; they do not select a language.
     """
     if await deny_if_rate_limited(websocket):
         return

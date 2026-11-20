@@ -56,7 +56,7 @@ class TestRefusalListIsCoherent:
 class TestDocumentedCountsMatchTheCode:
     @pytest.mark.parametrize(
         "label,expected",
-        [("honoured", 3), ("refused", 3), ("ignored", 31)],
+        [("honoured", 3), ("refused", 3), ("ignored", 32)],
     )
     def test_computed_counts(self, label: str, expected: int):
         computed = {"honoured": HONOURED, "refused": REFUSED, "ignored": IGNORED}[label]
