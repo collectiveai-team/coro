@@ -46,12 +46,9 @@ def _fingerprint(**overrides) -> str:
 
 # MARK: Fingerprint Inputs
 def test_the_same_configuration_fingerprints_the_same():
-    # Pinned: a different digest for the same configuration orphans every cached
-    # window, so a change here must be deliberate. This digest moved with the
-    # onnxruntime 1.30.0 -> 1.31.0 bump: runtime_identity() embeds the runtime
-    # version on purpose (see module docstring), so the new value is expected
-    # and simply orphans caches filled under 1.30.0.
-    assert _fingerprint() == "ad13b029c01a9651b7ca6165cc35dbed"
+    # The CPU runtime version is part of the key: 1.31.1 must not reuse
+    # predictions cached under 1.31.0.
+    assert _fingerprint() == "238776b10eba3de03a70c0efed18a50f"
 
 
 @pytest.mark.parametrize(
