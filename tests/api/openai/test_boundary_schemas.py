@@ -45,6 +45,7 @@ _PUBLIC_FIELDS = {
         "diarization",
         "raw_words",
         "detected_language",
+        "duration",
     ],
     ResponseSegment: ["start", "end", "text", "speaker", "words", "overlap"],
     TranscriptWord: ["word", "start", "end", "score", "speaker", "overlap"],

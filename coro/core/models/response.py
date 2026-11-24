@@ -88,3 +88,5 @@ class TranscriptionResult:
     ``coro/pipelines/windowing.py``'s sticky auto-LID state). Only ever set
     by a backend that exposes ``detect_language``; ``None`` for every other
     backend and for an explicit request language (detection never runs)."""
+    duration: float = 0.0
+    """Length of the decoded input audio in seconds."""

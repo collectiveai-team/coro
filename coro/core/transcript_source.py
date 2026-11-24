@@ -1,21 +1,20 @@
 """Transcript Source — the read interface every response projection renders from.
 
-A vendor projection needs the five response arrays and two scalars derived from
-them. Taking those as *iterators* rather than as a ``TranscriptionResult``
+A vendor projection needs the decoded audio duration and the response arrays.
+Taking those arrays as *iterators* rather than as a ``TranscriptionResult``
 decouples the projection from whether the transcript is resident: the
 **Full-Memory Pipeline** hands over lists it already holds, the **Streaming
 Pipeline** hands over a cursor into the **Transcript Spill Store**, and one
 implementation of each response format serves both. Byte parity between the two
 pipelines stops depending on two projections being kept in step (ADR 0018).
 
-The five iterators mirror ``TranscriptionResult``'s five fields exactly, rather
+The five iterators mirror ``TranscriptionResult``'s arrays exactly, rather
 than deriving four of them from ``segments``, because the derivation is not
 total: an empty transcript with a speaker timeline yields a populated
 ``diarization`` and no segments at all. A source that recomputed the convenience
 arrays would silently change that case.
 
-A source may be iterated several times — once per array it feeds, plus once for
-the duration — so every iterator must be restartable and none may consume state.
+A source may be iterated several times, so every iterator must be restartable.
 """
 
 from __future__ import annotations
@@ -35,6 +34,11 @@ from coro.core.models import (
 
 class TranscriptSource(Protocol):
     """Restartable, order-preserving reads over one transcription's response arrays."""
+
+    @property
+    def duration(self) -> float:
+        """Return the length of the decoded input audio in seconds."""
+        ...
 
     def iter_segments(self) -> Iterator[ResponseSegment]:
         """Yield speaker-attributed, overlap-clamped segments in transcript order."""
@@ -74,6 +78,11 @@ class MemoryTranscriptSource:
         self._result = result
 
     @property
+    def duration(self) -> float:
+        """Return the length of the decoded input audio in seconds."""
+        return self._result.duration
+
+    @property
     def detected_language(self) -> str | None:
         """Language auto-LID resolved for this request, if any.
 
@@ -101,30 +110,6 @@ class MemoryTranscriptSource:
 
     def close(self) -> None:
         return None
-
-
-def response_duration(source: TranscriptSource) -> float:
-    """Return the response's reported duration: the latest end across every array.
-
-    Mirrors the materialised projection's own definition exactly, including its
-    ``default=0.0`` for a response with no timed content. It is a separate pass
-    because every format serialises a duration *before* the arrays it summarises,
-    so it cannot be accumulated while rendering them.
-    """
-    return max(
-        (
-            item.end
-            for items in (
-                source.iter_segments(),
-                source.iter_words(),
-                source.iter_raw_words(),
-                source.iter_transcript(),
-                source.iter_diarization(),
-            )
-            for item in items
-        ),
-        default=0.0,
-    )
 
 
 def iter_text_fragments(source: TranscriptSource) -> Iterator[str]:

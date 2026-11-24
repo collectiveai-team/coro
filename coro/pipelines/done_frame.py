@@ -136,12 +136,7 @@ _STORE_DERIVED_RENDERERS = {"raw_words": _raw_word_elements}
 
 # Response fields that are a JSON scalar, not an array -- rendered directly
 # from the frame's own attribute rather than scanned from the store/segments.
-# ``detected_language`` is one: the auto-LID sticky result for the whole
-# request (see ``coro/pipelines/windowing.py``'s ``LanguageState``), which the
-# Streaming Pipeline does not yet thread through here (that is ticket 05's
-# streaming/live slice) -- it always renders ``null`` until then, exactly as
-# the field's own default already implies for any caller that does not set it.
-_SCALAR_FIELDS = {"detected_language"}
+_SCALAR_FIELDS = {"detected_language", "duration"}
 
 # Field order comes from the response dataclass, never from string literals.
 _RESPONSE_FIELDS = tuple(f.name for f in fields(TranscriptionResult))
@@ -149,8 +144,8 @@ _RESPONSE_FIELDS = tuple(f.name for f in fields(TranscriptionResult))
 
 def _check_renderers_cover(response_fields: tuple[str, ...]) -> None:
     """Fail unless each response field has a renderer and each renderer a field."""
-    rendered = set(_SEGMENT_DERIVED_RENDERERS) | set(_STORE_DERIVED_RENDERERS)
-    unrendered = set(response_fields) - rendered - _SCALAR_FIELDS
+    rendered = set(_SEGMENT_DERIVED_RENDERERS) | set(_STORE_DERIVED_RENDERERS) | _SCALAR_FIELDS
+    unrendered = set(response_fields) - rendered
     unknown = rendered - set(response_fields)
     if unrendered or unknown:
         raise RuntimeError(
@@ -230,6 +225,7 @@ class StreamingDoneFrame:
     store: TranscriptSpillStore
     timeline: list[SpeakerSegment]
     detected_language: str | None = None
+    duration: float = 0.0
 
     def inner_fragments(self) -> Iterator[str]:
         """Yield the response JSON piecewise, equal to json.dumps(response)."""

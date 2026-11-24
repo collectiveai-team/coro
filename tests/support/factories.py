@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import struct
 import wave
 from typing import Any
 
@@ -32,7 +31,9 @@ DIARIZED_WORDS = [
 UNSCORED_WORDS = [(w, s, e, None, sp) for w, s, e, _, sp in DIARIZED_WORDS]
 
 
-def make_result(words: list[tuple[str, float, float, float | None, str]]) -> TranscriptionResult:
+def make_result(
+    words: list[tuple[str, float, float, float | None, str]], *, duration: float = 0.0
+) -> TranscriptionResult:
     """Build a TranscriptionResult whose segments are same-speaker runs."""
     typed = [
         TranscriptWord(word=w, start=s, end=e, score=c, speaker=sp) for w, s, e, c, sp in words
@@ -59,6 +60,7 @@ def make_result(words: list[tuple[str, float, float, float | None, str]]) -> Tra
         transcript=[TranscriptItem(start=s.start, end=s.end, text=s.text) for s in segments],
         diarization=[],
         raw_words=[],
+        duration=duration,
     )
 
 
@@ -72,14 +74,14 @@ class FakePipeline:
         return self.result
 
 
-def make_wav(*, frames: int = 1600, rate: int = 16000) -> bytes:
-    """Return a valid, silent, mono 16-bit WAV payload."""
+def make_wav(*, frames: int = 1600, rate: int = 16000, pcm_prefix: bytes = b"") -> bytes:
+    """Return a mono 16-bit WAV, padding the optional PCM prefix with silence."""
     buf = io.BytesIO()
     with wave.open(buf, "wb") as handle:
         handle.setnchannels(1)
         handle.setsampwidth(2)
         handle.setframerate(rate)
-        handle.writeframes(struct.pack(f"<{frames}h", *([0] * frames)))
+        handle.writeframes(pcm_prefix.ljust(frames * 2, b"\0"))
     return buf.getvalue()
 
 

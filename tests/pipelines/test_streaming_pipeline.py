@@ -34,6 +34,7 @@ RESPONSE_KEYS = {
     "diarization",
     "raw_words",
     "detected_language",
+    "duration",
 }
 UPLOAD_SECONDS = 2.5
 UPLOAD_PCM_BYTES = int(UPLOAD_SECONDS * BYTES_PER_SECOND)
