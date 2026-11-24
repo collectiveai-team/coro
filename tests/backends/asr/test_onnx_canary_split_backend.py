@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from support.adapters import NoSpeechWordAligner
 
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.onnx_canary_split import (
@@ -99,16 +100,9 @@ class _StubAsr:
         yield self._result
 
 
-class _StubWordAligner:
-    """Reject alignment for tests that supply no transcript text."""
-
-    def align(self, audio, text):
-        raise AssertionError("Blank Canary output must not be aligned")
-
-
 def _adapter(asr, **options):
     """Build the split adapter with an in-memory aligner."""
-    return OnnxCanarySplitASRAdapter(asr, word_aligner=_StubWordAligner(), **options)
+    return OnnxCanarySplitASRAdapter(asr, word_aligner=NoSpeechWordAligner(), **options)
 
 
 class TestOnnxCanarySplitASRAdapter:
@@ -279,15 +273,6 @@ def _build_artifact_dir(tmp_path):
 
 
 class TestBuildOnnxCanarySplitAdapter:
-    @pytest.fixture(autouse=True)
-    def fake_ctc_model(self):
-        """Keep the artifact tests independent of the CTC checkpoint."""
-        with patch(
-            "coro.backends.asr.canary_ctc_alignment.build_canary_word_aligner",
-            return_value=_StubWordAligner(),
-        ) as build:
-            yield build
-
     def test_missing_directory_raises_file_not_found(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             build_onnx_canary_split_adapter(str(tmp_path))
@@ -299,20 +284,21 @@ class TestBuildOnnxCanarySplitAdapter:
         with pytest.raises(FileNotFoundError):
             build_onnx_canary_split_adapter(str(tmp_path))
 
-    def test_builds_adapter_against_stubbed_onnxruntime(self, tmp_path, fake_ctc_model):
+    def test_builds_adapter_against_stubbed_onnxruntime(self, tmp_path):
         _build_artifact_dir(tmp_path)
         with patch("onnxruntime.InferenceSession", autospec=True, return_value=MagicMock()):
-            adapter = build_onnx_canary_split_adapter(str(tmp_path), device="cpu")
+            adapter = build_onnx_canary_split_adapter(
+                str(tmp_path), device="cpu", word_aligner=NoSpeechWordAligner()
+            )
 
         assert isinstance(adapter, OnnxCanarySplitASRAdapter)
         assert adapter.admission.max_concurrency >= 2
-        fake_ctc_model.assert_called_once_with(providers=["CPUExecutionProvider"], hf_token=None)
 
     def test_builder_forwards_max_concurrency_to_admission(self, tmp_path):
         _build_artifact_dir(tmp_path)
         with patch("onnxruntime.InferenceSession", autospec=True, return_value=MagicMock()):
             adapter = build_onnx_canary_split_adapter(
-                str(tmp_path), device="cpu", max_concurrency=5
+                str(tmp_path), device="cpu", max_concurrency=5, word_aligner=NoSpeechWordAligner()
             )
 
         assert adapter.admission.max_concurrency == 5
@@ -328,7 +314,10 @@ class TestBuildOnnxCanarySplitAdapter:
 
         with patch("onnxruntime.InferenceSession", autospec=True, side_effect=_fake_session):
             build_onnx_canary_split_adapter(
-                str(tmp_path), device="cpu", quantization="static_qdq_v3"
+                str(tmp_path),
+                device="cpu",
+                quantization="static_qdq_v3",
+                word_aligner=NoSpeechWordAligner(),
             )
 
         assert any("encoder-model.static_qdq_v3.onnx" in p for p in session_paths)
@@ -350,7 +339,10 @@ class TestBuildOnnxCanarySplitAdapter:
 
         with patch("onnxruntime.InferenceSession", autospec=True, side_effect=_fake_session):
             build_onnx_canary_split_adapter(
-                str(tmp_path), device="cpu", decoder_quantization="dynamic_v1_quint8"
+                str(tmp_path),
+                device="cpu",
+                decoder_quantization="dynamic_v1_quint8",
+                word_aligner=NoSpeechWordAligner(),
             )
 
         assert any("decoder_step.dynamic_v1_quint8.onnx" in p for p in session_paths)
@@ -378,6 +370,7 @@ class TestBuildOnnxCanarySplitAdapter:
                 device="cpu",
                 quantization="static_qdq_v3",
                 decoder_quantization="dynamic_v1_quint8",
+                word_aligner=NoSpeechWordAligner(),
             )
 
         assert any("encoder-model.static_qdq_v3.onnx" in p for p in session_paths)

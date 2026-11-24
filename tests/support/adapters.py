@@ -5,6 +5,16 @@ from __future__ import annotations
 from coro.core.models import SpeakerSegment, TranscriptToken
 
 
+class NoSpeechWordAligner:
+    """Alignment adapter for decoder tests that produce no speech."""
+
+    def align(self, audio, text) -> list[TranscriptToken]:
+        """Reject alignment of unexpected speech in a decoder-only test."""
+        if text.strip():
+            raise AssertionError("Decoder-only test produced speech")
+        return []
+
+
 class RecordingASR:
     """An ASR Adapter returning fixed tokens and keeping what each window asked for.
 

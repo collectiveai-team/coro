@@ -457,23 +457,14 @@ See [ADR 0019](docs/adr/0019-canary-default-asr.md) and
 
 ### Canary word timings
 
-The `canary-1b-v2` slug aligns each ASR window with text. Coro keeps Canary's text and uses
-the aligned word boundaries before merging adjacent windows. If alignment fails,
-Coro fails the transcription instead of substituting interpolated times.
+Canary aligns words to the audio after decoding each window. An alignment
+failure stops transcription.
 
-Set `CORO_ASR_ALIGNMENT_MODEL` or `--asr-alignment-model` to select the model:
-
-- `canary-nemo` (default): the CTC model bundled in NVIDIA's Canary checkpoint.
-  First startup caches the 6.36 GB checkpoint; startup also needs about 2.5 GB
-  of temporary space to restore the CTC weights.
-- `omnilingual-ctc-int8`: Meta's Omnilingual CTC 300M INT8 in ONNX Runtime.
-  The model runs on CPU even when Canary runs on CUDA, and adds a 365 MB download.
-
-For offline deployments, preload the decoder and selected aligner into the
-Hugging Face cache. Canary keeps separate ASR window cache keys for each aligner.
-
-Canary throughput measurements from before CTC alignment do not include this
-second model pass.
+`CORO_ASR_ALIGNMENT_MODEL=canary-nemo` is the default. It downloads NVIDIA's
+6.36 GB checkpoint and uses 2.5 GB of temporary disk space at startup.
+Set `CORO_ASR_ALIGNMENT_MODEL=omnilingual-ctc-int8` for the 365 MB CPU model,
+including on CUDA servers. Populate the Hugging Face cache before starting
+either model offline.
 
 ### ASR language handling
 

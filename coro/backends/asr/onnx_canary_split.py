@@ -188,6 +188,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
+    from coro.backends.asr.canary_ctc_alignment import CanaryWordAligner
+
 __all__ = [
     "OnnxCanarySplitASRAdapter",
     "build_onnx_canary_split_adapter",
@@ -223,6 +225,7 @@ def build_onnx_canary_split_adapter(
     max_queue_depth: int = _DEFAULT_QUEUE_DEPTH,
     hf_token: str | None = None,
     fallback_language: str = "en",
+    word_aligner: CanaryWordAligner | None = None,
 ) -> OnnxCanarySplitASRAdapter:
     """Construct and return an OnnxCanarySplitASRAdapter.
 
@@ -258,6 +261,8 @@ def build_onnx_canary_split_adapter(
             (``ServerSettings.asr_fallback_language``). This checkpoint has no
             auto-detection, so the fallback -- not a hidden ``en`` inside
             onnx_asr's prefix -- is what a no-language request decodes with.
+
+        word_aligner: Optional injected alignment adapter. When absent, load alignment_model.
 
     Returns:
         Initialised adapter ready for use.
@@ -302,13 +307,15 @@ def build_onnx_canary_split_adapter(
     asr_cls = _split_canary_asr_class()
     asr = asr_cls(model_files, manager._create_preprocessor, manager.default_onnx_config)
     logger.info("onnx-canary-split model loaded.")
+    if word_aligner is None:
+        word_aligner = build_alignment_model(
+            alignment_model, providers=resolved_providers, hf_token=hf_token
+        )
     return OnnxCanarySplitASRAdapter(
         asr,
         admission=build_admission_controller(
             max_concurrency=max_concurrency, max_queue_depth=max_queue_depth
         ),
         fallback_language=fallback_language,
-        word_aligner=build_alignment_model(
-            alignment_model, providers=resolved_providers, hf_token=hf_token
-        ),
+        word_aligner=word_aligner,
     )

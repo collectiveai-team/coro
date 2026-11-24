@@ -363,12 +363,7 @@ class ServerSettings(BaseSettings):
 
     @model_validator(mode="after")
     def collapse_blank_fallback_language(self) -> ServerSettings:
-        """Collapse a blank asr_fallback_language to the default.
-
-        Blank means unset (the same forgiving contract the request surfaces
-        give their optional language fields), and an empty string would
-        otherwise reach the adapter as "no language at all".
-        """
+        """Treat a blank fallback language as unset."""
         if not self.asr_fallback_language.strip():
             self.asr_fallback_language = "en"
         return self
