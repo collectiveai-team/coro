@@ -267,6 +267,8 @@ def build_onnx_canary_split_adapter(
     """
     from onnx_asr.loader import Manager
 
+    from coro.backends.asr.canary_ctc_alignment import build_canary_word_aligner
+
     artifacts = _resolve_artifacts(
         model_asr,
         quantization=quantization,
@@ -303,4 +305,5 @@ def build_onnx_canary_split_adapter(
             max_concurrency=max_concurrency, max_queue_depth=max_queue_depth
         ),
         fallback_language=fallback_language,
+        word_aligner=build_canary_word_aligner(providers=resolved_providers, hf_token=hf_token),
     )

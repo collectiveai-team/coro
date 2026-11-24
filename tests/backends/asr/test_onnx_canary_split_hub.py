@@ -72,6 +72,13 @@ def _populate_split_snapshot(directory):
     return directory
 
 
+@pytest.fixture(autouse=True)
+def fake_ctc_model():
+    """Isolate split-decoder artifact resolution from the auxiliary model."""
+    with patch("coro.backends.asr.canary_ctc_alignment.build_canary_word_aligner"):
+        yield
+
+
 class TestInt8Int8HubResolution:
     def test_downloads_exactly_the_needed_files(self, tmp_path):
         """One snapshot_download, exact allow_patterns; the fp32 decoder is never pulled."""
@@ -168,7 +175,7 @@ class TestFp32EncoderTwoRepoResolution:
 
 class TestLocalDirectoryBypassesTheHub:
     def test_no_download_call(self, tmp_path):
-        """An existing local directory resolves entirely offline."""
+        """A local split decoder requires no split-decoder snapshot download."""
         (tmp_path / "encoder-model.onnx").write_bytes(b"")
         (tmp_path / "xattn_kv.onnx").write_bytes(b"")
         (tmp_path / "decoder_step.onnx").write_bytes(b"")

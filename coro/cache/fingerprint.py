@@ -32,6 +32,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from coro.backends.asr.canary_ctc_alignment import CANARY_CTC_REVISION
 from coro.pipelines.windowing import DEFAULT_OVERLAP_SECONDS, DEFAULT_WINDOW_SECONDS
 from coro.settings.host import host_environment
 
@@ -150,6 +151,8 @@ def runtime_identity(provider: str) -> str:
         names = ()
 
     parts = [f"{name} {_module_version(name) or 'absent'}" for name in names]
+    if provider == "onnx-canary-split":
+        parts.extend((f"canary-ctc {CANARY_CTC_REVISION}", runtime_identity("nemo")))
     return ", ".join(parts) if parts else f"{provider} unknown"
 
 

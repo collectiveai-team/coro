@@ -455,6 +455,22 @@ See [ADR 0019](docs/adr/0019-canary-default-asr.md) and
 | `faster-whisper` | `whisper-large-v3-turbo`, `whisper-large-v3` | CTranslate2 | Best English meeting accuracy; multilingual. `CORO_ASR_COMPUTE_TYPE` = `int8` (CPU) / `float16` (GPU). |
 | `onnx-genai` | _(no slug — raw model id)_ `onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4` | onnxruntime-genai | NVIDIA Nemotron **cache-aware streaming**; 40 locales. Built for low-latency real-time, not batch throughput. Timestamps are 560 ms-resolution. GPU strongly recommended; with the default `CORO_ASR_DEVICE=auto` it uses CUDA when onnxruntime offers it (the GPU image) and CPU otherwise (up to v1.5.0 `auto` ran on CPU even in the GPU image, ~5× slower). |
 
+### Canary word timings
+
+The `canary-1b-v2` slug aligns each ASR window with text using the auxiliary CTC
+model bundled in NVIDIA's Canary checkpoint. Coro keeps Canary's text and uses
+the aligned word boundaries before merging adjacent windows. If alignment fails,
+Coro fails the transcription instead of substituting interpolated times.
+
+The first startup caches the 6.36 GB checkpoint. Startup also needs about 2.5 GB
+of temporary disk space to restore the CTC weights. For offline deployments,
+preload both the ONNX artifacts and the NVIDIA checkpoint into the Hugging Face
+cache. Existing Canary ASR window cache entries are not reused because they
+contain interpolated times.
+
+Canary throughput measurements from before CTC alignment do not include this
+second model pass.
+
 ### ASR language handling
 
 With **Canary-1b-v2** (the default), every decode runs in an explicitly

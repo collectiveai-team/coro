@@ -103,6 +103,13 @@ def test_a_setting_the_provider_ignores_does_not_change_the_fingerprint():
     )
 
 
+def test_only_canary_fingerprints_include_the_ctc_model_and_its_runtime():
+    canary = runtime_identity("onnx-canary-split")
+    assert "canary-ctc " in canary
+    assert runtime_identity("nemo") in canary
+    assert "canary-ctc " not in runtime_identity("onnx-asr")
+
+
 def test_concurrency_settings_do_not_change_the_fingerprint():
     """ASR was measured deterministic under concurrency, so these cannot change output."""
     baseline = _fingerprint()
