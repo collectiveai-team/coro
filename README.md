@@ -749,6 +749,7 @@ flag (CLI flags take precedence). Source of truth: `coro/settings/server.py`.
 | `CORO_ASR_COMPUTE_TYPE` | `--asr-compute-type` | `default` | Faster-Whisper compute type (ignored by every other backend). |
 | `CORO_ASR_QUANTIZATION` | `--asr-quantization` | _(slug-derived; `static_qdq_v4_pct_excl` for the default `canary-1b-v2`)_ | Encoder quantization (e.g. `int8` for `onnx-asr`); ignored by `faster-whisper`. Explicit `fp32` turns a slug's own default back off. |
 | `CORO_ASR_DECODER_QUANTIZATION` | `--asr-decoder-quantization` | _(slug-derived; `dynamic_v1_quint8` for the default `canary-1b-v2`)_ | `onnx-canary-split` decoder quantization; ignored by every other backend. Explicit `fp32` turns it off independently of `CORO_ASR_QUANTIZATION`. |
+| `CORO_ASR_ALIGNMENT_MODEL` | `--asr-alignment-model` | `canary-nemo` | Canary word alignment: `canary-nemo` (6.36 GB download, 2.5 GB temporary disk at startup) or `omnilingual-ctc-int8` (365 MB download, CPU only). |
 | `CORO_ASR_FALLBACK_LANGUAGE` | `--asr-fallback-language` | `en` | Language used when a request gives none and detection (where available) never yields one. |
 | `CORO_ASR_ONNX_VAD` | `--asr-onnx-vad` | `disabled` | Silero VAD segmentation for `onnx-asr` (`enabled` \| `disabled`). |
 | `CORO_ASR_ONNX_VAD_THRESHOLD` | `--asr-onnx-vad-threshold` | _(unset)_ | Silero VAD speech-probability threshold; only when VAD enabled. |
