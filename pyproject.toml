@@ -220,7 +220,7 @@ default-groups = ["dev", "botica"]
 # nv-one-logger trainer fails to import (osv-scanner.toml). Re-check on each nemo release
 # and drop the line it no longer needs. The wheel keeps nemo's caps.
 override-dependencies = [
-    "hydra-core>=1.3.6",
+    "hydra-core>=1.3.8",
     "fsspec>=2026.6.0",
 ]
 constraint-dependencies = ["transformers>=5.10"]
