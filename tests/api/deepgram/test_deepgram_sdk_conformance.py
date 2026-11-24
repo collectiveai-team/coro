@@ -14,14 +14,16 @@ import pytest
 from deepgram.types.listen_v1response import ListenV1Response
 from httpx import ASGITransport, AsyncClient
 
-from support.factories import FakePipeline, make_app, make_wav
+from support.factories import DIARIZED_WORDS, FakePipeline, make_app, make_result, make_wav
+
+_AUDIO = make_wav(frames=40_000)
 
 
 async def _listen(query: str = "") -> Any:
-    app = make_app(FakePipeline())
+    app = make_app(FakePipeline(make_result(DIARIZED_WORDS, duration=2.5)))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
-            f"/v1/listen{query}", content=make_wav(), headers={"Content-Type": "audio/wav"}
+            f"/v1/listen{query}", content=_AUDIO, headers={"Content-Type": "audio/wav"}
         )
     assert response.status_code == 200, response.text
     return response.json()
@@ -63,7 +65,7 @@ async def test_metadata_required_fields_are_populated():
     assert int(metadata.request_id, 16) >= 0
     assert len(metadata.sha256) == 64
     assert metadata.channels == 1
-    assert metadata.duration == pytest.approx(2.0, abs=0.01)
+    assert metadata.duration == pytest.approx(2.5, abs=1e-9)
     # One model, named, and described in model_info under the same key.
     assert len(metadata.models) == 1
     assert set(metadata.model_info) == set(metadata.models)
@@ -74,4 +76,4 @@ async def test_metadata_digest_matches_the_submitted_audio():
     import hashlib
 
     body = await _listen()
-    assert body["metadata"]["sha256"] == hashlib.sha256(make_wav()).hexdigest()
+    assert body["metadata"]["sha256"] == hashlib.sha256(_AUDIO).hexdigest()

@@ -10,7 +10,7 @@ Two things make this shape harder than the OpenAI ones. The arrays are *nested*
 real channel and alternative carrying no words rather than with an empty
 ``channels`` list. And ``alternatives[0].confidence`` is the mean over the very
 words it precedes, so it is computed by its own pass before the envelope is
-serialised, exactly as the duration is.
+serialised. Metadata duration comes directly from the decoded audio length.
 
 ``exclude_none`` is preserved: an undiarized response carries no ``speaker`` keys
 rather than null ones, and ``utterances`` is absent unless requested, which is
@@ -43,11 +43,7 @@ from coro.api.json_body import (
 )
 from coro.api.utterances import group_words_into_utterances, mean_measured
 from coro.core.models import TranscriptWord
-from coro.core.transcript_source import (
-    TranscriptSource,
-    iter_text_fragments,
-    response_duration,
-)
+from coro.core.transcript_source import TranscriptSource, iter_text_fragments
 
 
 def _mean_word_confidence(source: TranscriptSource) -> float | None:
@@ -102,13 +98,12 @@ def render_deepgram(
     utterances: bool,
 ) -> Iterator[str]:
     """Render the Deepgram pre-recorded body from a Transcript Source."""
-    duration = response_duration(source)
     envelope_response = DeepgramResponse(
         metadata=DeepgramMetadata(
             request_id=request_id,
             sha256=audio_sha256,
             created=created,
-            duration=duration,
+            duration=source.duration,
             channels=MONO_CHANNEL_COUNT,
             models=[asr_model],
             model_info={asr_model: DeepgramModelInfo(name=asr_model, arch=asr_backend)},

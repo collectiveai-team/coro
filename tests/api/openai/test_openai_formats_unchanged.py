@@ -68,6 +68,7 @@ class _FakePipeline:
             ],
             diarization=[],
             raw_words=[],
+            duration=1.0,
         )
 
 
@@ -76,7 +77,7 @@ async def _raw_body(fmt: str) -> str:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/v1/audio/transcriptions",
-            files={"file": ("t.wav", make_wav(), "audio/wav")},
+            files={"file": ("t.wav", make_wav(frames=16_000), "audio/wav")},
             data={"response_format": fmt, "language": "es"},
         )
     assert response.status_code == 200, response.text

@@ -37,6 +37,7 @@ RESPONSE_KEYS = {
     "diarization",
     "raw_words",
     "detected_language",
+    "duration",
 }
 
 _CHUNK_BYTES = struct.pack("<1600h", *([0] * 1600))

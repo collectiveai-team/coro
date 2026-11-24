@@ -36,11 +36,18 @@ class SpillTranscriptSource:
         store: TranscriptSpillStore,
         timeline: list[SpeakerSegment],
         *,
+        duration: float,
         detected_language: str | None = None,
     ) -> None:
         self._store = store
         self._timeline = timeline
+        self._duration = duration
         self._detected_language = detected_language
+
+    @property
+    def duration(self) -> float:
+        """Return the length of the decoded input audio in seconds."""
+        return self._duration
 
     @property
     def detected_language(self) -> str | None:

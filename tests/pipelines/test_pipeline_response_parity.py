@@ -170,6 +170,7 @@ async def test_batch_response_json_is_byte_identical(tmp_path, diarization: bool
     full_memory = await _full_memory_response_json(diarization=diarization)
     streaming = await _streaming_response_json(str(tmp_path), diarization=diarization)
     assert streaming == full_memory
+    assert json.loads(streaming)["duration"] == pytest.approx(_AUDIO_SECONDS, abs=1e-9)
 
 
 @pytest.mark.parametrize("diarization", [False, True])

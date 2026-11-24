@@ -35,14 +35,11 @@ from coro.api.openai.schemas import (
     VerboseJsonWord,
 )
 from coro.core.models import RawWord, TranscriptWord
-from coro.core.transcript_source import (
-    TranscriptSource,
-    iter_text_fragments,
-    response_duration,
-)
+from coro.core.transcript_source import TranscriptSource, iter_text_fragments
 
 
 def _usage(duration: float) -> TranscriptionUsage:
+    """Report decoded audio usage in whole seconds, rounded up."""
     return TranscriptionUsage(type="duration", seconds=math.ceil(duration))
 
 
@@ -64,13 +61,13 @@ def _timed_words(source: TranscriptSource) -> Iterator[TranscriptWord | RawWord]
 
 def render_json(source: TranscriptSource) -> Iterator[str]:
     """Render the default ``json`` body: the transcript text and its usage."""
-    envelope = dump_model(JsonResponse(text=TEXT_SENTINEL, usage=_usage(response_duration(source))))
+    envelope = dump_model(JsonResponse(text=TEXT_SENTINEL, usage=_usage(source.duration)))
     yield from splice(envelope, [text_slot(iter_text_fragments(source))])
 
 
 def render_verbose_json(source: TranscriptSource, *, language: str | None) -> Iterator[str]:
     """Render the ``verbose_json`` body: text, segments and words."""
-    duration = response_duration(source)
+    duration = source.duration
     envelope = dump_model(
         VerboseJsonResponse(
             duration=duration,
@@ -114,7 +111,7 @@ def render_verbose_json(source: TranscriptSource, *, language: str | None) -> It
 
 def render_diarized_json(source: TranscriptSource) -> Iterator[str]:
     """Render the ``diarized_json`` body: text and speaker-annotated segments."""
-    duration = response_duration(source)
+    duration = source.duration
     envelope = dump_model(
         DiarizedJsonResponse(
             task="transcribe",

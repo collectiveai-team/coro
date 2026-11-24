@@ -114,6 +114,7 @@ def build_streaming_response(
     store: TranscriptSpillStore,
     speaker_timeline: list[SpeakerSegment] | None = None,
     *,
+    duration: float = 0.0,
     detected_language: str | None = None,
 ) -> TranscriptionResult:
     """Assemble the full :class:`TranscriptionResult` from a spill store.
@@ -125,6 +126,7 @@ def build_streaming_response(
     Args:
         store: The request's Transcript Spill Store.
         speaker_timeline: Speaker timeline segments from the Diarization Adapter.
+        duration: Length of the decoded input audio in seconds.
         detected_language: Language auto-LID resolved for this request, if any
             (see :class:`~coro.core.models.TranscriptionResult`).
 
@@ -144,4 +146,5 @@ def build_streaming_response(
         diarization=diarization,
         raw_words=raw_words,
         detected_language=detected_language,
+        duration=duration,
     )

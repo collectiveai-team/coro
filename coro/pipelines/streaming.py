@@ -99,7 +99,10 @@ class StreamingPipeline:
             async for _ in self._run(audio, store, outcome, language=language, prompt=prompt):
                 pass
             return build_streaming_response(
-                store, outcome.timeline, detected_language=outcome.detected_language
+                store,
+                outcome.timeline,
+                duration=outcome.duration,
+                detected_language=outcome.detected_language,
             )
         finally:
             store.close()
@@ -129,7 +132,10 @@ class StreamingPipeline:
         finally:
             await audio.cleanup()
         return SpillTranscriptSource(
-            store, outcome.timeline, detected_language=outcome.detected_language
+            store,
+            outcome.timeline,
+            duration=outcome.duration,
+            detected_language=outcome.detected_language,
         )
 
     # Streaming Transcription ----------------------------------------------
@@ -151,7 +157,10 @@ class StreamingPipeline:
             # rendered; the final transcript is never materialised in memory.
             store_released = True
             yield StreamingDoneFrame(
-                store=store, timeline=outcome.timeline, detected_language=outcome.detected_language
+                store=store,
+                timeline=outcome.timeline,
+                detected_language=outcome.detected_language,
+                duration=outcome.duration,
             )
         finally:
             if not store_released:
