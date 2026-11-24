@@ -110,6 +110,15 @@ def test_only_canary_fingerprints_include_the_ctc_model_and_its_runtime():
     assert "canary-ctc " not in runtime_identity("onnx-asr")
 
 
+@pytest.mark.parametrize(
+    ("backend", "changes_key"), [("onnx-canary-split", True), ("onnx-asr", False)]
+)
+def test_alignment_model_separates_only_canary_window_caches(backend, changes_key):
+    original = _fingerprint(backend_asr=backend)
+    alternative = _fingerprint(backend_asr=backend, asr_alignment_model="omnilingual-ctc-int8")
+    assert (original != alternative) == changes_key
+
+
 def test_concurrency_settings_do_not_change_the_fingerprint():
     """ASR was measured deterministic under concurrency, so these cannot change output."""
     baseline = _fingerprint()

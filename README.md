@@ -457,16 +457,20 @@ See [ADR 0019](docs/adr/0019-canary-default-asr.md) and
 
 ### Canary word timings
 
-The `canary-1b-v2` slug aligns each ASR window with text using the auxiliary CTC
-model bundled in NVIDIA's Canary checkpoint. Coro keeps Canary's text and uses
+The `canary-1b-v2` slug aligns each ASR window with text. Coro keeps Canary's text and uses
 the aligned word boundaries before merging adjacent windows. If alignment fails,
 Coro fails the transcription instead of substituting interpolated times.
 
-The first startup caches the 6.36 GB checkpoint. Startup also needs about 2.5 GB
-of temporary disk space to restore the CTC weights. For offline deployments,
-preload both the ONNX artifacts and the NVIDIA checkpoint into the Hugging Face
-cache. Existing Canary ASR window cache entries are not reused because they
-contain interpolated times.
+Set `CORO_ASR_ALIGNMENT_MODEL` or `--asr-alignment-model` to select the model:
+
+- `canary-nemo` (default): the CTC model bundled in NVIDIA's Canary checkpoint.
+  First startup caches the 6.36 GB checkpoint; startup also needs about 2.5 GB
+  of temporary space to restore the CTC weights.
+- `omnilingual-ctc-int8`: Meta's Omnilingual CTC 300M INT8 in ONNX Runtime.
+  The model runs on CPU even when Canary runs on CUDA, and adds a 365 MB download.
+
+For offline deployments, preload the decoder and selected aligner into the
+Hugging Face cache. Canary keeps separate ASR window cache keys for each aligner.
 
 Canary throughput measurements from before CTC alignment do not include this
 second model pass.
@@ -765,6 +769,7 @@ flag (CLI flags take precedence). Source of truth: `coro/settings/server.py`.
 | `CORO_ASR_COMPUTE_TYPE` | `--asr-compute-type` | `default` | Faster-Whisper compute type (ignored by every other backend). |
 | `CORO_ASR_QUANTIZATION` | `--asr-quantization` | _(slug-derived; `static_qdq_v4_pct_excl` for the default `canary-1b-v2`)_ | Encoder quantization (e.g. `int8` for `onnx-asr`); ignored by `faster-whisper`. Explicit `fp32` turns a slug's own default back off. |
 | `CORO_ASR_DECODER_QUANTIZATION` | `--asr-decoder-quantization` | _(slug-derived; `dynamic_v1_quint8` for the default `canary-1b-v2`)_ | `onnx-canary-split` decoder quantization; ignored by every other backend. Explicit `fp32` turns it off independently of `CORO_ASR_QUANTIZATION`. |
+| `CORO_ASR_ALIGNMENT_MODEL` | `--asr-alignment-model` | `canary-nemo` | Selects the model used for [Canary word timings](#canary-word-timings). |
 | `CORO_ASR_FALLBACK_LANGUAGE` | `--asr-fallback-language` | `en` | Language used when a request gives none and detection (where available) never yields one. |
 | `CORO_ASR_ONNX_VAD` | `--asr-onnx-vad` | `disabled` | Silero VAD segmentation for `onnx-asr` (`enabled` \| `disabled`). |
 | `CORO_ASR_ONNX_VAD_THRESHOLD` | `--asr-onnx-vad-threshold` | _(unset)_ | Silero VAD speech-probability threshold; only when VAD enabled. |

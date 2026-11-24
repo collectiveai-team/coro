@@ -182,6 +182,7 @@ from coro.backends.asr.onnx_canary_split_decoder import _split_canary_asr_class
 from coro.backends.asr.onnx_canary_split_language import resolve_canary_language
 from coro.backends.asr.onnx_session import build_asr_session_options
 from coro.core.logger import get_logger
+from coro.settings.selection import DEFAULT_CANARY_ALIGNMENT_MODEL, CanaryAlignmentModel
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -216,6 +217,7 @@ def build_onnx_canary_split_adapter(
     device: str = "auto",
     quantization: str | None = None,
     decoder_quantization: str | None = None,
+    alignment_model: CanaryAlignmentModel = DEFAULT_CANARY_ALIGNMENT_MODEL,
     providers: Sequence[str] | None = None,
     max_concurrency: int = 0,
     max_queue_depth: int = _DEFAULT_QUEUE_DEPTH,
@@ -244,6 +246,7 @@ def build_onnx_canary_split_adapter(
             (e.g. ``"dynamic_v1_quint8"``, the accepted dynamic-INT8 variant
             -- see the module docstring for why static QDQ was rejected for
             this graph); ``None`` (or ``"fp32"``) loads the fp32 decoder step.
+        alignment_model: Word alignment model for Canary's decoded transcript.
         providers: Explicit onnxruntime providers; overrides ``device`` when supplied.
         max_concurrency: Adapter Concurrency Policy permit count; 0 auto-sizes
             from the usable core count.
@@ -267,7 +270,7 @@ def build_onnx_canary_split_adapter(
     """
     from onnx_asr.loader import Manager
 
-    from coro.backends.asr.canary_ctc_alignment import build_canary_word_aligner
+    from coro.backends.asr.alignment_model import build_alignment_model
 
     artifacts = _resolve_artifacts(
         model_asr,
@@ -305,5 +308,7 @@ def build_onnx_canary_split_adapter(
             max_concurrency=max_concurrency, max_queue_depth=max_queue_depth
         ),
         fallback_language=fallback_language,
-        word_aligner=build_canary_word_aligner(providers=resolved_providers, hf_token=hf_token),
+        word_aligner=build_alignment_model(
+            alignment_model, providers=resolved_providers, hf_token=hf_token
+        ),
     )

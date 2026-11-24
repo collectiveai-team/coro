@@ -30,11 +30,13 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
 from coro.backends.asr.canary_ctc_alignment import CANARY_CTC_REVISION
+from coro.backends.asr.omnilingual_ctc_alignment import OMNILINGUAL_CTC_REVISION
 from coro.pipelines.windowing import DEFAULT_OVERLAP_SECONDS, DEFAULT_WINDOW_SECONDS
 from coro.settings.host import host_environment
+from coro.settings.selection import DEFAULT_CANARY_ALIGNMENT_MODEL, CanaryAlignmentModel
 
 if TYPE_CHECKING:
     from coro.settings import ServerSettings
@@ -126,7 +128,9 @@ def _module_version(name: str) -> str | None:
         return None
 
 
-def runtime_identity(provider: str) -> str:
+def runtime_identity(
+    provider: str, *, alignment_model: CanaryAlignmentModel = DEFAULT_CANARY_ALIGNMENT_MODEL
+) -> str:
     """Return the inference runtime identity for an ASR Backend Provider.
 
     Read from distribution metadata rather than by importing the runtime, so
@@ -135,6 +139,7 @@ def runtime_identity(provider: str) -> str:
 
     Args:
         provider: ASR Backend Provider selector.
+        alignment_model: Word alignment model, used only by Canary.
 
     Returns:
         A stable identity string; ``"<name> unknown"`` when the distribution is
@@ -152,8 +157,19 @@ def runtime_identity(provider: str) -> str:
 
     parts = [f"{name} {_module_version(name) or 'absent'}" for name in names]
     if provider == "onnx-canary-split":
-        parts.extend((f"canary-ctc {CANARY_CTC_REVISION}", runtime_identity("nemo")))
+        parts.extend(_alignment_identity(alignment_model))
     return ", ".join(parts) if parts else f"{provider} unknown"
+
+
+def _alignment_identity(model: CanaryAlignmentModel) -> tuple[str, ...]:
+    """Identify the alignment weights and runtime that produced cached words."""
+    match model:
+        case "canary-nemo":
+            return f"canary-ctc {CANARY_CTC_REVISION}", runtime_identity("nemo")
+        case "omnilingual-ctc-int8":
+            return (f"{model} {OMNILINGUAL_CTC_REVISION} cpu",)
+        case _:
+            assert_never(model)
 
 
 def _nvidia_gpu_names() -> list[str]:
@@ -276,7 +292,7 @@ def fingerprint_components(
         backend_asr=provider,
         model_asr=settings.model_asr,
         device=device,
-        runtime=runtime_identity(provider),
+        runtime=runtime_identity(provider, alignment_model=settings.asr_alignment_model),
         accelerator=accelerator_identity(device),
         window_seconds=window_seconds,
         overlap_seconds=overlap_seconds,

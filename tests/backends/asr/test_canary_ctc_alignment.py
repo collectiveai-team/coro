@@ -60,12 +60,13 @@ async def test_alignment_failure_does_not_fall_back_to_interpolation():
         await adapter.transcribe_pcm(b"\x00\x40" * 16000, language="es")
 
 
-@pytest.fixture(scope="module")
-def aligned_canary():
-    """Load the split decoder and the NVIDIA CTC checkpoint."""
+@pytest.fixture(scope="module", params=["canary-nemo", "omnilingual-ctc-int8"])
+def aligned_canary(request):
+    """Load the split decoder with each real alignment model."""
     return build_asr_adapter(
         ServerSettings(
             asr_device="cpu",
+            asr_alignment_model=request.param,
             _env_file=None,
         )
     )

@@ -9,11 +9,13 @@ from pydantic import AliasChoices, Field, PrivateAttr, SecretStr, model_validato
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from coro.settings.selection import (
+    DEFAULT_CANARY_ALIGNMENT_MODEL,
     DEFAULT_MODEL_SLUG,
     FP32_QUANTIZATION_SENTINEL,
     MODEL_SLUGS,
     ASRBackendProvider,
     ASRDevice,
+    CanaryAlignmentModel,
     DiarizationBackendProvider,
     DiarizationDevice,
     DiarizationLatencyTier,
@@ -91,6 +93,10 @@ class ServerSettings(BaseSettings):
         "docstring for the measured quality/speed numbers and ADR 0019 for the "
         "default decision. Explicit 'fp32' turns it off, independently of "
         "asr_quantization.",
+    )
+    asr_alignment_model: CanaryAlignmentModel = Field(
+        default=DEFAULT_CANARY_ALIGNMENT_MODEL,
+        description="Word alignment model for the onnx-canary-split ASR Backend Provider.",
     )
     asr_fallback_language: str = Field(
         default="en",

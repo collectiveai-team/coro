@@ -105,6 +105,7 @@ def _no_hf_token_in_env(monkeypatch):
 def test_dispatches_to_onnx_canary_split(monkeypatch):
     """The onnx-canary-split provider routes to its builder with both quantization selectors."""
     _no_hf_token_in_env(monkeypatch)
+    monkeypatch.setenv("CORO_ASR_ALIGNMENT_MODEL", "omnilingual-ctc-int8")
     settings = ServerSettings(
         backend_asr="onnx-canary-split",
         model_asr="m",
@@ -120,6 +121,7 @@ def test_dispatches_to_onnx_canary_split(monkeypatch):
             "device": settings.asr_device,
             "quantization": "static_qdq_v3",
             "decoder_quantization": "dynamic_v1_quint8",
+            "alignment_model": "omnilingual-ctc-int8",
             "max_concurrency": settings.asr_max_concurrency,
             "max_queue_depth": settings.asr_max_queue_depth,
             "hf_token": None,

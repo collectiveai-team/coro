@@ -17,6 +17,7 @@ def test_settings_default_to_full_memory_canary_configuration():
     assert settings.model_asr == "collectiveai/canary-1b-v2-onnx-split-int8"
     assert settings.asr_quantization == "static_qdq_v4_pct_excl"
     assert settings.asr_decoder_quantization == "dynamic_v1_quint8"
+    assert settings.asr_alignment_model == "canary-nemo"
     assert settings.asr_device == "auto"
     assert settings.asr_compute_type == "default"
     assert settings.backend_diarization == "none"
@@ -26,6 +27,13 @@ def test_settings_default_to_full_memory_canary_configuration():
     assert settings.asr_onnx_vad_threshold is None
     assert settings.diarization_postprocessing is None
     assert settings.diarization_postprocessing_max_speakers == 4
+
+
+def test_unknown_alignment_model_fails_configuration(monkeypatch):
+    monkeypatch.setenv("CORO_ASR_ALIGNMENT_MODEL", "disabled")
+
+    with pytest.raises(ValidationError, match="asr_alignment_model"):
+        ServerSettings(_env_file=None)
 
 
 def test_a_non_slug_asr_quantization_stays_unset_for_a_non_canary_backend():
