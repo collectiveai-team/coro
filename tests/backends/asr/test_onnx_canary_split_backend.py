@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from support.adapters import NoSpeechWordAligner
 
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.backends.asr.onnx_canary_split import (
@@ -99,10 +100,19 @@ class _StubAsr:
         yield self._result
 
 
+def _adapter(asr, **options):
+    """Build the split adapter with an in-memory aligner."""
+    return OnnxCanarySplitASRAdapter(asr, word_aligner=NoSpeechWordAligner(), **options)
+
+
 class TestOnnxCanarySplitASRAdapter:
+    async def test_does_not_align_empty_text(self):
+        adapter = _adapter(_StubAsr(SimpleNamespace(text="  ")))
+        assert await adapter.transcribe_pcm(_pcm(), language="es") == []
+
     async def test_forwards_the_language_kwarg(self):
         asr = _StubAsr(_result())
-        adapter = OnnxCanarySplitASRAdapter(asr)
+        adapter = _adapter(asr)
         await adapter.transcribe_pcm(_pcm(), language="es")
         assert asr.calls == [
             {
@@ -115,41 +125,32 @@ class TestOnnxCanarySplitASRAdapter:
     async def test_no_language_resolves_to_the_adapter_fallback(self):
         """No request language resolves to the adapter's fallback (never onnx_asr's own default)."""
         asr = _StubAsr(_result())
-        adapter = OnnxCanarySplitASRAdapter(asr, fallback_language="fr")
+        adapter = _adapter(asr, fallback_language="fr")
         await adapter.transcribe_pcm(_pcm())
         assert asr.calls[0]["language"] == "fr"
 
     async def test_no_language_defaults_to_english_fallback(self):
         asr = _StubAsr(_result())
-        adapter = OnnxCanarySplitASRAdapter(asr)
+        adapter = _adapter(asr)
         await adapter.transcribe_pcm(_pcm())
         assert asr.calls[0]["language"] == "en"
 
     async def test_prompt_is_accepted_but_ignored(self):
         """No carried-prompt input port on this AED model (only language/pnc prefix tokens)."""
         asr = _StubAsr(_result())
-        adapter = OnnxCanarySplitASRAdapter(asr)
+        adapter = _adapter(asr)
         await adapter.transcribe_pcm(_pcm(), language="es", prompt="some carried prompt")
         assert "prompt" not in asr.calls[0]
 
-    async def test_converts_result_to_transcript_tokens_via_words_from_text_fallback(self):
-        """No per-token timestamps for this AED model -- falls back like onnx-asr's Canary."""
-        asr = _StubAsr(_result(tokens=[" hola", " mundo"], timestamps=None))
-        adapter = OnnxCanarySplitASRAdapter(asr)
-        tokens = await adapter.transcribe_pcm(_pcm(2.0), language="es")
-        assert (
-            "".join(t.text for t in tokens).strip() == ""
-        )  # text-only result has no `.text` set on the stub
-
     def test_admission_auto_sizes_by_default(self):
         """Default admission follows the shared auto-sizing policy (>= 2 permits)."""
-        adapter = OnnxCanarySplitASRAdapter(_StubAsr(_result()))
+        adapter = _adapter(_StubAsr(_result()))
         assert adapter.admission.max_concurrency >= 2
 
     def test_admission_honours_an_explicit_permit_count(self):
         from coro.backends.asr.concurrency import AdmissionController
 
-        adapter = OnnxCanarySplitASRAdapter(
+        adapter = _adapter(
             _StubAsr(_result()), admission=AdmissionController(max_concurrency=3, max_queue_depth=4)
         )
         assert adapter.admission.max_concurrency == 3
@@ -211,7 +212,7 @@ class _LidStubAsr(_StubAsr):
 class TestDetectLanguage:
     async def test_detects_the_emitted_language_token(self):
         asr = _LidStubAsr(emitted_tokens=("<|emo:undefined|>", "<|es|>"))
-        adapter = OnnxCanarySplitASRAdapter(asr)
+        adapter = _adapter(asr)
 
         detected = await adapter.detect_language(_pcm())
 
@@ -221,7 +222,7 @@ class TestDetectLanguage:
     async def test_a_non_language_second_token_returns_none(self):
         """Defensive: not observed on real audio in the LID probe, but handled."""
         asr = _LidStubAsr(emitted_tokens=("<|emo:undefined|>", "<|pnc|>"))
-        adapter = OnnxCanarySplitASRAdapter(asr)
+        adapter = _adapter(asr)
 
         assert await adapter.detect_language(_pcm()) is None
 
@@ -231,7 +232,7 @@ class TestDetectLanguage:
 
         asr = _LidStubAsr(emitted_tokens=("<|emo:undefined|>", "<|es|>"))
         admission = AdmissionController(max_concurrency=1, max_queue_depth=0)
-        adapter = OnnxCanarySplitASRAdapter(asr, admission=admission)
+        adapter = _adapter(asr, admission=admission)
 
         assert await adapter.detect_language(_pcm()) == "es"
 
@@ -286,7 +287,9 @@ class TestBuildOnnxCanarySplitAdapter:
     def test_builds_adapter_against_stubbed_onnxruntime(self, tmp_path):
         _build_artifact_dir(tmp_path)
         with patch("onnxruntime.InferenceSession", autospec=True, return_value=MagicMock()):
-            adapter = build_onnx_canary_split_adapter(str(tmp_path), device="cpu")
+            adapter = build_onnx_canary_split_adapter(
+                str(tmp_path), device="cpu", word_aligner=NoSpeechWordAligner()
+            )
 
         assert isinstance(adapter, OnnxCanarySplitASRAdapter)
         assert adapter.admission.max_concurrency >= 2
@@ -295,7 +298,7 @@ class TestBuildOnnxCanarySplitAdapter:
         _build_artifact_dir(tmp_path)
         with patch("onnxruntime.InferenceSession", autospec=True, return_value=MagicMock()):
             adapter = build_onnx_canary_split_adapter(
-                str(tmp_path), device="cpu", max_concurrency=5
+                str(tmp_path), device="cpu", max_concurrency=5, word_aligner=NoSpeechWordAligner()
             )
 
         assert adapter.admission.max_concurrency == 5
@@ -311,7 +314,10 @@ class TestBuildOnnxCanarySplitAdapter:
 
         with patch("onnxruntime.InferenceSession", autospec=True, side_effect=_fake_session):
             build_onnx_canary_split_adapter(
-                str(tmp_path), device="cpu", quantization="static_qdq_v3"
+                str(tmp_path),
+                device="cpu",
+                quantization="static_qdq_v3",
+                word_aligner=NoSpeechWordAligner(),
             )
 
         assert any("encoder-model.static_qdq_v3.onnx" in p for p in session_paths)
@@ -333,7 +339,10 @@ class TestBuildOnnxCanarySplitAdapter:
 
         with patch("onnxruntime.InferenceSession", autospec=True, side_effect=_fake_session):
             build_onnx_canary_split_adapter(
-                str(tmp_path), device="cpu", decoder_quantization="dynamic_v1_quint8"
+                str(tmp_path),
+                device="cpu",
+                decoder_quantization="dynamic_v1_quint8",
+                word_aligner=NoSpeechWordAligner(),
             )
 
         assert any("decoder_step.dynamic_v1_quint8.onnx" in p for p in session_paths)
@@ -361,6 +370,7 @@ class TestBuildOnnxCanarySplitAdapter:
                 device="cpu",
                 quantization="static_qdq_v3",
                 decoder_quantization="dynamic_v1_quint8",
+                word_aligner=NoSpeechWordAligner(),
             )
 
         assert any("encoder-model.static_qdq_v3.onnx" in p for p in session_paths)

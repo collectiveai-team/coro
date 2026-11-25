@@ -23,6 +23,8 @@ ASRBackendProvider = Literal[
 ]
 DiarizationBackendProvider = Literal["none", "nemo", "pyannote"]
 ASRDevice = Literal["auto", "cuda", "cpu"]
+CanaryAlignmentModel = Literal["canary-nemo", "omnilingual-ctc-int8"]
+DEFAULT_CANARY_ALIGNMENT_MODEL: CanaryAlignmentModel = "canary-nemo"
 OnnxVadSelector = Literal["enabled", "disabled"]
 DiarizationDevice = Literal["auto", "cuda", "cpu"]
 DiarizationLatencyTier = Literal["very-high", "high", "low", "ultra-low"]

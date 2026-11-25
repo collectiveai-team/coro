@@ -24,6 +24,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from support.adapters import NoSpeechWordAligner
 
 from coro.backends.asr.onnx_canary_split import build_onnx_canary_split_adapter
 
@@ -87,6 +88,7 @@ class TestInt8Int8HubResolution:
                 device="cpu",
                 quantization="static_qdq_v4_pct_excl",
                 decoder_quantization="dynamic_v1_quint8",
+                word_aligner=NoSpeechWordAligner(),
             )
 
         assert adapter is not None
@@ -110,6 +112,7 @@ class TestInt8Int8HubResolution:
                 quantization="static_qdq_v4_pct_excl",
                 decoder_quantization="dynamic_v1_quint8",
                 hf_token=expected,
+                word_aligner=NoSpeechWordAligner(),
             )
 
         assert mock_dl.call_args.kwargs["token"] == expected
@@ -146,7 +149,12 @@ class TestFp32EncoderTwoRepoResolution:
             ) as mock_dl,
             patch("onnxruntime.InferenceSession", autospec=True, side_effect=_fake_session),
         ):
-            build_onnx_canary_split_adapter(_SPLIT_REPO, device="cpu", quantization=quantization)
+            build_onnx_canary_split_adapter(
+                _SPLIT_REPO,
+                device="cpu",
+                quantization=quantization,
+                word_aligner=NoSpeechWordAligner(),
+            )
 
         repo_calls = [
             (call.args[0], tuple(call.kwargs["allow_patterns"])) for call in mock_dl.call_args_list
@@ -168,7 +176,7 @@ class TestFp32EncoderTwoRepoResolution:
 
 class TestLocalDirectoryBypassesTheHub:
     def test_no_download_call(self, tmp_path):
-        """An existing local directory resolves entirely offline."""
+        """A local split decoder requires no split-decoder snapshot download."""
         (tmp_path / "encoder-model.onnx").write_bytes(b"")
         (tmp_path / "xattn_kv.onnx").write_bytes(b"")
         (tmp_path / "decoder_step.onnx").write_bytes(b"")
@@ -178,7 +186,9 @@ class TestLocalDirectoryBypassesTheHub:
             patch("huggingface_hub.snapshot_download", autospec=True) as mock_dl,
             patch("onnxruntime.InferenceSession", autospec=True, return_value=MagicMock()),
         ):
-            adapter = build_onnx_canary_split_adapter(str(tmp_path), device="cpu")
+            adapter = build_onnx_canary_split_adapter(
+                str(tmp_path), device="cpu", word_aligner=NoSpeechWordAligner()
+            )
 
         assert adapter is not None
         mock_dl.assert_not_called()

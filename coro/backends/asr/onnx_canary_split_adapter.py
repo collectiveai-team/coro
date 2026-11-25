@@ -13,7 +13,6 @@ import numpy as np
 
 from coro.backends.asr.concurrency import AdmissionController, build_admission_controller
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
-from coro.backends.asr.onnx_asr import convert_onnx_asr_result
 from coro.backends.asr.onnx_canary_split_language import (
     _partial_prompt_lid,
     resolve_canary_language,
@@ -22,13 +21,13 @@ from coro.backends.asr.onnx_canary_split_language import (
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from coro.backends.asr.canary_ctc_alignment import CanaryWordAligner
     from coro.backends.asr.onnx_canary_split_language import CanaryLidModel
 
     import numpy.typing as npt
 
     from coro.core.models import TranscriptToken
 
-_SAMPLE_RATE = 16000
 # Admission queue depth used when an adapter is built without explicit settings
 # (direct construction in tests and tooling); the factory always passes one.
 _DEFAULT_QUEUE_DEPTH = 32
@@ -68,6 +67,7 @@ class OnnxCanarySplitASRAdapter:
         self,
         asr: SplitCanaryAsr,
         *,
+        word_aligner: CanaryWordAligner,
         admission: AdmissionController | None = None,
         fallback_language: str = "en",
     ) -> None:
@@ -76,6 +76,7 @@ class OnnxCanarySplitASRAdapter:
         # supported-language set, never a hardcoded list.
         self._language_tokens: dict[str, int] = asr.language_token_ids
         self._fallback_language = fallback_language
+        self._word_aligner = word_aligner
         self._admission = admission or build_admission_controller(
             max_concurrency=0, max_queue_depth=_DEFAULT_QUEUE_DEPTH
         )
@@ -173,20 +174,15 @@ class OnnxCanarySplitASRAdapter:
         """
         resolved = self.resolve_language(language)
         audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        duration = len(audio) / _SAMPLE_RATE
-
-        def _recognize() -> object:
-            waveforms = audio[None, :]
-            waveforms_len = np.array([len(audio)], dtype=np.int64)
-            return next(
-                iter(self._asr.recognize_batch(waveforms, waveforms_len, language=resolved))
-            )
 
         async with self._admission.admit():
-            result = await asyncio.to_thread(_recognize)
-        # No per-token timestamps for this AED model (same as `onnx-asr`'s Canary
-        # and Whisper integrations) -- `convert_onnx_asr_result` already falls
-        # back to `words_from_text` when `result.timestamps` is None, which
-        # `_decoding`'s `None` second yield element guarantees here too. Do not
-        # regress or paper over that known limitation (see findings.md).
-        return convert_onnx_asr_result(result, span_end=duration)
+            return await asyncio.to_thread(self._transcribe_window, audio, resolved)
+
+    def _transcribe_window(
+        self, audio: npt.NDArray[np.float32], language: str
+    ) -> list[TranscriptToken]:
+        """Decode one window and align its text to the same audio."""
+        lengths = np.array([len(audio)], dtype=np.int64)
+        result = next(iter(self._asr.recognize_batch(audio[None, :], lengths, language=language)))
+        text = (getattr(result, "text", "") or "").strip()
+        return self._word_aligner.align(audio, text) if text else []
