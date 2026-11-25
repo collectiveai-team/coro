@@ -77,7 +77,6 @@ class StreamingPipeline:
         # spill).  None falls back to the system temp dir, for tests only.
         self._spill_dir = spill_dir
 
-    # Window Geometry -------------------------------------------------------
     @property
     def windowing(self) -> ASRWindowing:
         """The ASR Windowing this pipeline transcribes with."""

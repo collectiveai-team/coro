@@ -5,6 +5,8 @@ adapters that record each call, so the assertions observe whether the
 diarizer was used for a request and that the body does not change.
 """
 
+# botica: ignore-file[test-through-interface] -- same body by design; the fakes record calls
+
 from __future__ import annotations
 
 import pytest

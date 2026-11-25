@@ -6,13 +6,11 @@ from functools import lru_cache
 from typing import Literal
 
 from pydantic import AliasChoices, Field, PrivateAttr, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 
 from coro.settings.selection import (
     DEFAULT_CANARY_ALIGNMENT_MODEL,
     DEFAULT_MODEL_SLUG,
-    DEFAULT_OVERLAP_SECONDS,
-    DEFAULT_WINDOW_SECONDS,
     FP32_QUANTIZATION_SENTINEL,
     MODEL_SLUGS,
     ASRBackendProvider,
@@ -24,10 +22,11 @@ from coro.settings.selection import (
     OnnxVadSelector,
     PipelineSelector,
 )
+from coro.settings.windowing import ASRWindowSettings
 
 
 # MARK: Server Settings
-class ServerSettings(BaseSettings):
+class ServerSettings(ASRWindowSettings):
     """Runtime-injectable settings for the coro package."""
 
     model_config = SettingsConfigDict(
@@ -119,19 +118,6 @@ class ServerSettings(BaseSettings):
         default=None,
         description="Optional Silero VAD speech probability threshold for the onnx-asr "
         "backend; only used when asr_onnx_vad is 'enabled'. None uses onnx-asr's default.",
-    )
-    asr_window_seconds: float = Field(
-        default=DEFAULT_WINDOW_SECONDS,
-        gt=0,
-        description="ASR Windowing window length in seconds. A request can override it "
-        "with coro_window_seconds.",
-    )
-    asr_window_overlap_seconds: float = Field(
-        default=DEFAULT_OVERLAP_SECONDS,
-        ge=0,
-        description="ASR Windowing overlap between consecutive windows in seconds; must "
-        "be shorter than asr_window_seconds. A request can override it with "
-        "coro_overlap_seconds.",
     )
     backend_diarization: DiarizationBackendProvider = Field(
         default="none",
@@ -374,17 +360,6 @@ class ServerSettings(BaseSettings):
         from coro.cache.directory import resolve_cache_dir
 
         self.asr_cache_dir = resolve_cache_dir(self.asr_cache_dir)
-        return self
-
-    @model_validator(mode="after")
-    def reject_overlap_not_shorter_than_window(self) -> ServerSettings:
-        """Reject an ASR Windowing overlap that does not leave a positive step."""
-        if self.asr_window_overlap_seconds >= self.asr_window_seconds:
-            msg = (
-                f"CORO_ASR_WINDOW_OVERLAP_SECONDS ({self.asr_window_overlap_seconds}) must be "
-                f"shorter than CORO_ASR_WINDOW_SECONDS ({self.asr_window_seconds})."
-            )
-            raise ValueError(msg)
         return self
 
     @model_validator(mode="after")

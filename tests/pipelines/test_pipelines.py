@@ -88,11 +88,13 @@ async def test_built_pipeline_windows_with_the_configured_geometry(selector, tmp
         _env_file=None,
         pipeline=selector,
         transcript_spill_dir=str(tmp_path),
-        asr_window_seconds=0.5,
+        asr_window_seconds=0.4,
         asr_window_overlap_seconds=0.0,
     )
-    asr = _asr()
 
-    await build_pipeline(settings, asr=asr).transcribe(AudioInput(ONE_SECOND_WAV))
+    asr = RecordingASR([TranscriptToken(start=0.1, end=0.3, text=" hola", probability=1.0)])
 
-    assert max(asr.window_sizes) == ONE_SECOND_PCM_BYTES // 2
+    result = await build_pipeline(settings, asr=asr).transcribe(AudioInput(ONE_SECOND_WAV))
+
+    # The adapter hears one word 0.1 s into each window.
+    assert [word.start for word in result.word_segments] == [0.1, 0.5, 0.9]

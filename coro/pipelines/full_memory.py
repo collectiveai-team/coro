@@ -35,7 +35,6 @@ class FullMemoryPipeline:
         self._diarization = diarization
         self._windowing = windowing or ASRWindowing()
 
-    # Window Geometry -------------------------------------------------------
     @property
     def windowing(self) -> ASRWindowing:
         """The ASR Windowing this pipeline transcribes with."""

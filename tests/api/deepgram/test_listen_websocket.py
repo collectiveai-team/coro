@@ -345,6 +345,17 @@ class TestAutoLIDStickyState:
 
 
 class TestWindowOverrides:
+    """The adapter hears one word half a second into every window, so the
+    Results frame start times show where each window began."""
+
+    @staticmethod
+    def _asr() -> _FakeASR:
+        return _FakeASR([TranscriptToken(start=0.5, end=0.9, text=" hola", probability=0.9)])
+
+    @staticmethod
+    def _result_starts(frames: list[dict]) -> list[float]:
+        return [frame["start"] for frame in frames if frame["type"] == "Results"]
+
     def test_server_window_settings_reach_the_live_session(self):
         app = make_app(
             pipeline=object(),
@@ -352,20 +363,18 @@ class TestWindowOverrides:
                 _env_file=None, asr_window_seconds=2.0, asr_window_overlap_seconds=0.0
             ),
         )
-        asr = _FakeASR()
-        app.state.runtime.asr_adapter = asr
+        app.state.runtime.asr_adapter = self._asr()
 
-        _stream(app, seconds=5)
+        frames = _stream(app, seconds=5)
 
-        assert asr.max_pcm == 2 * SAMPLE_RATE * BYTES_PER_SAMPLE
+        assert self._result_starts(frames) == [0.5, 2.5, 4.5]
 
     def test_query_overrides_set_the_window_for_the_connection(self):
-        asr = _FakeASR()
+        frames = _stream(
+            _app(self._asr()), "?coro_window_seconds=2&coro_overlap_seconds=0", seconds=5
+        )
 
-        _stream(_app(asr), "?coro_window_seconds=2&coro_overlap_seconds=0", seconds=5)
-
-        assert asr.calls >= 3
-        assert asr.max_pcm == 2 * SAMPLE_RATE * BYTES_PER_SAMPLE
+        assert self._result_starts(frames) == [0.5, 2.5, 4.5]
 
     @pytest.mark.parametrize(
         "query",
