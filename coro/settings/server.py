@@ -6,7 +6,7 @@ from functools import lru_cache
 from typing import Literal
 
 from pydantic import AliasChoices, Field, PrivateAttr, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 
 from coro.settings.selection import (
     DEFAULT_CANARY_ALIGNMENT_MODEL,
@@ -22,10 +22,11 @@ from coro.settings.selection import (
     OnnxVadSelector,
     PipelineSelector,
 )
+from coro.settings.windowing import ASRWindowSettings
 
 
 # MARK: Server Settings
-class ServerSettings(BaseSettings):
+class ServerSettings(ASRWindowSettings):
     """Runtime-injectable settings for the coro package."""
 
     model_config = SettingsConfigDict(

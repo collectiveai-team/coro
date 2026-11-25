@@ -26,6 +26,12 @@ from coro.api.deepgram.live_schemas import (
     DeepgramLiveMetadata,
     DeepgramLiveResults,
 )
+from coro.api.window_overrides import (
+    OVERLAP_SECONDS_DOC,
+    OVERLAP_SECONDS_PARAM,
+    WINDOW_SECONDS_DOC,
+    WINDOW_SECONDS_PARAM,
+)
 from coro.pcm import LINEAR16, MAX_SAMPLE_RATE, MIN_SAMPLE_RATE
 
 # Must equal the path of the WebSocket route. It is deliberately *not* an
@@ -173,6 +179,16 @@ _QUERY_SCHEMA: dict[str, JsonValue] = {
                 "Accepted but ignored, including repeated query values. Language preferences "
                 "are not supported; use `language` to select a language."
             ),
+        },
+        WINDOW_SECONDS_PARAM: {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": WINDOW_SECONDS_DOC,
+        },
+        OVERLAP_SECONDS_PARAM: {
+            "type": "number",
+            "minimum": 0,
+            "description": OVERLAP_SECONDS_DOC,
         },
     },
 }

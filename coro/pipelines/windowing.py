@@ -16,18 +16,13 @@ from coro.core.models import (
     TranscriptDeltaEvent,
     TranscriptToken,
 )
+from coro.settings.selection import DEFAULT_OVERLAP_SECONDS, DEFAULT_WINDOW_SECONDS
 
 logger = get_logger(__name__)
 
 BYTES_PER_SECOND = SAMPLE_RATE * BYTES_PER_SAMPLE
 PROMPT_TOKEN_LIMIT = 50
 PROMPT_CHAR_LIMIT = 200
-
-DEFAULT_WINDOW_SECONDS = 30.0
-"""Window length every pipeline uses; part of the ASR window cache fingerprint."""
-
-DEFAULT_OVERLAP_SECONDS = 2.0
-"""Window overlap every pipeline uses; part of the ASR window cache fingerprint."""
 
 
 # MARK: Result Model
@@ -190,6 +185,15 @@ class ASRWindowing:
         # reconciliation boundaries land exactly where windows actually sit.
         self._step_seconds = self.step_bytes / BYTES_PER_SECOND
         self._half_overlap_seconds = self.overlap_bytes / BYTES_PER_SECOND / 2.0
+
+    def with_overrides(
+        self, *, window_seconds: float | None = None, overlap_seconds: float | None = None
+    ) -> ASRWindowing:
+        """Return a windowing with the given geometry; ``None`` keeps this one's value."""
+        return ASRWindowing(
+            window_seconds=self.window_seconds if window_seconds is None else window_seconds,
+            overlap_seconds=self.overlap_seconds if overlap_seconds is None else overlap_seconds,
+        )
 
     # Window Planning -------------------------------------------------------
     @staticmethod

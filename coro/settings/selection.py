@@ -29,6 +29,12 @@ OnnxVadSelector = Literal["enabled", "disabled"]
 DiarizationDevice = Literal["auto", "cuda", "cpu"]
 DiarizationLatencyTier = Literal["very-high", "high", "low", "ultra-low"]
 
+DEFAULT_WINDOW_SECONDS = 30.0
+"""Default ASR Windowing window length; part of the ASR window cache fingerprint."""
+
+DEFAULT_OVERLAP_SECONDS = 2.0
+"""Default ASR Windowing overlap; part of the ASR window cache fingerprint."""
+
 
 # MARK: Model Slug Registry
 class _SlugConfig(TypedDict):

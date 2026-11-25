@@ -350,7 +350,12 @@ def build_asr_adapter_stack(settings: ServerSettings, *, lazy: bool = False) -> 
         max_bytes=settings.asr_cache_max_mb * 1024 * 1024,
         ttl_seconds=settings.asr_cache_ttl_days * 86400.0,
     )
-    fingerprint = asr_fingerprint(settings, honours_prompt=honours_prompt)
+    fingerprint = asr_fingerprint(
+        settings,
+        honours_prompt=honours_prompt,
+        window_seconds=settings.asr_window_seconds,
+        overlap_seconds=settings.asr_window_overlap_seconds,
+    )
     logger.info(
         "ASR window cache enabled dir=%s fingerprint=%s entries=%d bytes=%d",
         directory,

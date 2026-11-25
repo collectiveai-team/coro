@@ -342,3 +342,51 @@ class TestAutoLIDStickyState:
         metadata = frames[-1]
         assert metadata["type"] == "Metadata"
         assert "detected_language" not in metadata
+
+
+class TestWindowOverrides:
+    """The adapter hears one word half a second into every window, so the
+    Results frame start times show where each window began."""
+
+    @staticmethod
+    def _asr() -> _FakeASR:
+        return _FakeASR([TranscriptToken(start=0.5, end=0.9, text=" hola", probability=0.9)])
+
+    @staticmethod
+    def _result_starts(frames: list[dict]) -> list[float]:
+        return [frame["start"] for frame in frames if frame["type"] == "Results"]
+
+    def test_server_window_settings_reach_the_live_session(self):
+        app = make_app(
+            pipeline=object(),
+            settings=ServerSettings(
+                _env_file=None, asr_window_seconds=2.0, asr_window_overlap_seconds=0.0
+            ),
+        )
+        app.state.runtime.asr_adapter = self._asr()
+
+        frames = _stream(app, seconds=5)
+
+        assert self._result_starts(frames) == [0.5, 2.5, 4.5]
+
+    def test_query_overrides_set_the_window_for_the_connection(self):
+        frames = _stream(
+            _app(self._asr()), "?coro_window_seconds=2&coro_overlap_seconds=0", seconds=5
+        )
+
+        assert self._result_starts(frames) == [0.5, 2.5, 4.5]
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "?coro_window_seconds=0",
+            "?coro_overlap_seconds=-1",
+            "?coro_window_seconds=2&coro_overlap_seconds=2",
+            "?coro_window_seconds=abc",
+        ],
+    )
+    def test_invalid_override_is_refused_before_audio(self, query: str):
+        with TestClient(_app()).websocket_connect(f"/v1/listen{query}") as ws:
+            frame = _next_frame(ws)
+        assert frame["type"] == "Error"
+        assert frame["description"] == "Invalid window override"
