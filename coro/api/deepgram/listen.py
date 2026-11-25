@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse, Response
 from coro.api.deepgram.render import render_deepgram
 from coro.api.deepgram.schemas import DeepgramErrorResponse
 from coro.api.dependencies import get_pipeline, get_settings
+from coro.api.diarization_need import pipeline_for_speakers
 from coro.api.exceptions import PROCESSING_FAILED_MESSAGE
 from coro.api.json_body import spooled_json_response
 from coro.api.rate_limit import RateLimited, admit_request, admit_upload
@@ -230,6 +231,8 @@ async def listen(
         return _error(
             err_code=_BAD_REQUEST, err_msg=exc.message, request_id=request_id, status_code=400
         )
+    # Utterances are split at speaker changes even when the labels are hidden.
+    pipeline = pipeline_for_speakers(pipeline, needs_speakers=diarize or utterances)
 
     content_type = (request.headers.get("content-type") or "").split(";")[0].strip()
     if content_type == "application/json":

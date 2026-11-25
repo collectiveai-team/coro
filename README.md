@@ -1138,6 +1138,10 @@ Behaviour worth knowing:
   emits a null speaker, and inventing a label would be a guess.
 - `speaker_confidence` is **omitted**: Coro's diarizers binarize their
   per-frame posteriors, so the value does not exist to report.
+- Diarization runs only when the response renders speakers: `diarize=true` or
+  `utterances=true` here, `diarized_json` or `stream=true` on
+  `/v1/audio/transcriptions`. Other requests skip it, which saves its cost
+  (about 24% of throughput on CPU, see `docs/benchmark.md`).
 - `Authorization` is accepted and never validated. Coro has no auth.
 - `?utterances=true` roughly doubles the body, because the shape carries every
   word twice (flat and nested per utterance) — as the real API does.

@@ -45,6 +45,10 @@ class FullMemoryPipeline:
         """Return a pipeline over the same adapters that transcribes with ``windowing``."""
         return FullMemoryPipeline(asr=self._asr, diarization=self._diarization, windowing=windowing)
 
+    def without_diarization(self) -> FullMemoryPipeline:
+        """Return a pipeline over the same ASR Adapter that skips diarization."""
+        return FullMemoryPipeline(asr=self._asr, diarization=None, windowing=self._windowing)
+
     # PCM Decoding ----------------------------------------------------------
     async def _pcm(self, audio: AudioInput) -> bytes:
         """Decode the upload to PCM, letting ffmpeg read it from disk.

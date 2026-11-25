@@ -92,6 +92,12 @@ class StreamingPipeline:
             spill_dir=self._spill_dir,
         )
 
+    def without_diarization(self) -> StreamingPipeline:
+        """Return a pipeline over the same ASR Adapter that skips diarization."""
+        return StreamingPipeline(
+            asr=self._asr, windowing=self._windowing, spill_dir=self._spill_dir
+        )
+
     # Batch Transcription ---------------------------------------------------
     async def transcribe(
         self,

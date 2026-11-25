@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import Response
 
 from coro.api.dependencies import get_pipeline
+from coro.api.diarization_need import pipeline_for_speakers
 from coro.api.exceptions import (
     PROCESSING_FAILED_MESSAGE,
     UNDECODABLE_MEDIA_MESSAGE,
@@ -230,6 +231,10 @@ async def create_transcription(
     prompt_value = _normalize_optional(prompt)
     pipeline = _pipeline_for_request(
         pipeline, WindowOverrides(coro_window_seconds, coro_overlap_seconds)
+    )
+    # The SSE done frame carries the full result, speakers included.
+    pipeline = pipeline_for_speakers(
+        pipeline, needs_speakers=stream or response_format == ResponseFormat.DIARIZED_JSON
     )
     audio = await AudioInput.from_upload(file)
     # Size comes from the spool counter, never from reading the upload back: a
