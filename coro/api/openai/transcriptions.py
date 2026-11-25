@@ -28,6 +28,13 @@ from coro.api.openai.formats import ResponseFormat
 from coro.api.openai.render import render_for_format
 from coro.api.openai.sse import streaming_response
 from coro.api.rate_limit import RateLimited, admit_request, admit_upload
+from coro.api.window_overrides import (
+    OVERLAP_SECONDS_DOC,
+    WINDOW_SECONDS_DOC,
+    InvalidWindowOverride,
+    WindowOverrides,
+    pipeline_for_request,
+)
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.concurrency import AsrCapacityError
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
@@ -84,6 +91,16 @@ def _rate_limit_error(limited: RateLimited) -> TranscriptionCapacityError:
         retry_after_seconds=limited.retry_after_seconds,
         code="rate_limit_exceeded",
     )
+
+
+def _pipeline_for_request(
+    pipeline: TranscriptionPipeline, overrides: WindowOverrides
+) -> TranscriptionPipeline:
+    """Apply the request's window overrides, mapping a bad value to a 400."""
+    try:
+        return pipeline_for_request(pipeline, overrides)
+    except InvalidWindowOverride as exc:
+        raise TranscriptionValidationError(exc.message, param=exc.param) from exc
 
 
 async def _transcribe_or_raise(
@@ -180,6 +197,8 @@ async def create_transcription(
         alias="known_speaker_references[]",
         description="Accepted but ignored.",
     ),
+    coro_window_seconds: float | None = Form(default=None, description=WINDOW_SECONDS_DOC),
+    coro_overlap_seconds: float | None = Form(default=None, description=OVERLAP_SECONDS_DOC),
     pipeline: TranscriptionPipeline = Depends(get_pipeline),
 ) -> Response:
     """Accept audio and return an OpenAI-shaped response.
@@ -209,6 +228,9 @@ async def create_transcription(
         raise _rate_limit_error(limited)
     language = _validate_language(language)
     prompt_value = _normalize_optional(prompt)
+    pipeline = _pipeline_for_request(
+        pipeline, WindowOverrides(coro_window_seconds, coro_overlap_seconds)
+    )
     audio = await AudioInput.from_upload(file)
     # Size comes from the spool counter, never from reading the upload back: a
     # multi-gigabyte upload must not be materialised just to be measured.

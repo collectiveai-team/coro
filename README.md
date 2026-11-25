@@ -753,6 +753,8 @@ flag (CLI flags take precedence). Source of truth: `coro/settings/server.py`.
 | `CORO_ASR_FALLBACK_LANGUAGE` | `--asr-fallback-language` | `en` | Language used when a request gives none and detection (where available) never yields one. |
 | `CORO_ASR_ONNX_VAD` | `--asr-onnx-vad` | `disabled` | Silero VAD segmentation for `onnx-asr` (`enabled` \| `disabled`). |
 | `CORO_ASR_ONNX_VAD_THRESHOLD` | `--asr-onnx-vad-threshold` | _(unset)_ | Silero VAD speech-probability threshold; only when VAD enabled. |
+| `CORO_ASR_WINDOW_SECONDS` | `--asr-window-seconds` | `30.0` | ASR Windowing window length in seconds. A request can override it with `coro_window_seconds`. |
+| `CORO_ASR_WINDOW_OVERLAP_SECONDS` | `--asr-window-overlap-seconds` | `2.0` | Overlap between consecutive windows in seconds; must be shorter than the window. A request can override it with `coro_overlap_seconds`. |
 | `CORO_ASR_MAX_CONCURRENCY` | `--asr-max-concurrency` | `0` _(auto)_ | Max ASR inference calls running at once; `0` auto-sizes from the cores the process may use: its CPU affinity, capped by a container CPU limit. Ignored by `onnx-genai`, which always serialises. |
 | `CORO_ASR_MAX_QUEUE_DEPTH` | `--asr-max-queue-depth` | `32` | Max ASR calls allowed to queue for a slot; beyond this the request gets HTTP 429 + `Retry-After` instead of waiting indefinitely. |
 | `CORO_RATE_LIMIT_REQUESTS_PER_MINUTE` | `--rate-limit-requests-per-minute` | `60` | Transcription requests one client IP may start per minute (REST, SSE, WebSocket connects); beyond it HTTP 429 + `Retry-After`. `0` disables. See [Client rate limits](#client-rate-limits). |
@@ -1165,6 +1167,39 @@ Two are **refused**, because ignoring them fails silently instead of visibly:
 failure wearing a 200), and `callback` would leave a client waiting forever for
 a webhook that never fires. A missing `summary` key you can see; those two you
 cannot.
+
+### Coro extension parameters
+
+`POST /v1/listen` and `WebSocket /v1/listen` (query parameters) and
+`POST /v1/audio/transcriptions` (form fields) accept two extra parameters that
+set the ASR Windowing geometry for one request or connection. Vendor clients never send them, so the vendor contracts are
+unchanged. When left out, `CORO_ASR_WINDOW_SECONDS` and
+`CORO_ASR_WINDOW_OVERLAP_SECONDS` apply.
+
+| parameter | meaning |
+|---|---|
+| `coro_window_seconds` | Window length in seconds; greater than 0. |
+| `coro_overlap_seconds` | Overlap between windows in seconds; 0 or greater, shorter than the window. |
+
+An invalid value returns a `400` in the endpoint's own error shape; on the
+WebSocket it closes the connection with an `Error` frame before any audio is
+accepted.
+
+```bash
+curl -s "http://localhost:8000/v1/listen?coro_window_seconds=20&coro_overlap_seconds=1" \
+  -H "Content-Type: audio/wav" --data-binary @audio.wav
+```
+
+With the OpenAI SDK, pass them through `extra_body`:
+
+```python
+client.audio.transcriptions.create(
+    model="coro", file=f, extra_body={"coro_window_seconds": 20, "coro_overlap_seconds": 1}
+)
+```
+
+The ASR window cache keys each entry on the window's audio, so windows cut with
+an override are cached apart from windows cut with the server defaults.
 
 Also not implemented:
 

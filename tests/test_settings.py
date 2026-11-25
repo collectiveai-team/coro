@@ -304,3 +304,24 @@ def test_diarization_device_selector_is_strict(diarization_device: str):
             diarization_device=diarization_device,  # pyrefly: ignore[bad-argument-type]
             _env_file=None,
         )
+
+
+def test_asr_window_settings_default_to_the_windowing_defaults():
+    settings = ServerSettings(_env_file=None)
+
+    assert settings.asr_window_seconds == pytest.approx(30.0, abs=1e-9)
+    assert settings.asr_window_overlap_seconds == pytest.approx(2.0, abs=1e-9)
+
+
+def test_asr_window_settings_read_from_env(monkeypatch):
+    monkeypatch.setenv("CORO_ASR_WINDOW_SECONDS", "20")
+    monkeypatch.setenv("CORO_ASR_WINDOW_OVERLAP_SECONDS", "1.5")
+    settings = ServerSettings(_env_file=None)
+
+    assert settings.asr_window_seconds == pytest.approx(20.0, abs=1e-9)
+    assert settings.asr_window_overlap_seconds == pytest.approx(1.5, abs=1e-9)
+
+
+def test_asr_window_overlap_not_shorter_than_window_is_rejected():
+    with pytest.raises(ValueError, match="CORO_ASR_WINDOW_OVERLAP_SECONDS"):
+        ServerSettings(_env_file=None, asr_window_seconds=5.0, asr_window_overlap_seconds=5.0)

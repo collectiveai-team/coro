@@ -28,6 +28,13 @@ from coro.api.dependencies import get_pipeline, get_settings
 from coro.api.exceptions import PROCESSING_FAILED_MESSAGE
 from coro.api.json_body import spooled_json_response
 from coro.api.rate_limit import RateLimited, admit_request, admit_upload
+from coro.api.window_overrides import (
+    OVERLAP_SECONDS_DOC,
+    WINDOW_SECONDS_DOC,
+    InvalidWindowOverride,
+    WindowOverrides,
+    pipeline_for_request,
+)
 from coro.audio import AudioConversionError, AudioInput
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.core.language import canonical_language
@@ -179,6 +186,8 @@ async def listen(
         description="**Refused with 400.** Results are returned inline; no webhook is ever "
         "delivered, so a client awaiting one would wait forever.",
     ),
+    coro_window_seconds: float | None = Query(default=None, description=WINDOW_SECONDS_DOC),
+    coro_overlap_seconds: float | None = Query(default=None, description=OVERLAP_SECONDS_DOC),
     authorization: str | None = Header(default=None, description="Accepted but not validated."),
     pipeline: TranscriptionPipeline = Depends(get_pipeline),
     settings: ServerSettings = Depends(get_settings),
@@ -211,6 +220,15 @@ async def listen(
             err_msg=f"Unsupported parameter '{name}': {reason}.",
             request_id=request_id,
             status_code=400,
+        )
+
+    try:
+        pipeline = pipeline_for_request(
+            pipeline, WindowOverrides(coro_window_seconds, coro_overlap_seconds)
+        )
+    except InvalidWindowOverride as exc:
+        return _error(
+            err_code=_BAD_REQUEST, err_msg=exc.message, request_id=request_id, status_code=400
         )
 
     content_type = (request.headers.get("content-type") or "").split(";")[0].strip()

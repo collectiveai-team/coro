@@ -41,6 +41,13 @@ from coro.api.deepgram.live_socket import (
     spill_dir,
 )
 from coro.api.deepgram.schemas import DeepgramWord
+from coro.api.window_overrides import (
+    OVERLAP_SECONDS_PARAM,
+    WINDOW_SECONDS_PARAM,
+    InvalidWindowOverride,
+    WindowOverrides,
+    windowing_for_request,
+)
 from coro.audio import BYTES_PER_SAMPLE, SAMPLE_RATE
 from coro.backends.asr.errors import AsrUnsupportedLanguageError
 from coro.cache.adapter import unwrap_asr_adapter
@@ -50,7 +57,9 @@ from coro.core.models import SpeakerSegment, TranscriptToken
 from coro.core.protocols import ASRAdapter
 from coro.core.speakers import attribute_span, merge_speaker_timeline
 from coro.pcm import PcmStreamConverter, UnsupportedAudioFormat, validate_format
+from coro.pipelines.factory import build_windowing
 from coro.pipelines.live import LiveAudioSource, LiveTranscriptionSession
+from coro.pipelines.windowing import ASRWindowing
 
 if TYPE_CHECKING:
     from coro.runtime import RuntimeState
@@ -76,6 +85,7 @@ class _Negotiated:
     sample_rate: int
     diarize: bool
     language: str | None
+    windowing: ASRWindowing
 
 
 def _int_param(websocket: WebSocket, name: str) -> int | None:
@@ -86,6 +96,26 @@ def _int_param(websocket: WebSocket, name: str) -> int | None:
         return int(raw)
     except ValueError as exc:
         raise UnsupportedAudioFormat(f"{name} must be an integer, got {raw!r}") from exc
+
+
+def _float_param(websocket: WebSocket, name: str) -> float | None:
+    raw = websocket.query_params.get(name)
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise InvalidWindowOverride(f"{name} must be a number, got {raw!r}.", param=name) from exc
+
+
+def _requested_windowing(websocket: WebSocket) -> ASRWindowing:
+    """Return the server's ASR Windowing with the connection's overrides applied."""
+    settings = getattr(websocket.app.state, "settings", None)
+    overrides = WindowOverrides(
+        window_seconds=_float_param(websocket, WINDOW_SECONDS_PARAM),
+        overlap_seconds=_float_param(websocket, OVERLAP_SECONDS_PARAM),
+    )
+    return windowing_for_request(build_windowing(settings), overrides)
 
 
 def _flag(websocket: WebSocket, name: str) -> bool:
@@ -147,6 +177,12 @@ async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | Non
         await reject(websocket, description="Server not ready", message="No ASR adapter is loaded.")
         return None
     try:
+        windowing = _requested_windowing(websocket)
+    except InvalidWindowOverride as exc:
+        logger.info("listen_ws[%s] rejected window override: %s", request_id, exc.message)
+        await reject(websocket, description="Invalid window override", message=exc.message)
+        return None
+    try:
         sample_rate = _int_param(websocket, "sample_rate")
         validate_format(
             websocket.query_params.get("encoding"),
@@ -176,6 +212,7 @@ async def _negotiate(websocket: WebSocket, request_id: str) -> _Negotiated | Non
         sample_rate=sample_rate or SAMPLE_RATE,
         diarize=_flag(websocket, "diarize"),
         language=language,
+        windowing=windowing,
     )
 
 
@@ -217,6 +254,7 @@ async def listen_ws(websocket: WebSocket) -> None:
     source = LiveAudioSource(spill_dir=spill_dir(websocket))
     session = LiveTranscriptionSession(
         asr=negotiated.asr,
+        windowing=negotiated.windowing,
         streaming_diarizer_factory=(
             getattr(negotiated.runtime, "streaming_diarizer_factory", None)
             if negotiated.diarize

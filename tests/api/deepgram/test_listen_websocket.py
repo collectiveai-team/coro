@@ -342,3 +342,42 @@ class TestAutoLIDStickyState:
         metadata = frames[-1]
         assert metadata["type"] == "Metadata"
         assert "detected_language" not in metadata
+
+
+class TestWindowOverrides:
+    def test_server_window_settings_reach_the_live_session(self):
+        app = make_app(
+            pipeline=object(),
+            settings=ServerSettings(
+                _env_file=None, asr_window_seconds=2.0, asr_window_overlap_seconds=0.0
+            ),
+        )
+        asr = _FakeASR()
+        app.state.runtime.asr_adapter = asr
+
+        _stream(app, seconds=5)
+
+        assert asr.max_pcm == 2 * SAMPLE_RATE * BYTES_PER_SAMPLE
+
+    def test_query_overrides_set_the_window_for_the_connection(self):
+        asr = _FakeASR()
+
+        _stream(_app(asr), "?coro_window_seconds=2&coro_overlap_seconds=0", seconds=5)
+
+        assert asr.calls >= 3
+        assert asr.max_pcm == 2 * SAMPLE_RATE * BYTES_PER_SAMPLE
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "?coro_window_seconds=0",
+            "?coro_overlap_seconds=-1",
+            "?coro_window_seconds=2&coro_overlap_seconds=2",
+            "?coro_window_seconds=abc",
+        ],
+    )
+    def test_invalid_override_is_refused_before_audio(self, query: str):
+        with TestClient(_app()).websocket_connect(f"/v1/listen{query}") as ws:
+            frame = _next_frame(ws)
+        assert frame["type"] == "Error"
+        assert frame["description"] == "Invalid window override"

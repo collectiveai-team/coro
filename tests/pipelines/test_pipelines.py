@@ -76,3 +76,23 @@ async def test_pipeline_stream_emits_delta_and_done():
     assert events[0].delta == "hello."
     assert isinstance(events[-1], TranscriptDoneEvent)
     assert json.loads(events[-1].text)["segments"][0]["text"] == "hello."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("selector", ["full-memory", "streaming"])
+async def test_built_pipeline_windows_with_the_configured_geometry(selector, tmp_path):
+    from coro.pipelines.factory import build_pipeline
+    from coro.settings import ServerSettings
+
+    settings = ServerSettings(
+        _env_file=None,
+        pipeline=selector,
+        transcript_spill_dir=str(tmp_path),
+        asr_window_seconds=0.5,
+        asr_window_overlap_seconds=0.0,
+    )
+    asr = _asr()
+
+    await build_pipeline(settings, asr=asr).transcribe(AudioInput(ONE_SECOND_WAV))
+
+    assert max(asr.window_sizes) == ONE_SECOND_PCM_BYTES // 2

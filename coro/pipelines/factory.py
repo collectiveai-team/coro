@@ -17,7 +17,23 @@ if TYPE_CHECKING:
         StreamingDiarizerFactory,
         TranscriptionPipeline,
     )
+    from coro.pipelines.windowing import ASRWindowing
     from coro.settings import ServerSettings
+
+
+def build_windowing(settings: ServerSettings | None) -> ASRWindowing:
+    """Build the ASR Windowing the server-wide window settings describe.
+
+    ``None`` gives the built-in defaults, for callers that run without settings.
+    """
+    from coro.pipelines.windowing import ASRWindowing
+
+    if settings is None:
+        return ASRWindowing()
+    return ASRWindowing(
+        window_seconds=settings.asr_window_seconds,
+        overlap_seconds=settings.asr_window_overlap_seconds,
+    )
 
 
 def build_pipeline(
@@ -40,15 +56,17 @@ def build_pipeline(
         A ready transcription pipeline.
 
     """
+    windowing = build_windowing(settings)
     if settings.pipeline == "streaming":
         from coro.pipelines.streaming import StreamingPipeline
 
         return StreamingPipeline(
             asr=asr,
+            windowing=windowing,
             streaming_diarizer_factory=streaming_diarizer_factory,
             spill_dir=settings.transcript_spill_dir,
         )
 
     from coro.pipelines.full_memory import FullMemoryPipeline
 
-    return FullMemoryPipeline(asr=asr, diarization=diarization)
+    return FullMemoryPipeline(asr=asr, diarization=diarization, windowing=windowing)

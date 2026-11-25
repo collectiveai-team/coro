@@ -77,6 +77,21 @@ class StreamingPipeline:
         # spill).  None falls back to the system temp dir, for tests only.
         self._spill_dir = spill_dir
 
+    # Window Geometry -------------------------------------------------------
+    @property
+    def windowing(self) -> ASRWindowing:
+        """The ASR Windowing this pipeline transcribes with."""
+        return self._windowing
+
+    def with_windowing(self, windowing: ASRWindowing) -> StreamingPipeline:
+        """Return a pipeline over the same adapters that transcribes with ``windowing``."""
+        return StreamingPipeline(
+            asr=self._asr,
+            windowing=windowing,
+            streaming_diarizer_factory=self._streaming_diarizer_factory,
+            spill_dir=self._spill_dir,
+        )
+
     # Batch Transcription ---------------------------------------------------
     async def transcribe(
         self,

@@ -34,9 +34,13 @@ from typing import TYPE_CHECKING, assert_never
 
 from coro.backends.asr.canary_ctc_alignment import CANARY_CTC_REVISION
 from coro.backends.asr.omnilingual_ctc_alignment import OMNILINGUAL_CTC_REVISION
-from coro.pipelines.windowing import DEFAULT_OVERLAP_SECONDS, DEFAULT_WINDOW_SECONDS
 from coro.settings.host import host_environment
-from coro.settings.selection import DEFAULT_CANARY_ALIGNMENT_MODEL, CanaryAlignmentModel
+from coro.settings.selection import (
+    DEFAULT_CANARY_ALIGNMENT_MODEL,
+    DEFAULT_OVERLAP_SECONDS,
+    DEFAULT_WINDOW_SECONDS,
+    CanaryAlignmentModel,
+)
 
 if TYPE_CHECKING:
     from coro.settings import ServerSettings
