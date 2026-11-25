@@ -9,8 +9,10 @@ installed = ["full-python", "python-test-smells", "agent-opencode", "agent-claud
 ruff-adapters = "coro/backends/**"
 
 [rules.file-size-guard]
-# Configuration with one section per tool.
-extend-ignores = ["pyproject.toml"]
+extend-ignores = [
+    "pyproject.toml",  # Configuration with one section per tool.
+    "tests/bench/fixtures/md_eval/md-eval-22.pl",  # Vendored scorer fixture.
+]
 
 [rules.no-artifacts-in-package]
 # The server warmup reads it at run time.

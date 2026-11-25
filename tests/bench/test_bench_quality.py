@@ -258,7 +258,9 @@ class TestCombineItems:
         first_item_der = item_results[0].metrics.der.der
         assert first_item_der == 0.0
         assert summary.combined is not None and summary.combined.der is not None
-        assert summary.combined.der.der > 0.0
+        assert summary.combined.der.speaker_error == pytest.approx(2.0, abs=1e-12)
+        assert summary.combined.der.total_speech == pytest.approx(6.0, abs=1e-12)
+        assert summary.combined.der.der == pytest.approx(2.0 / 6.0, abs=1e-12)
         assert summary.n_degenerate_diarization == 1
 
     def test_combine_items_reports_both_lanes_in_the_aggregate(self, tmp_path: Path):
