@@ -182,16 +182,16 @@ wheels = [
 
 [[package]]
 name = "botica"
-version = "0.18.1"
+version = "0.22.0"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/78/6c/8eee6be10020c65e2e58325175b136455865489ae5dd3e1dde48bdb51a39/botica-0.18.1-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:85c422960d68dc1cda37b4ca8d1c141c6ed4aea87ac512048325418526cb8ae9", size = 4788369, upload-time = "2026-10-29T22:05:05.084Z" },
-    { url = "https://files.pythonhosted.org/packages/cf/4b/79c712eab939576e5f9c5becf26356d34308253436f345eb005d092fe5a1/botica-0.18.1-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b9420005553cabdbff1976c3529fa093d2d760a45e3cef3951402dcbe61c077a", size = 4458983, upload-time = "2026-10-29T22:05:07.293Z" },
-    { url = "https://files.pythonhosted.org/packages/5c/0c/3ef2677e5e15414166e91b78c0d77578fc843dd0d35de38bf5977abf897b/botica-0.18.1-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:b6c58f1cf0c958c042782ab46e3537e17664e909fc820a35a02916e98d7aee99", size = 4624704, upload-time = "2026-10-29T22:05:08.885Z" },
-    { url = "https://files.pythonhosted.org/packages/0d/d3/940474e27a23b5059d1a110c1adeb22f2424f5e56211813c2cb26d3f32b7/botica-0.18.1-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:50a4b7523c333815df670ef81dc8bf4e895574893b11e95173dd100554082b7e", size = 4950164, upload-time = "2026-10-29T22:05:10.502Z" },
-    { url = "https://files.pythonhosted.org/packages/dc/79/7ffa85e63a3a10b5ee61c212c16feba7f0129a6141e5ab939f089eaf38e8/botica-0.18.1-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:5a48cd70ee5b550f52e6640c8e90cd3df06357690e08aee1e28021c4006b6317", size = 4606588, upload-time = "2026-10-29T22:05:12.09Z" },
-    { url = "https://files.pythonhosted.org/packages/c3/81/fb6a1718e333a72e04cb6f2e68493a295434bcb65e1d61dea206d08b8b7d/botica-0.18.1-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:391b2de4972e454f08f4b4d7d43bde04af2800c9e2042a08b1e53aea43dc210c", size = 5033694, upload-time = "2026-10-29T22:05:13.804Z" },
-    { url = "https://files.pythonhosted.org/packages/ad/cc/34b8f04f29840c3d312d444238224af098419fdb9f64093901f8676fbdee/botica-0.18.1-py3-none-win_amd64.whl", hash = "sha256:9b5d921627e8cf4045c009d3864fe6710b26bc4826d36ece2b9043b39e9ba73e", size = 4686069, upload-time = "2026-10-29T22:05:15.557Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/f1/f9de375eea740e6add4c64e8b3a92bfbef608a17849a9c378a2e5ae2ade0/botica-0.22.0-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:54ec6ece3f6793cb853d30af4258d70a0a08ecd24ea3819384a0b562affef7c4", size = 6548592, upload-time = "2026-11-20T07:31:34.263Z" },
+    { url = "https://files.pythonhosted.org/packages/28/13/b1489692480a5ef499bcc1da4e9700211750bded93c28e81f49d80c5885b/botica-0.22.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:8a43046b17f2f7268f3f77abbecbf81f83d7b4ee1099e570d1b93f971cf2380f", size = 6042571, upload-time = "2026-11-20T07:31:36.398Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/ee/932996a2b4827f027df77cff6d961e3585eb714b8d3331d020f558474723/botica-0.22.0-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:45fa8effd522ac626d6bb1452f96dd568dd23d12eedb2b2e26a71ad5ed6a2293", size = 6325829, upload-time = "2026-11-20T07:31:38.55Z" },
+    { url = "https://files.pythonhosted.org/packages/70/4a/70c19eff65c8eb158c8b7be6ff4ccceda4504e659eb91737728fe1e2426d/botica-0.22.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:903fdcfca765e6c6877a23e52eb4e0e081eb619e8c5fa02636b780e023505ed8", size = 6773840, upload-time = "2026-11-20T07:31:40.71Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/5a/d506631e6ac4eacf29d98fc715e57aca9267bf2e1bcff535b8b0d6e3ce1b/botica-0.22.0-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:c87e7283412c6ec7d77472ac801239dec8cbd1b569e1096f8e5fb02590b45802", size = 6309573, upload-time = "2026-11-20T07:31:42.81Z" },
+    { url = "https://files.pythonhosted.org/packages/08/c1/549d05845ebb66efd4b87bef89189315399f90b812e7480091ac210ad6c1/botica-0.22.0-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:607855adc07f1b7ff1ceb05711af425c848204a697c4b3f76ec0556fe631542d", size = 6893218, upload-time = "2026-11-20T07:31:44.982Z" },
+    { url = "https://files.pythonhosted.org/packages/06/e6/412aa3bd62dedc26b403e9daedd3c9371aa9463f8902507bdd5d57c22440/botica-0.22.0-py3-none-win_amd64.whl", hash = "sha256:974fec2a060a6cd1f1259c7d1655327abd7145cc84fb383d924b350ed93e1662", size = 6409359, upload-time = "2026-11-20T07:31:47.292Z" },
 ]
 
 [[package]]
@@ -470,7 +470,7 @@ bench = [
     { name = "rich", specifier = ">=15.0.0" },
     { name = "simplejson", specifier = ">=3.0.0" },
 ]
-botica = [{ name = "botica", specifier = "==0.18.1" }]
+botica = [{ name = "botica", specifier = "==0.22.0" }]
 contracts = [
     { name = "cyclopts" },
     { name = "fastapi" },
