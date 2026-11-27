@@ -2840,16 +2840,16 @@ wheels = [
 
 [[package]]
 name = "scalar-fastapi"
-version = "1.9.1"
+version = "1.10.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bc/18/4314770c7a9a90171ef7fdae8dd100e69ceea7ffbff8e4e3c30b95f2bd2b/scalar_fastapi-1.9.1.tar.gz", hash = "sha256:a54104c434655c457fdbad3c181d3368be07c63ddbb7a5a084c83fdfa7239333", size = 10906, upload-time = "2026-09-25T10:47:41.198Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/3a/6c1dada2a2a110669a8b19642a32d79785124a4bd46158ca3babf85d72a0/scalar_fastapi-1.10.1.tar.gz", hash = "sha256:f44ae2c1c8f36360e7694e1774a52ad1e95779c0a6dbab4e94d90b950e82dfa6", size = 11453, upload-time = "2026-11-19T22:24:01.177Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/ed/9b927292c8e40fec09defb517ddc11c17f5a66a1129922521b7e81385ff6/scalar_fastapi-1.9.1-py3-none-any.whl", hash = "sha256:fc7fdba6e60fb016a57b3eca59621773179c133abb6d496611df9575f97555a8", size = 8594, upload-time = "2026-09-25T10:47:40.296Z" },
+    { url = "https://files.pythonhosted.org/packages/50/9b/2aba1ca8e7daa0aa89d022eb5f9ccc55517ed5fe8550ecc30c9e800d9eed/scalar_fastapi-1.10.1-py3-none-any.whl", hash = "sha256:93d1708e1afbac081cb816391acad8b05d8433582159f799774c7c9a1a32f0e9", size = 8852, upload-time = "2026-11-19T22:24:00.106Z" },
 ]
 
 [[package]]
